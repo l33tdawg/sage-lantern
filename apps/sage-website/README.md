@@ -18,4 +18,5 @@ Only `dist/client` is web content. Never upload the workspace, device evidence, 
 
 Production hostname: https://sage.ngo/. The server is the existing SAGE Natter origin. Public DNS was confirmed through Cloudflare and Google resolvers after a stale local negative DNS answer. No DNS or public-domain change was made.
 
-Copy and skill provenance: ../../docs/website/DESIGN_AND_COPY.md.
+Copy and skill provenance is kept in the private `internal-docs/website/` tree,
+outside this repository.

@@ -20,7 +20,7 @@ The fleet product has two operational presentations over shared signed contracts
 - the **Foundation fleet view** governs regions, cluster assignments, release policy, field delegations and aggregate evidence; and
 - the offline-capable **Field Operations Console** runs on a SAGE Lamplighter operator's laptop for explicitly assigned village clusters, bundle seeding, LoRa topology, provisioning/update assistance and later receipt reconciliation.
 
-The detailed Foundation → field laptop → cluster → Lantern authority and UX contract is defined in `../distribution/DATA_DONKEY_OPERATIONS_AND_UX.md`. Neither presentation is an alias for SAGE Admin or personal CEREBRUM Root.
+The detailed Foundation → field laptop → cluster → Lantern authority and UX contract is defined in the private data-donkey operations document (`internal-docs/programme/distribution/`). Neither presentation is an alias for SAGE Admin or personal CEREBRUM Root.
 
 ## 2. Problem
 
