@@ -1,0 +1,28 @@
+[runtime]
+state_log = "/var/lib/sage-lantern/logs/state.jsonl"
+output_dir = "/var/lib/sage-lantern/audio"
+
+[stt]
+binary = "/opt/sage-lantern/bin/whisper-cli"
+model = "/opt/sage-lantern/models/ggml-base.bin"
+threads = 6
+
+[llm]
+base_url = "http://127.0.0.1:8081"
+model = "qwen3.5-4b-q4_k_m"
+
+[tts]
+enabled = false
+python = "/opt/sage-lantern/venv/bin/python"
+model = "/opt/sage-lantern/models/en_US-lessac-medium.onnx"
+config = "/opt/sage-lantern/models/en_US-lessac-medium.onnx.json"
+
+[sage]
+base_url = "http://127.0.0.1:8080"
+identity_path = "/var/lib/sage-lantern/identity/lantern-agent.key"
+domain = "local-field-knowledge"
+
+[context]
+# For the first offline acceptance run, uncomment one exact pre-seeded item.
+# When this list is non-empty, the runtime does not access SAGE for context.
+static_items = []

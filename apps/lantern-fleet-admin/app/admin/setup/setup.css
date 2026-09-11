@@ -1,0 +1,23 @@
+.lantern-setup { min-height: 100dvh; padding: 40px max(24px, calc((100vw - 720px) / 2)) 64px; color: #e8edf2; background: #0b1820; }
+.lantern-setup header { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #334659; margin-bottom: 32px; }
+.setup-brand { font-size: 20px; font-weight: 750; color: #f1ce69; }
+.lantern-setup h1 { font-size: clamp(28px, 5vw, 40px); margin-bottom: 12px; }
+.setup-intro { color: #b8c8d8; margin-bottom: 28px; }
+.setup-card { background: #162a3c; border: 1px solid #40556a; border-radius: 18px; padding: 24px; }
+.setup-card h2 { margin-top: 0; font-size: 23px; }
+.setup-card p { line-height: 1.6; }
+.setup-card label { display: block; margin: 20px 0 8px; font-weight: 650; }
+.setup-card input { width: 100%; min-height: 50px; padding: 12px; border: 1px solid #879db0; border-radius: 8px; background: #0d1b29; color: #fff; font: inherit; box-sizing: border-box; }
+.setup-card button { min-height: 48px; padding: 12px 20px; border: 1px solid transparent; border-radius: 10px; background: #f1ce69; color: #182635; font: inherit; font-weight: 700; cursor: pointer; }
+.setup-card button:disabled { opacity: .55; cursor: default; }
+.setup-card button:focus-visible, .setup-card input:focus-visible { outline: 3px solid #84c5f4; outline-offset: 3px; }
+.setup-card form button { margin-top: 18px; }
+.setup-note { font-size: 14px; color: #b8c8d8; line-height: 1.5; }
+.setup-connection { display: flex; justify-content: space-between; gap: 16px; }
+.setup-networks { list-style: none; padding: 0; display: grid; gap: 10px; }
+.setup-card .setup-network { display: flex; justify-content: space-between; gap: 16px; width: 100%; text-align: left; background: #203f58; color: #fff; border-color: #58718a; overflow-wrap: anywhere; }
+.setup-network small { display: block; font-weight: 400; margin-top: 6px; }
+.setup-card .setup-network[aria-pressed="true"] { border-color: #f1ce69; }
+.setup-card .setup-secondary { margin-top: 24px; background: transparent; border-color: #879db0; color: #e8edf2; }
+.setup-error { border-left: 4px solid #f1ce69; padding: 16px; background: #332d21; }
+.setup-card code { overflow-wrap: anywhere; }

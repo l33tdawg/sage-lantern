@@ -1,0 +1,94 @@
+--- a/cmd/sage-gui/config.go
++++ b/cmd/sage-gui/config.go
+@@ -118,14 +118,14 @@
+ 	// P2PEnabled starts the optional v11.6 libp2p connectivity substrate. It
+ 	// changes only how federation connections are dialed/accepted; the existing
+ 	// mTLS, CA pins, request signatures, and HTTP handlers still run inside.
+-	P2PEnabled bool `yaml:"p2p_enabled,omitempty"`
++	P2PEnabled bool `yaml:"p2p_enabled"`
+ 	// P2PListenAddrs are local libp2p multiaddrs. Empty uses ephemeral TCP+QUIC
+ 	// listeners on all interfaces; no fixed inbound port is required.
+ 	P2PListenAddrs []string `yaml:"p2p_listen_addrs,omitempty"`
+ 	// P2PRelayAddrs is an ordered list of static Circuit Relay v2 bootstrap
+ 	// multiaddrs. Multiple relays are supported so deployments can self-host and
+ 	// avoid one author-operated availability dependency.
+-	P2PRelayAddrs []string `yaml:"p2p_relay_addrs,omitempty"`
++	P2PRelayAddrs []string `yaml:"p2p_relay_addrs"`
+ 	// P2PPeers binds a remote SAGE chain ID to one or more scanned/persisted
+ 	// libp2p multiaddrs. The libp2p peer ID is connectivity identity only; the
+ 	// existing on-chain CA SPKI pin remains the federation trust identity.
+@@ -137,7 +137,7 @@
+ 	// P2PForcePrivate makes AutoRelay reserve a relay path even on networks
+ 	// where automatic reachability detection would take time. Intended for
+ 	// known-NAT test/deployment profiles, not enabled by default.
+-	P2PForcePrivate bool `yaml:"p2p_force_private,omitempty"`
++	P2PForcePrivate bool `yaml:"p2p_force_private"`
+ }
+ 
+ type FederationRouteSnapshot struct {
+--- /dev/null
++++ b/cmd/sage-gui/lantern_policy_roundtrip_test.go
+@@ -0,0 +1,63 @@
++package main
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestLanternExplicitPrivatePolicyRoundTrips(t *testing.T) {
++	for _, entry := range os.Environ() {
++		name := strings.SplitN(entry, "=", 2)[0]
++		if strings.HasPrefix(name, "SAGE_") || strings.HasPrefix(name, "OLLAMA_") || name == "REST_ADDR" {
++			t.Setenv(name, "")
++		}
++	}
++	home := t.TempDir()
++	t.Setenv("SAGE_HOME", home)
++	baseline := "rest_addr: 127.0.0.1:8080\nfederation:\n  enabled: false\n  p2p_enabled: false\n  p2p_relay_addrs: []\n  p2p_force_private: false\nquorum:\n  enabled: false\nvoter:\n  enabled: true\n  required: true\n"
++	baseline += "data_dir: /synthetic/private/data\nagent_key_file: /synthetic/private/root.key\nencryption:\n  enabled: true\nvendored_agent_bootstrap:\n  agent_key_file: /synthetic/private/companion.key\n  home_domain: local-field-knowledge\n  clearance: 1\n"
++	require.NoError(t, os.WriteFile(filepath.Join(home, "config.yaml"), []byte(baseline), 0600))
++	check := func() *Config {
++		cfg, err := LoadConfig()
++		require.NoError(t, err)
++		require.False(t, cfg.Federation.Enabled)
++		require.False(t, cfg.Federation.P2PEnabled)
++		require.Empty(t, cfg.Federation.P2PRelayAddrs)
++		require.False(t, cfg.Federation.P2PForcePrivate)
++		require.True(t, cfg.Voter.Enabled)
++		require.True(t, cfg.Voter.Required)
++		require.Equal(t, "/synthetic/private/data", cfg.DataDir)
++		require.Equal(t, "/synthetic/private/root.key", cfg.AgentKey)
++		require.True(t, cfg.Encryption.Enabled)
++		require.Equal(t, "/synthetic/private/companion.key", cfg.VendoredAgentBootstrap.AgentKeyFile)
++		return cfg
++	}
++	require.NoError(t, SaveConfig(check()))
++	check()
++	require.NoError(t, persistChainID("sage-personal-roundtrip-test"))
++	check()
++	require.NoError(t, persistFederationEnabled(true))
++	enabled, err := LoadConfig()
++	require.NoError(t, err)
++	require.True(t, enabled.Federation.Enabled)
++	require.False(t, enabled.Federation.P2PEnabled)
++	require.Empty(t, enabled.Federation.P2PRelayAddrs)
++	require.NoError(t, persistFederationEnabled(false))
++	check()
++	require.NoError(t, SaveConfig(check()))
++	check()
++}
++
++func TestLanternPolicyPatchDoesNotChangeGenericDefaults(t *testing.T) {
++	cfg := DefaultConfig(t.TempDir())
++	require.False(t, cfg.Federation.Enabled)
++	require.True(t, cfg.Federation.P2PEnabled)
++	require.NotEmpty(t, cfg.Federation.P2PRelayAddrs)
++	require.True(t, cfg.Federation.P2PForcePrivate)
++	require.True(t, cfg.Voter.Enabled)
++	require.False(t, cfg.Voter.Required)
++}

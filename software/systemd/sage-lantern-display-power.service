@@ -1,0 +1,29 @@
+[Unit]
+Description=SAGE Lantern locked display power control
+After=display-manager.service sage-lantern-device-auth.service
+ConditionPathExists=/etc/sage-lantern-display-power.enabled
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/opt/sage-lantern/venv/bin/python -I -B /usr/local/libexec/sage-lantern-display-session --serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SETUID CAP_SETGID CAP_CHOWN CAP_FOWNER CAP_KILL
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=false
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+UMask=0077
+
+[Install]
+WantedBy=graphical.target

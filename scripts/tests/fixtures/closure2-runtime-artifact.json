@@ -1,0 +1,15 @@
+{
+  "manifest_sha256": "834023b1798e0ad278834e3440a604b38d8087e7e7e5685e622f2f3b110e6ea3",
+  "runtime_version": "0.2.0",
+  "file": {
+    "bytes": 330675,
+    "mode": 420,
+    "path": "software/bundle/python-wheels/sage_lantern_runtime-0.2.0-py3-none-any.whl",
+    "role": "runtime_wheel",
+    "sha256": "6a8e99c7e62ba5b767e1a23258fa25d97567364d08bddeccbabbfc3053754440"
+  },
+  "selected": {
+    "path": "software/bundle/python-wheels/sage_lantern_runtime-0.2.0-py3-none-any.whl",
+    "role": "runtime_wheel"
+  }
+}

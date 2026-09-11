@@ -1,0 +1,21 @@
+[Unit]
+Description=SAGE Lantern sanitized observation status writer
+
+[Service]
+Type=oneshot
+User=sage-lantern
+Group=sage-lantern-device
+ExecStart=/usr/local/libexec/sage-lantern-observation-status --output /run/sage-lantern/sanitized-status.json
+RuntimeDirectory=sage-lantern
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/sage-lantern
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# GDM starts this session directly. Keep Plasma, its screen locker, desktop,
+# launchers and global shortcuts out of the normal appliance path.
+if command -v xset >/dev/null 2>&1; then
+  xset s off || true
+  xset -dpms || true
+  xset s noblank || true
+fi
+
+if command -v xsetroot >/dev/null 2>&1; then
+  xsetroot -solid '#0b1820' || true
+fi
+
+kwin_x11 --replace \
+  >"${XDG_RUNTIME_DIR:-/tmp}/sage-lantern-kwin.log" 2>&1 &
+
+for attempt in {1..30}; do
+  if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then
+    break
+  fi
+  sleep 0.1
+done
+
+exec /usr/local/bin/sage-lantern-kiosk

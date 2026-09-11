@@ -1,0 +1,27 @@
+[Unit]
+Description=SAGE Lantern physical push-to-talk input
+After=local-fs.target
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+SupplementaryGroups=gpio
+ExecStart=/usr/local/libexec/sage-lantern-ptt-monitor --chip gpiochip4 --line 22 --state /run/sage-lantern-ptt/state.json
+Restart=on-failure
+RestartSec=2s
+RuntimeDirectory=sage-lantern-ptt
+RuntimeDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=false
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SAGE Lantern
+Comment=Launch the device-local Lantern touchscreen console
+Exec=/usr/local/bin/sage-lantern-kiosk
+Terminal=false
+X-GNOME-Autostart-enabled=true
+StartupNotify=false

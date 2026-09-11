@@ -1,0 +1,54 @@
+diff --git a/src/helpers/radiolib/CustomSX1262.h b/src/helpers/radiolib/CustomSX1262.h
+--- a/src/helpers/radiolib/CustomSX1262.h
++++ b/src/helpers/radiolib/CustomSX1262.h
+@@ -12,2 +12,8 @@
+   public:
++    float getPacketRSSI() {
++      const uint32_t packetStatus = getPacketStatus();
++      const uint8_t packetRssi = (packetStatus >> 16) & 0xFF;
++      return -0.5f * packetRssi;
++    }
++
+     CustomSX1262(Module *mod) : SX1262(mod) { }
+diff --git a/src/helpers/radiolib/CustomSX1262Wrapper.h b/src/helpers/radiolib/CustomSX1262Wrapper.h
+--- a/src/helpers/radiolib/CustomSX1262Wrapper.h
++++ b/src/helpers/radiolib/CustomSX1262Wrapper.h
+@@ -11,2 +11,9 @@
+ class CustomSX1262Wrapper : public RadioLibWrapper {
++  float _received_rssi = 0;
++  float _received_snr = 0;
++
++  void capturePacketSignal() override {
++    _received_rssi = ((CustomSX1262 *)_radio)->getPacketRSSI();
++    _received_snr = ((CustomSX1262 *)_radio)->getSNR();
++  }
+ public:
+@@ -32,4 +39,4 @@
+-  float getLastRSSI() const override { return ((CustomSX1262 *)_radio)->getRSSI(); }
++  float getLastRSSI() const override { return _received_rssi; }
+-  float getLastSNR() const override { return ((CustomSX1262 *)_radio)->getSNR(); }
++  float getLastSNR() const override { return _received_snr; }
+ 
+   float packetScore(float snr, int packet_len) override {
+diff --git a/examples/companion_radio/MyMesh.h b/examples/companion_radio/MyMesh.h
+--- a/examples/companion_radio/MyMesh.h
++++ b/examples/companion_radio/MyMesh.h
+@@ -14,3 +14,3 @@
+ #ifndef FIRMWARE_VERSION
+-#define FIRMWARE_VERSION "v1.17.1"
++#define FIRMWARE_VERSION "v1.17.1-d929643-r2"
+ #endif
+diff --git a/src/helpers/radiolib/RadioLibWrappers.h b/src/helpers/radiolib/RadioLibWrappers.h
+--- a/src/helpers/radiolib/RadioLibWrappers.h
++++ b/src/helpers/radiolib/RadioLibWrappers.h
+@@ -29,2 +29,3 @@
+   virtual void doResetAGC();
++  virtual void capturePacketSignal() { }
+ 
+diff --git a/src/helpers/radiolib/RadioLibWrappers.cpp b/src/helpers/radiolib/RadioLibWrappers.cpp
+--- a/src/helpers/radiolib/RadioLibWrappers.cpp
++++ b/src/helpers/radiolib/RadioLibWrappers.cpp
+@@ -139,2 +139,3 @@
+         n_recv++;
++        capturePacketSignal();
+       }

@@ -1,0 +1,69 @@
+Window.SetBackgroundTopColor(0.027, 0.059, 0.114);
+Window.SetBackgroundBottomColor(0.027, 0.059, 0.114);
+
+title_image = Image.Text("SAGE Lantern", 1.0, 0.82, 0.22, 1.0, "Sans Bold 32");
+title = Sprite(title_image);
+tagline_image = Image.Text("Tap. Ask. Learn.", 0.84, 0.87, 0.92, 1.0, "Sans 16");
+tagline = Sprite(tagline_image);
+prompt_sprite = Sprite();
+entry_sprite = Sprite();
+message_sprite = Sprite();
+hint_image = Image.Text("Esc: boot details", 0.65, 0.70, 0.78, 1.0, "Sans 12");
+hint = Sprite(hint_image);
+
+fun layout()
+{
+    title.SetPosition(Window.GetX() + (Window.GetWidth() - title_image.GetWidth()) / 2,
+                      Window.GetY() + Window.GetHeight() * 0.32, 1);
+    tagline.SetPosition(Window.GetX() + (Window.GetWidth() - tagline_image.GetWidth()) / 2,
+                        Window.GetY() + Window.GetHeight() * 0.32 + title_image.GetHeight() + 12, 1);
+    prompt_sprite.SetPosition(Window.GetX() + 20, Window.GetY() + Window.GetHeight() * 0.58, 10);
+    entry_sprite.SetPosition(Window.GetX() + 20, Window.GetY() + Window.GetHeight() * 0.68, 10);
+    message_sprite.SetPosition(Window.GetX() + 20, Window.GetY() + Window.GetHeight() * 0.80, 10);
+    hint.SetPosition(Window.GetX() + 20, Window.GetY() + Window.GetHeight() - hint_image.GetHeight() - 12, 1);
+}
+
+fun normal()
+{
+    prompt_sprite.SetOpacity(0);
+    entry_sprite.SetOpacity(0);
+}
+
+fun password(prompt, bullets)
+{
+    prompt_sprite.SetImage(Image.Text(prompt, 1, 1, 1));
+    prompt_sprite.SetOpacity(1);
+    marks = "";
+    for (index = 0; index < bullets && index < 64; index++)
+        marks += "*";
+    entry_sprite.SetImage(Image.Text(marks, 1.0, 0.82, 0.22));
+    entry_sprite.SetOpacity(1);
+}
+
+fun question(prompt, entry)
+{
+    prompt_sprite.SetImage(Image.Text(prompt, 1, 1, 1));
+    prompt_sprite.SetOpacity(1);
+    entry_sprite.SetImage(Image.Text(entry, 1, 1, 1));
+    entry_sprite.SetOpacity(1);
+}
+
+fun message(text)
+{
+    message_sprite.SetImage(Image.Text(text, 0.84, 0.87, 0.92));
+    message_sprite.SetOpacity(1);
+}
+
+fun hide_message(text)
+{
+    message_sprite.SetOpacity(0);
+}
+
+layout();
+normal();
+Plymouth.SetRefreshFunction(layout);
+Plymouth.SetDisplayNormalFunction(normal);
+Plymouth.SetDisplayPasswordFunction(password);
+Plymouth.SetDisplayQuestionFunction(question);
+Plymouth.SetDisplayMessageFunction(message);
+Plymouth.SetHideMessageFunction(hide_message);

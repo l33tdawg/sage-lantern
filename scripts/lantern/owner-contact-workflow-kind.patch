@@ -1,0 +1,30 @@
+diff --git a/software/runtime/src/sage_lantern/workflow_store.py b/software/runtime/src/sage_lantern/workflow_store.py
+--- a/software/runtime/src/sage_lantern/workflow_store.py
++++ b/software/runtime/src/sage_lantern/workflow_store.py
+@@ -21 +21 @@
+-                   "conversation_control", "conversation_session"))
++                   "conversation_control", "conversation_session", "contact_issuance"))
+diff --git a/sdk/python/src/sage_sdk/client.py b/sdk/python/src/sage_sdk/client.py
+--- a/sdk/python/src/sage_sdk/client.py
++++ b/sdk/python/src/sage_sdk/client.py
+@@ -173 +173 @@
+-    if type(kind) is not str or kind not in ("mesh_outbound", "mesh_inbound", "public_proposal", "conversation_control", "conversation_session"):
++    if type(kind) is not str or kind not in ("mesh_outbound", "mesh_inbound", "public_proposal", "conversation_control", "conversation_session", "contact_issuance"):
+diff --git a/sdk/python/src/sage_sdk/models.py b/sdk/python/src/sage_sdk/models.py
+--- a/sdk/python/src/sage_sdk/models.py
++++ b/sdk/python/src/sage_sdk/models.py
+@@ -630 +630 @@
+-    kind: Literal["mesh_outbound", "mesh_inbound", "public_proposal", "conversation_control", "conversation_session"]
++    kind: Literal["mesh_outbound", "mesh_inbound", "public_proposal", "conversation_control", "conversation_session", "contact_issuance"]
+diff --git a/internal/store/workflow_journal.go b/internal/store/workflow_journal.go
+--- a/internal/store/workflow_journal.go
++++ b/internal/store/workflow_journal.go
+@@ -155 +155 @@
+-		kind == "conversation_control" || kind == "conversation_session"
++		kind == "conversation_control" || kind == "conversation_session" || kind == "contact_issuance"
+diff --git a/api/rest/workflow_journal_handler.go b/api/rest/workflow_journal_handler.go
+--- a/api/rest/workflow_journal_handler.go
++++ b/api/rest/workflow_journal_handler.go
+@@ -216 +216 @@
+-		kind != "conversation_control" && kind != "conversation_session") {
++		kind != "conversation_control" && kind != "conversation_session" && kind != "contact_issuance") {

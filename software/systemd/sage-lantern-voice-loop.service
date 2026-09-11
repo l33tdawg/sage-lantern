@@ -1,0 +1,29 @@
+[Unit]
+Description=SAGE Lantern private PTT question and screen-answer loop
+Requires=sage-lantern-llm.service sage-lantern-personal-sage.service
+Wants=sage-lantern-ptt.service
+After=sage-lantern-ptt.service sage-lantern-llm.service sage-lantern-personal-sage.service
+ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
+ConditionPathExists=!/run/sage-lantern-sleep.fenced
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+SupplementaryGroups=audio
+ExecStart=/usr/local/libexec/sage-lantern-voice-loop
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=sage-lantern-voice
+RuntimeDirectoryMode=0750
+StateDirectory=sage-lantern/history
+StateDirectoryMode=0700
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sage-lantern/audio /var/lib/sage-lantern/logs /run/sage-lantern-voice /var/lib/sage-lantern/history
+
+[Install]
+WantedBy=multi-user.target

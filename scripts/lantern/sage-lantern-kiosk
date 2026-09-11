@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+readonly console_url=http://127.0.0.1:3100/device
+profile_dir="${HOME:?}/.config/sage-lantern/chromium"
+if (($#)); then
+  [[ $# == 2 && $1 == --profile-dir && $2 =~ ^/home/[a-z][a-z0-9_-]*/\.config/sage-lantern/unit-[ab]/chromium$ ]] || exit 2
+  profile_dir=$2
+fi
+readonly profile_dir
+profile_parent=$profile_dir
+while [[ $profile_parent != / && $profile_parent != . ]]; do
+  [[ ! -L $profile_parent ]] || exit 2
+  profile_parent=$(dirname "$profile_parent")
+done
+readonly sleep_fence=/run/sage-lantern-sleep.fenced
+
+sleep_fenced() {
+  [[ -e ${sleep_fence} || -L ${sleep_fence} ]]
+}
+
+wait_for_wake() {
+  while sleep_fenced; do
+    sleep 1
+  done
+}
+
+wait_for_wake
+if command -v xset >/dev/null 2>&1; then
+  sleep_fenced || xset s off || true
+  sleep_fenced || xset -dpms || true
+  sleep_fenced || xset s noblank || true
+fi
+
+while true; do
+  wait_for_wake
+  if curl --fail --silent --max-time 2 "${console_url}" >/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
+while true; do
+  wait_for_wake
+  window_options=(--window-position=0,0)
+  screen_size=$(xrandr --current 2>/dev/null | sed -nE 's/.*current ([0-9]+) x ([0-9]+),.*/\1,\2/p')
+  if [[ ${screen_size} =~ ^[0-9]+,[0-9]+$ ]]; then
+    window_options+=("--window-size=${screen_size}")
+  fi
+  if ! pgrep -u "$(id -u)" -x chromium >/dev/null 2>&1; then
+    for singleton_name in SingletonLock SingletonSocket SingletonCookie; do
+      singleton_path="${profile_dir}/${singleton_name}"
+      if [[ -e ${singleton_path} || -L ${singleton_path} ]]; then
+        unlink "${singleton_path}"
+      fi
+    done
+  fi
+  if sleep_fenced; then
+    continue
+  fi
+  /usr/bin/chromium \
+    --kiosk \
+    "${window_options[@]}" \
+    --no-first-run \
+    --no-default-browser-check \
+    --noerrdialogs \
+    --disable-session-crashed-bubble \
+    --disable-dev-tools \
+    --disable-extensions \
+    --disable-features=Translate,MediaRouter,PrintPreview \
+    --disable-pinch \
+    --overscroll-history-navigation=0 \
+    --password-store=basic \
+    --user-data-dir="${profile_dir}" \
+    "${console_url}" || true
+  sleep 2
+done

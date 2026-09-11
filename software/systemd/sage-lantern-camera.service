@@ -1,0 +1,38 @@
+[Unit]
+Description=SAGE Lantern on-demand loopback camera preview
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+SupplementaryGroups=video
+ExecStart=/opt/sage-lantern/venv/bin/python /usr/local/libexec/sage-lantern-camera-server
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+SocketBindDeny=any
+SocketBindAllow=ipv4:tcp:3198
+DevicePolicy=closed
+DeviceAllow=char-video4linux rw
+InaccessiblePaths=-/etc/sage-lantern -/var/lib/sage-lantern
+TasksMax=32
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

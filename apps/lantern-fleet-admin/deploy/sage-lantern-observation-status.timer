@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh SAGE Lantern sanitized observation status
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

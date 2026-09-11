@@ -1,0 +1,32 @@
+SAGE — INTELLIGENCE. FOR ALL OF US.
+Public mission brief · September 2026
+
+THE MISSION
+Democratise intelligence: help people learn, create and solve problems regardless of income or connectivity. SAGE Foundation is an initiative in formation. The long-term ambition is a collaborative institution shaped with communities.
+
+SAGE LANTERN
+A portable, local-first AI device being developed for people beyond reliable internet access. Two prototypes are built. Local AI, voice and other product components are in development and integration. Radio messaging and further end-to-end acceptance remain ongoing work. This is not a retail release.
+
+SAGE COMMONS
+A public knowledge network being developed around deliberate sharing, review and community participation. Personal knowledge should remain private unless its owner chooses to share.
+
+COMMUNITY NETWORKS AND RESILIENCE
+Each Lantern is intended to participate in a local MeshCore network. We aim to help the wider MeshCore community grow networks around the world through devices, dedicated repeaters, local maintainers and community gateways. We plan to roll out Starlink backhaul at gateways.
+More Lanterns add participants; repeaters and well-placed infrastructure extend coverage. The goal is useful local AI and short-message communication during outages, with wider gateway service when backhaul is available. This is a rollout ambition, not a claim of existing global coverage or a replacement for full-bandwidth internet. Field resilience and gateway integration remain to be validated.
+
+THE AMBITION
+US$133.7 million over ten years. The proposed campaign window is 2027–2036. This is a fundraising target, not funds received or a promise of a specific deployment count.
+
+NEXT STEPS
+December 2026: target six complete demonstration Lanterns, with eight to ten as the stretch.
+January 2027: target public campaign launch and demonstration material.
+With funding: prepare a supported 20–30-unit pilot, a core team and supporting infrastructure.
+These are targets, subject to development, funding and validation.
+
+GET INVOLVED
+Supporters can bring funding, equipment and expertise. Developers can contribute code, languages, content and hardware skills. Community organisations and educators can help shape useful local programmes.
+Contact: dhillon@sage.ngo
+Donation-receiving arrangements are being developed. This site does not currently accept payments or device orders.
+
+TRANSPARENCY
+We intend to report cash received, pledges, expenditure and device-delivery stages separately. The initiative name is not a claim of completed legal registration. Images labelled as AI illustrations express the vision; they are not field deployment evidence.

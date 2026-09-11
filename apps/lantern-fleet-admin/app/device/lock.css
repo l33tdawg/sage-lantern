@@ -1,0 +1,29 @@
+.device-screen.device-lock { grid-template-rows: 52px minmax(0, 1fr); min-height: 400px; overflow-y: auto; }
+.device-lock-heading { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 22px; font-weight: 650; }
+.device-lock-heading svg { width: 30px; height: 30px; color: var(--device-accent); }
+.device-lock-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 24px; align-items: center; width: min(100%, 780px); margin: auto; padding: 12px 24px 20px; box-sizing: border-box; }
+.device-lock-copy { min-width: 0; text-align: center; }
+.device-lock-copy h1 { font-size: 36px; margin: 0 0 20px; }
+.device-lock-digits { font-size: 24px; letter-spacing: 3px; min-height: 44px; overflow-wrap: anywhere; }
+.device-lock-copy .device-lock-reveal { min-height: 48px; padding: 8px 16px; font-size: 18px; }
+.device-lock-copy p { min-height: 3em; margin: 12px 0 0; font-size: 20px; line-height: 1.4; color: var(--device-muted); }
+.device-lock-keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.device-lock-keypad button { min-width: 0; min-height: 64px; font-size: 32px; padding: 8px; }
+.device-lock-keypad .device-lock-secondary { font-size: 18px; }
+.device-lock-keypad .device-lock-submit { grid-column: 1 / -1; background: var(--device-accent); border-color: #ffe0a6; color: #0b1820; font-size: 24px; }
+.device-screen.device-sleep { display: flex; background: #000; }
+.device-screen.device-sleep button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; border: 0; border-radius: 0; background: #000; color: #b9cbd4; font-size: 24px; text-align: center; }
+.device-screen.device-sleep button svg { width: 56px; height: 56px; flex-shrink: 0; margin-bottom: 8px; color: var(--device-accent); }
+.device-sleep button span { display: block; }
+.device-sleep button span + span { font-size: 20px; }
+.device-screen.device-lock-wait { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; text-align: center; }
+.device-lock-wait h1 { margin: 0; max-width: 100%; font-size: clamp(36px, 6vw, 52px); font-weight: 650; line-height: 1.2; color: var(--device-ink); }
+.device-lock-wait p { margin: 20px 0 0; max-width: 32ch; font-size: 24px; line-height: 1.4; color: var(--device-ink); }
+.device-recovery-key { display: block; max-width: 100%; padding: 14px; font-size: 24px; line-height: 1.5; word-break: break-all; user-select: text; border: 1px solid #42606f; border-radius: 12px; }
+@media (min-height: 550px) { .device-lock-keypad button { min-height: 72px; } }
+@media (max-width: 560px) {
+  .device-lock-content { grid-template-columns: 1fr; max-width: 360px; gap: 12px; padding-inline: 16px; }
+  .device-lock-copy h1 { font-size: 28px; margin-bottom: 4px; }
+  .device-lock-copy p { min-height: 0; margin-top: 0; font-size: 18px; }
+  .device-lock-digits { min-height: 32px; }
+}

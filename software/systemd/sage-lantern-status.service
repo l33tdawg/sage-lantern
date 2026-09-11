@@ -1,0 +1,21 @@
+[Unit]
+Description=SAGE Lantern device-local status endpoint
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+ExecStart=/opt/sage-lantern/venv/bin/python /usr/local/libexec/sage-lantern-status-server --host 127.0.0.1 --port 3199
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

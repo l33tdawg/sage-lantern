@@ -1,0 +1,96 @@
+# SAGE Lantern Hardware Bill of Materials and Arrival Status
+
+**Status date:** 2026-09-11 (exact 6.25-inch display and SX1262 board orders; CARBO 20 identified)  
+**Build quantity:** Two beta units  
+**Rule:** `Received` means physically reported/confirmed, not merely ordered.
+
+## New enclosure hardware — latest owner confirmation, 2026-09-11
+
+| Qty | Component | Status | Notes |
+|---:|---|---|---|
+| 4 | 6.25-inch capacitive touch display, 720×1560, optical bonding toughened glass, HDMI, IPS, 5-point touch | Ordered; awaiting delivery | Exact pasted order description supersedes the earlier approximate 6.5-inch wording. Matches Waveshare 6.25inch 720x1560 LCD, SKU 26757. Earlier delivery estimate: next week. |
+| 4 | SX1262 LoRaWAN Node Module Expansion Board for Raspberry Pi, with magnetic CB antenna, frequency-band/GNSS options | Ordered; awaiting delivery | Matches Waveshare SX1262 LoRaWAN/GNSS HAT family. Selected frequency band and basic/GNSS option not supplied. Separate from A/B's Heltec USB MeshCore companions. |
+| Not stated | NITECORE CARBO 20, 20,000 mAh USB-C power bank | Owner identified intended pack; order/receipt not stated | Manufacturer: 128 × 48 × 29 mm, 320 g ±5 g, 65 W single-port input/output; simultaneous outputs 15 W total. This is CARBO 20, not CARBO 20000. |
+
+These additions do not imply four complete electronics sets or four purchased
+battery packs. Existing A/B inventory remains below. The old exclusion of raw
+SX1262 Raspberry Pi HATs is superseded for the newly confirmed order; SPI/GPIO
+host integration and radio software compatibility remain to be qualified.
+
+Primary references checked 2026-09-11: [display](https://www.waveshare.com/product/6.25inch-720x1560-lcd.htm), [display dimensions](https://www.waveshare.com/wiki/6.25inch_720x1560_LCD), [radio options](https://www.waveshare.com/product/raspberry-pi/sx1262-lorawan-hat.htm), [CARBO 20](https://www.nitecore.com/product/carbo20).
+Full corrected handoff: [hardware list](../../work/hardware-list-ableman-20260911/HARDWARE_LIST.md).
+
+## Core components
+
+| Qty | Component | Intended allocation | Status | Notes |
+|---:|---|---|---|---|
+| 2 | Radxa ROCK 5B+ | One per unit | Received — untested | Already owned before this procurement cycle; receipt reconfirmed 2026-08-24. |
+| 2 | Radxa Heatsink 6240B V2.0 | One per unit | Received — untested | Confirm V2.0 marking/fit. |
+| 2 | 512 GB Netac M.2 2280 NVMe SSD | One per unit | Received — untested | Record exact model and firmware during bring-up. |
+| 2 | Lenovo-compatible 65 W USB-C PD PSU, 20 V/3.25 A | One per unit | Received — untested | Bench power. Verify cable and PD negotiation before use. |
+| 2 | UGREEN 130 W, 20,000 mAh USB-C PD power bank | One per unit | Received — untested | Receipt reconfirmed 2026-08-24. |
+
+## Interaction and peripheral components
+
+| Qty | Component | Intended allocation | Status | Notes |
+|---:|---|---|---|---|
+| 2 | Waveshare ESP32-S3-AUDIO-Board | One per unit | Ordered; receipt unconfirmed | Dual-mic/AEC/speaker frontend. Confirm included accessories and host interface. |
+| 2 | Waveshare 3.5-inch HDMI LCD (E) | One per unit | Received — untested | Capacitive touch. Inventory included video/touch cables before bring-up. |
+| 2 | Waveshare USB 3.2 Gen1 HUB HAT | One per unit | Received — untested | Use as cabled USB hub; do not assume Pi-header compatibility. |
+| 2 | Heltec WiFi LoRa 32 V4, ESP32-S3 + SX1262 | One per unit | Received — untested | MeshCore companion role. Record exact regional variant. |
+| 2 | 16 mm, 2-pin, momentary, no-LED PTT button | One per unit | Ordered; receipt unconfirmed | Validate mechanical action and GPIO wiring. |
+| 2 | KY-040 rotary encoder with push-click | One per unit | Ordered; receipt unconfirmed | Final R1-style wheel can be printed for the shaft. |
+| 1 | Rabbit R1 reference/teardown unit | Shared | Delayed | Mechanical and interaction reference only; reported delayed 2026-08-24. |
+
+## Camera prototype addition — 2026-09-05
+
+| Qty | Component | Intended allocation | Status | Notes |
+|---:|---|---|---|---|
+| 1 | Logitech Webcam C270, USB `046d:0825` | Unit A photo-and-question prototype | Received — single-frame capture tested | Existing camera connected 2026-09-05. Operator-authorized V4L2 MJPEG capture produced a 37,590-byte JPEG with 1280×720 header. Full decode, focus/image quality, USB load, reconnect and vision inference remain untested. |
+
+Do not duplicate this camera for Units 3/4 until the camera-to-answer workflow
+and enclosure fit are validated. Reserve camera placement in the
+[enclosure study](UNIT_3_4_ENCLOSURE_STUDY.md); final module, dimensions, cable,
+cost and required accessories remain TBD. A camera's optional microphone must
+not displace the working voice capture device automatically.
+
+## Wiring and cables
+
+| Qty | Component | Status | Notes |
+|---:|---|---|---|
+| 1 pack | 40-wire male-to-female Dupont, 10 cm | Received — untested | Shared integration stock. |
+| 1 pack | 40-wire female-to-female Dupont, 10 cm | Received — untested | Shared integration stock. |
+| 1 pack | 40-wire male-to-male Dupont | Received — untested | Shared integration stock. |
+| 4 | 6-pin female-to-female 2.54 mm cable assemblies | Received — untested | Two spares beyond one per unit. |
+| 4 | USB-A to USB-C data cables | Received — untested | Confirm data capability; do not assume from charging alone. |
+
+## Explicitly excluded or deferred
+
+- Earlier raw SX1262 HAT exclusion applied to the A/B baseline; superseded by the four new LoRaWAN expansion-board orders above.
+- Generic JST assortment — deferred until exact connector families are identified.
+- Separate rotary knobs — deferred in favor of an eventual custom wheel.
+- Separate speaker — not a distinct procurement item in the current audio-board plan.
+- Logic analyser and USB-TTL adapter — earlier suggestions, not part of the final confirmed purchase baseline.
+- PalChat/WV01 modules — superseded by the Waveshare audio-board decision.
+
+## Receipt procedure
+
+For each delivery:
+
+1. Photograph the shipping label and all contents.
+2. Match the exact model and variant against this BOM.
+3. Record serial number or board revision where present.
+4. Record included cables, antennas, fasteners, and adapters.
+5. Inspect for damage or bent headers.
+6. Change status to `Received — untested`.
+7. After a basic power/enumeration test, change status to `Received — tested` and link the evidence in `BRINGUP_AND_VALIDATION.md`.
+
+## Status vocabulary
+
+- **Planned — not ordered/received** — intended test item; exact selection and procurement remain unconfirmed.
+- **Ordered; receipt unconfirmed** — purchased but not physically confirmed.
+- **Delayed** — ordered but delivery has been delayed; revised arrival date may be unknown.
+- **Received — untested** — physically present but not electrically tested.
+- **Received — tested** — passed its defined smoke test.
+- **Blocked** — cannot be tested because a dependency is missing.
+- **Rejected/RMA** — wrong, damaged, or failed component.

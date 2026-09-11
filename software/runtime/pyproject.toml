@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sage-lantern-runtime"
+version = "0.2.0"
+description = "Local-first SAGE Lantern voice and transport orchestration runtime"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = ["PyNaCl==1.6.2", "cryptography==46.0.3", "sage-agent-sdk==11.19.10+lantern.20260906", "PyYAML==6.0.2"]
+
+[project.scripts]
+sage-lantern = "sage_lantern.cli:main"
+sage-lantern-device-agent = "sage_lantern.device_agent_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sage_lantern = ["release-manifest.json"]

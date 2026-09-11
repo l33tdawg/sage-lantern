@@ -1,0 +1,38 @@
+.device-question-turn { margin-top: 8px; }
+.device-flow-question { width: 100%; max-width: 100%; box-sizing: border-box; min-height: 154px; transition: background-color .18s ease, border-color .18s ease; border: 1px solid #42606f; }
+.device-question-turn[data-phase="listening"] .device-flow-question { background: #33272c; border-color: #b57870; }
+.device-question-turn[data-phase="review"] .device-flow-question { border-color: #bc975e; }
+.device-flow-question .device-question-context { margin: 0; padding: 0; border: 0; }
+.device-flow-question .device-question-context h2, .device-transcribing-question h2 { margin: 0 0 8px; }
+.device-flow-question .device-question-context p { line-height: 1.36; }
+.device-flow-question.device-flow-question-editable { padding: 0; }
+.device-screen .device-question-edit-target { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; width: 100%; min-width: 0; min-height: 152px; box-sizing: border-box; margin: 0; padding: 14px 18px; border: 0; border-radius: 18px 18px 4px 18px; background: transparent; text-align: left; font: inherit; }
+.device-screen .device-question-edit-target:disabled { opacity: 1; }
+.device-question-edit-target > span { display: block; }
+.device-question-label { margin-bottom: 8px; color: var(--device-muted); font-size: 15px; font-weight: 700; }
+.device-question-text { font-size: 25px; line-height: 1.36; white-space: pre-wrap; overflow-wrap: anywhere; }
+.device-question-hint { margin-top: 12px; color: var(--device-muted); font-size: 16px; line-height: 1.4; }
+.device-screen .device-question-edit-target:focus-visible { outline: 3px solid var(--device-accent); outline-offset: -3px; }
+.device-flow-question .device-recording-status { margin: 0; padding: 0; border: 0; background: transparent; }
+.device-flow-question .device-recording-status h1 { font-size: 26px; }
+.device-flow-question .device-recording-status .device-recording-label { font-size: 15px; }
+.device-flow-question .device-recording-status .device-recording-instruction { font-size: 17px; }
+.device-transcribing-question { color: var(--device-muted); }
+.device-flow-answer { animation: question-answer-in .18s ease-out; }
+.device-thread-layout > .device-footer { min-height: 96px; box-sizing: border-box; }
+.device-review-actions {
+  grid-column: 1 / -1; order: -1; justify-self: center;
+  position: relative; z-index: 2; width: min(640px, calc(100% - 24px)); box-sizing: border-box;
+  padding: 10px; margin-block: -11px; transform: translateY(18px);
+  border: 1px solid #899ca8; border-top-color: #c0ccd2; border-radius: 18px;
+  background: linear-gradient(180deg, #304550, #20333e);
+  box-shadow: 0 12px 28px #0009, 0 3px 6px #0006, inset 0 1px 0 #ffffff12;
+}
+.device-review-actions[hidden] { display: none; }
+.device-review-actions .question-review-actions { width: 100%; gap: 8px; flex-wrap: nowrap; }
+.device-screen .device-review-actions button { min-width: 0; min-height: 56px; font-size: 18px; line-height: 1.2; padding: 8px; }
+@media (max-width: 450px) { .device-screen .device-review-actions button { font-size: 16px; }.device-flow-question { padding: 12px; } }
+@media (max-width: 450px) { .device-thread-layout .device-top button { padding-inline: 6px; }.device-thread-layout .device-wordmark span { font-size: 16px; } }
+@media (max-width: 450px) { .device-screen .device-question-edit-target { padding: 12px; } }
+@keyframes question-answer-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .device-flow-question { transition: none; }.device-flow-answer { animation: none; } }

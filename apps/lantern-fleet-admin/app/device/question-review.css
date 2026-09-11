@@ -1,0 +1,31 @@
+.question-review { width: min(100%, 880px); margin: auto; padding: 24px; box-sizing: border-box; overflow-y: auto; }
+.question-review-eyebrow { color: var(--device-accent, #f0cd67); font-size: 14px; letter-spacing: .08em; }
+.question-review h1 { font-size: clamp(28px, 4vw, 38px); margin: 8px 0; }
+.question-review header > p { margin: 8px 0 20px; font-size: 18px; }
+.question-review-text { font-size: clamp(24px, 3vw, 34px); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; padding: 20px; border: 1px solid #89b6db; border-radius: 16px; background: #14283b; }
+.question-review-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.question-review-actions button { min-height: 52px; flex: 1; font-size: 19px; padding: 10px 16px; }
+.question-review-actions .question-review-submit { background: var(--device-accent, #f0cd67); color: #202417; }
+.question-review button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.question-review-editing { width: min(100%, 1024px); padding: 16px 24px; }
+.question-review-editing header { display: none; }
+.question-review-editing .question-key-row button { max-width: none; }
+.question-review-editing .question-suggestions { min-height: 32px; }
+.question-review-editing .question-suggestions button { min-height: 40px; font-size: 20px; }
+@media (max-width: 540px) { .question-review { padding: 16px; } .question-review-actions button { flex-basis: calc(50% - 12px); } }
+@media (max-height: 500px) {
+  .question-review-editing { padding-block: 10px; }
+  .question-review-editing .question-keyboard { gap: 6px; }
+  .device-screen .question-review-editing .question-keyboard button { min-height: 50px; }
+  .device-screen .question-review-editing .question-suggestions button { min-height: 32px; }
+}
+.question-review-embedded { width: 100%; margin: 0; padding: 0; overflow: visible; }
+.question-review-embedded .question-review-text { border: 0; background: none; padding: 0; margin: 0; font-size: 25px; line-height: 1.36; }
+.question-review .question-review-guidance { font-size: 16px; line-height: 1.4; margin: 12px 0 0; color: var(--device-muted); }
+.question-keyboard-sheet { position: fixed; inset: auto 0 0; margin: 0 auto; width: min(100%, 1024px); max-width: 100%; max-height: calc(100dvh - 12px); box-sizing: border-box; overflow: auto; background: #10212b; color: #f6fafc; border: 1px solid #65828f; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 16px 24px max(16px, env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px #0005; }
+.question-keyboard-sheet[open] { animation: question-keyboard-in .18s ease-out; }
+.question-keyboard-sheet::backdrop { background: #06101666; }
+@keyframes question-keyboard-in { from { opacity: .7; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 450px) { .question-keyboard-sheet { padding-inline: 12px; } }
+@media (max-height: 500px) { .question-keyboard-sheet { padding-block: 10px; } }
+@media (prefers-reduced-motion: reduce) { .question-keyboard-sheet[open] { animation: none; } }

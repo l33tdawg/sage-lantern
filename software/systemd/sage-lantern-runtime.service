@@ -1,0 +1,21 @@
+[Unit]
+Description=SAGE Lantern prerecorded-WAV runtime readiness gate
+Requires=sage-lantern-llm.service sage-lantern-personal-sage.service
+After=sage-lantern-llm.service sage-lantern-personal-sage.service
+ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
+
+[Service]
+# This is deliberately a one-shot health gate, not a live microphone/PTT daemon.
+# Successful activation means the installed prerecorded-WAV CLI and its local
+# dependencies are ready; a caller must still invoke `sage-lantern voice`.
+Type=oneshot
+ExecStart=/usr/local/sbin/smoke-test-lantern-unit --local-voice-ready --require-services-active --wait-health-seconds=60
+TimeoutStartSec=90
+RemainAfterExit=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

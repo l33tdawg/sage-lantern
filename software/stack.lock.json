@@ -1,0 +1,532 @@
+{
+  "components": {
+    "cryptography": {
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "source": "https://pypi.org/project/cryptography/46.0.3/",
+      "version": "46.0.3"
+    },
+    "lantern-runtime": {
+      "license": "Apache-2.0",
+      "source": "software/runtime",
+      "version": "0.2.0"
+    },
+    "llama.cpp": {
+      "license": "MIT",
+      "source": "https://github.com/ggml-org/llama.cpp/releases/tag/b9637",
+      "version": "b9637"
+    },
+    "numpy": {
+      "license": "BSD-3-Clause",
+      "source": "https://pypi.org/project/numpy/1.26.4/",
+      "version": "1.26.4"
+    },
+    "piper-tts": {
+      "license": "GPL-3.0-or-later",
+      "source": "https://github.com/OHF-Voice/piper1-gpl/releases/tag/v1.4.2",
+      "version": "1.4.2"
+    },
+    "qwen3.5-4b": {
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/tree/e87f176479d0855a907a41277aca2f8ee7a09523",
+      "version": "Q4_K_M"
+    },
+    "sage": {
+      "license": "Apache-2.0",
+      "source": "https://github.com/l33tdawg/sage/releases/tag/v11.19.10",
+      "version": "11.19.10"
+    },
+    "sage-agent-sdk": {
+      "license": "Apache-2.0",
+      "source": "https://pypi.org/project/sage-agent-sdk/11.19.10/",
+      "version": "11.19.10"
+    },
+    "whisper.cpp": {
+      "license": "MIT",
+      "source": "https://github.com/ggml-org/whisper.cpp/releases/tag/v1.8.6",
+      "version": "1.8.6"
+    }
+  },
+  "files": [
+    {
+      "bytes": 65798328,
+      "path": "software/bundle/linux-arm64/bin/sage-gui",
+      "sha256": "945c98c535f512371e526ab4083ddbd55411686f20bae90950a69f9d8fe13799"
+    },
+    {
+      "bytes": 1078,
+      "path": "software/bundle/linux-arm64/llama.cpp/LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "bytes": 799112,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-base.so",
+      "sha256": "851484f823b7ffe67d2e589d4a029c4fa6253f19a86c9a302f51079607dd1eb6"
+    },
+    {
+      "bytes": 799112,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-base.so.0",
+      "sha256": "851484f823b7ffe67d2e589d4a029c4fa6253f19a86c9a302f51079607dd1eb6"
+    },
+    {
+      "bytes": 799112,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-base.so.0.15.1",
+      "sha256": "851484f823b7ffe67d2e589d4a029c4fa6253f19a86c9a302f51079607dd1eb6"
+    },
+    {
+      "bytes": 928608,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv8.0_1.so",
+      "sha256": "44fa4f462372f0e724e00609056140e37db9dc99f183a3db9daefda771fda776"
+    },
+    {
+      "bytes": 995480,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv8.2_1.so",
+      "sha256": "81bf4f74d138a3cb66c72504534e1bf97d867e11ef6bc7f7308be7c14eb8b0a1"
+    },
+    {
+      "bytes": 995504,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv8.2_2.so",
+      "sha256": "324ab57cb3339019c4b8cbda2760e64f3a2aa558b715d015d02aba863db06661"
+    },
+    {
+      "bytes": 930408,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv8.2_3.so",
+      "sha256": "1669e4ee537102880945002fd2ba4cc8ddaf09167f78b82ec62a2c7b6ae035f7"
+    },
+    {
+      "bytes": 996248,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv8.6_1.so",
+      "sha256": "4685089311130103ac1e88df13e4dcbe6732ec32a5a3b635f6c7775d256f7351"
+    },
+    {
+      "bytes": 996248,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv8.6_2.so",
+      "sha256": "1defaa71141d5faa9b9ed11b4ca411955b434f939037b119c9e6c84037bb5a39"
+    },
+    {
+      "bytes": 996248,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv9.2_1.so",
+      "sha256": "962f2e3c7bf53e2b7c95748302ac7edf775ce68d4fd6ebad576f14aba5c10812"
+    },
+    {
+      "bytes": 996248,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-cpu-armv9.2_2.so",
+      "sha256": "76415ebbe64f2dd6821ef9623c794ca527d83538e404a79b876b23df26165783"
+    },
+    {
+      "bytes": 162720,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml-rpc.so",
+      "sha256": "4e99e460a3f8e15790d56356cb3f84d3580bc981e0af690913ae8249bbc5a321"
+    },
+    {
+      "bytes": 77400,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml.so",
+      "sha256": "da7a5729a5f39de75a490c1c839fa6bf62f73471cc03fac75ae2d5eaba7a69d1"
+    },
+    {
+      "bytes": 77400,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml.so.0",
+      "sha256": "da7a5729a5f39de75a490c1c839fa6bf62f73471cc03fac75ae2d5eaba7a69d1"
+    },
+    {
+      "bytes": 77400,
+      "path": "software/bundle/linux-arm64/llama.cpp/libggml.so.0.15.1",
+      "sha256": "da7a5729a5f39de75a490c1c839fa6bf62f73471cc03fac75ae2d5eaba7a69d1"
+    },
+    {
+      "bytes": 75024,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-batched-bench-impl.so",
+      "sha256": "7208be8c65ae455fc122e5cf64d121d7976d03629db1d2933522150c8b7edb57"
+    },
+    {
+      "bytes": 466760,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-bench-impl.so",
+      "sha256": "5cb5198cab04ebced7c3f6e2a1f10ec99ceeba0c4cc6d40e3ac797a2ac1cf5cf"
+    },
+    {
+      "bytes": 1633872,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-cli-impl.so",
+      "sha256": "089e222b8c7a3c415c21761a8dbfebcfadbcbda00a3dcba5a28ae85b9909386e"
+    },
+    {
+      "bytes": 5204704,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-common.so",
+      "sha256": "8446e0826cc99228f8d32a755a77646ebf2d075407826e472ab0a004ddb39547"
+    },
+    {
+      "bytes": 5204704,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-common.so.0",
+      "sha256": "8446e0826cc99228f8d32a755a77646ebf2d075407826e472ab0a004ddb39547"
+    },
+    {
+      "bytes": 5204704,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-common.so.0.0.9637",
+      "sha256": "8446e0826cc99228f8d32a755a77646ebf2d075407826e472ab0a004ddb39547"
+    },
+    {
+      "bytes": 149176,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-completion-impl.so",
+      "sha256": "90d06d602cf038f9968b0595f0f6a8947dc4ee8ab3a86ca13cab12bc09e6b4cd"
+    },
+    {
+      "bytes": 73808,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-fit-params-impl.so",
+      "sha256": "6f3e1b6c4da4f8f2069598152fa3a2542122a189c0f8a5fe3beb06270b306ef9"
+    },
+    {
+      "bytes": 157016,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-perplexity-impl.so",
+      "sha256": "2359ac07cdef8599e0d23b0d49b0a6d3d03dbeee437425cd85cd96815f9727b0"
+    },
+    {
+      "bytes": 81096,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-quantize-impl.so",
+      "sha256": "f2aa9597f776df26b2a9a49851cee2087555fc9faffdc7b0979ece4ec977f513"
+    },
+    {
+      "bytes": 6172560,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama-server-impl.so",
+      "sha256": "70280d6635ae7eb63c0fee88cc4d78ea1c3c3806dc9995c2229fbdcc19da89a0"
+    },
+    {
+      "bytes": 3665376,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama.so",
+      "sha256": "ea6e8ec895d0ae4d6f77bf7c9e9150a4db95b15fe66438f7357b757e8e07ac70"
+    },
+    {
+      "bytes": 3665376,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama.so.0",
+      "sha256": "ea6e8ec895d0ae4d6f77bf7c9e9150a4db95b15fe66438f7357b757e8e07ac70"
+    },
+    {
+      "bytes": 3665376,
+      "path": "software/bundle/linux-arm64/llama.cpp/libllama.so.0.0.9637",
+      "sha256": "ea6e8ec895d0ae4d6f77bf7c9e9150a4db95b15fe66438f7357b757e8e07ac70"
+    },
+    {
+      "bytes": 1315976,
+      "path": "software/bundle/linux-arm64/llama.cpp/libmtmd.so",
+      "sha256": "e84dc61e2b348feef27df59ac98608246b47e62816b8493406b8870ee4932341"
+    },
+    {
+      "bytes": 1315976,
+      "path": "software/bundle/linux-arm64/llama.cpp/libmtmd.so.0",
+      "sha256": "e84dc61e2b348feef27df59ac98608246b47e62816b8493406b8870ee4932341"
+    },
+    {
+      "bytes": 1315976,
+      "path": "software/bundle/linux-arm64/llama.cpp/libmtmd.so.0.0.9637",
+      "sha256": "e84dc61e2b348feef27df59ac98608246b47e62816b8493406b8870ee4932341"
+    },
+    {
+      "bytes": 73008,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama",
+      "sha256": "30f91e58be140a3528431705fd71ced8d9382fd9bd8e3e9490da9238d1669959"
+    },
+    {
+      "bytes": 70304,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-batched-bench",
+      "sha256": "09f20becdca03300c4555159035ee35a89c6592a88cbe0ece2c16586a5c4ebc4"
+    },
+    {
+      "bytes": 72480,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-bench",
+      "sha256": "692cc65f147834819c4d9781d2b1a1eb67196f273c3e6c9c99f7764639aed9e4"
+    },
+    {
+      "bytes": 72472,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-cli",
+      "sha256": "323fe6d9f9d861045817fd01eb285becd1e1ea3fd4c52b3ee4e1bfedf6683eba"
+    },
+    {
+      "bytes": 70304,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-completion",
+      "sha256": "e7d50fd11ccc28b19d9d9868204455f10a723a78c75e93f44bb158e0dd553c93"
+    },
+    {
+      "bytes": 249320,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-debug-template-parser",
+      "sha256": "0c863106882719d8c649141294d7b8bde1946844244842ece6a2355a98eece8a"
+    },
+    {
+      "bytes": 70304,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-fit-params",
+      "sha256": "80d389805a2eaecf2adb5da7e8d257735f1b6754b78c022780577ddad590e692"
+    },
+    {
+      "bytes": 71432,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-gemma3-cli",
+      "sha256": "b4e5891316104e12a491d69c52a7e95faece98fe978ec1caeba9de3830fbfb1c"
+    },
+    {
+      "bytes": 77896,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-gguf-split",
+      "sha256": "12173e9ca89036d63cb42a84d8dc859f987911afcd3435d12b7c09c9ba9f9b09"
+    },
+    {
+      "bytes": 323384,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-imatrix",
+      "sha256": "1768a2720ce1e64be7aefdda8b0ab8564413549506084eb00f5f0e962adb4b01"
+    },
+    {
+      "bytes": 71432,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-llava-cli",
+      "sha256": "b4e5891316104e12a491d69c52a7e95faece98fe978ec1caeba9de3830fbfb1c"
+    },
+    {
+      "bytes": 71432,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-minicpmv-cli",
+      "sha256": "b4e5891316104e12a491d69c52a7e95faece98fe978ec1caeba9de3830fbfb1c"
+    },
+    {
+      "bytes": 79592,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-mtmd-cli",
+      "sha256": "88720f66a36c58c255f1fcf71c3742411a4c99a6d5117cc38cc67f0462fd25ba"
+    },
+    {
+      "bytes": 76576,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-mtmd-debug",
+      "sha256": "a5411f44ead668bed2717dbb066718cd73e9873d01e30707f99d6c3a07a3acd4"
+    },
+    {
+      "bytes": 70304,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-perplexity",
+      "sha256": "e014db4ceefbc248dccfe4fb698adbcf41bdda97df6a994d56b914aecf7d9b3c"
+    },
+    {
+      "bytes": 72480,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-quantize",
+      "sha256": "82092798456c910c328c1ecc24cd5e31dbfeab87897838d1945e622c04a26b2c"
+    },
+    {
+      "bytes": 71432,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-qwen2vl-cli",
+      "sha256": "b4e5891316104e12a491d69c52a7e95faece98fe978ec1caeba9de3830fbfb1c"
+    },
+    {
+      "bytes": 75856,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-results",
+      "sha256": "d1c6caf99465f0fa4d98364a2f4fdfbf117c6c3c03f2f59eaaf01c0cf62f3708"
+    },
+    {
+      "bytes": 72480,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-server",
+      "sha256": "0c96501cdbb3f648d9aceb1cee7c790519b41b4791ea47c9a3e3f33d6039c0d0"
+    },
+    {
+      "bytes": 236352,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-template-analysis",
+      "sha256": "50282c41e892b1fcb656af48cc4ce2d8959772f03005417a15daafbbddacaca7"
+    },
+    {
+      "bytes": 73904,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-tokenize",
+      "sha256": "a782c3e7a5a106d024ff17b8ffaa8c099ecc6a1c23acaccafe1a5ac99063e978"
+    },
+    {
+      "bytes": 409096,
+      "path": "software/bundle/linux-arm64/llama.cpp/llama-tts",
+      "sha256": "8981f8becfd576c7f17c25b8efc6aee5b031e25b689999fcbb352de293e6bf1e"
+    },
+    {
+      "bytes": 244848,
+      "path": "software/bundle/linux-arm64/llama.cpp/rpc-server",
+      "sha256": "6b6ce71a18a23f84323f43514b5e15435e194dbde817e662a2e9c0b47bc70a1c"
+    },
+    {
+      "bytes": 13427,
+      "path": "software/bundle/python-wheels/annotated_types-0.8.0-py3-none-any.whl",
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
+    },
+    {
+      "bytes": 125813,
+      "path": "software/bundle/python-wheels/anyio-4.14.2-py3-none-any.whl",
+      "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"
+    },
+    {
+      "bytes": 136983,
+      "path": "software/bundle/python-wheels/certifi-2026.7.22-py3-none-any.whl",
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+    },
+    {
+      "bytes": 218716,
+      "path": "software/bundle/python-wheels/cffi-2.1.1-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "sha256": "3311ed60d36f83378794e1009ac6258bafbf81f7888b4caa7b35a521e3f95813"
+    },
+    {
+      "bytes": 46018,
+      "path": "software/bundle/python-wheels/coloredlogs-15.0.1-py2.py3-none-any.whl",
+      "sha256": "612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934"
+    },
+    {
+      "bytes": 4299615,
+      "path": "software/bundle/python-wheels/cryptography-46.0.3-cp311-abi3-manylinux_2_28_aarch64.whl",
+      "sha256": "6eae65d4c3d33da080cff9c4ab1f711b15c1d9760809dad6ea763f3812d254cb"
+    },
+    {
+      "bytes": 26661,
+      "path": "software/bundle/python-wheels/flatbuffers-25.12.19-py2.py3-none-any.whl",
+      "sha256": "7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4"
+    },
+    {
+      "bytes": 37515,
+      "path": "software/bundle/python-wheels/h11-0.16.0-py3-none-any.whl",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+    },
+    {
+      "bytes": 78784,
+      "path": "software/bundle/python-wheels/httpcore-1.0.9-py3-none-any.whl",
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+    },
+    {
+      "bytes": 73517,
+      "path": "software/bundle/python-wheels/httpx-0.28.1-py3-none-any.whl",
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+    },
+    {
+      "bytes": 86794,
+      "path": "software/bundle/python-wheels/humanfriendly-10.0-py2.py3-none-any.whl",
+      "sha256": "1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477"
+    },
+    {
+      "bytes": 65455,
+      "path": "software/bundle/python-wheels/idna-3.18-py3-none-any.whl",
+      "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2"
+    },
+    {
+      "bytes": 536198,
+      "path": "software/bundle/python-wheels/mpmath-1.3.0-py3-none-any.whl",
+      "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+    },
+    {
+      "bytes": 14222994,
+      "path": "software/bundle/python-wheels/numpy-1.26.4-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "7ab55401287bfec946ced39700c053796e7cc0e3acbef09993a9ad2adba6ca6e"
+    },
+    {
+      "bytes": 14312005,
+      "path": "software/bundle/python-wheels/numpy-2.2.6-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "b64d8d4d17135e00c8e346e0a738deb17e754230d7e0810ac5012750bbd85a5a"
+    },
+    {
+      "bytes": 5751365,
+      "path": "software/bundle/python-wheels/onnxruntime-1.16.3-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "00cccc37a5195c8fca5011b9690b349db435986bd508eb44c9fce432da9228a4"
+    },
+    {
+      "bytes": 129956,
+      "path": "software/bundle/python-wheels/packaging-26.3-py3-none-any.whl",
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+    },
+    {
+      "bytes": 24305,
+      "path": "software/bundle/python-wheels/pathvalidate-3.3.1-py3-none-any.whl",
+      "sha256": "5263baab691f8e1af96092fa5137ee17df5bdfbd6cff1fcac4d6ef4bc2e1735f"
+    },
+    {
+      "bytes": 13841991,
+      "path": "software/bundle/python-wheels/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "6736329f1ef58c39272215849dffdacae601201480b08a0c892938fa4d7c8c67"
+    },
+    {
+      "bytes": 328847,
+      "path": "software/bundle/python-wheels/protobuf-7.35.1-cp310-abi3-manylinux2014_aarch64.whl",
+      "sha256": "11d6b0ec246892d85215b0a13ca6e0233cf5284b68f0ac02646427f4ff88a799"
+    },
+    {
+      "bytes": 48172,
+      "path": "software/bundle/python-wheels/pycparser-3.0-py3-none-any.whl",
+      "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
+    },
+    {
+      "bytes": 463580,
+      "path": "software/bundle/python-wheels/pydantic-2.12.5-py3-none-any.whl",
+      "sha256": "e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d"
+    },
+    {
+      "bytes": 1917869,
+      "path": "software/bundle/python-wheels/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "378bec5c66998815d224c9ca994f1e14c0c21cb95d2f52b6021cc0b2a58f2a5a"
+    },
+    {
+      "bytes": 800020,
+      "path": "software/bundle/python-wheels/pynacl-1.6.2-cp38-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "sha256": "8845c0631c0be43abdd865511c41eab235e0be69c81dc66a50911594198679b0"
+    },
+    {
+      "bytes": 50423,
+      "path": "software/bundle/python-wheels/sage_agent_sdk-11.19.10-py3-none-any.whl",
+      "sha256": "ffaacce8a5878b7b42c14ccbce9f7ca5f9c60ebc0566b28e53d5fd27a7393110"
+    },
+    {
+      "bytes": 156714,
+      "path": "software/bundle/python-wheels/sage_lantern_runtime-0.2.0-py3-none-any.whl",
+      "sha256": "21809cefad4566b45aed592bea66ee01c211f9add372ecba70981324ad04bccd"
+    },
+    {
+      "bytes": 6299353,
+      "path": "software/bundle/python-wheels/sympy-1.14.0-py3-none-any.whl",
+      "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5"
+    },
+    {
+      "bytes": 45571,
+      "path": "software/bundle/python-wheels/typing_extensions-4.16.0-py3-none-any.whl",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+    },
+    {
+      "bytes": 14611,
+      "path": "software/bundle/python-wheels/typing_inspection-0.4.2-py3-none-any.whl",
+      "sha256": "4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7"
+    },
+    {
+      "bytes": 12528190,
+      "path": "software/cache/downloads/llama-b9637-bin-ubuntu-arm64.tar.gz",
+      "sha256": "211d9e9ee738698beb7ca271be82661ae2b5da3fbb489cf7d9e4e6ed601be106"
+    },
+    {
+      "bytes": 351,
+      "path": "software/cache/models/en_US-lessac-medium.MODEL_CARD",
+      "sha256": "ce49eb457742208166d399a40cdec2c7fa9db77960930031564ab56f12882645"
+    },
+    {
+      "bytes": 63201294,
+      "path": "software/cache/models/en_US-lessac-medium.onnx",
+      "sha256": "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f"
+    },
+    {
+      "bytes": 4885,
+      "path": "software/cache/models/en_US-lessac-medium.onnx.json",
+      "sha256": "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0"
+    },
+    {
+      "bytes": 147951465,
+      "path": "software/cache/models/ggml-base.bin",
+      "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"
+    },
+    {
+      "bytes": 2740937888,
+      "path": "software/cache/models/qwen3.5-4b-q4_k_m.gguf",
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
+    },
+    {
+      "bytes": 34860293,
+      "path": "software/cache/sources/llama.cpp-b9637.tar.gz",
+      "sha256": "762283319feb3de30886dc850d42f0e426b06600e7f9639d34e06506597309ca"
+    },
+    {
+      "bytes": 10393817,
+      "path": "software/cache/sources/sage-v11.19.10.tar.gz",
+      "sha256": "07c9b877f3e7f7dcd262a067cbbe8fe8ceec64e06dbfbad9ffa9e6adbbdd7bb6"
+    },
+    {
+      "bytes": 8841784,
+      "path": "software/cache/sources/whisper.cpp-v1.8.6.tar.gz",
+      "sha256": "f8e632016ceae556f3132a16c7f704be1e7715595041f474fa81a2b64c1abf7c"
+    }
+  ],
+  "schema": "sage.lantern.stack-lock.v1",
+  "target": {
+    "architecture": "arm64",
+    "os": "linux",
+    "python": "3.11"
+  }
+}

@@ -1,0 +1,39 @@
+[Unit]
+Description=Lantern fixed-manifest gateway listener evidence
+Before=sage-lantern-mesh-runtime.service
+ConditionPathExists=/etc/sage-lantern/mesh-runtime.json
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=root
+Group=root
+ExecStart=/opt/sage-lantern/venv/bin/python -m sage_lantern.gateway_evidence --serve
+Restart=no
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+RuntimeDirectory=sage-lantern-gateway-evidence
+RuntimeDirectoryMode=0700
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallFilter=~ptrace process_vm_readv process_vm_writev
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+InaccessiblePaths=-/var/lib/sage-lantern
+ReadWritePaths=/run/sage-lantern-gateway-evidence
+ReadOnlyPaths=/etc/sage-lantern
+StandardOutput=null
+StandardError=null

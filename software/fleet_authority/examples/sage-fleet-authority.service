@@ -1,0 +1,30 @@
+[Unit]
+Description=SAGE Fleet Authority
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sage-fleet-authority
+Group=sage-fleet-authority
+EnvironmentFile=/etc/sage-fleet-authority.env
+ExecStart=/opt/sage-fleet-authority/.venv/bin/sage-fleet-authority
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sage-fleet-authority
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
+

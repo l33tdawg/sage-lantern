@@ -1,0 +1,384 @@
+diff --git a/internal/store/sqlite.go b/internal/store/sqlite.go
+index 044b7b7..219e564 100644
+--- a/internal/store/sqlite.go
++++ b/internal/store/sqlite.go
+@@ -122,8 +122,12 @@ const ErrTextSearchVaultEncryptedMsg = "text search unavailable: content is vaul
+ func (s *SQLiteStore) SetVault(v *vault.Vault) {
+ 	s.vaultPublicationMu.Lock()
+ 	defer s.vaultPublicationMu.Unlock()
++	expectedChanged := false
+ 	if v != nil {
+-		s.vaultExpected.Store(true)
++		expectedChanged = !s.vaultExpected.Swap(true)
++	}
++	if !expectedChanged && s.vault.Load().SameKey(v) {
++		return
+ 	}
+ 	s.vault.Store(v)
+ 	if s.vaultGeneration != nil {
+@@ -181,8 +185,8 @@ func (s *SQLiteStore) SetVaultExpected(expected bool) {
+ 	}
+ }
+ 
+-// VaultGeneration advances on every vault publication and expected-state
+-// transition, including lock->unlock ABA and same-state key rotation.
++// VaultGeneration advances on vault publication and expected-state transitions,
++// including lock->unlock ABA and key rotation, but not an equivalent resident key.
+ func (s *SQLiteStore) VaultGeneration() uint64 {
+ 	if s == nil || s.vaultGeneration == nil {
+ 		return 0
+diff --git a/internal/vault/vault.go b/internal/vault/vault.go
+index 179f154..6319ac2 100644
+--- a/internal/vault/vault.go
++++ b/internal/vault/vault.go
+@@ -10,6 +10,7 @@ import (
+ 	"crypto/cipher"
+ 	"crypto/rand"
+ 	"crypto/sha256"
++	"crypto/subtle"
+ 	"encoding/base64"
+ 	"encoding/json"
+ 	"errors"
+@@ -61,6 +62,12 @@ type Vault struct {
+ 	dataKey []byte // raw 32-byte data key (only in memory while unlocked)
+ }
+ 
++func (v *Vault) SameKey(other *Vault) bool {
++	return v != nil && other != nil && v.gcm != nil && other.gcm != nil &&
++		len(v.dataKey) == argonKeyLen && len(other.dataKey) == argonKeyLen &&
++		subtle.ConstantTimeCompare(v.dataKey, other.dataKey) == 1
++}
++
+ // Init creates a new vault key file protected by the given passphrase.
+ // The actual data encryption key is randomly generated — the passphrase
+ // just protects the key file. This means changing the passphrase doesn't
+diff --git a/internal/store/vault_publication_lantern_test.go b/internal/store/vault_publication_lantern_test.go
+index c3942cd..f71fbb3 100644
+--- a/internal/store/vault_publication_lantern_test.go
++++ b/internal/store/vault_publication_lantern_test.go
+@@ -25,10 +25,11 @@ func TestLanternVaultPublicationLatchesExpectedAndGeneration(t *testing.T) {
+ 	if initial.EncryptionExpected || initial.VaultActive {
+ 		t.Fatal("unexpected initial encryption state")
+ 	}
++	generations := []uint64{1, 2, 3, 3, 4}
+ 	for index, next := range []*vault.Vault{active, nil, active, active, nil} {
+ 		projection.SetVault(next)
+ 		status := projection.MessageStorageStatus()
+-		if !status.EncryptionExpected || status.VaultActive != (next != nil) || !status.Stable || status.VaultGeneration != uint64(index+1) {
++		if !status.EncryptionExpected || status.VaultActive != (next != nil) || !status.Stable || status.VaultGeneration != generations[index] {
+ 			t.Fatal("vault publication lost expected state or generation")
+ 		}
+ 		if next == nil {
+diff --git a/internal/store/resident_vault_test.go b/internal/store/resident_vault_test.go
+new file mode 100644
+index 0000000..091a99c
+--- /dev/null
++++ b/internal/store/resident_vault_test.go
+@@ -0,0 +1,126 @@
++package store
++
++import (
++	"encoding/base64"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/l33tdawg/sage/internal/vault"
++)
++
++func residentTestVault(t *testing.T, seed byte) *vault.Vault {
++	t.Helper()
++	key := make([]byte, 32)
++	key[0] = seed
++	value, err := vault.FromDataKey(base64.StdEncoding.EncodeToString(key))
++	if err != nil {
++		t.Fatal(err)
++	}
++	return value
++}
++
++func TestResidentVaultTransitions(t *testing.T) {
++	database := &SQLiteStore{vaultGeneration: &atomic.Uint64{}}
++	database.SetVaultExpected(true)
++	first := residentTestVault(t, 1)
++	database.SetVault(first)
++	baseline := database.MessageStorageStatus()
++	database.SetVault(residentTestVault(t, 1))
++	if database.MessageStorageStatus() != baseline || database.vault.Load() != first {
++		t.Fatal("equivalent resident key was republished")
++	}
++	database.SetVault(nil)
++	locked := database.MessageStorageStatus()
++	if locked.VaultActive || !database.VaultLocked() || locked.VaultGeneration != baseline.VaultGeneration+1 {
++		t.Fatal("lock did not advance generation")
++	}
++	database.SetVault(residentTestVault(t, 1))
++	unlocked := database.MessageStorageStatus()
++	if !unlocked.VaultActive || unlocked.VaultGeneration != locked.VaultGeneration+1 {
++		t.Fatal("real unlock did not advance generation")
++	}
++	database.SetVault(residentTestVault(t, 2))
++	rotated := database.MessageStorageStatus()
++	if rotated.VaultGeneration != unlocked.VaultGeneration+1 {
++		t.Fatal("key rotation did not advance generation")
++	}
++	database.SetVaultExpected(false)
++	if database.VaultGeneration() != rotated.VaultGeneration+1 {
++		t.Fatal("expected-state transition did not advance generation")
++	}
++	before := database.VaultGeneration()
++	database.SetVaultExpected(false)
++	if database.VaultGeneration() != before {
++		t.Fatal("unchanged expected state advanced generation")
++	}
++}
++
++func TestResidentVaultConcurrentEquivalentPublication(t *testing.T) {
++	database := &SQLiteStore{vaultGeneration: &atomic.Uint64{}}
++	var workers sync.WaitGroup
++	for range 32 {
++		value := residentTestVault(t, 1)
++		workers.Add(1)
++		go func() {
++			defer workers.Done()
++			database.SetVault(value)
++		}()
++	}
++	workers.Wait()
++	if database.VaultGeneration() != 1 || !database.MessageStorageStatus().Stable {
++		t.Fatal("concurrent equivalent publications advanced generation")
++	}
++}
++
++func TestResidentVaultRepairsExpectedStateBeforeDeduplication(t *testing.T) {
++	database := &SQLiteStore{vaultGeneration: &atomic.Uint64{}}
++	database.SetVault(residentTestVault(t, 1))
++	database.SetVaultExpected(false)
++	before := database.VaultGeneration()
++	database.SetVault(residentTestVault(t, 1))
++	status := database.MessageStorageStatus()
++	if !status.EncryptionExpected || !status.VaultActive || !status.Stable || status.VaultGeneration != before+1 {
++		t.Fatal("equivalent key skipped expected-state repair")
++	}
++	database.SetVault(residentTestVault(t, 1))
++	if database.MessageStorageStatus() != status {
++		t.Fatal("repaired equivalent key was republished")
++	}
++	database.SetVault(nil)
++	if !database.VaultLocked() {
++		t.Fatal("repair did not retain encryption requirement after lock")
++	}
++}
++
++func TestResidentVaultPublicationSerializesWithLock(t *testing.T) {
++	database := &SQLiteStore{vaultGeneration: &atomic.Uint64{}}
++	database.SetVault(residentTestVault(t, 1))
++	equivalent := residentTestVault(t, 1)
++	database.vaultPublicationMu.Lock()
++	started, done := make(chan struct{}), make(chan struct{})
++	go func() {
++		close(started)
++		database.SetVault(equivalent)
++		close(done)
++	}()
++	<-started
++	select {
++	case <-done:
++		database.vaultPublicationMu.Unlock()
++		t.Fatal("publication bypassed store lock")
++	case <-time.After(20 * time.Millisecond):
++	}
++	database.vault.Store(nil)
++	database.vaultGeneration.Add(1)
++	database.vaultPublicationMu.Unlock()
++	select {
++	case <-done:
++	case <-time.After(5 * time.Second):
++		t.Fatal("publication did not finish")
++	}
++	if database.vault.Load() != equivalent || database.VaultGeneration() != 3 {
++		t.Fatal("concurrent real lock was mistaken for equivalent resident key")
++	}
++}
+diff --git a/internal/vault/resident_key_test.go b/internal/vault/resident_key_test.go
+new file mode 100644
+index 0000000..52cebbf
+--- /dev/null
++++ b/internal/vault/resident_key_test.go
+@@ -0,0 +1,45 @@
++package vault
++
++import (
++	"encoding/base64"
++	"testing"
++)
++
++func TestResidentSameKey(t *testing.T) {
++	first, err := FromDataKey(base64.StdEncoding.EncodeToString(make([]byte, 32)))
++	if err != nil {
++		t.Fatal(err)
++	}
++	equivalent, err := FromDataKey(base64.StdEncoding.EncodeToString(make([]byte, 32)))
++	if err != nil {
++		t.Fatal(err)
++	}
++	differentKey := make([]byte, 32)
++	differentKey[31] = 1
++	different, err := FromDataKey(base64.StdEncoding.EncodeToString(differentKey))
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, test := range []struct {
++		name  string
++		left  *Vault
++		right *Vault
++		want  bool
++	}{
++		{"same_object", first, first, true},
++		{"same_key", first, equivalent, true},
++		{"different_key", first, different, false},
++		{"nil_left", nil, first, false},
++		{"nil_right", first, nil, false},
++		{"both_nil", nil, nil, false},
++		{"empty", &Vault{}, &Vault{}, false},
++		{"missing_cipher", first, &Vault{dataKey: make([]byte, 32)}, false},
++		{"missing_key", first, &Vault{gcm: first.gcm}, false},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			if test.left.SameKey(test.right) != test.want || test.right.SameKey(test.left) != test.want {
++				t.Fatal("unexpected resident key equality")
++			}
++		})
++	}
++}
+diff --git a/web/resident_vault_login_test.go b/web/resident_vault_login_test.go
+new file mode 100644
+index 0000000..9ebaa10
+--- /dev/null
++++ b/web/resident_vault_login_test.go
+@@ -0,0 +1,124 @@
++package web
++
++import (
++	"context"
++	"encoding/base64"
++	"net/http"
++	"net/http/httptest"
++	"path/filepath"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++
++	"github.com/l33tdawg/sage/internal/store"
++	"github.com/l33tdawg/sage/internal/vault"
++)
++
++func residentLoginFixture(t *testing.T) (*store.SQLiteStore, *DashboardHandler, *vault.Vault) {
++	t.Helper()
++	directory := t.TempDir()
++	keyFile := filepath.Join(directory, "synthetic-vault.json")
++	if err := vault.Init(keyFile, "synthetic-test-passphrase"); err != nil {
++		t.Fatal(err)
++	}
++	opened, err := vault.Open(keyFile, "synthetic-test-passphrase")
++	if err != nil {
++		t.Fatal(err)
++	}
++	database, err := store.NewSQLiteStore(context.Background(), filepath.Join(directory, "synthetic.db"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { database.Close() })
++	database.SetVaultExpected(true)
++	handler := NewDashboardHandler(database, "resident-vault-test")
++	handler.Encrypted.Store(true)
++	handler.VaultKeyPath = keyFile
++	handler.RunBackground = func(func(context.Context)) {}
++	return database, handler, opened
++}
++
++func residentLogin(handler *DashboardHandler, passphrase, address string) *httptest.ResponseRecorder {
++	request := httptest.NewRequest(http.MethodPost, "/v1/dashboard/auth/login",
++		strings.NewReader(`{"passphrase":"`+passphrase+`"}`))
++	request.RemoteAddr = address
++	response := httptest.NewRecorder()
++	handler.handleLogin(response, request)
++	return response
++}
++
++func TestResidentLoginVerifiesCredentialsWithoutRepublishing(t *testing.T) {
++	database, handler, opened := residentLoginFixture(t)
++	database.SetVault(opened)
++	baseline := database.MessageStorageStatus()
++	handler.VaultLocked.Store(true)
++	var callbacks atomic.Int32
++	handler.OnVaultUnlocked = func(string) { callbacks.Add(1) }
++	for _, address := range []string{"127.0.0.1:1000", "127.0.0.2:1000"} {
++		response := residentLogin(handler, "synthetic-test-passphrase", address)
++		if response.Code != http.StatusOK || len(response.Result().Cookies()) != 1 {
++			t.Fatal("verified login did not issue session")
++		}
++		if database.MessageStorageStatus() != baseline || handler.VaultLocked.Load() {
++			t.Fatal("verified resident login changed storage generation")
++		}
++	}
++	response := residentLogin(handler, "wrong-test-passphrase", "127.0.0.3:1000")
++	if response.Code != http.StatusUnauthorized || len(response.Result().Cookies()) != 0 || callbacks.Load() != 2 {
++		t.Fatal("resident vault bypassed credential verification")
++	}
++	if database.MessageStorageStatus() != baseline {
++		t.Fatal("denied login changed storage generation")
++	}
++}
++
++func TestResidentLoginRealUnlockAndRotationAdvanceGeneration(t *testing.T) {
++	database, handler, opened := residentLoginFixture(t)
++	database.SetVault(opened)
++	database.SetVault(nil)
++	baseline := database.MessageStorageStatus()
++	handler.VaultLocked.Store(false)
++	if residentLogin(handler, "synthetic-test-passphrase", "127.0.0.1:1000").Code != http.StatusOK {
++		t.Fatal("real unlock failed")
++	}
++	if database.VaultGeneration() != baseline.VaultGeneration+1 || !database.VaultActive() {
++		t.Fatal("dashboard flag incorrectly suppressed real unlock")
++	}
++	different, err := vault.FromDataKey(base64.StdEncoding.EncodeToString(make([]byte, 32)))
++	if err != nil {
++		t.Fatal(err)
++	}
++	database.SetVault(different)
++	before := database.VaultGeneration()
++	if residentLogin(handler, "synthetic-test-passphrase", "127.0.0.2:1000").Code != http.StatusOK {
++		t.Fatal("verified changed-key publication failed")
++	}
++	if database.VaultGeneration() != before+1 {
++		t.Fatal("different resident key was treated as equivalent")
++	}
++}
++
++func TestResidentConcurrentLoginSharesStorePublicationGate(t *testing.T) {
++	database, first, _ := residentLoginFixture(t)
++	second := NewDashboardHandler(database, "resident-vault-test")
++	second.Encrypted.Store(true)
++	second.VaultKeyPath = first.VaultKeyPath
++	second.RunBackground = func(func(context.Context)) {}
++	before := database.VaultGeneration()
++	var workers sync.WaitGroup
++	var successes atomic.Int32
++	for _, handler := range []*DashboardHandler{first, second} {
++		workers.Add(1)
++		go func() {
++			defer workers.Done()
++			if residentLogin(handler, "synthetic-test-passphrase", "127.0.0.1:1000").Code == http.StatusOK {
++				successes.Add(1)
++			}
++		}()
++	}
++	workers.Wait()
++	if successes.Load() != 2 || database.VaultGeneration() != before+1 || !database.VaultActive() {
++		t.Fatal("shared store login did not publish exactly once")
++	}
++}

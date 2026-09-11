@@ -1,0 +1,20 @@
+[Unit]
+Description=SAGE Lantern guarded automatic deep sleep
+After=display-manager.service sage-lantern-device-auth.service sage-lantern-voice-loop.service
+ConditionPathExists=/etc/sage-lantern-idle-suspend.enabled
+ConditionPathExists=!/run/sage-lantern-deployment.pending
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/systemd-inhibit --what=sleep:handle-power-key --mode=block --who=SAGE-Lantern --why=Guarded-idle-suspend-and-wake /opt/sage-lantern/venv/bin/python /usr/local/libexec/sage-lantern-idle-suspend
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=read-only
+PrivateTmp=false
+
+[Install]
+WantedBy=graphical.target

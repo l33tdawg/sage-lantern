@@ -1,0 +1,35 @@
+.device-community { gap: 12px; }
+.device-community .device-subcontent { flex: 1; min-height: 0; overflow-y: auto; }
+.device-community-tabs, .device-community-actions { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+.device-community-tabs button { flex: 1; }
+.device-message-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 180px; text-align: center; gap: 12px; padding: 20px; }
+.device-community .device-message-empty svg { width: 48px; height: 48px; color: var(--device-accent); }
+.device-message-empty h2, .device-message-empty p { margin: 0; }
+.device-message-empty p { color: var(--device-muted); font-size: 20px; }
+.device-community-tabs button[aria-pressed="true"] { background: #245679; border-color: #a0d6ff; }
+.device-community-actions { justify-content: space-between; }
+.device-community-actions button, .device-dictation button { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.device-community svg { width: 28px; height: 28px; flex-shrink: 0; }
+.device-community .device-community-primary { background: var(--device-accent); border-color: #ffe0a6; color: #0b1820; }
+.device-community .device-community-row { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; margin-bottom: 10px; padding: 14px 18px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.device-community-row small, .device-contact-id { font-size: 16px; color: var(--device-muted); overflow-wrap: anywhere; }
+.device-community-row span { font-size: 21px; font-weight: 400; }
+.device-message-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 25px; line-height: 1.45; }
+.device-community-badge { display: inline-block; padding: 8px 12px; border: 1px solid #7896a5; border-radius: 12px; font-weight: 600; }
+.device-community-badge.state-pending, .device-community-badge.state-challenged { color: #ffd382; border-color: #ffd382; }
+.device-community-badge.state-accepted { color: #86e8b9; border-color: #86e8b9; }
+.device-community-badge.state-rejected, .device-community-badge.state-failed { color: #ffb4a9; border-color: #ffb4a9; }
+.device-community .device-public-warning { border-color: #bd924e; }
+.device-community .device-consent-button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; }
+.device-consent-button[aria-pressed="true"] { border-color: #86e8b9; }
+.device-screen .device-top .device-messages-shortcut svg { width: 30px; height: 30px; color: var(--device-accent); }
+.device-navigation-footer > .device-share-answer { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 72px; width: 100%; margin: 0; padding-inline: 10px; font-size: 20px; background: #116566; border-color: #66d6c6; color: #fff; }
+.device-share-answer svg { width: 28px; height: 28px; flex-shrink: 0; }
+.device-history-sharing { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.device-history-sharing .device-share-answer { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; background: #173b56; border-color: #699abb; }
+.device-history-public { display: flex; align-items: center; gap: 8px; font-size: 17px; color: #bacbd5; margin: 0 12px 16px; }
+.device-history-public svg { width: 22px; height: 22px; flex-shrink: 0; }
+.device-history-public.state-pending, .device-history-public.state-queued, .device-history-public.state-challenged { color: #ffd382; }
+.device-history-public.state-accepted { color: #86e8b9; }
+.device-history-public.state-rejected { color: #ffb4a9; }
+@media (max-width: 560px) { .device-community-actions button { flex: 1; font-size: 19px; }.device-community .device-page-title h1 { font-size: 23px; } }

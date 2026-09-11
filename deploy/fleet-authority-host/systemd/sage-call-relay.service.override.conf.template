@@ -1,0 +1,9 @@
+[Service]
+# Copy the live unit's complete ExecStart here, preserving every existing flag;
+# change only the two listener values. This example assumes the deployed binary
+# path and defaults observed in the current service.
+ExecStart=
+ExecStart=/usr/local/bin/sage-call-relay -http 127.0.0.1:8080 -https 127.0.0.1:8444
+
+# The proxy, not the relay, owns public TCP 80/443 after migration.
+NoNewPrivileges=true

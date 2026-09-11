@@ -1,0 +1,60 @@
+package rest
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestLanternWorkflowInterop(t *testing.T) {
+	python := os.Getenv("LANTERN_INTEROP_PYTHON")
+	script := os.Getenv("LANTERN_INTEROP_SCRIPT")
+	if python == "" || script == "" {
+		t.Skip("requires explicit isolated interoperability harness")
+	}
+	first := newMediaRESTFixture(t)
+	second := newMediaRESTFixture(t)
+	firstHTTP := httptest.NewServer(first.server.Router())
+	defer firstHTTP.Close()
+	secondHTTP := httptest.NewServer(second.server.Router())
+	defer secondHTTP.Close()
+	configuration, err := json.Marshal(map[string]string{
+		"first_url": firstHTTP.URL, "second_url": secondHTTP.URL,
+		"first_seed": hex.EncodeToString(first.keys["first"].Seed()),
+		"second_seed": hex.EncodeToString(second.keys["second"].Seed()),
+	})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, python, script)
+	if runtime.GOOS == "darwin" {
+		architecture := os.Getenv("LANTERN_INTEROP_ARCH")
+		require.Contains(t, []string{"arm64", "x86_64"}, architecture)
+		command = exec.CommandContext(ctx, "/usr/bin/arch", "-"+architecture, python, script)
+	}
+	command.Stdin = bytes.NewReader(configuration)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
+	t.Log(string(output))
+	for _, fixture := range []workflowTestFixture{first, second} {
+		for _, suffix := range []string{"", "-wal"} {
+			path := fixture.databasePath + suffix
+			content, err := os.ReadFile(path)
+			if os.IsNotExist(err) && suffix == "-wal" {
+				continue
+			}
+			require.NoError(t, err)
+			require.NotContains(t, string(content), "LANTERN-INTEROP-PRIVATE-CANARY", filepath.Base(path))
+		}
+	}
+}

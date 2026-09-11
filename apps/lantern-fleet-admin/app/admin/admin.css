@@ -1,0 +1,22 @@
+.lantern-admin { font-size: 16px; grid-template-rows: 88px 1fr 90px; padding-bottom: 30px; }
+.lantern-admin .lantern-header { padding: 16px 32px; }
+.lantern-admin .lantern-body { padding: 28px; }
+.lantern-admin .lantern-view { max-width: 1200px; margin: 0 auto; }
+.lantern-admin small, .lantern-admin .lantern-chip, .lantern-admin .lantern-header-state,
+.lantern-admin .lantern-stat span, .lantern-admin .lantern-note,
+.lantern-admin .setup-list b, .lantern-admin code { font-size: 14px; }
+.lantern-admin p, .lantern-admin dd, .lantern-admin dt,
+.lantern-admin .live-row strong, .lantern-admin .setup-list strong { font-size: 18px; line-height: 1.5; }
+.lantern-admin .lantern-stat strong { font-size: 25px; }
+.lantern-admin .lantern-stat, .lantern-admin .live-row { padding: 20px; }
+.lantern-admin .lantern-nav button { font-size: 16px; min-height: 64px; }
+.lantern-admin .lantern-nav button span { font-size: 22px; }
+.lantern-admin .lantern-operator { font-size: 12px; }
+.lantern-admin .lantern-brand strong { font-size: 22px; }
+.lantern-admin .lantern-title h1 { font-size: 36px; }
+@media (max-width: 700px) {
+  .lantern-admin .lantern-header { padding: 12px; }
+  .lantern-admin .lantern-header-state time { display: none; }
+  .lantern-admin .lantern-body { padding: 16px; }
+  .lantern-admin .lantern-summary-grid, .lantern-admin .system-grid { grid-template-columns: 1fr; }
+}

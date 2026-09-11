@@ -1,0 +1,26 @@
+[Unit]
+Description=SAGE Lantern Fleet Admin (device-local)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radxa
+Group=radxa
+WorkingDirectory=/home/radxa/sage-commons/apps/lantern-fleet-admin
+Environment=NODE_ENV=production
+Environment=LANTERN_EDGE_LOCAL=1
+Environment="LANTERN_EDGE_OPERATOR=Unit A operator"
+ExecStart=/usr/bin/env npm start -- --hostname 127.0.0.1 --port 3100
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

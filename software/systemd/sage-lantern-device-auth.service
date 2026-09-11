@@ -1,0 +1,40 @@
+[Unit]
+Description=SAGE Lantern private device unlock broker
+After=sage-lantern-personal-sage.service
+BindsTo=sage-lantern-personal-sage.service
+PartOf=sage-lantern-personal-sage.service
+ConditionPathExists=/etc/sage-lantern-device-lock.enabled
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+ExecStart=/opt/sage-lantern/venv/bin/python /usr/local/libexec/sage-lantern-device-auth --state-dir /var/lib/sage-lantern/device-lock --idle-seconds 120 --operator-key /var/lib/sage-lantern/sage-personal/agent.key --setup-marker /etc/sage-lantern-vault-setup.enabled
+Restart=on-failure
+RestartSec=2
+StateDirectory=sage-lantern/device-lock
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+SocketBindDeny=any
+SocketBindAllow=ipv4:tcp:3196
+TasksMax=32
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=sage-lantern-personal-sage.service

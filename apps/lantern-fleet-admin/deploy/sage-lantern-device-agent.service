@@ -1,0 +1,27 @@
+[Unit]
+Description=SAGE Lantern outbound Fleet Device Agent
+After=network-online.target sage-lantern-observation-status.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sage-lantern-device
+Group=sage-lantern-device
+ExecStart=/opt/sage-lantern-runtime/.venv/bin/sage-lantern-device-agent run --state-root /var/lib/sage-lantern-device --status-file /run/sage-lantern/sanitized-status.json --interval-seconds 60 --freshness-seconds 300 --clock-confidence ntp-synchronized
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/run/sage-lantern/sanitized-status.json
+ReadWritePaths=/var/lib/sage-lantern-device
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

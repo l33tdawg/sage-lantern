@@ -1,0 +1,22 @@
+[Unit]
+Description=SAGE Lantern local llama.cpp server
+After=local-fs.target
+ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
+ConditionPathExists=!/run/sage-lantern-sleep.fenced
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+Environment=LD_LIBRARY_PATH=/opt/sage-lantern/llama.cpp
+ExecStart=/opt/sage-lantern/llama.cpp/llama-server --model /opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf --host 127.0.0.1 --port 8081 --ctx-size 4096 --threads 6
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sage-lantern
+
+[Install]
+WantedBy=multi-user.target

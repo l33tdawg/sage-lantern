@@ -1,0 +1,6 @@
+# Factory firmware and ROM download-mode recovery endpoint.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", ATTRS{serial}=="28:84:85:B2:AD:88", GROUP="sage-lantern", MODE="0660", SYMLINK+="sage-lantern-audio-flash"
+
+# Normal Lantern firmware: stable control endpoint. PCM clients should select
+# ALSA card ID "Audio" or the standard /dev/snd/by-id link.
+SUBSYSTEM=="sound", KERNEL=="controlC*", ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="8000", ENV{ID_SERIAL_SHORT}=="SAGE-LANTERN-A-AUDIO", GROUP="sage-lantern", MODE="0660", SYMLINK+="sage-lantern-audio-control"

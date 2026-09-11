@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=SAGE Lantern
+Comment=Dedicated SAGE Lantern appliance session
+Exec=/usr/local/bin/sage-lantern-session
+TryExec=/usr/local/bin/sage-lantern-session
+Type=Application
+DesktopNames=SAGE-Lantern

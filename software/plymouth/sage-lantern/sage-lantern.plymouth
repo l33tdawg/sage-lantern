@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=SAGE Lantern
+Description=Understated local-first Lantern boot screen
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/sage-lantern
+ScriptFile=/usr/share/plymouth/themes/sage-lantern/sage-lantern.script
