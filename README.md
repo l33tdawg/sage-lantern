@@ -46,9 +46,9 @@ that way.
 - **Hardware imagery is an AI-generated concept**, not a photograph of a
   product. Final dimensions, screen resolution, battery runtime and pricing
   will be published after validation.
-- **The campaign figure is an ambition, not funds raised.** See
-  [`docs/roadmap/`](docs/roadmap/) for the programme, federation and funding
-  material.
+- **The campaign figure is an ambition, not funds raised.** Programme delivery
+  plans live in [`docs/roadmap/`](docs/roadmap/); campaign, funding and
+  federation research is kept privately outside this tree.
 
 The device acceptance gate is
 [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md). Treat it
@@ -67,8 +67,11 @@ as the current source of truth for what is proven and what is still open.
 | [`docs/`](docs/) | Programme, architecture, distribution, roadmap, governance and open-source policy documents |
 | [`deploy/`](deploy/) | Server-side configuration used by the hosted services |
 
-`work/` and `evidence/` hold local development evidence and are intentionally
-not published.
+`docs/` is the published documentation tree: device, hardware and engineering
+material only. Business material — pitch decks, exported programme documents,
+concept imagery, and funding, campaign or federation research — lives locally in
+`internal-docs/` (`pitch/`, `imagery/`, `funding/`), which git ignores. Local
+development evidence in `work/` and `evidence/` is likewise not published.
 
 ## Building and testing
 
