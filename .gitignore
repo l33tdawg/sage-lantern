@@ -40,11 +40,14 @@ sdkconfig
 sdkconfig.old
 next-env.d.ts
 
-# Private presentation, funding and campaign material. Kept on the owner's
-# machine only; never published from this repository.
+# Private business material: pitch decks, funding and campaign research, concept
+# imagery. It lives on the owner's machine in internal-docs/ and is never
+# published; docs/ carries only device, hardware and engineering documentation.
+internal-docs/
 docs/*.pptx
 docs/*.pdf
 docs/*.docx
+docs/*.inspect.ndjson
 docs/assets/
 lantern-fleet-admin-social-preview.png
 docs/roadmap/EMAD_CHAMPIONS_OWNERSHIP_RESEARCH_*.md
