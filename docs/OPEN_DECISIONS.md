@@ -64,4 +64,4 @@ Scale: likelihood/impact `L`, `M`, `H`, `C` (critical).
 
 Every risk review records residual risk, contingency trigger and retirement evidence. New material risks receive IDs; rows are never silently deleted.
 
-Federation design context: [owner-endorsed exploration, 9 September 2026](roadmap/FOUNDATION_FEDERATION_DIRECTION_20260909.md). These decisions remain open; the discussion does not grant operational authority.
+Federation design context: owner-endorsed exploration of 9 September 2026, kept in the private `internal-docs/` tree. These decisions remain open; the discussion does not grant operational authority.

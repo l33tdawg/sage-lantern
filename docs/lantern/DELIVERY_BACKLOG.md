@@ -851,8 +851,8 @@ but must exclude credentials, personal media, runtime databases and test evidenc
   and 61 frontend tests pass. Native UI build passes. Owner chooses PIN and
   recovery backup on-device; physical idle/wake/restart acceptance remains open.
 
-The linked [TII initial-funding readiness roadmap](../roadmap/TII_INITIAL_FUNDING_READINESS.md)
-is the end-to-end execution attachment to the two master tasks below. It covers
+The TII initial-funding readiness roadmap, kept in the private `internal-docs/`
+tree, is the end-to-end execution attachment to the two master tasks below. It covers
 reliable Unit A UX/voice, reproducible Unit B and LoRa, the private-to-public
 Commons contribution/query demonstration, security/recovery evidence, and the
 costed proposal, deck, rehearsal and funding ask. Target: January 2027, at least

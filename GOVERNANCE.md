@@ -16,4 +16,4 @@ See [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md) for t
 
 The owner endorsed exploring a federation of local SAGE organisations on 9 September 2026. The proposed global Foundation supports a shared mission; country, state and community organisations deliver local access and support. Foundation membership, local governance and public-validator operation remain separate roles. Legal forms, representation and voting rules are unresolved.
 
-See [the federation direction](docs/roadmap/FOUNDATION_FEDERATION_DIRECTION_20260909.md), status IDEA. It grants no new authority and does not amend validator admission, consensus or private-data boundaries. Formal contracts still require the RFC and review process above.
+Federation direction is an owner-endorsed exploration kept in the private `internal-docs/` tree, status IDEA. It grants no new authority and does not amend validator admission, consensus or private-data boundaries. Formal contracts still require the RFC and review process above.

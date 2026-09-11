@@ -58,7 +58,7 @@ optional lane must not block the January speech-to-screen demonstration.
 
 Read against the [original PRD](PRD.md), [BOM](HARDWARE_BOM.md), [hardware–software contract](HARDWARE_SOFTWARE_CONTRACT.md), [dual-home contract](DUAL_HOME_AND_PUBLICATION_CONTRACT.md) and [decisions](DECISIONS.md). The original 3.5-inch/TTS/wheel requirements are not silently amended or passed by this study: owners must record the scoped demo variation. Maintain semantic PTT events, stable enumeration, recovery, private/public isolation and independent new-unit identities.
 
-The [TII roadmap](../roadmap/TII_INITIAL_FUNDING_READINESS.md) targets at least two polished working units, ideally four; the [long-horizon roadmap](../roadmap/THREE_TO_FIVE_YEAR_DELIVERY_PLAN.md) and [gate contract](../roadmap/GATE_EVIDENCE_CONTRACT.md) still govern maturity. A January demo is not production or pilot acceptance. Workstream tracking remains with the parent in `DELIVERY_BACKLOG.md`; this study does not modify it.
+The private TII roadmap in `internal-docs/` targets at least two polished working units, ideally four; the [long-horizon roadmap](../roadmap/THREE_TO_FIVE_YEAR_DELIVERY_PLAN.md) and [gate contract](../roadmap/GATE_EVIDENCE_CONTRACT.md) still govern maturity. A January demo is not production or pilot acceptance. Workstream tracking remains with the parent in `DELIVERY_BACKLOG.md`; this study does not modify it.
 
 ## Shortlist — documented specifications, not approved parts
 
