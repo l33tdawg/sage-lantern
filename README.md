@@ -1,98 +1,163 @@
 # SAGE Lantern
 
-Private prototype development: device runtime, touchscreen interface, firmware,
-provisioning tools, and SAGE Commons architecture. Implemented, staged, deployed,
-and physically accepted are separate milestones; this is not a production-ready
-release. See [the Unit A completion gate](docs/lantern/DELIVERY_BACKLOG.md).
+**Intelligence. For all of us.**
 
-This directory collects product, architecture, presentation, and implementation material for SAGE Commons. The `docs/lantern/` package is the working source of truth for the two-unit SAGE Lantern bench beta: a Rabbit R1-inspired, local-first voice appliance built around the Radxa ROCK 5B+.
+A curious mind shouldn't need a better postcode. SAGE is an initiative to
+democratise intelligence: local AI that works without reliable internet, and
+community-owned networks that keep people connected when the usual connections
+don't. SAGE Lantern is the first device project; SAGE Commons is the shared
+knowledge network being built around it.
 
-Project-authored code, documentation, schemas and tests are licensed under [Apache-2.0](LICENSE). Third-party models, data, voices, firmware and other artifacts retain their upstream licences; see [`docs/OPEN_SOURCE_POLICY.md`](docs/OPEN_SOURCE_POLICY.md).
+This repository is the private development home of that work — device runtime,
+touchscreen interface, firmware, provisioning tools, public website and the
+engineering documentation behind them.
 
-## Naming system
+## What we're building
 
-- **SAGE Commons** — the overall mission, governed public knowledge network, community programme, and ecosystem.
-- **SAGE Lantern** — the portable, local-first AI device product.
-- **Knowledge Point** — the physical/institutional research, publishing, caching, synchronisation and service station.
-- **SAGE Lamplighter** — the untrusted offline super-seed and field-service system carrying verified packs.
-- **SAGE Lightbearer** — a stable public-service node/profile; validators are independently governed **Lightbearer Validators**.
+**SAGE Lantern — a handheld AI companion.** A 6.5-inch portrait touchscreen, a
+physical hold-to-talk control, an outward camera for visual questions and a
+replaceable rear battery pack, running local intelligence on a ROCK 5B+ class
+platform. Ask a question, explore an idea, or work through a problem with the
+model running on the device itself.
 
-The precise naming and authority boundaries are in [`docs/TERMINOLOGY.md`](docs/TERMINOLOGY.md).
+**Community connections.** Every Lantern is intended to join a local MeshCore
+radio network for short messages and shared knowledge, with community gateways
+planned to carry authorised requests beyond the local mesh when backhaul is
+available. Local AI and short radio messages are the fallback that keeps
+working during outages.
 
-## SAGE Lantern hardware package
+**SAGE Commons.** One person's discovery can become everyone's possibility.
+Personal knowledge stays personal, and sharing is deliberate: you choose what
+leaves your private space, and shared knowledge can be reviewed and improved by
+others.
 
-- [`docs/lantern/PRD.md`](docs/lantern/PRD.md) — product intent, scope, requirements, and acceptance criteria.
-- [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) — authoritative bill of materials and arrival status.
-- [`docs/lantern/BRINGUP_AND_VALIDATION.md`](docs/lantern/BRINGUP_AND_VALIDATION.md) — staged assembly, test procedure, and evidence checklist.
-- [`docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — ownership boundary and provisional interfaces between the device hardware and SAGE software.
-- [`docs/lantern/DECISIONS.md`](docs/lantern/DECISIONS.md) — decisions already made and the open decisions that must be resolved from real hardware.
-- [`docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md`](docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md) — canonical Unit A build, offline voice, timing, and recovery evidence record.
-- [`docs/lantern/MESHCORE_HOST_PROTOCOL_TEST_PLAN.md`](docs/lantern/MESHCORE_HOST_PROTOCOL_TEST_PLAN.md) — host protocol, payload-limit, fragmentation, retry, duplicate, and rejection test matrix.
-- [`docs/lantern/SOFTWARE_STACK.md`](docs/lantern/SOFTWARE_STACK.md) — pinned ARM64 local-AI/SAGE stack, offline bundle, installation, and identity boundary.
-- [`docs/lantern/UNIT_A_BOOTSTRAP.md`](docs/lantern/UNIT_A_BOOTSTRAP.md) — Unit A Debian preparation, installation, provisioning, service, smoke-test, and evidence runbook.
-- [`docs/lantern/DUAL_HOME_AND_PUBLICATION_CONTRACT.md`](docs/lantern/DUAL_HOME_AND_PUBLICATION_CONTRACT.md) — normative personal/public separation, proposer manifest, intake, receipts, and no-validator contract.
+## Where the project actually is
 
-## Administration and dual-network design
+Honesty is a design requirement here. Implemented, staged, deployed and
+physically accepted are separate milestones, and this repository treats them
+that way.
 
-- [`docs/admin/DUAL_NETWORK_ARCHITECTURE_OPTIONS.md`](docs/admin/DUAL_NETWORK_ARCHITECTURE_OPTIONS.md) — private personal nodes, stable public validators, signed proposal intake, and phased topology.
-- [`docs/admin/LANTERN_FLEET_ADMIN_PRD.md`](docs/admin/LANTERN_FLEET_ADMIN_PRD.md) — provisioning and fleet-management requirements.
-- [`docs/admin/PUBLIC_NETWORK_ADMIN_PRD.md`](docs/admin/PUBLIC_NETWORK_ADMIN_PRD.md) — public Commons operations, governance, proposal, and transparency requirements.
-- [`docs/admin/PUBLIC_NETWORK_ADMIN_DESIGN.md`](docs/admin/PUBLIC_NETWORK_ADMIN_DESIGN.md) — proposed information architecture and operator/public workflows.
+- **Two prototype units are built and running.** Local voice, on-device answers,
+  camera capture, the touchscreen interface and the radio foundation are under
+  active integration and validation.
+- **Radio messaging is not yet a verified end-to-end service.** Transport,
+  storage, contacts and discovery exist; real message exchange, delivery and
+  read receipts still have open acceptance gates.
+- **Hardware imagery is an AI-generated concept**, not a photograph of a
+  product. Final dimensions, screen resolution, battery runtime and pricing
+  will be published after validation.
+- **The campaign figure is an ambition, not funds raised.** See
+  [`docs/roadmap/`](docs/roadmap/) for the programme, federation and funding
+  material.
 
-## Offline distribution
+The device acceptance gate is
+[`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md). Treat it
+as the current source of truth for what is proven and what is still open.
 
-- [`docs/distribution/DATA_DONKEY_ARCHITECTURE.md`](docs/distribution/DATA_DONKEY_ARCHITECTURE.md) — signed knowledge/model/runtime packs, physical store-carry-forward, local swarm distribution, activation, rollback and privacy boundaries.
-- [`docs/distribution/DATA_DONKEY_OPERATIONS_AND_UX.md`](docs/distribution/DATA_DONKEY_OPERATIONS_AND_UX.md) — Foundation, field-laptop, village-cluster and Lantern authority, workflows, screens, offline delegation and receipts.
-- [`docs/distribution/DECISIONS.md`](docs/distribution/DECISIONS.md) — frozen distribution decisions and unresolved evidence gates.
+## Repository layout
 
-## Programme documents
+| Path | What lives there |
+| --- | --- |
+| [`software/runtime/`](software/runtime/) | Device runtime: local voice loop, mesh/LoRa broker and transport, SAGE vault integration, storage-supervisor lifecycle, audio readiness, device lock and community services |
+| [`apps/lantern-fleet-admin/`](apps/lantern-fleet-admin/) | Device touchscreen UI and local fleet-admin console (Next.js/React): ask-and-answer flow, history, messages, camera, sharing, settings and read-only operator views |
+| [`apps/sage-website/`](apps/sage-website/) | Public [sage.ngo](https://sage.ngo/) site — mission, hardware and programme copy, exported as static files |
+| [`firmware/`](firmware/) | Espressif audio-bridge project and the MeshCore companion-radio patch series used by the units |
+| [`scripts/lantern/`](scripts/lantern/) | Provisioning, installers, update and recovery tooling, evidence capture and acceptance runners |
+| [`docs/lantern/`](docs/lantern/) | Device PRD, hardware BOM and contract, bring-up and validation, protocol notes, acceptance evidence, delivery backlog |
+| [`docs/`](docs/) | Programme, architecture, distribution, roadmap, governance and open-source policy documents |
+| [`deploy/`](deploy/) | Server-side configuration used by the hosted services |
 
-- [`docs/TERMINOLOGY.md`](docs/TERMINOLOGY.md) — canonical Commons/Lantern/Knowledge Point/Lamplighter/Lightbearer vocabulary.
-- [`docs/MASTER_TECHNICAL_PRD.md`](docs/MASTER_TECHNICAL_PRD.md) — normative 3–5 year programme and system contract.
-- [`docs/SAGE_V12_DEPENDENCY_CROSSWALK.md`](docs/SAGE_V12_DEPENDENCY_CROSSWALK.md) — joint core-SAGE capability ownership, availability states, non-promises and evidence gates.
-- [`docs/REQUIREMENTS_TRACEABILITY.md`](docs/REQUIREMENTS_TRACEABILITY.md) — stable requirement IDs, owners, gates and acceptance evidence.
-- [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md) — unresolved choices and programme risks.
-- [`docs/roadmap/THREE_TO_FIVE_YEAR_DELIVERY_PLAN.md`](docs/roadmap/THREE_TO_FIVE_YEAR_DELIVERY_PLAN.md) — phased delivery plan and evidence gates.
-- [`docs/roadmap/TII_INITIAL_FUNDING_READINESS.md`](docs/roadmap/TII_INITIAL_FUNDING_READINESS.md) — current prototype through TII demonstration, evidence, budget and initial funding request; pre-meeting versus funded-work scope.
-- [`docs/roadmap/GATE_EVIDENCE_CONTRACT.md`](docs/roadmap/GATE_EVIDENCE_CONTRACT.md) — reproducible G0–G6 manifests, approvals, thresholds and waiver format.
-- [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md) — specification hierarchy, RFC/ADR/change and evidence rules.
-- [`docs/OPEN_SOURCE_POLICY.md`](docs/OPEN_SOURCE_POLICY.md) — Apache-2.0 scope, third-party licensing and release compliance.
-- [`docs/SAGE_Commons_PRD_Revised.docx`](docs/SAGE_Commons_PRD_Revised.docx) and [`PDF`](docs/SAGE_Commons_PRD_Revised.pdf) — programme PRD, updated to name the portable product **SAGE Lantern**.
-- [`docs/SAGE_Commons_Technical_Architecture_Revised.docx`](docs/SAGE_Commons_Technical_Architecture_Revised.docx) and [`PDF`](docs/SAGE_Commons_Technical_Architecture_Revised.pdf) — system architecture with the Commons/Lantern/Knowledge Point boundary made explicit.
-- [`docs/SAGE_Foundation_Pitch_Deck_September_2026.pptx`](docs/SAGE_Foundation_Pitch_Deck_September_2026.pptx) and [`PDF`](docs/SAGE_Foundation_Pitch_Deck_September_2026.pdf) — current campaign pitch: A/B prototypes, access to intelligence, US$133.7M ten-year goal and first-stage Foundation/team/pilot plan.
-- [`SAGE federation direction`](docs/roadmap/FOUNDATION_FEDERATION_DIRECTION_20260909.md) — proposed global/local responsibilities, community rights and independent network governance; institutional exploration.
-- [`Foundation campaign brief`](docs/roadmap/FOUNDATION_CAMPAIGN_BRIEF_20260909.md) — owner direction, founder commitment, January launch, purchase/donation assumptions and open-platform roadmap.
-- [`Emad Champions ownership research`](docs/roadmap/EMAD_CHAMPIONS_OWNERSHIP_RESEARCH_20260909.md) — the nominal $1 company valuation, equity versus donations and implications for SAGE.
-- [`Foundation jurisdiction and launch research`](docs/roadmap/FOUNDATION_JURISDICTION_AND_LAUNCH_20260909.md) — Malaysia/UK shortlist, fiscal sponsors, payment eligibility and establishment sequence.
+`work/` and `evidence/` hold local development evidence and are intentionally
+not published.
 
-Older `DRAFT`, `Revised` and `Refined` pitch-deck files remain as historical snapshots; the September 2026 Foundation deck is current.
+## Building and testing
 
-## Working rules
-
-1. Build and validate Unit A before cloning the setup to Unit B.
-2. Do not mark a component received from an order confirmation alone; record physical receipt in the BOM.
-3. Keep measured values and test evidence in the validation document rather than silently replacing assumptions.
-4. Do not begin the enclosure CAD until the assembled stack has been measured.
-5. A requirement is complete only when its acceptance evidence is recorded.
-6. Cross-subsystem, security, privacy, protocol or governance changes require an RFC; local durable implementation choices require an ADR.
-7. Presentations and generated PDFs never override the master PRD or normative subsystem specifications.
-
-## Bring-up utility
-
-On a Lantern ROCK running Linux, capture a reproducible platform snapshot with:
+Prerequisites: Node 22+ for the web apps, Python 3.11+ for the runtime, and the
+respective vendor toolchains for firmware.
 
 ```bash
+# Device UI and fleet console
+cd apps/lantern-fleet-admin
+npm ci
+npm test          # unit tests
+npx tsc --noEmit  # typecheck
+npm run build     # production build
+
+# Public website
+cd apps/sage-website
+npm ci
+npm run build     # static export into dist/client
+
+# Device runtime
+cd software/runtime
+PYTHONPATH=src python3 -m pytest tests
+
+# Read-only platform snapshot on a Lantern unit
 ./scripts/capture-lantern-evidence.sh evidence/<test-id>
 ```
 
-The utility records OS, storage, USB/PCI enumeration, stable device paths, thermal sensors, OS-visible power data, SAGE version, and failed services. It does not read SAGE keys, tokens, message content, or private audio.
+Firmware builds and device provisioning are documented in
+[`docs/lantern/`](docs/lantern/) and [`scripts/lantern/`](scripts/lantern/);
+they expect the pinned toolchains and the unit's own identity material.
 
-## Prepared software bundle
+## Design principles
 
-The Linux ARM64 beta stack is cached under `software/`: exact SAGE v11.19.10, llama.cpp, Qwen 3.5 4B, whisper.cpp and model, Piper and voice, the Lantern integration runtime, and an offline Python wheelhouse. Verify it with `python3 scripts/verify-lantern-bundle.py`; installation and per-unit identity rules are in the software-stack document above.
+1. **Offline first.** Local questions are answered on the device. Connectivity
+   adds capability; it is never a dependency for the core experience.
+2. **Private by default, shared on purpose.** Personal knowledge stays in the
+   owner's vault. Anything that leaves it — a message, a public share, a photo —
+   requires explicit consent and a bounded, reviewable path.
+3. **No fabricated success.** Measurements, receipts and acceptance evidence are
+   recorded; a component is not "done" because it deployed or because an order
+   confirmation arrived.
+4. **Serviceable and understandable.** Replaceable packs, ventilated
+   enclosures, documented pinouts and repair paths are part of the design, not
+   an afterthought.
+5. **Honest limits.** Radio bandwidth is bounded, coverage needs repeaters and
+   power, and satellite service can be unavailable. The documentation says so.
 
-## Current phase
+## Documentation map
 
-Component arrival plus software pre-staging; Unit A installation and bench bring-up begin when the remaining display, audio, storage, cooling and control hardware is physically available.
+Start with these, then follow the links inside them:
 
-Last status baseline: **2026-08-09**.
+- [`docs/lantern/PRD.md`](docs/lantern/PRD.md) — product intent, scope and acceptance criteria.
+- [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md) — current device gate, verified state and open work.
+- [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) and [`HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — authoritative parts list and the hardware/software ownership boundary.
+- [`docs/lantern/BRINGUP_AND_VALIDATION.md`](docs/lantern/BRINGUP_AND_VALIDATION.md) — staged assembly, test procedure and evidence checklist.
+- [`docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md`](docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md) — Unit A build, offline voice, timing and recovery evidence.
+- [`docs/lantern/SSH_MANAGEMENT.md`](docs/lantern/SSH_MANAGEMENT.md) — operator access, the `sage` maintenance account and key rotation.
+- [`docs/lantern/MESHCORE_TRANSPORT_PROTOCOL.md`](docs/lantern/MESHCORE_TRANSPORT_PROTOCOL.md) and [`MESHCORE_HOST_PROTOCOL_TEST_PLAN.md`](docs/lantern/MESHCORE_HOST_PROTOCOL_TEST_PLAN.md) — the radio protocol as implemented and its test matrix.
+- [`docs/MASTER_TECHNICAL_PRD.md`](docs/MASTER_TECHNICAL_PRD.md), [`docs/TERMINOLOGY.md`](docs/TERMINOLOGY.md) and [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md) — programme contract, canonical vocabulary and document hierarchy.
+- [`docs/OPEN_SOURCE_POLICY.md`](docs/OPEN_SOURCE_POLICY.md) and [`GOVERNANCE.md`](GOVERNANCE.md) — licensing scope and how decisions are made.
+
+## Direction and roadmap
+
+The project's public plan, as published on the website:
+
+| Stage | Target | Status |
+| --- | --- | --- |
+| Now | Build and prove the prototypes end to end | In development |
+| December 2026 | Six complete demonstration Lanterns (eight to ten as a stretch) | Demonstration target |
+| January 2027 | Public campaign launch with demonstration evidence | Public launch target |
+| Next, with funding | A supported 20–30 unit community pilot | Proposed first stage |
+
+These are targets and proposals, not completed milestones. Progress is reported
+as evidence rather than announcements.
+
+## Contact
+
+SAGE Foundation is an initiative in formation, and Lantern is in development.
+To talk about the mission, the hardware or a community pilot, write to
+<dhillon@sage.ngo>.
+
+## Contributing, security and licence
+
+- Contributions: read [`CONTRIBUTING.md`](CONTRIBUTING.md) and the documentation
+  governance rules before opening a change. Cross-subsystem, security, privacy,
+  protocol or governance changes need an RFC; durable local choices need an ADR.
+- Security: report vulnerabilities through [`SECURITY.md`](SECURITY.md) rather
+  than a public issue.
+- Licence: project-authored code, documentation, schemas and tests are
+  [Apache-2.0](LICENSE). Third-party models, data, voices, firmware and other
+  artifacts keep their upstream licences — see
+  [`docs/OPEN_SOURCE_POLICY.md`](docs/OPEN_SOURCE_POLICY.md) and [`NOTICE`](NOTICE).
