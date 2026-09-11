@@ -39,3 +39,14 @@ managed_components/
 sdkconfig
 sdkconfig.old
 next-env.d.ts
+
+# Private presentation, funding and campaign material. Kept on the owner's
+# machine only; never published from this repository.
+docs/*.pptx
+docs/*.pdf
+docs/*.docx
+docs/assets/
+lantern-fleet-admin-social-preview.png
+docs/roadmap/EMAD_CHAMPIONS_OWNERSHIP_RESEARCH_*.md
+docs/roadmap/FOUNDATION_*.md
+docs/roadmap/TII_INITIAL_FUNDING_READINESS.md
