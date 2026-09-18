@@ -30,6 +30,16 @@ JOURNALS = Path('/var/lib/sage-lantern-startup')
 PYTHON = '/opt/sage-lantern/venv/bin/python'
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LANG': 'C'}
 
+# The lifecycle asserts one access epoch across its whole run, and the boot gets
+# exactly one attempt. An unlock that is only transiently present - an activated
+# session whose presence lease lapses, a broker still settling at boot - reports
+# locked:false with an epoch that rotates within seconds, which would refuse the
+# adapter mid-run and burn that attempt. The lease is six seconds and is renewed
+# roughly every four, so one epoch has to survive a whole settle window before
+# the coordinator charges the boot for it.
+STABILITY_SECONDS = 30
+STABILITY_INTERVAL = 1.0
+
 
 def require(value):
     if value is not True:
@@ -119,11 +129,18 @@ RADIO_FOUNDATION_SOURCES = '9c2a317ae7c3779c023ef216f7c8ce730b2fea08f2c6a3650b96
 RADIO_DIRECTORY_SOURCES = 'd9ba5b90c315f902be77fbd23e515547a8332c533e7afcadfe911c4984b2bbf0'
 RADIO_DIRECTORY_A_SOURCES = '1ca41a3400aff258767aff50f8cb26f87108150e69a833ce330d296244763a88'
 RADIO_FOUNDATION_A_SOURCES = '0ef48243d2351fea35db7d4714bc3089d9ae032f394f4dd177bf939bb0a10ae8'
+# Published 2026-09-18: runtime wheel rebuilt to match the deployed bytes on the
+# units (answer suggestions + the 2026-09-12 messaging receive fix).
+DEPLOYED_MESSAGING_RUNTIME = '290c0e67ff391084dc11e47bda0058aca946286828f56d7a809b811d014f94fb'
+# A unit release describes its own runtime. build-release.py replaces this line
+# with the digest of the wheel it built from that unit's deployed bytes; the
+# repository copy stays None and accepts only the digests published above.
+RELEASE_RUNTIME = None
 MAINTAINED_LIFETIMES = Path('/var/lib/sage-lantern-maintained-audio')
 
 
 def verify_wheel(pin):
-    require(pin['sha256'] in (R7, RETRIEVAL_V1, COMPACT_PROMPT_V1, OWNER_LEDGERS_V2, RADIO_OWNER_COMBINED, RADIO_FOUNDATION_SOURCES, RADIO_FOUNDATION_A_SOURCES, RADIO_DIRECTORY_SOURCES, RADIO_DIRECTORY_A_SOURCES, '355ade85f6fc2ee307a079261a532631b5799d5ac4c3e21d735c8fa644a81581', 'fd4828e004a91e516bb7fd24fdd603fa098389c908923247c693777c63919edc', 'cf963bd87e9a838ec926f2da80fc4aad3b0946b2ebdc1827a6228734ac0b214a', '3d90611e780b36d59e8d91b230f7f202c8e44076e23a3f610c914856ee743b03'))
+    require(pin['sha256'] in (R7, RETRIEVAL_V1, COMPACT_PROMPT_V1, OWNER_LEDGERS_V2, RADIO_OWNER_COMBINED, RADIO_FOUNDATION_SOURCES, RADIO_FOUNDATION_A_SOURCES, RADIO_DIRECTORY_SOURCES, RADIO_DIRECTORY_A_SOURCES, DEPLOYED_MESSAGING_RUNTIME, RELEASE_RUNTIME, '355ade85f6fc2ee307a079261a532631b5799d5ac4c3e21d735c8fa644a81581', 'fd4828e004a91e516bb7fd24fdd603fa098389c908923247c693777c63919edc', 'cf963bd87e9a838ec926f2da80fc4aad3b0946b2ebdc1827a6228734ac0b214a', '3d90611e780b36d59e8d91b230f7f202c8e44076e23a3f610c914856ee743b03'))
     pinned(pin)
 
 
@@ -147,10 +164,15 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
 
 
+PINNED_FIELDS = ('adapter', 'policy', 'initial_lifetime', 'coordinator')
+
+
 def validate_full_config(config):
-    require(type(config) is dict and set(config) == {'schema', 'adapter', 'policy', 'initial_lifetime', 'coordinator'})
+    require(type(config) is dict
+            and set(config) in (set(PINNED_FIELDS) | {'schema'},
+                                set(PINNED_FIELDS) | {'schema', 'allowance'}))
     require(config['schema'] == 'sage.lantern.startup-coordinator.v1')
-    for name in ('adapter', 'policy', 'initial_lifetime', 'coordinator'):
+    for name in (*PINNED_FIELDS, *(['allowance'] if 'allowance' in config else [])):
         pin = config[name]
         require(type(pin) is dict and set(pin) == {'path', 'sha256'} and hexvalue(pin['sha256'])
                 and type(pin['path']) is str and Path(pin['path']).is_absolute()
@@ -189,13 +211,30 @@ def terminate_child(process):
         pass
 
 
-def lifetime(raw, inventory, boot=None):
+def lifetime(raw, inventory, boot=None, allowance=None):
     value = decode(raw)
     require(type(value) is dict and set(value) == {'schema', 'phase', 'boot_id', 'pid', 'inventory', 'evidence'})
     require(value['schema'] == 'sage.lantern.voice-bootstrap.v1' and value['phase'] == 'complete'
             and type(value['boot_id']) is str and str(uuid.UUID(value['boot_id'])) == value['boot_id']
-            and uuid.UUID(value['boot_id']).int != 0 and value['inventory'] == inventory
+            and uuid.UUID(value['boot_id']).int != 0
             and type(value['pid']) is int and value['pid'] > 0)
+    if allowance is None:
+        require(value['inventory'] == inventory)
+    else:
+        # The prior lifetime may predate exactly the deltas a reviewed allowance
+        # pins; nothing else may differ. The new lifetime written by complete()
+        # is always checked against the baseline with no allowance.
+        delta = allowance['inventory_delta']
+        changed = set()
+        for name in set(value['inventory']) | set(inventory):
+            before, after = value['inventory'].get(name), inventory.get(name)
+            if before == after:
+                continue
+            pin = delta.get(name)
+            require(type(pin) is dict and before is not None and after is not None
+                    and pin['from'] == before and pin['to'] == after)
+            changed.add(name)
+        require(changed == set(delta))
     if boot is not None:
         require(value['boot_id'] == boot)
     evidence = value['evidence']
@@ -234,7 +273,8 @@ class FullLifecycle:
     def check(self, epoch):
         require(hexvalue(epoch, 32) and access_epoch() == epoch and read_public(CONFIG) == self.raw
                 and Path('/proc/sys/kernel/random/boot_id').read_text().strip() == self.boot)
-        for name in ('adapter', 'policy', 'coordinator'):
+        for name in ('adapter', 'policy', 'coordinator',
+                     *(['allowance'] if 'allowance' in self.config else [])):
             pinned(self.config[name])
         for name in ('helper', 'collector', 'baseline'):
             pinned(self.policy[name])
@@ -246,7 +286,14 @@ class FullLifecycle:
         pointer = JOURNALS / 'latest.json'
         pin = decode(read_public(pointer)) if os.path.lexists(pointer) else self.config['initial_lifetime']
         raw = pinned(pin)
-        prior = lifetime(raw, self.baseline['inventory'])
+        try:
+            prior = lifetime(raw, self.baseline['inventory'])
+        except RuntimeError:
+            # Strict binding failed; consult the reviewed allowance if one is
+            # configured. Leaving one in place cannot weaken an exact prior.
+            require('allowance' in self.config)
+            allowance = decode(read_public(self.config['allowance']['path']))
+            prior = lifetime(raw, self.baseline['inventory'], allowance=allowance)
         require(prior_path(pin['path'], prior['boot_id']) and prior['boot_id'] != self.boot)
         return pin, prior
 
@@ -275,10 +322,13 @@ class FullLifecycle:
     def apply(self, pin, epoch):
         self.check(epoch)
         pinned(pin)
-        return self.child([self.config['adapter']['path'], '--policy', self.config['policy']['path'],
+        command = [self.config['adapter']['path'], '--policy', self.config['policy']['path'],
             '--policy-sha256', self.config['policy']['sha256'], '--prior', pin['path'],
-            '--prior-sha256', pin['sha256'], '--boot-id', self.boot, '--access-epoch', epoch,
-            '--apply'], 'apply', 510)
+            '--prior-sha256', pin['sha256'], '--boot-id', self.boot, '--access-epoch', epoch]
+        if 'allowance' in self.config:
+            command += ['--allowance', self.config['allowance']['path'],
+                        '--allowance-sha256', self.config['allowance']['sha256']]
+        return self.child([*command, '--apply'], 'apply', 510)
 
     def complete(self, result, prior, epoch):
         self.check(epoch)
@@ -336,6 +386,29 @@ def run_full_attempt(backend, journal, epoch):
         raise
 
 
+def stable_epoch(observed=access_epoch, clock=time.monotonic, sleeper=time.sleep,
+                 window=STABILITY_SECONDS, interval=STABILITY_INTERVAL, deadline=None):
+    """Return an access epoch only once it has held for the whole settle window.
+
+    A changed, absent or newly observed epoch restarts the window; a transient
+    unlock therefore delays the lifecycle instead of spending the boot's single
+    attempt on it. ``deadline`` is a monotonic instant, or None to wait forever.
+    """
+    require(window > 0 and interval > 0)
+    epoch = None
+    held = None
+    while True:
+        now = clock()
+        if deadline is not None and now >= deadline:
+            raise TimeoutError('owner activation not observed')
+        value = observed()
+        if value is None or value != epoch:
+            epoch, held = value, now
+        elif now - held >= window:
+            return epoch
+        sleeper(interval)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Bounded post-unlock full lifecycle coordinator; standalone beside R7.')
     parser.add_argument('--wait-seconds', type=int, default=0, help='0 waits indefinitely for activated owner unlock')
@@ -345,15 +418,19 @@ def main():
     raw = read_public(CONFIG)
     config = decode(raw)
     validate_full_config(config)
-    until = time.monotonic() + args.wait_seconds
-    while args.wait_seconds == 0 or time.monotonic() < until:
-        epoch = access_epoch()
-        if epoch is not None:
-            break
-        time.sleep(1)
-    else:
-        raise TimeoutError('owner activation not observed')
     backend = FullLifecycle(config, raw)
+    deadline = None if args.wait_seconds == 0 else time.monotonic() + args.wait_seconds
+    while True:
+        epoch = stable_epoch(deadline=deadline)
+        try:
+            backend.check(epoch)
+            break
+        except RuntimeError:
+            # A session that lapsed between the settle window and this check has
+            # not been charged yet: wait for the next stable activation. Any
+            # refusal that is not the epoch moving stays a refusal.
+            if access_epoch() == epoch:
+                raise
     journal = Journal(backend.boot, sha(raw))
     def interrupted(signum, frame):
         raise InterruptedError('startup_coordinator_interrupted')

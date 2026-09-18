@@ -201,3 +201,156 @@ def test_policy_duplicate_keys_refused_before_loading(monkeypatch, raw):
         MODULE.main(['--policy', '/policy', '--policy-sha256', '0' * 64,
                      '--prior', '/prior', '--prior-sha256', '0' * 64,
                      '--boot-id', BOOT, '--access-epoch', 'access'])
+
+
+PRIOR_PIN = dict(path='/var/lib/sage-lantern-cross-boot-audio/old/new-lifetime.json',
+                 sha256='d' * 64)
+FENCE = dict(schema='sage.lantern.storage-supervisor.v1', phase='active', broker_id='c' * 32)
+FENCE_SHA = 'e' * 64
+PATH = '/etc/sage-lantern/mesh-runtime.json'
+
+
+def drifted():
+    """A prior lifetime and live state that differ in exactly the two pinned ways."""
+    prior = completed_prior()
+    prior['inventory'] = {PATH: 'a' * 64}
+    live = {PATH: 'b' * 64}
+    fence = dict(FENCE)
+    delta = {PATH: {'from': 'a' * 64, 'to': 'b' * 64}}
+    return prior, fence, live, delta
+
+
+def allowance_of(prior_pin=PRIOR_PIN, fence=FENCE, fence_sha256=FENCE_SHA, delta=None,
+                 boot=BOOT, **extra):
+    value = dict(schema='sage.lantern.startup-allowance.v1', boot_id=boot, prior=prior_pin,
+                 fence=dict(sha256=fence_sha256, phase=fence['phase'], broker_id=fence['broker_id']),
+                 inventory_delta=delta, historical_outcomes='unknown', authorized_by='owner-approved')
+    value.update(extra)
+    return value
+
+
+def admits(prior, fence, live, allowance, fence_sha256=FENCE_SHA, prior_pin=PRIOR_PIN):
+    MODULE.validate_prior(prior, fence, {'inventory': live}, BOOT, allowance,
+                          fence_sha256=fence_sha256, prior_pin=prior_pin)
+
+
+def test_allowance_admits_exactly_the_pinned_deviation():
+    prior, fence, live, delta = drifted()
+    admits(prior, fence, live, allowance_of(delta=delta))
+
+
+def test_allowance_refuses_without_the_argument():
+    prior, fence, live, delta = drifted()
+    with pytest.raises(ValueError):
+        MODULE.validate_prior(prior, fence, {'inventory': live}, BOOT)
+
+
+def test_allowance_refuses_an_unpinned_inventory_change():
+    prior, fence, live, delta = drifted()
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta={}))
+
+
+def test_allowance_refuses_an_extra_inventory_delta():
+    prior, fence, live, delta = drifted()
+    prior['inventory']['/etc/sage-lantern/other.json'] = 'f' * 64
+    live['/etc/sage-lantern/other.json'] = '0' * 64
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta))
+
+
+def test_allowance_refuses_a_dead_pin():
+    prior, fence, live, delta = drifted()
+    live[PATH] = 'a' * 64
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta))
+
+
+def test_allowance_binds_the_fence_broker_not_its_phase():
+    """A clean stop between the review and the boot moves active -> stopped_verified.
+    The reviewed deviation is the broker the fence names, so the phase may move and
+    the reviewed digest is audit evidence rather than a binding."""
+    prior, fence, live, delta = drifted()
+    admits(prior, fence, live, allowance_of(delta=delta), fence_sha256='1' * 64)
+    stopped = dict(fence, phase='stopped_verified')
+    admits(prior, stopped, live, allowance_of(delta=delta, fence=fence))
+
+
+def test_allowance_refuses_a_pinned_fence_phase_the_lifecycle_rejects():
+    prior, fence, live, delta = drifted()
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta,
+               fence=dict(fence, phase='recovery_required')))
+    with pytest.raises(ValueError):
+        admits(prior, dict(fence, phase='drained'), live, allowance_of(delta=delta, fence=fence))
+
+
+def test_allowance_refuses_a_foreign_broker():
+    prior, fence, live, delta = drifted()
+    foreign = dict(fence, broker_id='9' * 32)
+    with pytest.raises(ValueError):
+        admits(prior, foreign, live, allowance_of(delta=delta))
+
+
+def test_allowance_refuses_a_foreign_boot():
+    prior, fence, live, delta = drifted()
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta,
+               boot='5cbe6e0e-0000-4000-8000-000000000000'))
+
+
+def test_allowance_may_name_the_prior_boot_it_excuses():
+    """A release installed on one boot is spent by the next: the tolerance can
+    name the prior lifetime's boot instead of the boot that consumes it."""
+    prior, fence, live, delta = drifted()
+    admits(prior, fence, live, allowance_of(delta=delta, boot=prior['boot_id']))
+
+
+def test_allowance_refuses_a_foreign_prior():
+    prior, fence, live, delta = drifted()
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta),
+               prior_pin=dict(PRIOR_PIN, sha256='2' * 64))
+
+
+def test_allowance_refuses_when_nothing_actually_drifted():
+    prior, fence, live, delta = drifted()
+    live[PATH] = 'a' * 64
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta))
+
+
+@pytest.mark.parametrize('bad', [dict(authorized_by=''), dict(historical_outcomes='drained'),
+    dict(schema='sage.lantern.startup-allowance.v2'), dict(extra='field')])
+def test_allowance_refuses_a_malformed_document(bad):
+    prior, fence, live, delta = drifted()
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta, **bad))
+
+
+@pytest.mark.parametrize('delta', [
+    {PATH: {'from': 'a' * 64}},
+    {PATH: {'from': 'a' * 64, 'to': 'b' * 64, 'why': 'x'}},
+    {PATH: {'from': 'nope', 'to': 'b' * 64}},
+    {'relative/path': {'from': 'a' * 64, 'to': 'b' * 64}},
+    {},
+])
+def test_allowance_refuses_a_malformed_delta(delta):
+    prior, fence, live, _ = drifted()
+    with pytest.raises(ValueError):
+        admits(prior, fence, live, allowance_of(delta=delta))
+
+
+def test_strict_prior_wins_even_when_an_allowance_is_supplied():
+    """A configured allowance must not make an already-exact prior refuse."""
+    prior = completed_prior()
+    prior['inventory'] = {PATH: 'a' * 64}
+    live = {PATH: 'a' * 64}
+    fence = dict(FENCE, broker_id='a' * 32)
+    exact = dict(PRIOR_PIN)
+    allowance = dict(schema='sage.lantern.startup-allowance.v1', boot_id=BOOT, prior=exact,
+                     fence=dict(sha256=FENCE_SHA, phase='active', broker_id='a' * 32),
+                     inventory_delta={}, historical_outcomes='unknown', authorized_by='owner-approved')
+    # The document is deliberately malformed (empty delta, unpinned fence). Strict
+    # validation must return before it is ever consulted, so this call succeeds.
+    admits(prior, fence, live, allowance, prior_pin=exact)

@@ -9,6 +9,9 @@ not settled operations. Only verified terminal public/outbox schemas are added.
 Pending conversations/media/public/RF work and unsupported schema variants
 require separate reviewed recovery. The unguarded inventory API still refuses
 all additional kinds.
+Retained interrupted-receive audits (sage.lantern.mesh-receive-audit.v1) are
+admitted as retained_unknown, but only after proving each row is exactly the
+record reviewed receive recovery writes for this slot.
 No records are rewritten, replayed, deleted or declared historically drained.
 An attempt has an exclusive retained journal. There is no retry or rollback.
 Use the installed venv Python -I -B. Never run this from a boot restart loop.
@@ -35,6 +38,20 @@ BROKER = 'sage-lantern-mesh-runtime.service'
 VOICE = 'sage-lantern-voice-loop.service'
 MODEL = 'sage-lantern-llm.service'
 SYSTEMD = Path('/etc/systemd/system')
+# Retained interrupted-receive audits written by sage_lantern.mesh_receive_recovery.
+# They are not settled work; the scan classifies them as retained_unknown only
+# after proving they are byte-for-byte the record that reviewed recovery writes.
+RECEIVE_AUDIT_SCHEMA = 'sage.lantern.mesh-receive-audit.v1'
+RECEIVE_AUDIT_OUTCOME = 'interrupted_receive_abandoned'
+RECEIVE_AUDIT_NAMESPACE = uuid.UUID('f6c1d3d2-0b26-4c58-9de1-2a7b0f4c5d10')
+RECEIVE_AUDIT_FIELDS = {'schema', 'slot_id', 'operation_id', 'original_revision',
+                        'original_sha256', 'recovered_at', 'reason', 'outcome',
+                        'replayed', 'delivery_claim'}
+RECEIVE_AUDIT_REASON_MAX = 512
+# Outbound rows that never reached a terminal state. They are retained evidence,
+# not settled sends: the scan admits them as retained_unknown and never claims
+# delivery. Terminal rows still go through the full receipt verification.
+PENDING_OUTBOX_STATES = {'queued', 'dispatching', 'awaiting_receipt'}
 CLEANUP_SECONDS = 180
 ABSENT = tuple(Path(name) for name in ('/run/sage-lantern-voice',
     '/run/sage-lantern-voice-bootstrap.json', '/run/sage-lantern-mesh-control/broker.sock',
@@ -232,7 +249,28 @@ def tree(root):
     return result
 
 
-def settled_inventory(rows, actor, records, receiver_slot, validate_receiver, *, owner_ledgers=None):
+def settled_inventory(rows, actor, records, receiver_slot, validate_receiver, *,
+                      owner_ledgers=None, validate_outbox=None):
+    def validate_receive_audit(payload, record_id):
+        """Prove the row is exactly what reviewed receive recovery writes."""
+        require(type(payload) is dict and set(payload) == RECEIVE_AUDIT_FIELDS)
+        require(payload['schema'] == RECEIVE_AUDIT_SCHEMA and payload['slot_id'] == receiver_slot)
+        operation = payload['operation_id']
+        require(type(operation) is str and len(operation) == 36
+                and str(uuid.UUID(operation)) == operation and uuid.UUID(operation).int != 0)
+        require(record_id == str(uuid.uuid5(RECEIVE_AUDIT_NAMESPACE,
+            'receive-recovery:' + receiver_slot + ':' + operation)))
+        require(payload['outcome'] == RECEIVE_AUDIT_OUTCOME
+                and payload['replayed'] is False and payload['delivery_claim'] is False)
+        require(type(payload['original_revision']) is int and payload['original_revision'] >= 1)
+        require(type(payload['original_sha256']) is str
+                and re.fullmatch('[0-9a-f]{64}', payload['original_sha256']) is not None)
+        require(type(payload['recovered_at']) is int and payload['recovered_at'] >= 0)
+        require(type(payload['reason']) is str and payload['reason'].strip()
+                and '\x00' not in payload['reason']
+                and len(payload['reason'].encode('utf-8')) <= RECEIVE_AUDIT_REASON_MAX)
+        return 'retained_unknown'
+
     require(type(rows) is list and 0 < len(rows) <= 4096)
     controls = 0
     seen = set()
@@ -247,6 +285,12 @@ def settled_inventory(rows, actor, records, receiver_slot, validate_receiver, *,
             records.validate_control(row['payload'], actor)
             require(row['record_id'] == records.record_id(actor))
             controls += 1
+        elif row['kind'] == 'mesh_inbound' and row['payload'].get('schema') == RECEIVE_AUDIT_SCHEMA:
+            require(validate_receive_audit(row['payload'], row['record_id']) == 'retained_unknown')
+        elif (row['kind'] == 'mesh_outbound' and validate_outbox is not None
+                and type(row['payload'].get('body')) is dict
+                and row['payload']['body'].get('state') in PENDING_OUTBOX_STATES):
+            require(validate_outbox(row) == 'retained_unknown')
         elif row['kind'] == 'mesh_inbound' and (owner_ledgers is None
                 or row['payload'].get('schema') == 'sage.lantern.mesh-receiver.v1'):
             require(row['record_id'] == receiver_slot)
@@ -289,8 +333,20 @@ def inspect_retained_inventory(rows, actor, store, identity, contained, config):
             identities[role] = signer
         inspector = OwnerLedgerInspection(rows, actor, store, identity, containment=contained,
             producer_config=config, producer_identities=identities)
+
+        def validate_outbox(row):
+            """Prove a non-terminal outbound row is the reviewed outbox record."""
+            from sage_lantern.mesh_envelope import Peer
+            from sage_lantern.mesh_outbox import MeshOutbox
+            outbox = MeshOutbox(store, identity,
+                sender=Peer(actor['chain_id'], bytes.fromhex(actor['agent_id'])),
+                guard=lambda action: False, verify_contact=lambda action: False)
+            body = outbox._verified(row)
+            require(body['state'] in PENDING_OUTBOX_STATES and body['receipts'] == [])
+            return 'retained_unknown'
+
         result = settled_inventory(rows, actor, conversation_records, config['receiver_slot'],
-            validate_receiver, owner_ledgers=inspector)
+            validate_receiver, owner_ledgers=inspector, validate_outbox=validate_outbox)
         require(inspector.finish())
         return result
     finally:

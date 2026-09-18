@@ -22,8 +22,20 @@ import uuid
 
 
 STATIC = ('inventory', 'runtime_sources', 'files', 'commission_sha256', 'actor', 'model_argv')
-HELPER_SHA = '31aaa51daa83b905f090de8359d8842c9b690c6355aadb043b65c61d062d4f1e'
-COLLECTOR_SHA = 'd3518d0f9ade6901b282ec32bf92954c19aaa6cf261902c219f613038c0fffea'
+HELPER_SHA = '9d28f9201d8b1d2a8b27e0b9072424c730e9d4c353f446e4ea3df0c37c217dd9'
+# Repinned 2026-09-18: the collector gained the digest of the runtime wheel
+# rebuilt to match the deployed bytes (previously faked by cf963bd8...).
+# Repinned again the same day: it also gained the RELEASE_RUNTIME slot that
+# build-release.py fills with each unit's own wheel digest.
+COLLECTOR_SHA = 'e37d91cd115aa1ac62cbe40d3aee367a0d9547c358ceae47d70b5d200ebcce72'
+ALLOWANCE_FIELDS = {'schema', 'boot_id', 'prior', 'fence', 'inventory_delta',
+                    'historical_outcomes', 'authorized_by'}
+# The phases the lifecycle itself accepts. A broker that was running when the
+# unit was stopped cleanly leaves `stopped_verified` where the review saw
+# `active`, so the reviewed deviation is the broker the fence names and the
+# digest stays audit evidence.
+ALLOWANCE_FENCE_PHASES = ('active', 'stopping', 'stopped_verified')
+HEX64 = re.compile(r'[0-9a-f]{64}')
 
 
 def require(value):
@@ -74,7 +86,31 @@ def load(pin):
     return module
 
 
-def validate_prior(prior, fence, expected, boot):
+def delta_names(delta):
+    require(type(delta) is dict and delta)
+    for name, pin in delta.items():
+        require(type(name) is str and name.startswith('/') and '..' not in Path(name).parts)
+        require(type(pin) is dict and set(pin) == {'from', 'to'}
+                and type(pin['from']) is str and HEX64.fullmatch(pin['from']) is not None
+                and type(pin['to']) is str and HEX64.fullmatch(pin['to']) is not None)
+    return delta
+
+
+def inventory_agrees(prior_inventory, live_inventory, delta):
+    changed = set()
+    for name in set(prior_inventory) | set(live_inventory):
+        before, after = prior_inventory.get(name), live_inventory.get(name)
+        if before == after:
+            continue
+        pin = delta.get(name)
+        require(type(pin) is dict and before is not None and after is not None
+                and pin['from'] == before and pin['to'] == after)
+        changed.add(name)
+    require(changed == set(delta))
+    return True
+
+
+def validate_prior(prior, fence, expected, boot, allowance=None, fence_sha256=None, prior_pin=None):
     require(type(prior) is dict and set(prior) == {
         'schema', 'phase', 'boot_id', 'pid', 'inventory', 'evidence'})
     require(prior['schema'] == 'sage.lantern.voice-bootstrap.v1'
@@ -91,10 +127,38 @@ def validate_prior(prior, fence, expected, boot):
     require(all(type(evidence[name]) is int and evidence[name] > 0
                 for name in ('broker_pid', 'voice_pid')))
     require(prior['phase'] == 'complete' and str(uuid.UUID(prior['boot_id'])) == prior['boot_id']
-            and prior['boot_id'] != boot and prior['inventory'] == expected['inventory'])
+            and prior['boot_id'] != boot)
     require(fence['schema'] == 'sage.lantern.storage-supervisor.v1'
-            and fence['phase'] in {'active', 'stopped_verified', 'stopping'} and set(fence) == {'schema', 'phase', 'broker_id'}
-            and prior['evidence']['broker_id'] == fence['broker_id'])
+            and fence['phase'] in {'active', 'stopped_verified', 'stopping'}
+            and set(fence) == {'schema', 'phase', 'broker_id'})
+    # Strict binding first. An allowance is only consulted when the prior no
+    # longer binds, so leaving one in the configuration cannot weaken a boot
+    # whose prior is already exact.
+    if (prior['evidence']['broker_id'] == fence['broker_id']
+            and prior['inventory'] == expected['inventory']):
+        return
+    require(allowance is not None)
+    require(type(allowance) is dict and set(allowance) == ALLOWANCE_FIELDS
+            and allowance['schema'] == 'sage.lantern.startup-allowance.v1'
+            # A tolerance names the boot it was reviewed for. That is either the
+            # boot that spends it (an operator recovery of this boot) or the boot
+            # whose lifetime it excuses (a release installed on one boot and
+            # spent by the next one, which is the only way to ship a fix before
+            # the reboot that proves it). Both are exact and unguessable, and the
+            # prior, fence and delta pins below are what actually bound it.
+            and allowance['boot_id'] in (boot, prior['boot_id'])
+            and allowance['historical_outcomes'] == 'unknown'
+            and type(allowance['authorized_by']) is str and allowance['authorized_by'])
+    require(prior_pin is not None and fence_sha256 is not None and allowance['prior'] == prior_pin)
+    fence_pin = allowance['fence']
+    require(type(fence_pin) is dict and set(fence_pin) == {'sha256', 'phase', 'broker_id'}
+            and type(fence_pin['sha256']) is str and HEX64.fullmatch(fence_pin['sha256']) is not None
+            and fence_pin['phase'] in ALLOWANCE_FENCE_PHASES
+            and re.fullmatch('[0-9a-f]{32}', fence_pin['broker_id']) is not None
+            and fence_pin['broker_id'] == fence['broker_id']
+            and fence['phase'] in ALLOWANCE_FENCE_PHASES)
+    require(inventory_agrees(prior['inventory'], expected['inventory'],
+                             delta_names(allowance['inventory_delta'])))
 
 
 def validate_current(expected, baseline, boot):
@@ -104,7 +168,7 @@ def validate_current(expected, baseline, boot):
         require(expected[name] == baseline[name])
 
 
-def run(helper, collector, policy, prior_pin, boot, access, apply, access_epoch):
+def run(helper, collector, policy, prior_pin, boot, access, apply, access_epoch, allowance=None):
     require(str(uuid.UUID(boot)) == boot and access is not None and access_epoch() == access)
     baseline = helper.decode(pinned(policy['baseline']))
     prior_raw = pinned(prior_pin)
@@ -145,7 +209,9 @@ def run(helper, collector, policy, prior_pin, boot, access, apply, access_epoch)
     try:
         backend.lock()
         require(pinned(prior_pin) == prior_raw)
-        validate_prior(prior, helper.decode(helper.public(helper.SUPERVISOR / 'fence.json')), expected, boot)
+        fence_raw = helper.public(helper.SUPERVISOR / 'fence.json')
+        validate_prior(prior, helper.decode(fence_raw), expected, boot, allowance,
+                       fence_sha256=helper.sha(fence_raw), prior_pin=prior_pin)
         backend.reconcile()
         if not apply:
             return dict(preflight_verified=True, services_started=False, mutation_authorized=False,
@@ -178,8 +244,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     for name in ('policy', 'policy-sha256', 'prior', 'prior-sha256', 'boot-id', 'access-epoch'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--allowance')
+    parser.add_argument('--allowance-sha256')
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
+    require((args.allowance is None) == (args.allowance_sha256 is None))
     require(os.geteuid() == 0 and sys.platform == 'linux' and sys.prefix == '/opt/sage-lantern/venv')
     def interrupted(signum, frame):
         raise InterruptedError('startup_audio_interrupted')
@@ -198,8 +267,10 @@ def main(argv=None):
         site = Path(sys.prefix) / 'lib' / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'site-packages'
         collector.runtime_sources(helper, Path(policy['runtime_wheel']['path']), site)
         from sage_lantern.device_access import access_epoch
+        allowance = None if args.allowance is None else json.loads(
+            pinned(dict(path=args.allowance, sha256=args.allowance_sha256)), object_pairs_hook=unique)
         result = run(helper, collector, policy, dict(path=args.prior, sha256=args.prior_sha256),
-                     args.boot_id, args.access_epoch, args.apply, access_epoch)
+                     args.boot_id, args.access_epoch, args.apply, access_epoch, allowance)
         print(helper.canonical(result).decode())
     finally:
         signal.alarm(0)

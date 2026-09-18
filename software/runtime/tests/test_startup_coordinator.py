@@ -141,6 +141,22 @@ def test_concrete_helper_cli(monkeypatch):
         '--access-epoch', EPOCH, '--apply'], 'apply', 510)]
 
 
+def test_allowance_reaches_the_adapter_only_when_configured(monkeypatch):
+    backend = startup.FullLifecycle.__new__(startup.FullLifecycle)
+    backend.config = {'adapter': {'path': '/adapter'}, 'policy': {'path': '/policy', 'sha256': 'f' * 64},
+                      'allowance': {'path': '/allowance', 'sha256': 'b' * 64}}
+    backend.boot = BOOT
+    backend.check = lambda epoch: None
+    calls = []
+    backend.child = lambda *args: calls.append(args)
+    monkeypatch.setattr(startup, 'pinned', lambda pin: b'{}')
+    backend.apply({'path': '/expected', 'sha256': 'a' * 64}, EPOCH)
+    assert calls == [(['/adapter', '--policy', '/policy', '--policy-sha256', 'f' * 64,
+        '--prior', '/expected', '--prior-sha256', 'a' * 64, '--boot-id', BOOT,
+        '--access-epoch', EPOCH, '--allowance', '/allowance', '--allowance-sha256', 'b' * 64,
+        '--apply'], 'apply', 510)]
+
+
 def test_completion_requires_durable_receipt_and_live_proof(monkeypatch):
     backend = startup.FullLifecycle.__new__(startup.FullLifecycle)
     backend.boot = BOOT
@@ -210,6 +226,20 @@ def test_policy_schema_standalone_pins_only():
         startup.validate_full_config(config)
 
 
+def test_allowance_is_an_optional_pinned_field():
+    pin = {'path': '/trusted', 'sha256': 'a' * 64}
+    config = dict(schema='sage.lantern.startup-coordinator.v1', adapter=pin, policy=pin,
+        initial_lifetime=pin, coordinator={'path': str(startup.COORDINATOR), 'sha256': 'b' * 64})
+    config['allowance'] = pin
+    startup.validate_full_config(config)
+    config['allowance'] = {'path': '/trusted', 'sha256': 'nope'}
+    with pytest.raises(RuntimeError):
+        startup.validate_full_config(config)
+    config['allowance'] = {'path': '/trusted', 'sha256': 'a' * 64, 'extra': 'x'}
+    with pytest.raises(RuntimeError):
+        startup.validate_full_config(config)
+
+
 def test_latest_lifetime_replaces_seed_each_boot(monkeypatch):
     backend = startup.FullLifecycle.__new__(startup.FullLifecycle)
     backend.boot = BOOT
@@ -220,3 +250,85 @@ def test_latest_lifetime_replaces_seed_each_boot(monkeypatch):
     monkeypatch.setattr(startup, 'read_public', lambda path: startup.canonical(pin))
     monkeypatch.setattr(startup, 'pinned', lambda received: startup.canonical(lifetime()) if received == pin else pytest.fail('stale seed'))
     assert backend.previous() == (pin, lifetime())
+
+
+def test_prior_inventory_delta_needs_the_exact_pinned_allowance():
+    document = lifetime()
+    document['inventory'] = {'/etc/sage-lantern/mesh-runtime.json': 'a' * 64}
+    raw = startup.canonical(document)
+    live = {'/etc/sage-lantern/mesh-runtime.json': 'b' * 64}
+    with pytest.raises(RuntimeError):
+        startup.lifetime(raw, live)
+    allowance = {'inventory_delta': {'/etc/sage-lantern/mesh-runtime.json':
+                                     {'from': 'a' * 64, 'to': 'b' * 64}}}
+    startup.lifetime(raw, live, allowance=allowance)
+    with pytest.raises(RuntimeError):
+        startup.lifetime(raw, live, allowance={'inventory_delta': {}})
+    with pytest.raises(RuntimeError):
+        startup.lifetime(raw, {'/etc/sage-lantern/other.json': 'b' * 64}, allowance=allowance)
+    widened = dict(live, **{'/etc/sage-lantern/other.json': 'c' * 64})
+    with pytest.raises(RuntimeError):
+        startup.lifetime(raw, widened, allowance=allowance)
+
+
+def test_strict_prior_wins_even_when_an_allowance_is_configured():
+    document = lifetime()
+    raw = startup.canonical(document)
+    # An allowance that would refuse an empty delta must simply never be consulted.
+    allowance = {'inventory_delta': {}}
+    startup.lifetime(raw, document['inventory'])
+    startup.lifetime(raw, document['inventory'], allowance=allowance)
+
+
+class Clock:
+    """Monotonic stand-in for the settle window; sleeping only advances it."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def stability(values, window=3, interval=1, deadline=None, default=None):
+    clock = Clock()
+    def observed():
+        index = int(clock.now)
+        return values[index] if index < len(values) else default
+    epoch = startup.stable_epoch(observed=observed, clock=clock, sleeper=clock.sleep,
+                                 window=window, interval=interval, deadline=deadline)
+    return epoch, clock.now
+
+
+def test_stable_epoch_returns_only_a_held_activation():
+    epoch, at = stability(['a' * 32] * 6)
+    assert (epoch, at) == ('a' * 32, 3)
+
+
+def test_stable_epoch_waits_out_a_transient_unlock():
+    """An epoch that dies inside the window is never returned; the next held one is."""
+    epoch, at = stability(['a' * 32, 'a' * 32, 'b' * 32, 'b' * 32, 'b' * 32, 'b' * 32])
+    assert (epoch, at) == ('b' * 32, 5)
+
+
+def test_stable_epoch_ignores_a_locked_gap_and_restarts_the_window():
+    epoch, at = stability([None, None, 'c' * 32, 'c' * 32, 'c' * 32, 'c' * 32],
+                          deadline=10)
+    assert (epoch, at) == ('c' * 32, 5)
+
+
+def test_stable_epoch_deadline_is_a_wait_timeout_not_a_refusal():
+    with pytest.raises(TimeoutError):
+        stability([None] * 20, deadline=2)
+    with pytest.raises(TimeoutError):
+        # A session that keeps restarting the window never satisfies the deadline.
+        stability(['a' * 32, 'b' * 32, 'c' * 32, 'd' * 32], deadline=2)
+
+
+def test_stable_epoch_window_outlasts_the_presence_lease():
+    """The window has to be longer than a lapsed presence lease, or a transient
+    unlock could still be adopted and the boot's only attempt burned mid-run."""
+    assert startup.STABILITY_SECONDS >= 12

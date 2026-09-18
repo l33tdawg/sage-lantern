@@ -33,6 +33,16 @@ RADIO_FOUNDATION_SOURCES = '9c2a317ae7c3779c023ef216f7c8ce730b2fea08f2c6a3650b96
 RADIO_DIRECTORY_SOURCES = 'd9ba5b90c315f902be77fbd23e515547a8332c533e7afcadfe911c4984b2bbf0'
 RADIO_DIRECTORY_A_SOURCES = '1ca41a3400aff258767aff50f8cb26f87108150e69a833ce330d296244763a88'
 RADIO_FOUNDATION_A_SOURCES = '0ef48243d2351fea35db7d4714bc3089d9ae032f394f4dd177bf939bb0a10ae8'
+# Published 2026-09-18: the runtime wheel rebuilt to match the deployed bytes
+# (answer suggestions + the 2026-09-12 messaging receive fix). Supersedes
+# cf963bd8..., which described the maintained-audio wheel the units outgrew.
+# It deliberately includes the ten AppleDouble `._*` files that the audio
+# commissioning receipt binds as attested inputs.
+DEPLOYED_MESSAGING_RUNTIME = '290c0e67ff391084dc11e47bda0058aca946286828f56d7a809b811d014f94fb'
+# A unit release describes its own runtime. build-release.py replaces this line
+# with the digest of the wheel it built from that unit's deployed bytes; the
+# repository copy stays None and accepts only the digests published above.
+RELEASE_RUNTIME = None
 
 
 def require(value):
@@ -71,7 +81,7 @@ def load_helper(path, digest):
 
 def runtime_sources(helper, wheel, site):
     raw = trusted(wheel)
-    require(helper.sha(raw) in (R7, RETRIEVAL_V1, OWNER_LEDGERS_V2, COMPACT_PROMPT_V1, RADIO_OWNER_COMBINED, RADIO_FOUNDATION_SOURCES, RADIO_FOUNDATION_A_SOURCES, RADIO_DIRECTORY_SOURCES, RADIO_DIRECTORY_A_SOURCES, '355ade85f6fc2ee307a079261a532631b5799d5ac4c3e21d735c8fa644a81581', 'fd4828e004a91e516bb7fd24fdd603fa098389c908923247c693777c63919edc', 'cf963bd87e9a838ec926f2da80fc4aad3b0946b2ebdc1827a6228734ac0b214a', '3d90611e780b36d59e8d91b230f7f202c8e44076e23a3f610c914856ee743b03'))
+    require(helper.sha(raw) in (R7, RETRIEVAL_V1, OWNER_LEDGERS_V2, COMPACT_PROMPT_V1, RADIO_OWNER_COMBINED, RADIO_FOUNDATION_SOURCES, RADIO_FOUNDATION_A_SOURCES, RADIO_DIRECTORY_SOURCES, RADIO_DIRECTORY_A_SOURCES, DEPLOYED_MESSAGING_RUNTIME, RELEASE_RUNTIME, '355ade85f6fc2ee307a079261a532631b5799d5ac4c3e21d735c8fa644a81581', 'fd4828e004a91e516bb7fd24fdd603fa098389c908923247c693777c63919edc', 'cf963bd87e9a838ec926f2da80fc4aad3b0946b2ebdc1827a6228734ac0b214a'))
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         names = archive.namelist()
         require(len(names) == len(set(names)))
