@@ -121,6 +121,20 @@ SUBMIT_RETRY_SECONDS = 0.2
 # 503/community_unavailable before the queue write and could never dispatch the
 # row it did eventually create (unit A journal 2026-09-13 16:19-16:22).
 INVENTORY_ATTEMPTS = 3
+# Wall-clock bound on the refresh as well as on the attempts. Each stalled
+# contact read costs the transport's own timeout (3 s), so three attempts of a
+# part-way stall add up to the whole background job budget: unit A's dispatch
+# wakes died on the job deadline (mesh_background_failure TimeoutError,
+# operation=background_dispatch, wire_frames=1 - the contact-read command frame -)
+# before a fragment could go out, the worker retired and the runtime latched
+# until the next authenticated request. The refresh therefore has to leave this
+# much of the operation for the step it exists to serve; when the budget runs
+# out the cached inventory is used exactly as an exhausted re-read would be.
+# The job's own deadline is what the worker enforces, so the reserve has to be
+# big enough that an abandoned refresh can never be the last thing the job does:
+# unit A's dispatch wake at 17:18 on 2026-09-18 reached dispatch_one and then
+# failed on the session's own expiry with a whole fragment still unsent.
+INVENTORY_RESERVE_SECONDS = 6.0
 # A read-only exchange that came back as a complete but unexpected frame leaves
 # the port on a frame boundary, so a fresh read is safe even though there is
 # nothing to discard: the abandoned response belongs to the read that just
@@ -492,6 +506,22 @@ class MeshRuntime:
         return (failure["error"] in WIRE_RESYNC_CODES
                 and getattr(device, "discarded_bytes", 0) > 0)
 
+    def _readonly_read_failure(self, device):
+        """True when the last radio failure provably read and wrote nothing.
+
+        A failed read cannot have changed the firmware's routing table, so the
+        last inventory this runtime read is still the best observation of it.
+        This is deliberately weaker than ``_resynced_read_failure``: re-reading
+        the port needs a proven frame boundary, but *reusing* an inventory only
+        needs the failure to be read-only. A poisoned transport, a failure on a
+        send or receive exchange, and a refusal with no classification all keep
+        failing closed.
+        """
+        failure = getattr(device, "read_failure", None)
+        return (getattr(device, "poisoned", None) is False
+                and type(failure) is dict and type(failure.get("error")) is str
+                and failure.get("sending") is False and failure.get("receiving") is False)
+
     def _inventory(self, device, authorize):
         """Bounded contact-inventory refresh, falling back to the last known one.
 
@@ -502,20 +532,34 @@ class MeshRuntime:
         dispatch whose peer is missing from a stale table refuses rather than
         sending. A refresh that fails after its bounded re-read therefore falls
         back to the inventory this runtime read earlier and still holds; a first
-        read with nothing cached keeps failing closed.
+        read with nothing cached keeps failing closed. The re-read is bounded by
+        the operation's own clock too (INVENTORY_RESERVE_SECONDS), so a stall
+        that would have consumed the whole job cannot take the wire step with it.
+        The last inventory any operation read is kept on the runtime itself: the
+        job-local one is cleared with every context, and a provably read-only
+        failure is the only thing allowed to reuse it.
         """
         failure = None
         rereadable = False
+        deadline = getattr(getattr(self, "_local", None), "background_deadline", None)
+        if type(deadline) not in (int, float):
+            timeout = getattr(getattr(self, "config", None), "operation_timeout", None)
+            deadline = time.monotonic() + (timeout if type(timeout) in (int, float) else 10.0)
+        limit = deadline - INVENTORY_RESERVE_SECONDS
         for attempt in range(INVENTORY_ATTEMPTS):
             try:
-                return device.get_contacts(authorize=authorize)
+                inventory = device.get_contacts(authorize=authorize)
+                self._last_inventory = inventory
+                return inventory
             except Exception as error:
                 failure = error
                 rereadable = self._resynced_read_failure(device)
-                if attempt == INVENTORY_ATTEMPTS - 1 or not rereadable:
+                if attempt == INVENTORY_ATTEMPTS - 1 or not rereadable or time.monotonic() >= limit:
                     break
         cached = getattr(getattr(self, "_local", None), "inventory", None)
-        if rereadable and cached is not None:
+        if cached is None:
+            cached = getattr(self, "_last_inventory", None)
+        if cached is not None and self._readonly_read_failure(device):
             return cached
         raise failure
 

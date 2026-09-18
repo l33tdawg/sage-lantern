@@ -20,6 +20,7 @@ from sage_lantern.meshcore_transport import MeshCoreError
 def runtime():
     stub = SimpleNamespace(_access=lambda: True)
     stub._resynced_read_failure = lambda device: MeshRuntime._resynced_read_failure(stub, device)
+    stub._readonly_read_failure = lambda device: MeshRuntime._readonly_read_failure(stub, device)
     return stub
 
 
@@ -72,6 +73,28 @@ def test_a_failed_refresh_falls_back_to_the_inventory_already_read():
     assert device.calls == INVENTORY_ATTEMPTS
 
 
+def test_a_refresh_that_outlives_the_job_budget_falls_back_to_the_cached_inventory(monkeypatch):
+    """Each part-way stall costs the transport timeout; the second one must end
+    the re-read so the dispatch wake still has room for its fragment. Unit A's
+    dispatch jobs died on the job deadline with only the contact-read command
+    frame written (mesh_background_failure 2026-09-18 15:48)."""
+    import sage_lantern.mesh_runtime as runtime_module
+    now = [0.0]
+    monkeypatch.setattr(runtime_module, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+
+    def stalled_read(*, authorize):
+        now[0] += 3.0
+        raise MeshCoreError('serial_unavailable')
+
+    device = SimpleNamespace(get_contacts=stalled_read, poisoned=False, discarded_bytes=148,
+        read_failure=dict(command='contact-list', sending=False, receiving=False,
+                          error='serial_timeout', frames=1))
+    stub = runtime()
+    stub._local = SimpleNamespace(inventory='last-known', background_deadline=10.0)
+    assert MeshRuntime._inventory(stub, device, lambda: True) == 'last-known'
+    assert now[0] == 6.0, 'the refresh stopped before the job deadline'
+
+
 def test_a_first_read_with_nothing_cached_still_fails_closed():
     device = Device([True, True, True], code='unexpected_response', discarded_bytes=0)
     stub = runtime()
@@ -79,6 +102,32 @@ def test_a_first_read_with_nothing_cached_still_fails_closed():
     with pytest.raises(MeshCoreError):
         MeshRuntime._inventory(stub, device, lambda: True)
     assert device.calls == INVENTORY_ATTEMPTS
+
+
+def test_a_successful_read_becomes_the_runtime_cache():
+    """The job-local inventory is cleared with every context, so the wake that
+    must fall back needs the last inventory any operation read."""
+    device = Device([False])
+    stub = runtime()
+    assert MeshRuntime._inventory(stub, device, lambda: True) == 'inventory'
+    assert stub._last_inventory == 'inventory'
+
+
+def test_a_read_only_stall_reuses_the_last_inventory_any_operation_read():
+    device = Device([True, True, True], code='serial_timeout', discarded_bytes=0)
+    stub = runtime()
+    stub._last_inventory = 'last-good'
+    assert MeshRuntime._inventory(stub, device, lambda: True) == 'last-good'
+    assert device.calls == 1
+
+
+def test_a_send_or_receive_failure_never_reuses_an_inventory():
+    device = Device([True, True, True],
+        read_failure=dict(command='send', sending=True, receiving=False, error='serial_timeout', frames=1))
+    stub = runtime()
+    stub._last_inventory = 'last-good'
+    with pytest.raises(MeshCoreError):
+        MeshRuntime._inventory(stub, device, lambda: True)
 
 
 def test_a_poisoned_transport_never_falls_back_to_a_cached_inventory():
