@@ -455,6 +455,53 @@ def test_resource_uncertainty_forbids_vault_close(setup, result):
     assert supervisor.phase == "recovery_required" and "stop_vault" not in backend.events
 
 
+def test_background_lifecycle_check_verifies_the_identity_once_per_window(setup):
+    """A dispatch wake makes dozens of guarded calls per fragment (unit B,
+    2026-09-19: ~165 checks, ~5 s of a 10 s radio budget). The epoch/vault pair
+    each of them re-derived is verified once per LIVE_CHECK_SECONDS instead of
+    once per call."""
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    epochs, vaults = [], []
+    original, original_vault = supervisor._snapshot, backend.vault_identity
+    def snapshot():
+        epochs.append(state["now"])
+        return original()
+    def vault():
+        vaults.append(state["now"])
+        return original_vault()
+    supervisor._snapshot, backend.vault_identity = snapshot, vault
+    for _ in range(5):
+        assert supervisor.resource_lifecycle_check() is True
+    assert len(epochs) == 1 and len(vaults) == 1
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.resource_lifecycle_check() is True
+    assert len(epochs) == 2 and len(vaults) == 2
+
+
+def test_background_lifecycle_check_observes_a_new_vault_within_one_window(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    assert supervisor.resource_lifecycle_check() is True
+    backend.vault = (801, "d" * 32)
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.resource_lifecycle_check() is False
+
+
+def test_background_lifecycle_check_cache_does_not_outlive_a_phase_change(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    resource = SimpleNamespace(close=lambda timeout: True)
+    supervisor.own_resource(resource)
+    assert supervisor.resource_lifecycle_check() is True
+    supervisor._resource_joined = True
+    assert supervisor.resource_lifecycle_check() is False
+    supervisor._resource_joined = False
+    assert supervisor.resource_lifecycle_check() is True
+
+
 def test_clean_resume_starts_fresh_voice_and_rejects_old_broker(setup):
     supervisor, backend, state = setup
     supervisor.start()

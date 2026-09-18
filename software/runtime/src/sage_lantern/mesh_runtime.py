@@ -968,6 +968,30 @@ class MeshRuntime:
             state = self._queued_ids = set()
         return state
 
+    def _dispatch_wake_needed(self):
+        """True when a dispatch wake could put something on the wire.
+
+        The worker otherwise opens a capture lease and pays the whole access
+        prologue every cycle even when the durable store holds nothing to send.
+        A wake with nothing to dispatch cannot write a frame, so that job only
+        holds the serial device while it runs - measured on unit B 2026-09-19:
+        the job spent its whole 10 s budget in the prologue and in the queue,
+        and the owner's own request was refused behind it. Skipping the empty
+        job cannot lose a row: the queued set and the unresolved set are
+        consulted first, and the throttled journal scan keeps its own cadence,
+        so the first wake after a restart and every scan interval still run.
+        """
+        if self._queued_rows():
+            return True
+        outbox = getattr(self, "outbox", None)
+        if outbox is not None and outbox.unresolved():
+            return True
+        if getattr(self, "_public_gateway", None) is not None or getattr(self, "_public_mesh", None) is not None:
+            # The public paths keep their own pending work that only a real job
+            # can drain; they are not covered by the queued/unresolved sets.
+            return True
+        return time.monotonic() >= getattr(self, "_next_scan_at", 0.0)
+
     def _dispatch_row(self, device, message_id):
         """Send up to DISPATCH_BURST fragments of one queued row on this wake.
 
@@ -1166,6 +1190,14 @@ class MeshRuntime:
                             stop.wait(interval)
                             continue
                         operation = choices[index % len(choices)]
+                        # An idle dispatch wake cannot send anything: it would
+                        # only hold the serial device for its whole budget (see
+                        # _dispatch_wake_needed). Let the scan cadence, the
+                        # queued set or the unresolved set re-arm it.
+                        if operation == "background_dispatch" and not self._dispatch_wake_needed():
+                            index += 1
+                            stop.wait(interval)
+                            continue
                         future = self._submit(lambda device: invoke(device, operation, job))
                         future.result(timeout=job_timeout)
                     except Exception as error:

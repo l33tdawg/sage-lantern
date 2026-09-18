@@ -41,6 +41,16 @@ AUTH = "sage-lantern-device-auth.service"
 CHECKS = {"http_drained", "http_outcome_known", "session_finalized", "child_groups_absent",
           "memory_drained", "community_drained", "history_outcome_known", "deadline_met"}
 
+# How long one verified epoch/vault identity pair is reused by the *background*
+# lifecycle check. Every guarded call re-derives the pair: `_epoch()` is a signed
+# HTTP snapshot of the vault service and `vault_identity()` is a `systemctl show`
+# subprocess. A dispatch wake makes dozens of guarded calls per fragment - on
+# unit B 2026-09-19 the wake paid ~165 verifications (approximately 5 s of a 10 s
+# radio budget) inside one fragment and timed out before the wire. One window
+# keeps a change observable within a second; the admission paths (`check`,
+# `_live`, `voice_peer`) keep their own immediate verification.
+LIVE_CHECK_SECONDS = 1.0
+
 
 class StorageSupervisorError(RuntimeError):
     def __init__(self):
@@ -219,6 +229,7 @@ class RootStorageSupervisor:
         self._resource_joined = False
         self._shutdown_requested = False
         self._backend, self._snapshot, self._access, self._clock = backend, snapshot, access_epoch, clock
+        self._live_cache = None
         self.directory = Path(directory)
         self._owner = owner_uid
         try:
@@ -279,6 +290,23 @@ class RootStorageSupervisor:
                 or int(value.vault_generation) > 2**64 - 1):
             raise StorageSupervisorError()
         return value.epoch
+
+    def _live_identity(self, key):
+        """The verified (epoch, vault identity) pair, reused for LIVE_CHECK_SECONDS.
+
+        The pair is re-derived on every guarded call, which is what a dispatch
+        wake cannot afford (see LIVE_CHECK_SECONDS). Any phase, ownership or
+        broker change invalidates the reuse immediately because `key` carries
+        them, and a change in the identity itself is observed within one window.
+        """
+        now = self._clock()
+        cached = self._live_cache
+        if cached is not None and cached[0] == key and now - cached[1] < LIVE_CHECK_SECONDS:
+            return cached[2], cached[3]
+        epoch = self._epoch()
+        vault = self._backend.vault_identity()
+        self._live_cache = (key, now, epoch, vault)
+        return epoch, vault
 
     def _live(self):
         self._held()
@@ -363,7 +391,9 @@ class RootStorageSupervisor:
                     self._resource, self._resource_joined, getattr(self, '_drain_deadline', None))
                 if self._resource is None or self._resource_joined:
                     return False
-            if self._epoch() != before[2] or self._backend.vault_identity() != before[3]:
+            epoch, vault = self._live_identity((self.broker_id, self.phase, self._resource is not None,
+                                                self._resource_joined, self._vault))
+            if epoch != before[2] or vault != before[3]:
                 return False
             with self._mutex:
                 self._held()

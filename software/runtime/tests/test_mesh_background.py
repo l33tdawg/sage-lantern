@@ -487,6 +487,52 @@ def test_malformed_background_operations_still_stop(background, choices):
     assert state.provider.pause_receiving(timeout=5) is True
 
 
+def test_idle_dispatch_wake_is_skipped_without_opening_a_job(background, monkeypatch):
+    """A wake with nothing to dispatch cannot write a frame; it used to open a
+    capture lease and hold the serial device for its whole budget (unit B,
+    2026-09-19: 10 s, with the owner's own request refused behind it)."""
+    state = background
+    dispatched = []
+    monkeypatch.setattr(state.runtime, "_dispatch_pending", lambda device: dispatched.append(time.monotonic()))
+    state.runtime._queued_rows().clear()
+    state.runtime._next_scan_at = time.monotonic() + 3600
+    state.start()
+    time.sleep(0.6)
+    assert dispatched == []
+    assert state.runtime._poller.is_alive() and not state.runtime._receive_stop.is_set()
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
+def test_idle_dispatch_wake_still_runs_when_the_scan_is_due(background, monkeypatch):
+    state = background
+    dispatched = threading.Event()
+    def dispatch(device):
+        dispatched.set()
+        state.runtime._next_scan_at = time.monotonic() + 3600
+    monkeypatch.setattr(state.runtime, "_dispatch_pending", dispatch)
+    state.runtime._queued_rows().clear()
+    state.runtime._next_scan_at = 0.0
+    state.start()
+    assert dispatched.wait(5)
+    assert state.runtime._poller.is_alive() and not state.runtime._receive_stop.is_set()
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
+def test_queued_row_keeps_the_dispatch_wake_running(background, monkeypatch):
+    state = background
+    dispatched = threading.Event()
+    def dispatch(device):
+        dispatched.set()
+        state.runtime._next_scan_at = time.monotonic() + 3600
+    monkeypatch.setattr(state.runtime, "_dispatch_pending", dispatch)
+    state.runtime._queued_rows().add("1" * 8 + "-0000-4000-8000-" + "1" * 12)
+    state.runtime._next_scan_at = time.monotonic() + 3600
+    state.start()
+    assert dispatched.wait(5)
+    assert state.runtime._poller.is_alive()
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
 def test_mailbox_fence_wait_does_not_kill_worker(background, monkeypatch):
     state = background
     attempted = threading.Event()
