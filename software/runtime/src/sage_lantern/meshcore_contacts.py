@@ -15,11 +15,21 @@ from nacl.bindings import crypto_core_ed25519_is_valid_point
 MAX_CONTACTS = 256
 MAX_UNSOLICITED = 32
 CONTACT_FRAME_BYTES = 148
+# Codes this layer may carry through from the transport. Anything else - a raw
+# timeout message, a caller's diagnostic - is sanitised to the historical code,
+# so an arbitrary string never becomes the runtime's classification input.
+CONTACT_FAILURE_CODES = frozenset(("unexpected_response", "serial_timeout", "serial_incomplete",
+                                   "invalid_frame", "serial_unavailable"))
 
 
 class MeshCoreContactsError(ValueError):
-    def __init__(self):
-        super().__init__('meshcore_contacts_unavailable')
+    def __init__(self, code=None):
+        # The transport classifies a read-only failure by its first argument (or
+        # by the class name when there is none). A refusal raised by the decoder
+        # keeps the historical code; a failure that came from the wire carries the
+        # transport's own code through, so the runtime can tell a complete but
+        # unexpected frame ("unexpected_response") from an unclassifiable stall.
+        super().__init__(code if type(code) is str and code else 'meshcore_contacts_unavailable')
 
 
 def _key(value):
@@ -143,5 +153,12 @@ def get_contacts(*, exchange, read_frame, deadline, authorize) -> ContactInvento
                     raise MeshCoreContactsError()
                 return decoder.finish()
         raise MeshCoreContactsError()
-    except Exception:
-        raise MeshCoreContactsError() from None
+    except Exception as error:
+        # Carry the transport's own code through when it is one this layer knows.
+        # The transport classifies a read-only failure by args[0] (or by the class
+        # name when there is none), and the runtime's bounded re-read depends on
+        # that classification: swallowing it here is what made a complete but
+        # unexpected frame ("unexpected_response") look like an unclassifiable
+        # contacts failure that could never be re-read.
+        code = getattr(error, "code", None)
+        raise MeshCoreContactsError(code if code in CONTACT_FAILURE_CODES else None) from None

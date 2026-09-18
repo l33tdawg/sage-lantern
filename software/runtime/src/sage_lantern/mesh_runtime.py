@@ -19,6 +19,17 @@ Pause joins the poller AND serial queue before releasing lifecycle dependencies.
 Known durable captured frames may survive background shutdown; receiving/unknown
 state still denies clean shutdown. No policy lease or worker starts on import.
 Policy and storage callbacks must obey bounded IO and never reenter the runtime.
+
+A background job that fails before it reached a destructive radio step cannot
+have sent or dequeued anything, so it stops the poller without latching the
+permanent uncertainty flag: the next authenticated request restarts the reviewed
+worker. One exception is an admission refusal - a live producer fence, which an
+owner-session mailbox read holds for as long as its body runs. That admits
+nothing, so the worker waits it out and keeps receiving instead of retiring, and
+the mailbox read must never hold a runtime lock the worker needs to submit. A
+failure that may have written to the radio, a capture lease whose outcome is
+unknown, or any poisoned transport stays fail-closed, and no capture is started
+unless the job's own deadline still has room to finish it.
 """
 
 from contextlib import contextmanager
@@ -41,8 +52,8 @@ from .mesh_mailbox import MeshMailbox
 from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
 from .mesh_receipt_sender import MeshReceiptSender, ReceiptAction, ReceiptPermit, SCHEMA as RECEIPT_SCHEMA
 from .mesh_receiver import MeshReceiver
-from .mesh_serial_owner import SerialScheduler
-from .meshcore_transport import MeshCoreClient
+from .mesh_serial_owner import SerialScheduler, SerialOwnerError
+from .meshcore_transport import WIRE_RESYNC_CODES, MeshCoreClient
 from .public_mesh_provider import (PublicMeshProvider, PublicMeshRejected, FRAME_PREFIX as PUBLIC_FRAME_PREFIX,
                                    PUBLIC_BURST, PUBLIC_POLL_INTERVAL)
 from .message_contacts import RecipientID
@@ -59,9 +70,163 @@ class MeshLeaseUncertain(MeshRuntimeError):
     pass
 
 
+# A capture issues one destructive firmware dequeue plus its durable CAS. Never
+# start one without at least this much of the background job deadline left (at
+# most half the job budget), so a slow pre-capture check cannot turn into an
+# abandoned mid-exchange operation.
+CAPTURE_RESERVE_SECONDS = 5.0
+
+# Coordinator refusals that admit nothing and are reversible. They are the
+# normal consequence of a live producer fence, which an owner-session mailbox
+# read holds for the length of its body; a worker that retired on one stopped
+# receiving for as long as the session kept reading (unit A journal 2026-09-13
+# 10:44-10:48). producer_drain_timeout is deliberately absent: that one is
+# containment, not admission, and must stay fail-closed.
+ADMISSION_REFUSAL_CODES = ("producer_admission_fenced", "producer_queue_full")
+BACKGROUND_RETRY_MIN_SECONDS = 0.5
+BACKGROUND_RETRY_MAX_SECONDS = 5.0
+# Fragments of one message sent per background wake. Wakes alternate with the
+# receive path and sleep `interval` between them, so one fragment per wake made a
+# multi-fragment message cost a wake - at least two seconds of pacing - for every
+# 128 bytes, whatever the link could actually carry. The firmware's own TX queue
+# is the real bound and it is much deeper than this; the public-mesh path in this
+# file has always sent PUBLIC_BURST frames per wake for the same reason.
+DISPATCH_BURST = 4
+# Stop bursting this far before the job deadline, so a fragment is never started
+# that the wake cannot finish. A fragment cut off mid-flight is an unknown
+# outcome, and while the outbox makes it retryable inside the row's window it is
+# still evidence we would rather not manufacture.
+DISPATCH_RESERVE_SECONDS = 1.0
+# Retry cadence for a message row whose fragment reached the wire and was never
+# acknowledged. Owner decision 2026-09-13: that outcome is retryable inside the
+# row's own 24-hour window, escalated only once the window lapses. One attempt
+# per row per wake, backing off along this schedule (seconds).
+RETRY_BACKOFF_SECONDS = (60, 300, 900, 3600)
+# Bounded wait for a timed-out job to observe the stop fence and unwind so its
+# radio call cannot overlap the retry decision that follows it.
+ABANDONED_JOB_SECONDS = 5.0
+# Audit marker for a decision this runtime made by itself rather than an operator:
+# it travels with the row as the retry binding.
+AUTO_RETRY_BINDING = "lantern-auto-retry"
+# An owner request (a send) must be able to wait out a competing mailbox read,
+# which holds the producer fence for the length of its body. The background
+# worker never waits here: it has its own retry loop and must not consume a
+# caller's deadline.
+SUBMIT_RETRY_SECONDS = 0.2
+# Every operation refreshes the contact inventory before it touches the radio, and
+# a read-only contact-list stall does not poison the transport: the port is
+# resynchronised and the firmware re-sends a whole record for the next read. One
+# bounded re-read therefore turns "this attempt died on a 1-in-30 stall" into
+# "this attempt was slower" - without it, unit A answered an owner send with
+# 503/community_unavailable before the queue write and could never dispatch the
+# row it did eventually create (unit A journal 2026-09-13 16:19-16:22).
+INVENTORY_ATTEMPTS = 3
+# A read-only exchange that came back as a complete but unexpected frame leaves
+# the port on a frame boundary, so a fresh read is safe even though there is
+# nothing to discard: the abandoned response belongs to the read that just
+# failed. Unit A's stock firmware answers the contact-list read this way often
+# enough that requiring a discarded partial frame (WIRE_RESYNC_CODES plus
+# discarded bytes) left every dispatch and import failing on the first hiccup.
+READ_RETRY_CODES = ("unexpected_response",)
+# A masked error still carries the exception it replaced in __context__ even though
+# `raise ... from None` hides it, and every layer between the radio and the worker
+# masks: mesh_outbox._admitted, mesh_outbox.dispatch_one and MeshRuntime._run. The
+# traceback of a mask starts at the mask itself, so unit A journalled
+# "MeshOutboxError ... mesh_outbox.py:91:call" at 17:34:34 on 2026-09-13 with no way
+# to tell a refused admission from a stalled contact read. Walk the chain instead.
+# Depth 4 was measured too shallow on the first live failure (17:46): the chain ran
+# MeshOutboxError -> RegistryError -> WorkflowUnavailable twice and stopped one hop
+# short of the store call that actually failed.
+CAUSE_DEPTH = 8
+CAUSE_FRAMES = 5
+
+
 def _require(condition):
     if condition is not True:
         raise MeshRuntimeError()
+
+
+def _masked_causes(error):
+    """The exceptions a `raise ... from None` chain hid, outermost first."""
+    causes = []
+    seen = {id(error)}
+    current = error
+    for _ in range(CAUSE_DEPTH):
+        inner = getattr(current, '__cause__', None)
+        if inner is None:
+            inner = getattr(current, '__context__', None)
+        if not isinstance(inner, Exception) or id(inner) in seen:
+            break
+        seen.add(id(inner))
+        causes.append(inner)
+        current = inner
+    return causes
+
+
+def _failure_frames(error, limit):
+    import traceback
+    return [dict(file=Path(frame.filename).name, function=frame.name, line=frame.lineno)
+            for frame in traceback.extract_tb(error.__traceback__)[-limit:]]
+
+
+def _failure_code(error):
+    """The bounded error code a mesh error carries, when it is a plain short string."""
+    code = getattr(error, 'code', None)
+    return code if type(code) is str and 0 < len(code) <= 32 else None
+
+
+def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_frames=0,
+                           access_denied=None, event="mesh_operation_failed"):
+    """Bounded diagnostics only: no payloads, text, keys or peer identities."""
+    try:
+        import syslog
+    except Exception:
+        return
+    try:
+        causes = []
+        for cause in _masked_causes(error):
+            code = _failure_code(cause)
+            causes.append(dict(**{'exception': type(cause).__name__},
+                               **({} if code is None else {'code': code}),
+                               frames=_failure_frames(cause, CAUSE_FRAMES)))
+        payload = dict(event=event, exception=type(error).__name__, operation=operation,
+                       pre_wire=provably_pre_wire, wire_frames=wire_frames,
+                       frames=_failure_frames(error, 12))
+        if access_denied is not None:
+            payload['access_denied'] = access_denied
+        if causes:
+            payload['causes'] = causes
+        syslog.syslog(syslog.LOG_ERR, json.dumps(payload))
+    except Exception:
+        return
+
+
+def _log_background_failure(error, operation, provably_pre_wire, wire_frames, access_denied=None):
+    _log_operation_failure(error, operation, provably_pre_wire=provably_pre_wire,
+                           wire_frames=wire_frames, access_denied=access_denied,
+                           event="mesh_background_failure")
+
+
+class _BackgroundJob:
+    """Per-job marker for the destructive radio steps a poll can reach.
+
+    It is set immediately before the destructive firmware dequeue or a fragment
+    dispatch, after the last authorization check of that step. A failure that
+    never set it proves this job did not change radio or firmware state, so the
+    worker can retire without latching process-wide uncertainty.
+
+    access_denied names the guard condition that last refused this job, because a
+    dispatch re-evaluates authorization between loading the row and writing the
+    fragment: unit A 2026-09-13 17:50 lost a dispatch five masks deep in a plain
+    MeshOutboxError whose innermost cause was RegistryError, which cannot be told
+    apart from a contact or store failure without the condition itself.
+    """
+
+    __slots__ = ("radio_action", "access_denied")
+
+    def __init__(self):
+        self.radio_action = threading.Event()
+        self.access_denied = None
 
 
 @dataclass(frozen=True)
@@ -129,7 +294,6 @@ class MeshRuntime:
             service._public_gateway = None
             service._delivery_receipts = None
             service._close_mutex = threading.Lock()
-            service._scheduling_lock = threading.Lock()
             service.store = WorkflowStore(client, storage=probe)
             def initialize(device):
                 service._local.mode = "initialize"
@@ -170,31 +334,92 @@ class MeshRuntime:
             raise MeshRuntimeError() from None
 
     def admission_safe(self):
-        if any(getattr(getattr(self, name, None), "_uncertain", False)
-               for name in ("receipts", "outbox", "receiver", "inbox")):
-            self._uncertain = True
+        for name in ("receipts", "outbox", "receiver", "inbox"):
+            target = getattr(self, name, None)
+            if target is None:
+                continue
+            latching = getattr(target, "latching_unknown", None)
+            # An outbox row whose fragment reached the wire is retryable inside
+            # its own signed window (owner decision 2026-09-13) and must not
+            # park the unit at not_ready until a human restarts it; its window
+            # lapse, or any unknown that cannot be reconciled, still latches.
+            unknown = latching() is True if callable(latching) else bool(getattr(target, "_uncertain", False))
+            if unknown:
+                self._uncertain = True
         return not self._uncertain and not self._closed and not self._stop.is_set()
+
+    def _radio_written(self):
+        """Command frames this runtime's radio has begun writing, or None."""
+        device = getattr(self, "_device", None)
+        value = getattr(device, "wire_frames", None)
+        return value if type(value) is int else None
+
+    def _radio_poisoned(self):
+        """True when the transport is poisoned or cannot report its own state."""
+        device = getattr(self, "_device", None)
+        value = getattr(device, "poisoned", None)
+        return value is not False
+
+    def _capture_deadline_open(self):
+        """False when this poll cannot both start and finish a capture in time.
+
+        Only background jobs carry a deadline; an explicit user poll keeps its
+        existing single-operation timeout.
+        """
+        deadline = getattr(self._local, "background_deadline", None)
+        if deadline is None:
+            return True
+        reserve = getattr(self._local, "capture_reserve", CAPTURE_RESERVE_SECONDS)
+        return time.monotonic() + reserve <= deadline
 
     def _access(self):
         mode = getattr(self._local, "mode", None)
         if mode == "drain":
-            return (time.monotonic() < self._local.deadline and self._local.lease() is True
-                    and self._storage_lifecycle() is True and time.monotonic() < self._local.deadline)
-        if not self.admission_safe() or self._activation() is not True:
-            return False
+            if time.monotonic() >= self._local.deadline:
+                return self._denied("drain_deadline")
+            if self._local.lease() is not True:
+                return self._denied("drain_lease")
+            if self._storage_lifecycle() is not True:
+                return self._denied("drain_storage")
+            if time.monotonic() >= self._local.deadline:
+                return self._denied("drain_deadline")
+            return True
+        if not self.admission_safe():
+            return self._denied("admission_unsafe")
+        if self._activation() is not True:
+            return self._denied("not_active")
         if time.monotonic() >= getattr(self._local, "public_job_deadline", math.inf):
-            return False
+            return self._denied("job_deadline")
         if mode == "initialize":
             return True
         context = getattr(self._local, "context", None)
         if type(context) is MeshReceiveContext:
-            if self._local.operation not in ("receive", "background_dispatch") or (
-                    self._local.receive_stop.is_set() and not self._receive_pausing):
-                return False
-        return (type(context) in (MeshUserContext, MeshReceiveContext) and context.actor == self.actor
-                and type(context.epoch) is str and len(context.epoch) == 32
-                and all(character in "0123456789abcdef" for character in context.epoch)
-                and self._authorize_context(context, self._local.operation, None) is True)
+            if self._local.operation not in ("receive", "background_dispatch"):
+                return self._denied("operation_not_permitted")
+            if self._local.receive_stop.is_set() and not self._receive_pausing:
+                return self._denied("receive_stopped")
+        if type(context) not in (MeshUserContext, MeshReceiveContext):
+            return self._denied("no_context")
+        if context.actor != self.actor:
+            return self._denied("context_actor")
+        if (type(context.epoch) is not str or len(context.epoch) != 32
+                or not all(character in "0123456789abcdef" for character in context.epoch)):
+            return self._denied("context_epoch")
+        if self._authorize_context(context, self._local.operation, None) is not True:
+            return self._denied("authorize_context")
+        return True
+
+    def _denied(self, reason):
+        """Record why this refusal happened, then refuse.
+
+        The marker belongs to the job, not to the thread: _context clears the
+        thread-local state as it unwinds, so by the time the worker logs the
+        failure the only surviving record is the one held by the job itself.
+        """
+        job = getattr(self._local, "job", None)
+        if type(job) is _BackgroundJob:
+            job.access_denied = reason
+        return False
 
     def _capture_storage(self):
         if getattr(self._local, "capture_admitted", False):
@@ -218,18 +443,81 @@ class MeshRuntime:
         def invoke(device):
             try:
                 with self._context(context, operation):
-                    self._local.inventory = device.get_contacts(authorize=self._access)
+                    self._local.inventory = self._inventory(device, self._access)
                     return callback(device)
-            except Exception:
+            except Exception as error:
+                # Name the real cause: the MeshRuntimeError a caller sees is the
+                # same for a stalled transport, a refused admission and a failed
+                # compare-and-swap, so without this line a pre-mutation refusal
+                # leaves no trace of which one happened.
+                _log_operation_failure(error, operation)
                 raise MeshRuntimeError() from None
         try:
-            return self._submit(invoke).result(timeout=self.config.operation_timeout)
-        except FutureTimeout:
-            self._uncertain = True
-            raise MeshRuntimeError() from None
-        except Exception:
+            deadline = time.monotonic() + self.config.operation_timeout
+            return self._submit(invoke, deadline=deadline).result(timeout=max(0.001, deadline - time.monotonic()))
+        except FutureTimeout as error:
+            # A timeout is only process-wide-uncertain when it can have changed
+            # radio or firmware state. The per-layer flags record that precisely
+            # (the outbox sets its own flag only after a fragment reached the
+            # wire), so defer to them instead of latching on every timeout.
+            _log_operation_failure(error, operation)
             self.admission_safe()
             raise MeshRuntimeError() from None
+        except Exception as error:
+            if type(error) is not MeshRuntimeError:
+                _log_operation_failure(error, operation)
+            self.admission_safe()
+            raise MeshRuntimeError() from None
+
+    def _resynced_read_failure(self, device):
+        """True when the last radio failure was read-only and may be re-read.
+
+        Two shapes qualify, and both are provably read-only in the sense that
+        matters: the exchange was not sending and not receiving, so it cannot
+        have put user traffic on the air or dequeued it from the radio. Either
+        the port was mid-stream and the transport discarded the abandoned tail
+        (the firmware is back on a record boundary), or the response was a
+        complete but unexpected frame (the firmware never left a boundary).
+        Anything else - a poisoned transport, an exchange that could have sent or
+        dequeued, or a refusal with no classification - keeps the single-attempt
+        rule.
+        """
+        failure = getattr(device, "read_failure", None)
+        if (getattr(device, "poisoned", None) is not False
+                or type(failure) is not dict or type(failure.get("error")) is not str
+                or failure.get("sending") is not False or failure.get("receiving") is not False):
+            return False
+        if failure["error"] in READ_RETRY_CODES:
+            return True
+        return (failure["error"] in WIRE_RESYNC_CODES
+                and getattr(device, "discarded_bytes", 0) > 0)
+
+    def _inventory(self, device, authorize):
+        """Bounded contact-inventory refresh, falling back to the last known one.
+
+        Every radio operation refreshes the inventory first, so one failed
+        refresh used to fail an owner send before its queue write and every
+        dispatch before a fragment went out. Peer identity and consent come from
+        the registry; the firmware contact table only routes to them, and a
+        dispatch whose peer is missing from a stale table refuses rather than
+        sending. A refresh that fails after its bounded re-read therefore falls
+        back to the inventory this runtime read earlier and still holds; a first
+        read with nothing cached keeps failing closed.
+        """
+        failure = None
+        rereadable = False
+        for attempt in range(INVENTORY_ATTEMPTS):
+            try:
+                return device.get_contacts(authorize=authorize)
+            except Exception as error:
+                failure = error
+                rereadable = self._resynced_read_failure(device)
+                if attempt == INVENTORY_ATTEMPTS - 1 or not rereadable:
+                    break
+        cached = getattr(getattr(self, "_local", None), "inventory", None)
+        if rereadable and cached is not None:
+            return cached
+        raise failure
 
     def _outbox_guard(self, action):
         if not self._access():
@@ -239,7 +527,10 @@ class MeshRuntime:
         context = self._local.context
         if type(context) is MeshReceiveContext:
             operation = self._local.operation
-            if operation == "background_dispatch" and action.operation == "dispatch":
+            if operation == "background_dispatch" and action.operation in ("dispatch", "retry"):
+                # A retry decision re-queues a row whose fragment already reached
+                # the wire, so it carries the same weight as the dispatch itself:
+                # the peer card must still be the live consented one.
                 card = self.registry.resolve(action.radio_public_key, access_check=self._access)
                 binding = hashlib.sha256(json.dumps(asdict(card), ensure_ascii=True, sort_keys=True,
                     separators=(",", ":"), allow_nan=False).encode()).hexdigest()
@@ -286,24 +577,44 @@ class MeshRuntime:
             _require(bool(context.render_ack_binding) and permit.render_ack_binding == context.render_ack_binding)
         return permit
 
-    def _submit(self, operation):
-        _require(self._scheduling_lock.acquire(timeout=self.config.operation_timeout))
-        try:
-            return self.coordinator.submit(operation)
-        finally:
-            self._scheduling_lock.release()
+    def _submit(self, operation, *, deadline=None):
+        """Submit a producer job, optionally waiting out a live producer fence.
+
+        SerialScheduler.submit already refuses, atomically under its own
+        condition, whenever a producer fence is live, so no second runtime lock
+        is needed here - and holding one across a fence starved the background
+        worker (unit A journal 2026-09-13 10:44-10:48). A live fence is the
+        normal consequence of an owner-session mailbox read, so a caller with a
+        deadline of its own waits for that read to finish instead of failing the
+        owner's action outright.
+        """
+        while True:
+            try:
+                return self.coordinator.submit(operation)
+            except SerialOwnerError as error:
+                code = error.args[0] if error.args else None
+                if code not in ADMISSION_REFUSAL_CODES or deadline is None:
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(SUBMIT_RETRY_SECONDS, remaining))
 
     @contextmanager
     def _fence(self):
+        # The coordinator's own fence is the mutual exclusion: producer_fence()
+        # waits for every submitted job to finish and marks admission fenced
+        # while the lease is live, and submit() refuses in that window. This
+        # runtime must NOT hold a lock of its own across the fenced body: the
+        # body performs backend store round trips, so an owner-session mailbox
+        # read held it long enough to starve the background job submission and
+        # retire the receive worker (unit A journal 2026-09-13 10:44-10:48,
+        # MeshRuntimeError from _submit with wire_frames 0 every ~26 s).
         deadline = time.monotonic() + self.config.operation_timeout
-        _require(self._scheduling_lock.acquire(timeout=self.config.operation_timeout))
-        try:
-            remaining = deadline - time.monotonic()
-            _require(remaining > 0)
-            with self.coordinator.producer_fence(timeout=remaining) as lease:
-                yield lease
-        finally:
-            self._scheduling_lock.release()
+        remaining = deadline - time.monotonic()
+        _require(remaining > 0)
+        with self.coordinator.producer_fence(timeout=remaining) as lease:
+            yield lease
 
     def put_contact(self, context, card, *, known_actor):
         return self._run(context, "contact_update", lambda device: self.registry.put(card, known_actor=known_actor, access_check=self._access))
@@ -319,10 +630,14 @@ class MeshRuntime:
         return self._run(context, "queue_message", queue)
 
     def ready(self, context):
-        def check(device):
+        def check():
             self.store.storage.snapshot()
             return self._access()
-        return self._run(context, "status", check)
+        # Readiness is storage + authorization, not a radio round trip. Running it
+        # through the serial coordinator made every status check race the receive
+        # poller: a check queued behind a background job timed out, set the
+        # permanent uncertainty flag and left messaging not_ready until restart.
+        return self._read(context, "status", check)
 
     def contacts(self, context):
         def read(device):
@@ -343,7 +658,14 @@ class MeshRuntime:
         def dispatch(device):
             if expected_contact is not None:
                 _require(self.registry.resolve(bytes.fromhex(expected_contact.radio_public_key), access_check=self._access) == expected_contact)
-            return target.dispatch_one(identifier, device=device, radio_timestamp=radio_timestamp, access_check=self._access)
+            if receipt:
+                return target.dispatch_one(identifier, device=device, radio_timestamp=radio_timestamp,
+                                           access_check=self._access)
+            # This operation already refreshed the inventory; hand that same one
+            # to the row, so one fragment costs one contact read and not two.
+            return target.dispatch_one(identifier, device=device, radio_timestamp=radio_timestamp,
+                                       access_check=self._access,
+                                       inventory=self._local.inventory)
         return self._run(context, "dispatch_receipt" if receipt else "dispatch_message", dispatch)
 
     def outbox_id(self, message_id, recipient):
@@ -379,8 +701,13 @@ class MeshRuntime:
         state = self.receiver.state()
         if state == "idle":
             _require(self._access())
+            if not self._capture_deadline_open():
+                return state
             storage = getattr(self._local, "receive_storage", self._storage_lifecycle)
             _require(storage() is True)
+            job = getattr(self._local, "job", None)
+            if job is not None:
+                job.radio_action.set()
             self._local.capture_admitted = True
             try:
                 state = self.receiver.receive_next()
@@ -423,6 +750,9 @@ class MeshRuntime:
             self._public_mesh.inspect(request_id, access_check=self._access))
 
     def _dispatch_pending(self, device):
+        # Retryable unknowns first: a row requeued here is picked up by the
+        # ordinary dispatch pass below on this same wake.
+        self._reconcile_pending()
         if self._public_gateway is not None:
             self._public_gateway.dispatch(device, access_check=self._access)
             return
@@ -464,8 +794,119 @@ class MeshRuntime:
             body = self.outbox._verified(row)
             if body["state"] != "queued" or not body["approved"]["issued_at"] <= int(time.time()) < body["approved"]["expires_at"]:
                 continue
-            self.outbox.dispatch_one(body["message_id"], device=device, radio_timestamp=int(time.time()), access_check=self._access)
+            self._dispatch_row(device, body["message_id"])
             return
+
+    def _dispatch_row(self, device, message_id):
+        """Send up to DISPATCH_BURST fragments of one queued row on this wake.
+
+        Each fragment is still its own CAS at its own revision and still marks the
+        row unknown on its own failure, so the retry cursor and the window
+        semantics are unchanged - this only stops the wake pacing from being the
+        limit. Same single inventory read as the fenced path: the wake refreshed
+        it at the top of this job and each fragment spends it here.
+        """
+        deadline = getattr(self._local, "background_deadline", None)
+        for _ in range(DISPATCH_BURST):
+            if deadline is not None and time.monotonic() >= deadline - DISPATCH_RESERVE_SECONDS:
+                return
+            progress = self.outbox.dispatch_one(message_id, device=device,
+                                                radio_timestamp=int(time.time()),
+                                                access_check=self._access,
+                                                inventory=self._local.inventory)
+            # "queued" means there is another fragment still to send; anything
+            # else (awaiting_receipt, delivered, ...) ends this message's turn.
+            if progress.state != "queued" or progress.next_fragment >= progress.fragment_count:
+                return
+
+    def _retry_state(self):
+        state = getattr(self, "_retry_pending", None)
+        if state is None:
+            state = self._retry_pending = {"next": {}, "attempts": {}}
+        return state
+
+    def _await_abandoned(self, future, timeout=ABANDONED_JOB_SECONDS):
+        """Bounded wait for a timed-out job to observe the fence and unwind.
+
+        Returns False if a radio call from the abandoned job could still overlap
+        the retry decision that follows it, in which case the worker retires
+        fail-closed exactly as before.
+        """
+        if future is None or future.done():
+            return True
+        try:
+            future.result(timeout=timeout)
+        except Exception:
+            return future.done()
+        return True
+
+    def _outbox_recoverable(self):
+        """True when an unknown outbox outcome is still retryable inside its window."""
+        outbox = getattr(self, "outbox", None)
+        if outbox is None:
+            return False
+        return bool(outbox.unresolved()) and not outbox.latching_unknown()
+
+    def _recovery_allowed(self, written):
+        """One recovery-continue per distinct radio-progress point.
+
+        The worker keeps living after an unknown dispatch outcome only while the
+        retry decision has a named, in-window row *and* the radio has moved since
+        the last recovery. A wedged transport that writes nothing new therefore
+        retires fail-closed instead of spinning.
+        """
+        if not self._outbox_recoverable() or type(written) is not int:
+            return False
+        if getattr(self, "_recovered_at", None) == written:
+            return False
+        self._recovered_at = written
+        return True
+
+    def _reconcile_pending(self):
+        """Requeue message rows a lost acknowledgement left in 'dispatching'.
+
+        Owner decision 2026-09-13: an unknown dispatch outcome is retryable
+        inside the row's own signed window instead of parking the unit at
+        not_ready until a human restarts it. The audited
+        ``MeshOutbox.retry_decision`` CAS is the only way back to 'queued': same
+        wire, message id and fragment cursor, consent re-verified, one attempt
+        per row per wake with backoff. A row whose window has lapsed is left
+        exactly where it is - visible, unresolved, and still refusing a clean
+        close - and a retry_dispatch (radio) is attempted once the row is queued.
+        """
+        outbox = getattr(self, "outbox", None)
+        if outbox is None or not outbox.unresolved():
+            return False
+        state = self._retry_state()
+        wall, monotonic = int(time.time()), time.monotonic()
+        for row in self.store.scan(limit=50, max_records=4096, access_check=self._access):
+            if row["kind"] != "mesh_outbound" or row["payload"].get("body", {}).get("schema") != OUTBOX_SCHEMA:
+                continue
+            body = self.outbox._verified(row)
+            identifier, approved = body["message_id"], body["approved"]
+            if body["state"] != "dispatching":
+                state["next"].pop(identifier, None)
+                state["attempts"].pop(identifier, None)
+                continue
+            if identifier not in outbox.unresolved() or not approved["issued_at"] <= wall < approved["expires_at"]:
+                continue
+            due = state["next"].setdefault(identifier, monotonic + RETRY_BACKOFF_SECONDS[0])
+            if monotonic < due:
+                continue
+            attempts = state["attempts"].get(identifier, 0)
+            try:
+                self.outbox.retry_decision(identifier, expected_revision=body["revision"],
+                                           decision_binding=AUTO_RETRY_BINDING, access_check=self._access)
+            except Exception as error:
+                attempts += 1
+                state["attempts"][identifier] = attempts
+                state["next"][identifier] = monotonic + RETRY_BACKOFF_SECONDS[
+                    min(attempts, len(RETRY_BACKOFF_SECONDS) - 1)]
+                _log_background_failure(error, "background_retry", True, 0)
+                continue
+            state["next"].pop(identifier, None)
+            state["attempts"].pop(identifier, None)
+        return False
 
     def start_receiving(self, grant_factory, operations, *, interval=1):
         """An empty operation tuple pauses admissions; errors stop, never retry jobs."""
@@ -479,24 +920,38 @@ class MeshRuntime:
             gateway = self._public_gateway
             job_timeout = gateway.operation_timeout if gateway is not None else self.config.operation_timeout
             _require(type(job_timeout) in (int, float) and math.isfinite(job_timeout) and 0 < job_timeout <= 60)
-            def invoke(device, operation):
+            def invoke(device, operation, job):
                 _require(not stop.is_set() and not self._stop.is_set())
                 if operation not in permitted_operations():
                     return
                 with grant_factory(operation) as (context, storage_check):
                     _require(type(context) is MeshReceiveContext and callable(storage_check))
                     self._local.receive_stop = stop
+                    self._local.job = job
+                    self._local.background_deadline = time.monotonic() + job_timeout
+                    self._local.capture_reserve = min(CAPTURE_RESERVE_SECONDS, job_timeout / 2)
                     with self._context(context, operation):
                         self._local.receive_storage = storage_check
                         public_active = self._public_active()
                         if public_active or gateway is not None:
                             self._local.public_job_deadline = time.monotonic() + job_timeout
-                        self._local.inventory = device.get_contacts(authorize=self._access)
+                        # This read is now the *only* contact read a dispatched
+                        # fragment pays for, so it takes the same bounded re-read
+                        # the fenced path uses: a read-only stall the port
+                        # resynchronised from must not cost the whole wake.
+                        self._local.inventory = self._inventory(device, self._access)
                         if operation == "receive":
                             for _ in range(PUBLIC_BURST if public_active else 1):
                                 if self._poll(device) == "idle":
                                     break
                         else:
+                            # Do NOT set the destructive-action marker up front here.
+                            # The dispatch layers set their own uncertainty flag only
+                            # after a fragment actually reached the wire (rf_started in
+                            # mesh_outbox.dispatch_one), so a timeout during the
+                            # read-only inventory read that starts this path must stay
+                            # classifiable as pre-wire; otherwise one slow contact read
+                            # latches the whole runtime until a process restart.
                             self._dispatch_pending(device)
             def permitted_operations():
                 choices = operations()
@@ -505,26 +960,91 @@ class MeshRuntime:
                          and len(set(choices)) == len(choices))
                 return choices
             def worker():
+                nonlocal stop
                 index = 0
+                backoff = BACKGROUND_RETRY_MIN_SECONDS
+                refusals = 0
                 while not stop.is_set() and not self._stop.is_set():
                     future = None
+                    operation = None
+                    job = _BackgroundJob()
+                    written = self._radio_written()
                     try:
                         choices = permitted_operations()
                         if not choices:
                             stop.wait(interval)
                             continue
                         operation = choices[index % len(choices)]
-                        index += 1
-                        future = self._submit(lambda device: invoke(device, operation))
+                        future = self._submit(lambda device: invoke(device, operation, job))
                         future.result(timeout=job_timeout)
                     except Exception as error:
-                        if isinstance(error, (FutureTimeout, MeshLeaseUncertain)):
-                            self._uncertain = True
-                        self.admission_safe()
+                        current = self._radio_written()
+                        refusal = (isinstance(error, SerialOwnerError)
+                                   and (error.args[0] if error.args else None) in ADMISSION_REFUSAL_CODES)
+                        # A refusal admits nothing. A timeout is only pre-wire when
+                        # the job's own destructive-action marker is unset and the
+                        # transport is intact; an unacknowledged capture lease stays
+                        # uncertain by design and must keep blocking drain (see
+                        # test_unknown_supervisor_lease_outcome_blocks_clean_close).
+                        pre_wire = ((refusal or isinstance(error, FutureTimeout))
+                                    and not job.radio_action.is_set() and not self._radio_poisoned())
+                        refusals = refusals + 1 if refusal else 0
+                        # A fence that an owner-session read holds refuses every
+                        # retry for its whole body, so log the first few and then
+                        # one in thirty-two rather than a line every half second.
+                        if not refusal or refusals <= 2 or refusals % 32 == 0:
+                            _log_background_failure(error, operation, pre_wire,
+                                None if type(written) is not int or type(current) is not int else current - written,
+                                job.access_denied)
+                        if (refusal and pre_wire and not self._closed
+                                and not self._stop.is_set() and self.admission_safe()):
+                            # A refusal admitted nothing at all - the coordinator
+                            # rejected the job before it was queued - so there is no
+                            # radio or firmware state to resolve and nothing to
+                            # overlap. Wait for the fence to lift and try again
+                            # instead of stopping the receive loop.
+                            stop.wait(backoff)
+                            backoff = min(backoff * 2, BACKGROUND_RETRY_MAX_SECONDS)
+                            continue
+                        # Retire this worker before classifying the failure: the
+                        # in-flight job observes the stop flag at its next access
+                        # check and cannot start a new destructive capture.
+                        stop.set()
                         if future is not None:
                             future.cancel()
-                        stop.set()
+                        # A capture that reached the destructive dequeue owns the
+                        # radio until the reviewed recovery: unchanged, and latched
+                        # immediately so that state is never ambiguous.
+                        capture_unknown = (job.radio_action.is_set() and not pre_wire
+                                           and isinstance(error, (FutureTimeout, MeshLeaseUncertain)))
+                        # A dispatch failure is different evidence. The outbox
+                        # records the exact row and its own window as the job
+                        # unwinds (the dispatch path deliberately does not set the
+                        # job marker), so wait for that record before deciding:
+                        # owner decision 2026-09-13 makes a fragment that reached
+                        # the wire and was never acknowledged retryable inside the
+                        # window, so the unit must not park at not_ready until a
+                        # human restarts it. Everything else keeps the old latch.
+                        recovering = (not capture_unknown and self._await_abandoned(future)
+                                      and self._recovery_allowed(current) and not self._closed
+                                      and not self._stop.is_set() and not self._receive_pausing
+                                      and self.admission_safe())
+                        if recovering:
+                            with self._condition:
+                                self._receive_stop = threading.Event()
+                            stop = self._receive_stop
+                            refusals = 0
+                            backoff = BACKGROUND_RETRY_MIN_SECONDS
+                            stop.wait(min(BACKGROUND_RETRY_MIN_SECONDS, interval))
+                            continue
+                        if capture_unknown or (isinstance(error, (FutureTimeout, MeshLeaseUncertain))
+                                               and not pre_wire):
+                            self._uncertain = True
+                        self.admission_safe()
                         return
+                    index += 1
+                    backoff = BACKGROUND_RETRY_MIN_SECONDS
+                    self._recovered_at = None
                     public_active = self._public_active()
                     stop.wait(gateway.poll_interval if gateway is not None else
                               min(interval, PUBLIC_POLL_INTERVAL) if public_active else interval)

@@ -333,12 +333,19 @@ def test_allowance_refuses_a_malformed_document(bad):
     {PATH: {'from': 'a' * 64, 'to': 'b' * 64, 'why': 'x'}},
     {PATH: {'from': 'nope', 'to': 'b' * 64}},
     {'relative/path': {'from': 'a' * 64, 'to': 'b' * 64}},
-    {},
 ])
 def test_allowance_refuses_a_malformed_delta(delta):
     prior, fence, live, _ = drifted()
     with pytest.raises(ValueError):
         admits(prior, fence, live, allowance_of(delta=delta))
+
+
+def test_allowance_may_pin_a_fence_only_deviation():
+    """A maintenance cold start changes the fence broker and no inventory file:
+    the tolerance then names no delta, which is narrower than one that does."""
+    prior, fence, live, _ = drifted()
+    prior['inventory'] = dict(live)
+    admits(prior, fence, live, allowance_of(delta={}))
 
 
 def test_strict_prior_wins_even_when_an_allowance_is_supplied():

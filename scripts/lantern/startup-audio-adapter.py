@@ -87,7 +87,12 @@ def load(pin):
 
 
 def delta_names(delta):
-    require(type(delta) is dict and delta)
+    # A tolerance may be fence-only: a maintenance cold start leaves a new broker
+    # in the live fence while the prior lifetime names the broker its own
+    # lifecycle started, and no inventory file need have changed. An empty delta
+    # is strictly narrower than one naming files - the caller still requires the
+    # two inventories to agree exactly - so it is allowed.
+    require(type(delta) is dict)
     for name, pin in delta.items():
         require(type(name) is str and name.startswith('/') and '..' not in Path(name).parts)
         require(type(pin) is dict and set(pin) == {'from', 'to'}
