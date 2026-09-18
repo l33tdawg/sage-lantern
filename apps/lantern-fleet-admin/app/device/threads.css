@@ -98,3 +98,30 @@
   .device-mail-layout footer button { min-height: 48px; font-size: 16px; padding: 8px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .device-mail-sidebar { transition: none; } }
+
+/* Chats with people: the same interaction model as the main-screen chats. */
+.device-chat-mail { position: relative; display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.device-chat-mail > .device-chat-mail-list { position: static; transform: none; visibility: visible; width: auto; box-shadow: none; }
+.device-chat-mail-list { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.device-chat-mail-list nav { min-height: 0; overflow-y: auto; flex: 1; }
+.device-chat-mail-list nav button { position: relative; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.device-chat-mail-list nav small { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.device-chat-stamp { color: var(--device-muted); font-size: 13px; }
+.device-chat-unread { position: absolute; top: 8px; right: 8px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--device-accent); color: #08202b; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.device-chat-window { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.device-chat-window-head h2 { font-size: 22px; margin: 0; }
+.device-chat-window-head p { margin: 4px 0 0; }
+.device-chat-route { color: var(--device-muted); font-size: 14px; }
+.device-chat-exchanges { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+.device-chat-bubble { max-width: 88%; align-self: flex-start; padding: 10px 14px; border-radius: 16px 16px 16px 4px; background: #172a34; }
+.device-chat-bubble.device-chat-mine { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: #243b46; }
+.device-chat-bubble p { margin: 0; }
+.device-chat-bubble small { color: var(--device-muted); font-size: 13px; }
+.device-chat-compose { overflow-y: auto; }
+@media (max-width: 760px), (orientation: portrait) {
+  .device-chat-mail { grid-template-columns: minmax(0, 1fr); }
+  .device-chat-mail > .device-chat-mail-list { position: absolute; inset: 0 auto 0 0; width: min(88%, 340px); z-index: 31; transform: translateX(-105%); visibility: hidden; box-shadow: 12px 0 36px #0006; transition: transform .18s ease, visibility .18s; }
+  .device-chat-mail.device-show-chats > .device-chat-mail-list { transform: translateX(0); visibility: visible; }
+  .device-chat-mail.device-show-chats > .device-chat-window { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .device-chat-mail > .device-chat-mail-list { transition: none; } }

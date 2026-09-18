@@ -82,7 +82,7 @@ test('public and private interfaces keep consent separate and never render HTML'
   assert.match(share, /preview_id: preview.preview_id, digest: preview.digest/);
   assert.match(share, /!checked/);
   assert.match(share, /photo sharing|Photo sharing/);
-  assert.match(messages, /Check Outbox before trying again/);
+  assert.match(messages, /Check the chat before trying again/);
   assert.match(dictation, /purpose: 'message'/);
   assert.match(dictation, /Use this text/);
   for (const source of [share, messages, dictation]) assert.doesNotMatch(source, /dangerouslySetInnerHTML|localStorage|sessionStorage/);
@@ -99,9 +99,9 @@ test('recording completion cannot discard a message draft or regress a reviewed 
 
 test('unknown send preserves recovery identity when browsing outbox', () => {
   const messages = readFileSync(new URL('../app/device/messages.tsx', import.meta.url), 'utf8');
-  assert.match(messages, /if \(!unconfirmed\) resetDraft\(\); setComposing\(false\); setBox\('outbox'\)/);
+  assert.match(messages, /if \(!unconfirmed\) resetDraft\(\); setComposing\(false\); setRefresh\(\(value\) => value \+ 1\)/);
   assert.match(messages, /Discarding this draft will not cancel delivery/);
-  assert.ok(messages.indexOf('else if (selected)') < messages.indexOf('else if (unconfirmed'));
+  assert.match(messages, /else if \(composing\) \{ if \(unconfirmed \|\| paragraphs\.length && !outcome\) setDiscard\(true\)/);
   const share = readFileSync(new URL('../app/device/share.tsx', import.meta.url), 'utf8');
   assert.match(share, /ShareContent key=\{JSON.stringify\(props.source \?\? null\)\}/);
 });

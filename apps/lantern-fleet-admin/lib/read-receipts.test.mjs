@@ -109,7 +109,7 @@ test('UI binds a separately rendered inbox detail; unchecked explicit button onl
   const messages = readFileSync(new URL('../app/device/messages.tsx', import.meta.url), 'utf8');
   const control = readFileSync(new URL('../app/device/read-receipt.tsx', import.meta.url), 'utf8');
   assert.match(messages, /messages\/open'.*share_read_receipt: false/);
-  assert.match(messages, /message.box === 'inbox' && message.id === selected.id && receiptEligible/);
+  assert.match(messages, /message.box === 'inbox' && message.id === lastInbound\?\.id && receiptEligible/);
   assert.match(messages, /key=\{message.id\}/);
   assert.match(control, /useState\(false\)/);
   assert.match(control, /requestAnimationFrame/);

@@ -13,10 +13,11 @@ test('preview is associated with exactly one voice session', () => {
 
 test('question and answer share a preview with discard and clear controls', () => {
   const screen = readFileSync(new URL('../app/device/screen.tsx', import.meta.url), 'utf8');
+  const header = readFileSync(new URL('../app/device/device-header.tsx', import.meta.url), 'utf8');
   assert.match(screen, /alt="Photo attached to this question"/);
   assert.match(screen, /cancelLabel=\{displayedPhoto \? 'Back' : 'Cancel'\}/);
   assert.match(screen, /onCancelled=\{\(\) => \{ setPhoto\(undefined\); setPhotoStart\(undefined\); setSessionPhoto\(undefined\)/);
-  assert.match(screen, /New chat; keep saved conversations/);
+  assert.match(header, /New chat; keep saved conversations/);
 });
 
 test('photo attachment explicitly requests recording through the existing voice owner', () => {

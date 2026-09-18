@@ -22,18 +22,25 @@ test('legacy questions stay separate; current and saved turns merge without dupl
   assert.throws(() => parseConversationState({ ...current, items: [item(4)] }));
 });
 
-test('inbox and sent messages join by SAGE key AND network, never display names', () => {
+test('one chat per SAGE key AND network, newest first, titled by the verified radio contact', () => {
   const key = 'a'.repeat(64);
   const messages = [
     { id: 'one', peer_name: `north:${key}`, text: 'Hello', box: 'inbox', state: 'delivered', created_at: '2026-09-09T00:00:00Z' },
     { id: 'two', peer_name: `north:${key}`, text: 'Reply', box: 'outbox', state: 'sent', created_at: '2026-09-09T00:01:00Z' },
     { id: 'three', peer_name: `south:${key}`, text: 'Separate route', box: 'inbox', state: 'delivered', created_at: '2026-09-09T00:02:00Z' },
   ];
-  assert.equal(messageThreads(messages, 'inbox').length, 2);
-  assert.equal(messageThreads(messages, 'inbox', 'north')[0].messages.length, 2);
-  assert.equal(messageThreads(messages, 'sent').length, 1);
-  assert.equal(messageThreads(messages, 'outbox').length, 0);
-  assert.equal(messageThreads(messages.map((row) => ({ ...row, peer_name: 'Alex' })), 'inbox').length, 2);
+  const threads = messageThreads(messages, { names: { [`north:${key}`]: 'Alex' } });
+  assert.equal(threads.length, 2);
+  assert.equal(threads[0].identity.network, 'south', 'newest chat first');
+  const north = threads.find((thread) => thread.identity.network === 'north');
+  assert.equal(north.messages.length, 2, 'inbound and outbound join one chat');
+  assert.equal(north.title, 'Alex');
+  assert.equal(north.unread, 1);
+  assert.equal(messageThreads(messages, { names: { [`north:${key}`]: 'Alex' }, seen: new Set(['one']) })
+    .find((thread) => thread.identity.network === 'north').unread, 0);
+  assert.equal(messageThreads(messages, { search: 'separate' }).length, 1);
+  assert.equal(messageThreads(messages.map((row) => ({ ...row, peer_name: 'Alex' })), {}).length, 3,
+    'an unverified display name never groups chats');
   const contacts = [{ id: 'bound-contact', agent_id: key, chain_id: 'north', name: 'Alex' }, { id: 'other-route', agent_id: key, chain_id: 'south', name: 'Alex' }];
   assert.equal(replyContact(messages[0], contacts).id, 'bound-contact');
   assert.equal(replyContact(messages[0], [contacts[1]]), null);

@@ -18,8 +18,8 @@ import type { ShareSource } from '../../lib/community';
 import { voiceCommand } from '../../lib/voice-control';
 import { deviceSessionHeaders } from '../../lib/device-session';
 import type { DeviceProfile } from '../../lib/device-profile';
-import { CameraIcon, LanternIcon, SettingsIcon, HistoryIcon, InfoIcon, LockIcon, NetworkIcon, EnvelopeIcon, ShareIcon } from './icons';
-import RadioSignal from './radio-signal';
+import { CameraIcon, SettingsIcon, HistoryIcon, InfoIcon, LockIcon, NetworkIcon, ShareIcon } from './icons';
+import DeviceHeader, { type HeaderPage } from './device-header';
 import TalkControls from './talk';
 import AnswerWait from './answer-wait';
 import QuestionTurn from './question-turn';
@@ -184,25 +184,27 @@ export default function DeviceScreen({ onLock, profile, onProfileChange }: { onL
     finally { setClearing(false); }
   };
 
-  if (correction && connected) return <main className="device-screen"><QuestionCorrection key={correction.sourceId} {...correction} attempts={correctionAttempts}
-    ready={status?.voice.correction_ready === true && !busy && (correction.fromHistory ? canAskAgain : view.phase === 'complete' && status.voice.session_id === correction.sourceId)}
-    close={() => setCorrection(null)} submitted={(sessionId, attachment) => { showLatest(); setCorrection(null); setPhoto(undefined); setPhotoStart(undefined); setSessionPhoto(attachment ? { ...attachment, sessionId } : undefined); setPage('main'); }} /></main>;
-  if (page === 'settings') return <main className={`device-screen device-${view.phase}`}><SettingsScreen close={goBack} profile={profile} onProfileChange={onProfileChange} onLock={onLock} /></main>;
-  if (page === 'messages') return <main className="device-screen"><MessagesScreen close={goBack} /></main>;
-  if (page === 'sharing') return <main className="device-screen"><ShareScreen source={shareSource} close={goBack} /></main>;
+  const headerPage: HeaderPage = correction ? 'correction' : page;
+  const headerHome = () => {
+    if (busy) return;
+    if (page === 'main' && !correction) void clearAnswer();
+    else goBack();
+  };
 
-  return <main className={`device-screen device-${view.phase}${page === 'main' ? ' device-thread-layout' : ''}${showChats ? ' device-show-chats' : ''}`} onTouchStart={(event) => { const touch = event.touches[0]; edgeSwipe.current = touch.clientX < 28 ? { x: touch.clientX, y: touch.clientY } : null; }} onTouchEnd={(event) => { const start = edgeSwipe.current; edgeSwipe.current = null; const touch = event.changedTouches[0]; if (start && !busy && page === 'main' && touch.clientX - start.x > 70 && Math.abs(touch.clientY - start.y) < 50) setShowChats(true); }}>
-    {page === 'camera' ? <CameraScreen photoReady={connected && status?.voice.photo_ready} onAttach={(image) => { setPhoto(image); setPhotoStart(crypto.randomUUID()); setPage('main'); if (status?.voice.session_id) setClearedSession(status.voice.session_id); }} close={() => { setPage('main'); requestAnimationFrame(() => cameraButton.current?.focus()); }} /> : page === 'history' ? <HistoryScreen close={goBack} canAsk={canAskAgain} onAskAgain={askAgain} onCorrect={connected && status?.voice.correction_ready === true ? (sourceId, question, attachment) => setCorrection({ sourceId, question, photo: attachment, historyPhoto: !!attachment, fromHistory: true }) : undefined} /> : page === 'status' ? <NearbyScreen status={status} connected={connected} close={goBack} /> : page === 'about' ? <AboutScreen close={goBack} /> : <>
-      <header className="device-top" inert={menuOpen}>
-        <div className="device-home-group">
-          <button className="device-wordmark" disabled={busy} onClick={() => void clearAnswer()} aria-label="New chat; keep saved conversations" title="New chat" aria-busy={clearing}><LanternIcon /><span>SAGE Lantern</span></button>
-          <button className="device-lora-indicator" disabled={busy} onClick={() => setPage('status')} aria-label="Open nearby connections" title="Nearby"><RadioSignal paused={busy} /></button>
-        </div>
-        <div className="device-top-actions">
-          <button ref={messagesButton} className="device-messages-shortcut" disabled={busy} onClick={() => setPage('messages')} aria-label="Messages" title="Messages"><EnvelopeIcon /></button>
-          <button ref={menuButton} disabled={busy} onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}><span aria-hidden="true">☰</span> Menu</button>
-        </div>
-      </header>
+  return <main className={`device-screen${page === 'main' && !correction ? ` device-${view.phase} device-thread-layout` : page === 'settings' ? ` device-${view.phase}` : ''}${showChats ? ' device-show-chats' : ''}`} onTouchStart={(event) => { const touch = event.touches[0]; edgeSwipe.current = touch.clientX < 28 ? { x: touch.clientX, y: touch.clientY } : null; }} onTouchEnd={(event) => { const start = edgeSwipe.current; edgeSwipe.current = null; const touch = event.changedTouches[0]; if (start && !busy && page === 'main' && touch.clientX - start.x > 70 && Math.abs(touch.clientY - start.y) < 50) setShowChats(true); }}>
+    <DeviceHeader busy={busy} clearing={clearing} page={headerPage} menuOpen={menuOpen} messagesRef={messagesButton} menuRef={menuButton}
+      onHome={headerHome} onNearby={() => setPage('status')} onMessages={() => setPage('messages')} onMenu={() => setMenuOpen(true)} />
+    {correction && connected ? <QuestionCorrection key={correction.sourceId} {...correction} attempts={correctionAttempts}
+      ready={status?.voice.correction_ready === true && !busy && (correction.fromHistory ? canAskAgain : view.phase === 'complete' && status.voice.session_id === correction.sourceId)}
+      close={() => setCorrection(null)} submitted={(sessionId, attachment) => { showLatest(); setCorrection(null); setPhoto(undefined); setPhotoStart(undefined); setSessionPhoto(attachment ? { ...attachment, sessionId } : undefined); setPage('main'); }} />
+      : page === 'settings' ? <SettingsScreen close={goBack} profile={profile} onProfileChange={onProfileChange} onLock={onLock} />
+      : page === 'messages' ? <MessagesScreen close={goBack} />
+      : page === 'sharing' ? <ShareScreen source={shareSource} close={goBack} />
+      : page === 'camera' ? <CameraScreen photoReady={connected && status?.voice.photo_ready} onAttach={(image) => { setPhoto(image); setPhotoStart(crypto.randomUUID()); setPage('main'); if (status?.voice.session_id) setClearedSession(status.voice.session_id); }} close={() => { setPage('main'); requestAnimationFrame(() => cameraButton.current?.focus()); }} />
+      : page === 'history' ? <HistoryScreen close={goBack} canAsk={canAskAgain} onAskAgain={askAgain} onCorrect={connected && status?.voice.correction_ready === true ? (sourceId, question, attachment) => setCorrection({ sourceId, question, photo: attachment, historyPhoto: !!attachment, fromHistory: true }) : undefined} />
+      : page === 'status' ? <NearbyScreen status={status} connected={connected} close={goBack} />
+      : page === 'about' ? <AboutScreen close={goBack} />
+      : <>
       {showChats && <button className="device-chat-scrim" aria-label="Close chats" onClick={() => setShowChats(false)} />}
       <aside id="device-chats" ref={chatDrawer} className="device-chat-list" aria-label="Conversations" inert={menuOpen}>
         <div className="device-drawer-heading"><h2>Conversations</h2><button className="device-chats-back" onClick={() => setShowChats(false)}>Close</button></div>
@@ -259,26 +261,26 @@ export default function DeviceScreen({ onLock, profile, onProfileChange }: { onL
         <button ref={cameraButton} className="device-camera-shortcut" disabled={busy || !connected} onClick={() => setPage('camera')} aria-label="Open camera"><CameraIcon /></button>
         <TalkControls status={status} photo={photo} autoStart={photoStart} onAutoStartHandled={() => setPhotoStart(undefined)} onStarted={(sessionId, attachment) => setSessionPhoto(attachment ? { sessionId, ...attachment } : undefined)} onCancelled={() => { setPhoto(undefined); setPhotoStart(undefined); setSessionPhoto(undefined); }} cancelLabel={displayedPhoto ? 'Back' : 'Cancel'} connected={connected && !clearing && !chats.selecting && !draft && (!photo || !!status?.voice.photo_ready)} compact onBusyChange={setTouchBusy} label={suggestedQuestions.length ? 'Ask something else' : chats.current?.items.length || turnVisible ? 'Follow up' : 'Ask'} />
       </footer>
-      <div className={`device-menu-backdrop${menuOpen ? ' device-menu-open' : ''}`} inert={!menuOpen} aria-hidden={!menuOpen} onClick={(event) => { if (event.target === event.currentTarget) closeMenu(); }}>
-        <div ref={menu} role="dialog" aria-modal="true" aria-label="Device menu" className="device-menu" onKeyDown={(event) => {
-          if (event.key === 'Escape') closeMenu();
-          if (event.key === 'Tab') {
-            const buttons = menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
-            if (!buttons?.length) return;
-            if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons[buttons.length - 1].focus(); }
-            else if (!event.shiftKey && document.activeElement === buttons[buttons.length - 1]) { event.preventDefault(); buttons[0].focus(); }
-          }
-        }}>
-          <header><h1>Menu</h1><button ref={menuClose} onClick={closeMenu}>Close</button></header>
-          <button onClick={() => { setMenuOpen(false); setPage('history'); }}><HistoryIcon /> Past questions</button>
-          <button onClick={() => { setMenuOpen(false); setPage('status'); }}><NetworkIcon /> Nearby</button>
-          <button onClick={() => { setMenuOpen(false); setPage('settings'); }}><SettingsIcon /> Settings</button>
-          <button onClick={() => { setMenuOpen(false); setShareSource(undefined); setPage('sharing'); }}><ShareIcon /> Shared knowledge</button>
-          <button onClick={() => { setMenuOpen(false); setPage('about'); }}><InfoIcon /> About</button>
-          {onLock && <button onClick={onLock}><LockIcon /> Lock</button>}
-          <p>Saved questions and device details.</p>
-        </div>
-      </div>
     </>}
+    <div className={`device-menu-backdrop${menuOpen ? ' device-menu-open' : ''}`} inert={!menuOpen} aria-hidden={!menuOpen} onClick={(event) => { if (event.target === event.currentTarget) closeMenu(); }}>
+      <div ref={menu} role="dialog" aria-modal="true" aria-label="Device menu" className="device-menu" onKeyDown={(event) => {
+        if (event.key === 'Escape') closeMenu();
+        if (event.key === 'Tab') {
+          const buttons = menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+          if (!buttons?.length) return;
+          if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons[buttons.length - 1].focus(); }
+          else if (!event.shiftKey && document.activeElement === buttons[buttons.length - 1]) { event.preventDefault(); buttons[0].focus(); }
+        }
+      }}>
+        <header><h1>Menu</h1><button ref={menuClose} onClick={closeMenu}>Close</button></header>
+        <button onClick={() => { setMenuOpen(false); setPage('history'); }}><HistoryIcon /> Past questions</button>
+        <button onClick={() => { setMenuOpen(false); setPage('status'); }}><NetworkIcon /> Nearby</button>
+        <button onClick={() => { setMenuOpen(false); setPage('settings'); }}><SettingsIcon /> Settings</button>
+        <button onClick={() => { setMenuOpen(false); setShareSource(undefined); setPage('sharing'); }}><ShareIcon /> Shared knowledge</button>
+        <button onClick={() => { setMenuOpen(false); setPage('about'); }}><InfoIcon /> About</button>
+        {onLock && <button onClick={onLock}><LockIcon /> Lock</button>}
+        <p>Saved questions and device details.</p>
+      </div>
+    </div>
   </main>;
 }

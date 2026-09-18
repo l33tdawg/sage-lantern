@@ -42,15 +42,18 @@ test('share opens only a completed session preview and never sends directly', ()
 });
 
 test('Home resets the current interaction without deleting saved history', () => {
-  assert.match(screen, /disabled=\{busy\} onClick=\{\(\) => void clearAnswer\(\)\} aria-label="New chat; keep saved conversations"/);
-  assert.match(screen, /className="device-wordmark" disabled=\{busy\}/);
-  assert.match(screen, /title="New chat" aria-busy=\{clearing\}><LanternIcon \/><span>SAGE Lantern<\/span>/);
-  assert.equal((screen.match(/aria-label="New chat;/g) || []).length, 1);
-  assert.match(screen, /title="Nearby"><RadioSignal paused=\{busy\} \/><\/button>/);
-  const homeGroup = screen.slice(screen.indexOf('className="device-home-group"'), screen.indexOf('className="device-top-actions"'));
+  const header = readFileSync(new URL('../app/device/device-header.tsx', import.meta.url), 'utf8');
+  assert.match(screen, /if \(page === 'main' && !correction\) void clearAnswer\(\);/);
+  assert.match(header, /className="device-wordmark" disabled=\{busy\} onClick=\{onHome\}/);
+  assert.match(header, /aria-busy=\{clearing\}/);
+  assert.match(header, /title=\{home \? 'New chat' : 'Home'\}/);
+  assert.match(header, /<LanternIcon \/><span>SAGE Lantern<\/span>/);
+  assert.equal((header.match(/New chat; keep saved conversations/g) || []).length, 1);
+  assert.match(header, /title="Nearby"><RadioSignal paused=\{busy\} \/><\/button>/);
+  const homeGroup = header.slice(header.indexOf('className="device-home-group"'), header.indexOf('className="device-top-actions"'));
   assert.match(homeGroup, /device-wordmark/);
   assert.match(homeGroup, /device-lora-indicator/);
-  const reset = screen.slice(screen.indexOf('const clearAnswer'), screen.indexOf("if (page === 'settings')"));
+  const reset = screen.slice(screen.indexOf('const clearAnswer'), screen.indexOf('const headerPage'));
   assert.match(reset, /await voiceCommand\('clear', \{\}\)/);
   assert.match(reset, /setPhoto\(undefined\); setPhotoStart\(undefined\); setSessionPhoto\(undefined\)/);
   assert.match(reset, /setClearedSession\(current \|\| null\)/);
