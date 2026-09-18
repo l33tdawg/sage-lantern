@@ -45,6 +45,7 @@ import uuid
 
 from sage_sdk import AgentIdentity, SageClient
 
+from .airtime_budget import AirtimeLedger, AirtimePolicy
 from .mesh_contact_registry import MeshContactRegistry
 from .mesh_envelope import Peer
 from .mesh_inbox import MeshInbox
@@ -135,6 +136,19 @@ INVENTORY_ATTEMPTS = 3
 # unit A's dispatch wake at 17:18 on 2026-09-18 reached dispatch_one and then
 # failed on the session's own expiry with a whole fragment still unsent.
 INVENTORY_RESERVE_SECONDS = 6.0
+# A background wake may reuse the last inventory any operation read when it is
+# this fresh; only a stale one is read again. The firmware's routing table
+# changes only on an import or an observed advertisement, and every wake that
+# pays the serial round trip risks its 3 s stall and the job budget with it
+# (unit A journal 2026-09-18 17:53: a fenced read answered 503 while the wake
+# held the serial owner). The row's peer must still be in the inventory for the
+# prefix to be unique, so a stale table refuses rather than misfires.
+INVENTORY_WAKE_FRESH_SECONDS = 20.0
+# A full journal scan costs the whole background budget on this device (every
+# page is a snapshot pair plus a list call), so a wake only pays it this often.
+# Rows the runtime queued dispatch from memory and never wait for a scan, and
+# reconciliation loads the rows it already knows by key.
+DISPATCH_SCAN_SECONDS = 30.0
 # A read-only exchange that came back as a complete but unexpected frame leaves
 # the port on a frame boundary, so a fresh read is safe even though there is
 # nothing to discard: the abandoned response belongs to the read that just
@@ -221,6 +235,20 @@ def _log_background_failure(error, operation, provably_pre_wire, wire_frames, ac
                            event="mesh_background_failure")
 
 
+def _log_airtime_deferral(ledger, count):
+    """Bounded diagnostics: the duty-cycle gate paced one dispatch wake."""
+    try:
+        import syslog
+    except Exception:
+        return
+    try:
+        payload = dict(count=count, **ledger.snapshot())
+        payload["event"] = "mesh_airtime_deferred"
+        syslog.syslog(syslog.LOG_INFO, json.dumps(payload))
+    except Exception:
+        return
+
+
 class _BackgroundJob:
     """Per-job marker for the destructive radio steps a poll can reach.
 
@@ -250,6 +278,7 @@ class MeshRuntimeConfig:
     identity_path: Path
     receiver_slot: str
     operation_timeout: float = 10
+    airtime: AirtimePolicy | None = None
 
 
 @dataclass(frozen=True, repr=False)
@@ -280,6 +309,7 @@ class MeshRuntime:
             _require(activation_check() is True)
             _require(type(config.operation_timeout) in (int, float) and math.isfinite(config.operation_timeout)
                      and 0 < config.operation_timeout <= 30)
+            _require(config.airtime is None or type(config.airtime) is AirtimePolicy)
             _require(isinstance(config.identity_path, Path) and config.identity_path.is_absolute())
             _require(type(config.receiver_slot) is str and str(uuid.UUID(config.receiver_slot)) == config.receiver_slot
                      and uuid.UUID(config.receiver_slot).int != 0)
@@ -307,6 +337,8 @@ class MeshRuntime:
             service._public_mesh = None
             service._public_gateway = None
             service._delivery_receipts = None
+            service._airtime = None if config.airtime is None else AirtimeLedger(config.airtime)
+            service._airtime_deferrals = 0
             service._close_mutex = threading.Lock()
             service.store = WorkflowStore(client, storage=probe)
             def initialize(device):
@@ -522,7 +554,7 @@ class MeshRuntime:
                 and type(failure) is dict and type(failure.get("error")) is str
                 and failure.get("sending") is False and failure.get("receiving") is False)
 
-    def _inventory(self, device, authorize):
+    def _inventory(self, device, authorize, *, fresh=0.0):
         """Bounded contact-inventory refresh, falling back to the last known one.
 
         Every radio operation refreshes the inventory first, so one failed
@@ -537,10 +569,16 @@ class MeshRuntime:
         that would have consumed the whole job cannot take the wire step with it.
         The last inventory any operation read is kept on the runtime itself: the
         job-local one is cleared with every context, and a provably read-only
-        failure is the only thing allowed to reuse it.
+        failure is the only thing allowed to reuse it. A caller that passes a
+        ``fresh`` window may reuse it without touching the serial at all.
         """
         failure = None
         rereadable = False
+        cached = getattr(self, "_last_inventory", None)
+        cached_at = getattr(self, "_last_inventory_at", None)
+        if (fresh and cached is not None and type(cached_at) in (int, float)
+                and 0 <= time.monotonic() - cached_at <= fresh):
+            return cached
         deadline = getattr(getattr(self, "_local", None), "background_deadline", None)
         if type(deadline) not in (int, float):
             timeout = getattr(getattr(self, "config", None), "operation_timeout", None)
@@ -550,15 +588,16 @@ class MeshRuntime:
             try:
                 inventory = device.get_contacts(authorize=authorize)
                 self._last_inventory = inventory
+                self._last_inventory_at = time.monotonic()
                 return inventory
             except Exception as error:
                 failure = error
                 rereadable = self._resynced_read_failure(device)
                 if attempt == INVENTORY_ATTEMPTS - 1 or not rereadable or time.monotonic() >= limit:
                     break
-        cached = getattr(getattr(self, "_local", None), "inventory", None)
-        if cached is None:
-            cached = getattr(self, "_last_inventory", None)
+        job_cached = getattr(getattr(self, "_local", None), "inventory", None)
+        if job_cached is not None:
+            cached = job_cached
         if cached is not None and self._readonly_read_failure(device):
             return cached
         raise failure
@@ -671,7 +710,12 @@ class MeshRuntime:
             return self.outbox.queue(message_id=message_id,
                 recipient=recipient, radio_public_key=radio_public_key, content=content, approval_binding=context.approval_binding,
                 consent_binding=consent_binding, issued_at=issued_at, expires_at=expires_at, access_check=self._access)
-        return self._run(context, "queue_message", queue)
+        progress = self._run(context, "queue_message", queue)
+        if getattr(progress, "state", None) == "queued":
+            # The next dispatch wake must find this row without a journal scan:
+            # that wake is what the owner's send is waiting on.
+            self._queued_rows().add(message_id)
+        return progress
 
     def ready(self, context):
         def check():
@@ -793,31 +837,101 @@ class MeshRuntime:
         return self._run(context, "public_inspect", lambda device:
             self._public_mesh.inspect(request_id, access_check=self._access))
 
+    @contextmanager
+    def _airtime_reservation(self, device, *, frames=1):
+        """Two-phase duty-cycle reservation around one transmission attempt.
+
+        The check runs before the attempt and the estimate is committed after it
+        (including when it raised, because a fragment that reached the wire has
+        already spent airtime). A configured gate fails closed until the first
+        firmware counter reading has been cached by a health() call, because a
+        duty-cycle limit must not transmit on trust. Without a configured policy
+        this is a no-op, so an unconfigured unit behaves exactly as before.
+        Denials are pacing, not failure: the caller stops this wake and the
+        worker retries on its normal cadence.
+        """
+        ledger = getattr(self, "_airtime", None)
+        if ledger is None:
+            yield True
+            return
+        sample = getattr(device, "airtime_sample", None)
+        if sample is not None:
+            ledger.observe(sample)
+        if not ledger.allow(now=time.monotonic(), frames=frames):
+            count = getattr(self, "_airtime_deferrals", 0) + 1
+            self._airtime_deferrals = count
+            if count <= 2 or count % 32 == 0:
+                _log_airtime_deferral(ledger, count)
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            ledger.spend(frames=frames)
+
     def _dispatch_pending(self, device):
         # Retryable unknowns first: a row requeued here is picked up by the
         # ordinary dispatch pass below on this same wake.
         self._reconcile_pending()
+        # The epoch check is in-process and free; every store call below is not,
+        # and after an owner session rotates it is *denied*, not slow. A wake
+        # that found out by calling the store stayed inside its job until the
+        # fence drain timed out and contained the whole runtime (unit B journal
+        # 2026-09-18 10:18 and unit A 18:19: background_dispatch
+        # WorkflowUnavailable access_denied authorize_context, then every route
+        # 503). Failing here instead retires the worker in milliseconds, and the
+        # next authenticated request restarts it under the current epoch.
+        _require(self._access() is True)
         if self._public_gateway is not None:
-            self._public_gateway.dispatch(device, access_check=self._access)
+            with self._airtime_reservation(device) as allowed:
+                if not allowed:
+                    return
+                self._public_gateway.dispatch(device, access_check=self._access)
             return
         if self._public_mesh is not None:
             probe = getattr(self._public_mesh, "contact_probe", None)
             if probe is not None and probe.active():
                 for _ in range(PUBLIC_BURST):
-                    if not probe.dispatch_one(device=device, access_check=self._access, inventory=self._local.inventory):
+                    with self._airtime_reservation(device) as allowed:
+                        if not allowed:
+                            return
+                        sent = probe.dispatch_one(device=device, access_check=self._access,
+                                                  inventory=self._local.inventory)
+                    if not sent:
                         break
                 return
             for request_id in self._public_mesh.pending_ids():
                 progress, _ = self._public_mesh.inspect(request_id, access_check=self._access)
                 if progress.state == "queued":
                     for _ in range(PUBLIC_BURST):
-                        progress = self._public_mesh.dispatch_one(request_id, device=device, access_check=self._access,
-                            inventory=self._local.inventory)
+                        with self._airtime_reservation(device) as allowed:
+                            if not allowed:
+                                return
+                            progress = self._public_mesh.dispatch_one(request_id, device=device,
+                                access_check=self._access, inventory=self._local.inventory)
                         if progress.state != "queued":
                             break
                     return
             if self._public_mesh.active():
                 return
+        # Rows this runtime queued, or already found, dispatch from memory first.
+        # The journal scan below costs the whole wake on this device - every page
+        # is a snapshot pair plus a list call - and the owner's own send is
+        # blocked on the same serial owner for as long as the wake runs (unit A
+        # journal 2026-09-18 17:22-17:35: the wake died on its budget while the
+        # send that created the row was answered 503).
+        for message_id in tuple(self._queued_rows()):
+            try:
+                progress = self._dispatch_row(device, message_id)
+            except Exception:
+                self._queued_rows().discard(message_id)
+                continue
+            if progress is None or progress.state != "queued":
+                self._queued_rows().discard(message_id)
+            return
+        if time.monotonic() < getattr(self, "_next_scan_at", 0.0):
+            return
+        self._next_scan_at = time.monotonic() + DISPATCH_SCAN_SECONDS
         for row in self.store.scan(limit=50, max_records=4096, access_check=self._access):
             if row["kind"] == "mesh_outbound" and row["payload"].get("body", {}).get("schema") == RECEIPT_SCHEMA:
                 body, approved = self.receipts._verified(row)
@@ -830,16 +944,29 @@ class MeshRuntime:
                 if permit is None:
                     continue
                 _require(type(permit) is ReceiptPermit and permit.action == action)
-                self.receipts.dispatch_one(approved["receipt_id"], device=device,
-                    radio_timestamp=int(time.time()), access_check=self._access)
+                with self._airtime_reservation(device) as allowed:
+                    if not allowed:
+                        return
+                    self.receipts.dispatch_one(approved["receipt_id"], device=device,
+                        radio_timestamp=int(time.time()), access_check=self._access)
                 return
             if row["kind"] != "mesh_outbound" or row["payload"].get("body", {}).get("schema") != OUTBOX_SCHEMA:
                 continue
             body = self.outbox._verified(row)
             if body["state"] != "queued" or not body["approved"]["issued_at"] <= int(time.time()) < body["approved"]["expires_at"]:
                 continue
-            self._dispatch_row(device, body["message_id"])
+            self._queued_rows().add(body["message_id"])
+            progress = self._dispatch_row(device, body["message_id"])
+            if progress is None or progress.state != "queued":
+                self._queued_rows().discard(body["message_id"])
             return
+
+    def _queued_rows(self):
+        """Message ids known to be queued, so a wake need not scan the journal."""
+        state = getattr(self, "_queued_ids", None)
+        if state is None:
+            state = self._queued_ids = set()
+        return state
 
     def _dispatch_row(self, device, message_id):
         """Send up to DISPATCH_BURST fragments of one queued row on this wake.
@@ -853,15 +980,22 @@ class MeshRuntime:
         deadline = getattr(self._local, "background_deadline", None)
         for _ in range(DISPATCH_BURST):
             if deadline is not None and time.monotonic() >= deadline - DISPATCH_RESERVE_SECONDS:
-                return
-            progress = self.outbox.dispatch_one(message_id, device=device,
-                                                radio_timestamp=int(time.time()),
-                                                access_check=self._access,
-                                                inventory=self._local.inventory)
+                return None
+            with self._airtime_reservation(device) as allowed:
+                if not allowed:
+                    # Deferral uses the same "not now" signal as the deadline:
+                    # the row stays queued in the store and the bounded journal
+                    # scan re-adds it to the in-memory set on its next pass.
+                    return None
+                progress = self.outbox.dispatch_one(message_id, device=device,
+                                                    radio_timestamp=int(time.time()),
+                                                    access_check=self._access,
+                                                    inventory=self._local.inventory)
             # "queued" means there is another fragment still to send; anything
             # else (awaiting_receipt, delivered, ...) ends this message's turn.
             if progress.state != "queued" or progress.next_fragment >= progress.fragment_count:
-                return
+                return progress
+        return progress
 
     def _retry_state(self):
         state = getattr(self, "_retry_pending", None)
@@ -921,18 +1055,26 @@ class MeshRuntime:
         outbox = getattr(self, "outbox", None)
         if outbox is None or not outbox.unresolved():
             return False
+        if self._access() is not True:
+            return False
         state = self._retry_state()
         wall, monotonic = int(time.time()), time.monotonic()
-        for row in self.store.scan(limit=50, max_records=4096, access_check=self._access):
-            if row["kind"] != "mesh_outbound" or row["payload"].get("body", {}).get("schema") != OUTBOX_SCHEMA:
+        # The unresolved ids are already known, so each row is loaded by key
+        # instead of scanning the journal: that scan was the whole background
+        # budget on this device (unit B journal 2026-09-18 10:11: one dispatch
+        # wake died with wire_frames 0 inside it) and reconciliation is the
+        # first thing every dispatch wake does.
+        for identifier in tuple(outbox.unresolved()):
+            try:
+                body = self.outbox._load(identifier, self._access)
+            except Exception:
                 continue
-            body = self.outbox._verified(row)
-            identifier, approved = body["message_id"], body["approved"]
+            approved = body["approved"]
             if body["state"] != "dispatching":
                 state["next"].pop(identifier, None)
                 state["attempts"].pop(identifier, None)
                 continue
-            if identifier not in outbox.unresolved() or not approved["issued_at"] <= wall < approved["expires_at"]:
+            if not approved["issued_at"] <= wall < approved["expires_at"]:
                 continue
             due = state["next"].setdefault(identifier, monotonic + RETRY_BACKOFF_SECONDS[0])
             if monotonic < due:
@@ -950,6 +1092,7 @@ class MeshRuntime:
                 continue
             state["next"].pop(identifier, None)
             state["attempts"].pop(identifier, None)
+            self._queued_rows().add(identifier)
         return False
 
     def start_receiving(self, grant_factory, operations, *, interval=1):
@@ -982,8 +1125,12 @@ class MeshRuntime:
                         # This read is now the *only* contact read a dispatched
                         # fragment pays for, so it takes the same bounded re-read
                         # the fenced path uses: a read-only stall the port
-                        # resynchronised from must not cost the whole wake.
-                        self._local.inventory = self._inventory(device, self._access)
+                        # resynchronised from must not cost the whole wake. A
+                        # wake reuses a recent read entirely instead of paying
+                        # the serial round trip again: the owner's own send waits
+                        # on this wake, and the table only changes on an import.
+                        self._local.inventory = self._inventory(device, self._access,
+                            fresh=INVENTORY_WAKE_FRESH_SECONDS)
                         if operation == "receive":
                             for _ in range(PUBLIC_BURST if public_active else 1):
                                 if self._poll(device) == "idle":
@@ -1085,13 +1232,25 @@ class MeshRuntime:
                                                and not pre_wire):
                             self._uncertain = True
                         self.admission_safe()
-                        return
+                        # Break, not return: the cleanup below is what retires
+                        # this worker's own state, and this is the path a
+                        # rotated capture epoch takes.
+                        break
                     index += 1
                     backoff = BACKGROUND_RETRY_MIN_SECONDS
                     self._recovered_at = None
                     public_active = self._public_active()
                     stop.wait(gateway.poll_interval if gateway is not None else
                               min(interval, PUBLIC_POLL_INTERVAL) if public_active else interval)
+                # This worker is done. Its own thread reference stays for the
+                # observers that join it (a dead thread joins instantly, and
+                # restart_receiving clears it), but the pause flag must not
+                # outlive it: on 2026-09-18 a join that could not observe a
+                # retiring worker left the runtime pausing, so every later
+                # start was refused and every route answered 503.
+                with self._condition:
+                    if self._poller is threading.current_thread():
+                        self._receive_pausing = False
             self._poller = threading.Thread(target=worker, name="lantern-mesh-background", daemon=True)
             self._poller.start()
 
@@ -1124,6 +1283,47 @@ class MeshRuntime:
                 self._poller = None
             self._receive_pausing = False
         return self.admission_safe()
+
+    def restart_receiving(self, grant_factory, operations, *, interval=1, timeout=3):
+        """Re-admit background work after the previous worker retired.
+
+        An owner session rotates the storage epoch, which denies every store
+        call a capture admitted under the old one was authorized for; the wake
+        retires by design. This is the off-request-path way back: a supervisor
+        thread calls it, never a request, and unlike pause_receiving it never
+        marks the runtime as pausing - a failed attempt leaves the state exactly
+        as it was and the caller may retry. The previous thread must already be
+        gone and the serial owner must be provably free, because a job that
+        could not be observed unwinding still owns its fence; the probe is the
+        same producer-fence round trip a graceful pause uses. The first start
+        has nothing to fence, so it skips the probe.
+        """
+        _require(callable(grant_factory) and callable(operations))
+        _require(type(interval) in (int, float) and math.isfinite(interval) and 0.2 <= interval <= 30)
+        _require(type(timeout) in (int, float) and math.isfinite(timeout) and 0 < timeout <= 30)
+        with self._condition:
+            if self._stop.is_set() or self._closed:
+                return False
+            poller = self._poller
+            if poller is not None and poller.is_alive():
+                return True
+            if not self.admission_safe():
+                return False
+            first = poller is None and not self._background_receive
+            if poller is not None:
+                self._poller = None
+            self._receive_pausing = False
+        if not first:
+            try:
+                self.coordinator.submit(lambda device: None).result(timeout=timeout)
+            except Exception:
+                return False
+        try:
+            self.start_receiving(grant_factory, operations, interval=interval)
+            return True
+        except Exception:
+            poller = self._poller
+            return poller is not None and poller.is_alive()
 
     def start_polling(self, context, *, interval=1):
         _require(type(interval) in (int, float) and math.isfinite(interval) and 0.2 <= interval <= 30)

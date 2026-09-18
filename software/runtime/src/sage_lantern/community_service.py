@@ -84,7 +84,7 @@ from .community_public import CommunityPublic, PublicObservation, PublicProposal
 from .message_contacts import ContactClaim
 from .canonical_messaging import CanonicalMessageSender
 from .mesh_contact_registry import MeshContactRegistry
-from .mesh_contacts import VerifiedMeshContact
+from .mesh_contacts import MAX_WINDOW_SECONDS, VerifiedMeshContact
 from .mesh_envelope import Peer
 from .mesh_mailbox import MailboxItem, MeshMailbox
 from .mesh_runtime import MeshRuntime
@@ -258,19 +258,45 @@ class CommunityMeshProvider:
         """
         if self._runtime is None or not all(callable(value) for value in (consent_reader, lease_factory, unlocked_check)):
             raise ValueError("mesh_background_unavailable")
+        operations, grant = self._background_admission(consent_reader, lease_factory, unlocked_check)
+        if not operations():
+            raise ValueError("mesh_background_unavailable")
+        self._runtime.start_receiving(grant, operations, interval=interval)
+
+    def restart_receiving(self, *, consent_reader, lease_factory, unlocked_check=device_unlocked, interval=1, timeout=3):
+        """Off-request-path restart of a retired worker; False instead of raising.
+
+        An owner session rotates the storage epoch under a live capture grant,
+        every store call admitted under it is denied, and the wake retires the
+        worker. A request must not join that worker or restart it: the failed
+        pause that followed left the runtime pausing and answered 503 on every
+        route until a process restart (2026-09-18). The daemon's supervisor
+        thread calls this instead, so a False return is just the next tick's
+        problem and an in-flight request never waits on the background worker.
+        """
+        if self._runtime is None or not all(callable(value) for value in (consent_reader, lease_factory, unlocked_check)):
+            return False
+        try:
+            operations, grant = self._background_admission(consent_reader, lease_factory, unlocked_check)
+            if not operations():
+                return False
+            return self._runtime.restart_receiving(grant, operations, interval=interval, timeout=timeout) is True
+        except Exception:
+            return False
+
+    def _background_admission(self, consent_reader, lease_factory, unlocked_check):
+        """One typed consent snapshot and the per-job grants built from it."""
         consent = consent_reader()
         def operations():
             if consent_reader() != consent:
                 raise ValueError("mesh_background_unavailable")
             return tuple(operation for operation in ("receive", "background_dispatch")
                 if self._authority.receive_allowed(consent, self._runtime.actor, operation, unlocked_check))
-        if not operations():
-            raise ValueError("mesh_background_unavailable")
         def grant(operation):
             if consent_reader() != consent:
                 raise ValueError("mesh_background_unavailable")
             return self._authority.receive_grant(self._runtime.actor, operation, consent_reader, lease_factory, unlocked_check)
-        self._runtime.start_receiving(grant, operations, interval=interval)
+        return operations, grant
 
     def pause_receiving(self, timeout=10):
         if self._runtime is None:
@@ -337,7 +363,7 @@ class CommunityMeshProvider:
             arguments = dict(message_id=request_id, recipient=Peer(card.chain_id, bytes.fromhex(card.agent_id)),
                 radio_public_key=bytes.fromhex(card.radio_public_key), content=text,
                 consent_binding=hashlib.sha256(_json(asdict(card))).hexdigest(),
-                issued_at=now, expires_at=min(now + 3600, card.expires_at))
+                issued_at=now, expires_at=min(now + MAX_WINDOW_SECONDS, card.expires_at))
             expected = self._authority.message(self._runtime.actor, **arguments)
             with self._grant(access_check, ("queue_message", "open_message"),
                              approval_binding=approval_binding, message=expected) as context:
@@ -359,7 +385,7 @@ class CommunityMeshProvider:
                 recipient=Peer(current.chain_id, bytes.fromhex(current.agent_id)),
                 radio_public_key=bytes.fromhex(current.radio_public_key), content=text,
                 approval_binding=approval_binding, consent_binding=consent_binding,
-                issued_at=now, expires_at=min(now + 3600, current.expires_at), access_check=check)
+                issued_at=now, expires_at=min(now + MAX_WINDOW_SECONDS, current.expires_at), access_check=check)
             identifier = self.mailbox._id('outbox', progress.message_id, progress.message_id,
                                            self.mailbox.owner, current.recipient)
         return self.mailbox.open_message(identifier, access_check=access_check)

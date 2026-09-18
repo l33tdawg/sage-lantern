@@ -167,7 +167,7 @@ class SchedulerTests(unittest.TestCase):
         self.release.side_effect = OSError('close failed')
         self.assertFalse(self.scheduler.close(1))
 
-    def test_real_client_serial_commands_and_poisoning(self):
+    def test_real_client_serial_commands_and_read_only_resync(self):
         from sage_lantern.meshcore_transport import FIRMWARE, MeshCoreClient, MeshCoreError
         public = bytes(range(32))
         info, identity = bytearray(82), bytearray(58)
@@ -194,8 +194,12 @@ class SchedulerTests(unittest.TestCase):
         writes = stream.write.call_count
         with self.assertRaises(MeshCoreError) as caught:
             owner.submit(lambda device: device.get_contacts(authorize=lambda: True)).result(1)
-        self.assertEqual(caught.exception.code, 'reconciliation_required')
-        self.assertEqual(stream.write.call_count, writes)
+        # A read-only stall must not latch the radio: the contact list is
+        # refreshed before every operation, so poisoning here is what took
+        # messaging down for hours on unit A. The failure stays per-call and the
+        # next command is still allowed to reach the wire.
+        self.assertEqual(caught.exception.code, 'serial_unavailable')
+        self.assertGreater(stream.write.call_count, writes)
 
 
 class FactoryTests(unittest.TestCase):

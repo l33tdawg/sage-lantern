@@ -539,6 +539,8 @@ def test_actual_main_composes_lifetime_and_closes_key_on_startup_failure(factory
             events.append("resource_joined")
             return True
     class Event:
+        def set(self):
+            return None
         def is_set(self):
             return False
         def wait(self, timeout=None):

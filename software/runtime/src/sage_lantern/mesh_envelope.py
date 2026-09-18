@@ -16,6 +16,8 @@ import uuid
 from nacl.public import SealedBox
 from nacl.signing import SigningKey, VerifyKey
 
+from .mesh_contacts import MAX_WINDOW_SECONDS
+
 
 SCHEMA = "sage.lantern.mesh-peer.v1"
 SIGN_DOMAIN = b"sage.lantern.mesh-peer.v1/signature\x00"
@@ -23,7 +25,9 @@ WIRE_PREFIX = "LME1."
 MAX_CONTENT_BYTES = 512
 MAX_INNER_BYTES = 2048
 MAX_WIRE_BYTES = 4096
-MAX_LIFETIME_SECONDS = 3600
+# A sealed envelope is opened with the *receiver's* clock and re-checked against
+# this ceiling, so it must not be lower than the approval window that sealed it.
+MAX_LIFETIME_SECONDS = MAX_WINDOW_SECONDS
 
 
 class MeshEnvelopeError(ValueError):

@@ -128,6 +128,31 @@ def test_real_factory_queue_dispatch_mailbox_and_close(factory):
     assert state.runtime.client._client.is_closed
 
 
+def test_one_fragment_costs_one_contact_read(factory, monkeypatch):
+    """The fenced dispatch hands the row the inventory this operation refreshed.
+
+    Every operation refreshes the contact list once; the outbox used to read it
+    again for its own prefix lookup, so a single fragment paid two reads. At unit
+    A's measured stall rate (2026-09-13 16:19-16:22, about one read in three)
+    that is what made a multi-fragment message unreachable.
+    """
+    state=factory
+    state.adopt()
+    now=int(time.time())
+    identifier=str(uuid.uuid4())
+    state.runtime.queue_message(state.context,message_id=identifier,recipient=Peer("remote",bytes.fromhex(state.remote.agent_id)),
+        radio_public_key=state.radio,content="Synthetic private message",consent_binding="contact-policy",issued_at=now,expires_at=now+900)
+    reads=[]
+    original=state.device.get_contacts
+    def counted(*,authorize):
+        reads.append(authorize)
+        return original(authorize=authorize)
+    monkeypatch.setattr(state.device,"get_contacts",counted)
+    result=state.runtime.dispatch_one(state.context,identifier,radio_timestamp=now)
+    assert result.next_fragment==1 and len(state.transmits)==1
+    assert len(reads)==1
+
+
 def test_real_receive_and_explicit_read_receipt(factory):
     state=factory
     state.adopt()

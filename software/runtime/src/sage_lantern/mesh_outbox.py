@@ -19,7 +19,7 @@ import uuid
 
 from nacl.signing import SigningKey, VerifyKey
 
-from .mesh_contacts import VerifiedMeshContact
+from .mesh_contacts import MAX_WINDOW_SECONDS, VerifiedMeshContact
 from .mesh_envelope import Peer, seal_message, open_envelope, correlate_receipt
 from .mesh_fragments import split_envelope
 from .meshcore_transport import MeshCoreClient, SendReceipt
@@ -86,7 +86,7 @@ def _admitted(method):
             return method(self, *args, **kwargs)
         except BaseException as error:
             if not isinstance(error, Exception):
-                self._uncertain = True
+                self._untracked = True
                 raise
             raise MeshOutboxError() from None
         finally:
@@ -137,11 +137,40 @@ class MeshOutbox:
         self._condition = threading.Condition()
         self._active = False
         self._closing = False
-        self._uncertain = False
+        # Row-scoped unknowns. A fragment that reached the wire and was never
+        # acknowledged leaves exactly one message row in state 'dispatching'; that
+        # row is retryable inside its own signed window (owner decision
+        # 2026-09-13) and is resolved by the audited retry_decision CAS. An
+        # unknown whose row cannot be reconciled that way - a non-Exception
+        # escape or a CAS write whose outcome is unknown - is recorded as
+        # untracked and keeps the old fail-closed latch, including close().
+        self._unknown = {}
+        self._untracked = False
 
     def _open(self):
         with self._condition:
             return not self._closing
+
+    def unresolved(self):
+        """Message ids whose dispatch outcome is unknown, for the retry driver."""
+        return frozenset(self._unknown)
+
+    @property
+    def _uncertain(self):
+        """Any unresolved outcome, retryable or not, for existing observers."""
+        return bool(self._unknown) or self._untracked
+
+    def latching_unknown(self):
+        """True when this outbox must be treated as process-wide uncertain.
+
+        A post-wire unknown is retryable until its approval window lapses, so it
+        does not latch the runtime; once the window is gone the owner has to see
+        it. Anything untracked latches immediately, exactly as before.
+        """
+        if self._untracked:
+            return True
+        now = self.clock()
+        return any(expires <= now for expires in self._unknown.values())
 
     def close(self, timeout=0):
         """Latch closed, cancel future admission, bounded join; unknown stays false."""
@@ -150,7 +179,7 @@ class MeshOutbox:
         with self._condition:
             self._closing = True
             joined = self._condition.wait_for(lambda: not self._active, timeout)
-            return joined and not self._uncertain
+            return joined and not self._unknown and not self._untracked
 
     def _now(self):
         now = self.clock()
@@ -205,7 +234,7 @@ class MeshOutbox:
             if type(approved[field]) is not str or re.fullmatch('[0-9a-f]{64}', approved[field]) is None:
                 raise MeshOutboxError()
         _integer(approved['issued_at'], 1, (1 << 53) - 1)
-        _integer(approved['expires_at'], approved['issued_at'] + 1, approved['issued_at'] + 3600)
+        _integer(approved['expires_at'], approved['issued_at'] + 1, approved['issued_at'] + MAX_WINDOW_SECONDS)
         content = approved['content']
         if (type(content) is not str or not content.strip() or not 1 <= len(content.encode('utf-8')) <= 512
                 or any(ord(char) < 32 and char not in '\n\t' for char in content)):
@@ -303,7 +332,7 @@ class MeshOutbox:
             result = self.store.put(body['message_id'], 'mesh_outbound', expected_revision, proof,
                                     access_check=access_check)
         except WorkflowOutcomeUnknown:
-            self._uncertain = True
+            self._untracked = True
             raise
         return self._verified(result)
 
@@ -354,13 +383,87 @@ class MeshOutbox:
             raise MeshOutboxError() from None
 
     @_admitted
-    def dispatch_one(self, message_id, *, device, radio_timestamp, access_check):
+    def reapprove(self, message_id, *, expected_revision, window_seconds, approval_binding,
+                  consent_binding, access_check):
+        """Renew the signed approval of a row whose own window has lapsed.
+
+        Owner decision 2026-09-13: a message the owner approved is a durable local
+        artifact, and what expires is the approval - not the message. So a row
+        that never left the unit can be approved again: same message id, same
+        recipient, same radio key and same content, carrying a fresh window.
+
+        Two things cannot be reused. The wire is signed over its own
+        issued_at/expires_at, so a renewed approval needs a new seal; and the
+        existing consent_binding names the peer card the owner approved at the
+        time, which the dispatch guard compares against the live card, so the
+        caller passes the binding of the current card. Because the envelope
+        changed, the fragment cursor restarts at zero: any fragment already on
+        the wire belongs to the lapsed envelope and cannot be mixed with the new
+        one.
+
+        Only a lapsed row that has not been confirmed is eligible: queued,
+        mid-wire, or waiting for a receipt it never got. A delivered/read row is
+        finished evidence and is refused. The CAS names the revision the caller
+        saw, and a row whose peer card has itself lapsed is refused with no
+        window - the owner has to re-issue the card instead.
+        """
+        try:
+            _uuid(message_id)
+            _binding(approval_binding)
+            _binding(consent_binding)
+            _integer(window_seconds, 1, MAX_WINDOW_SECONDS)
+            now = self._now()
+            body = self._load(message_id, access_check)
+            approved = body['approved']
+            if (body['state'] not in ('queued', 'dispatching', 'awaiting_receipt')
+                    or body['revision'] != expected_revision
+                    or now < approved['expires_at']):
+                raise MeshOutboxError()
+            card = self.verify_contact(self._action(body, 'reapprove', approval_binding))
+            if type(card) is not VerifiedMeshContact:
+                raise MeshOutboxError()
+            expires_at = min(now + window_seconds, card.expires_at)
+            if not now < expires_at:
+                raise MeshOutboxError()
+            recipient = Peer(approved['recipient']['chain_id'], bytes.fromhex(approved['recipient']['public_key']))
+            sealed = seal_message(self.identity._signing_key, sender=self.sender, recipient=recipient,
+                                  message_id=message_id, content=approved['content'],
+                                  issued_at=now, expires_at=expires_at)
+            renewed = {**approved, 'wire': sealed.wire,
+                       'wire_hash': hashlib.sha256(sealed.wire.encode('ascii')).hexdigest(),
+                       'content_digest': sealed.digest, 'approval_binding': approval_binding,
+                       'consent_binding': consent_binding, 'issued_at': now, 'expires_at': expires_at}
+            body = {**body, 'approved': renewed, 'state': 'queued', 'next_fragment': 0,
+                    'dispatch_timestamp': None, 'attempts': 0, 'retry_binding': ''}
+            action = self._action(body, 'reapprove', approval_binding)
+            self._contact(action)
+            body['approval_proof'] = self._proof(dict(message_id=message_id, approved=renewed),
+                                                 method='LANTERN-OUTBOX-APPROVAL')
+            progress = self._progress(self._put(body, expected_revision,
+                lambda: access_check() is True and self._check(action)))
+        except Exception:
+            raise MeshOutboxError() from None
+        # The CAS above proved this row's state at the revision the caller named,
+        # so any unknown outcome recorded against it is now resolved: the row is
+        # queued again at a fresh revision with a fresh window.
+        self._unknown.pop(message_id, None)
+        return progress
+
+    @_admitted
+    def dispatch_one(self, message_id, *, device, radio_timestamp, access_check, read_contacts=None, inventory=None):
         """One CAS-admitted RF fragment. Any failure requires inspect, not retry."""
         if not self._mutex.acquire(blocking=False):
             raise MeshOutboxError()
         rf_started = False
+        window_end = None
         try:
             if type(device) is not MeshCoreClient:
+                raise MeshOutboxError()
+            if read_contacts is not None and not callable(read_contacts):
+                raise MeshOutboxError()
+            # Two sources for one prefix would make the read accounting - and
+            # therefore the stall measurement it exists to serve - a guess.
+            if read_contacts is not None and inventory is not None:
                 raise MeshOutboxError()
             _integer(radio_timestamp, 1, 0xffffffff)
             body = self._load(message_id, access_check)
@@ -368,6 +471,7 @@ class MeshOutbox:
                 raise MeshOutboxError()
             if not body['approved']['issued_at'] <= self._now() < body['approved']['expires_at']:
                 raise MeshOutboxError()
+            window_end = body['approved']['expires_at']
             action = self._action(body, 'dispatch')
             def check():
                 return (access_check() is True
@@ -375,7 +479,17 @@ class MeshOutbox:
                         and self._contact(action))
             if check() is not True:
                 raise MeshOutboxError()
-            inventory = device.get_contacts(authorize=check)
+            # One fragment, one contact read. The runtime already refreshed the
+            # inventory for this operation, so a second read here is a second
+            # chance to die before the wire: at the stall rate measured on unit A
+            # (2026-09-13 16:19-16:22, roughly one read in three) two reads per
+            # fragment is what made a multi-fragment message unreachable. A
+            # caller holding no refreshed inventory may still pass its own
+            # bounded reader. Either way the prefix must be unique in an
+            # inventory read under this row's access check, so the fragment
+            # cannot dispatch against a directory the caller may not read.
+            if inventory is None:
+                inventory = (read_contacts or (lambda *, authorize: device.get_contacts(authorize=authorize)))(authorize=check)
             prefix = inventory.unique_prefix(action.radio_public_key)
             stamp = body['dispatch_timestamp'] or radio_timestamp
             body = self._put({**body, 'state': 'dispatching', 'dispatch_timestamp': stamp,
@@ -396,7 +510,11 @@ class MeshOutbox:
             return self._progress(body)
         except Exception:
             if rf_started:
-                self._uncertain = True
+                # The row is left 'dispatching' at a known revision with its
+                # fragment cursor and wire intact. Record the unknown against
+                # that row and its own window so the driver can retry it inside
+                # the window and escalation happens only once the window lapses.
+                self._unknown[message_id] = window_end
             raise MeshOutboxError() from None
         finally:
             self._mutex.release()
@@ -420,10 +538,15 @@ class MeshOutbox:
             check = lambda: access_check() is True and self._contact(action)
             if check() is not True:
                 raise MeshOutboxError()
-            return self._progress(self._put({**body, 'state': 'queued', 'retry_binding': decision_binding},
-                                           expected_revision, check))
+            progress = self._progress(self._put({**body, 'state': 'queued', 'retry_binding': decision_binding},
+                                               expected_revision, check))
         except Exception:
             raise MeshOutboxError() from None
+        # The CAS above proved this row's state at the revision the caller
+        # named, so its unknown outcome is resolved and no longer blocks a
+        # clean close or admits a process-wide latch.
+        self._unknown.pop(message_id, None)
+        return progress
 
     def _receipt(self, body, wire, now):
         approved = body['approved']
@@ -445,7 +568,7 @@ class MeshOutbox:
             try:
                 record = self.store.put(record_id, 'mesh_outbound', 0, proof, access_check=access_check)
             except WorkflowOutcomeUnknown:
-                self._uncertain = True
+                self._untracked = True
                 raise
         if record['revision'] != 1:
             raise MeshOutboxError()

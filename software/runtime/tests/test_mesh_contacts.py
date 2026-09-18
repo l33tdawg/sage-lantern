@@ -89,7 +89,8 @@ def test_every_payload_field_is_bound(identity, fields, field, value):
 @pytest.mark.parametrize('change', [
     {'revision': True}, {'revision': -1}, {'revision': 1.0}, {'revision': 1 << 53},
     {'issued_at': False}, {'issued_at': 0}, {'issued_at': 111}, {'expires_at': 110},
-    {'expires_at': 3701}, {'expires_at': '160'}, {'findable': 1}, {'messaging_allowed': None},
+        {'expires_at': 100 + contacts.MAX_TTL_SECONDS + 1},
+        {'expires_at': '160'}, {'findable': 1}, {'messaging_allowed': None},
     {'chain_id': '../home'}, {'chain_id': ''}, {'chain_id': 'a' * 129},
     {'display_name': ''}, {'display_name': ' padded'}, {'display_name': 'bad\nname'},
     {'display_name': 'bad\u202ename'}, {'display_name': 'cafe\u0301'}, {'display_name': 'a' * 129},
@@ -151,7 +152,8 @@ def test_strict_envelope_duplicate_fields_and_wire_bounds(identity, fields):
 
 def test_signed_invalid_payload_still_rejected(identity, fields):
     envelope = json.loads(contacts.sign_contact_card(identity, **fields))
-    for change in ({'revision': True}, {'expires_at': 3701}, {'extra': 1}, {'findable': 1}):
+    for change in ({'revision': True}, {'expires_at': 100 + contacts.MAX_TTL_SECONDS + 1},
+                   {'extra': 1}, {'findable': 1}):
         payload = envelope['payload'] | change
         headers = identity.sign_request(contacts.SIGN_METHOD, contacts.SIGN_PATH, encode(payload), timestamp=100)
         card = encode(dict(payload=payload, nonce=headers['X-Nonce'], signature=headers['X-Signature']))

@@ -110,7 +110,7 @@ def test_reserved_revision_cannot_be_reissued_and_post_sign_revocation_returns_n
     assert state['revision'] == 5 and state['signed'] == 1
 
 
-@pytest.mark.parametrize('field,value', [('ttl_seconds', 3601), ('ttl_seconds', True),
+@pytest.mark.parametrize('field,value', [('ttl_seconds', module.MAX_TTL_SECONDS + 1), ('ttl_seconds', True),
     ('findable', 1), ('messaging_allowed', None), ('previous_revision', True)])
 def test_no_implicit_consent_or_unbounded_card_lifetime(field, value):
     identity, profile, binding, old = fixture()

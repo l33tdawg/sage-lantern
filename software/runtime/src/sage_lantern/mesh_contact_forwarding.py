@@ -5,6 +5,7 @@ import threading
 import time
 
 from .mesh_contact_issuance import require
+from .mesh_contacts import MAX_TTL_SECONDS
 from .mesh_voice_ipc import connect, receive, send
 
 
@@ -28,7 +29,7 @@ def validate_payload(path, payload):
         for field in ('challenge', 'plan_sha256'):
             require(type(payload[field]) is str and re.fullmatch(r'[0-9a-f]{64}', payload[field]) is not None)
     if path == '/contacts/preview':
-        require(type(payload['ttl_seconds']) is int and 1 <= payload['ttl_seconds'] <= 3600
+        require(type(payload['ttl_seconds']) is int and 1 <= payload['ttl_seconds'] <= MAX_TTL_SECONDS
             and type(payload['findable']) is bool and type(payload['messaging_allowed']) is bool)
     if path == '/contacts/reconcile/preview':
         require(payload['action'] in ('abandon', 'export', 'acknowledge'))

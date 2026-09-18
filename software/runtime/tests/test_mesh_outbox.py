@@ -16,6 +16,7 @@ from sage_sdk import AgentIdentity, SageClient
 from sage_lantern.mesh_contacts import sign_contact_card, verify_contact_card
 from sage_lantern.mesh_envelope import Peer, open_envelope, seal_delivery_receipt, seal_read_receipt
 from sage_lantern.mesh_fragments import split_envelope
+from sage_lantern.meshcore_contacts import ContactInventory
 from sage_lantern.mesh_outbox import MeshOutbox, MeshOutboxError
 from sage_lantern.message_contacts import RecipientID
 from sage_lantern.message_storage import MessageStorageProbe
@@ -32,7 +33,7 @@ BASE = 'http://127.0.0.1:19100'
 def setup(tmp_path):
     state = SimpleNamespace(now=110, allowed=True, contact_allowed=True, writes=[], radios=[],
                             fault=None, barrier=None, guard_actions=[], after_commit=None, promotion_barrier=None,
-                            receipt_slot_barrier=None)
+                            receipt_slot_barrier=None, card_expires=1000, card_now=None)
     state.identity = AgentIdentity.from_seed(b'a' * 32)
     state.peer_identity = AgentIdentity.from_seed(b'b' * 32)
     state.sender = Peer('test-home', bytes.fromhex(state.identity.agent_id))
@@ -107,8 +108,9 @@ def setup(tmp_path):
             return state.allowed
         def verify(action):
             card = sign_contact_card(state.peer_identity, chain_id='test-home', radio_public_key=state.radio_key.hex(),
-                                     display_name='Synthetic peer', revision=1, issued_at=100, expires_at=1000,
-                                     now=state.now, findable=state.contact_allowed, messaging_allowed=state.contact_allowed)
+                                     display_name='Synthetic peer', revision=1, issued_at=100, expires_at=state.card_expires,
+                                     now=state.card_now or state.now, findable=state.contact_allowed,
+                                     messaging_allowed=state.contact_allowed)
             return verify_contact_card(card, now=state.now)
         return MeshOutbox(store, state.identity, sender=state.sender, guard=guard,
                           verify_contact=verify, clock=lambda: state.now)
@@ -184,6 +186,159 @@ def test_queue_proof_original_wire_restarts_and_one_fragment_progress(setup):
     assert setup.stored()['body']['approved'] == initial
     assert setup.writes == ['queued', 'dispatching', 'queued']
     assert len(setup.radios) == 1
+
+
+def lapsed(setup, *, now=2000, card_expires=80000):
+    """Move the world past the row's own window while the peer card stays live."""
+    setup.now = now
+    setup.card_expires = card_expires
+
+
+def test_reapprove_renews_a_lapsed_row_and_restarts_the_fragments(setup):
+    long_content = 'Synthetic private content. ' * 10
+    setup.outbox.queue(message_id=MESSAGE, recipient=setup.peer, radio_public_key=setup.radio_key,
+                       content=long_content, approval_binding='explicit-open-1', consent_binding='consent-1',
+                       issued_at=100, expires_at=1000, access_check=setup.access)
+    progress = dispatch(setup)
+    assert progress.next_fragment == 1 and progress.state == 'queued'
+    original = setup.stored()['body']['approved']
+    lapsed(setup)
+    progress = setup.outbox.reapprove(MESSAGE, expected_revision=progress.revision, window_seconds=600,
+                                      approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                                      access_check=setup.access)
+    assert progress.state == 'queued' and progress.next_fragment == 0
+    body = setup.stored()['body']
+    renewed = body['approved']
+    assert body['attempts'] == 0 and body['retry_binding'] == '' and body['dispatch_timestamp'] is None
+    # The approval moved; the message did not.
+    assert (renewed['content'], renewed['sender'], renewed['recipient'], renewed['radio_public_key']) == (
+        original['content'], original['sender'], original['recipient'], original['radio_public_key'])
+    assert (renewed['issued_at'], renewed['expires_at']) == (2000, 2600)
+    assert renewed['wire'] != original['wire'] and renewed['wire_hash'] != original['wire_hash']
+    assert renewed['consent_binding'] == 'consent-2'
+    # The old envelope cannot be replayed at the new clock, which is exactly why
+    # the cursor restarts: those fragments carry the lapsed window.
+    with pytest.raises(Exception):
+        open_envelope(original['wire'], setup.peer_identity._signing_key,
+                      expected_sender=setup.sender, expected_recipient=setup.peer, now=2000)
+    opened = open_envelope(renewed['wire'], setup.peer_identity._signing_key,
+                           expected_sender=setup.sender, expected_recipient=setup.peer, now=2000)
+    assert opened.content == long_content and opened.message_id == MESSAGE
+    assert opened.digest == renewed['content_digest']
+    assert setup.outbox.read_sent(MESSAGE, access_check=setup.access).content == long_content
+    # And the row dispatches inside the new window.
+    setup.outbox = setup.make()
+    assert dispatch(setup).next_fragment == 1
+    assert setup.writes[-3:] == ['queued', 'dispatching', 'queued']
+
+
+def test_reapprove_refuses_a_live_row_drift_and_a_lapsed_card(setup):
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.reapprove(MESSAGE, expected_revision=1, window_seconds=600,
+                               approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                               access_check=setup.access)
+    lapsed(setup)
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.reapprove(MESSAGE, expected_revision=9, window_seconds=600,
+                               approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                               access_check=setup.access)
+    for window in (0, 60 * 60 * 24 + 1, '600'):
+        with pytest.raises(MeshOutboxError):
+            setup.outbox.reapprove(MESSAGE, expected_revision=1, window_seconds=window,
+                                   approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                                   access_check=setup.access)
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.reapprove(MESSAGE, expected_revision=1, window_seconds=600,
+                               approval_binding='owner reapprove', consent_binding='consent-2',
+                               access_check=setup.access)
+    # A lapsed peer card is not something a re-approval can fix: the owner has to
+    # re-issue the card, so the window would be empty and the row is refused.
+    setup.card_now, setup.card_expires, setup.now = 2000, 2400, 3000
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.reapprove(MESSAGE, expected_revision=1, window_seconds=600,
+                               approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                               access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'queued'
+    assert setup.stored()['body']['revision'] == 1
+    assert setup.stored()['body']['approved']['expires_at'] == 1000
+
+
+def test_reapprove_is_capped_by_the_peer_card_window(setup):
+    setup.queue()
+    lapsed(setup, now=2000, card_expires=2400)
+    progress = setup.outbox.reapprove(MESSAGE, expected_revision=1, window_seconds=86400,
+                                      approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                                      access_check=setup.access)
+    assert progress.state == 'queued'
+    assert setup.stored()['body']['approved']['expires_at'] == 2400
+
+
+def test_reapprove_renews_a_message_that_never_got_its_receipt(setup):
+    """Every fragment crossed, no receipt came back: still the owner's message."""
+    setup.queue()
+    progress = dispatch(setup)
+    for _ in range(progress.fragment_count - 1):
+        progress = dispatch(setup)
+    assert progress.state == 'awaiting_receipt' and progress.next_fragment == progress.fragment_count
+    lapsed(setup)
+    progress = setup.outbox.reapprove(MESSAGE, expected_revision=progress.revision, window_seconds=600,
+                                      approval_binding='owner-reapprove-1', consent_binding='consent-2',
+                                      access_check=setup.access)
+    assert progress.state == 'queued' and progress.next_fragment == 0
+    setup.outbox = setup.make()
+    assert dispatch(setup).next_fragment == 1
+    assert setup.stored()['body']['approved']['issued_at'] == 2000
+
+
+def test_dispatch_uses_the_callers_bounded_inventory_read(setup):
+    """The prefix this row needs comes from the reader the runtime passes in."""
+    setup.queue()
+    device = setup.radio()
+    calls = []
+    def reader(*, authorize):
+        calls.append(1)
+        return device.get_contacts(authorize=authorize)
+    progress = setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500,
+                                         access_check=setup.access, read_contacts=reader)
+    assert progress.next_fragment == 1 and calls == [1]
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500,
+                                  access_check=setup.access, read_contacts='not callable')
+
+
+def test_dispatch_spends_the_inventory_the_runtime_already_refreshed(setup):
+    """One fragment, one contact read.
+
+    The runtime refreshes the inventory once per operation and hands it down, so
+    the handoff must actually remove the dispatch's own read rather than adding
+    a third: at the stall rate measured on unit A (2026-09-13 16:19-16:22, about
+    one read in three) a second read per fragment is a second chance to die
+    before the wire. Two competing sources for one prefix are refused, because
+    otherwise the read accounting the stall measurement rests on is a guess.
+    """
+    setup.queue()
+    device = setup.radio()
+    inventory = device.get_contacts(authorize=setup.access)
+    device.get_contacts = lambda *, authorize: pytest.fail('the fragment read the contact list again')
+    progress = setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500,
+                                         access_check=setup.access, inventory=inventory)
+    assert progress.next_fragment == 1
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access,
+                                  inventory=inventory, read_contacts=lambda *, authorize: inventory)
+
+
+def test_dispatch_refuses_a_handed_inventory_that_does_not_carry_the_row(setup):
+    """A stale or foreign inventory fails closed before the wire, never guessed at."""
+    progress = setup.queue()
+    device = setup.radio()
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access,
+                                  inventory=ContactInventory(contacts=(), watermark=0))
+    assert setup.stored()['body']['state'] == 'queued'
+    assert setup.stored()['body']['attempts'] == 0
+    assert progress.next_fragment == 0
 
 
 def test_all_fragments_stop_at_awaiting_receipt_not_delivered(setup):
@@ -613,6 +768,35 @@ def test_clean_close_and_uncertain_rf_close(setup):
     with pytest.raises(MeshOutboxError):
         dispatch(setup, reply=False)
     assert setup.outbox.close(1) is False
+
+
+def test_rf_unknown_is_row_scoped_and_resolved_by_the_same_instance(setup):
+    """A lost acknowledgement is retryable in place until its window lapses."""
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    # inside the signed window this is a retry, not a process-wide unknown
+    assert setup.outbox.latching_unknown() is False
+    progress = setup.outbox.inspect(MESSAGE, access_check=setup.access)
+    assert progress.state == 'dispatching' and setup.outbox.latching_unknown() is False
+    setup.outbox.retry_decision(MESSAGE, expected_revision=progress.revision,
+                                decision_binding='auto-retry-tested', access_check=setup.access)
+    assert setup.outbox.unresolved() == frozenset()
+    assert setup.stored()['body']['state'] == 'queued'
+    assert setup.outbox.latching_unknown() is False
+    assert len(setup.radios) == 1
+
+
+def test_rf_unknown_window_lapse_latches_and_blocks_clean_close(setup):
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+    assert setup.outbox.close(1) is False
+    assert setup.stored()['body']['state'] == 'dispatching'
 
 
 def test_interrupted_admission_releases_join_but_never_claims_clean(setup):

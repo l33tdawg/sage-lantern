@@ -7,7 +7,7 @@ from nacl.signing import SigningKey
 import pytest
 
 from sage_lantern.mesh_envelope import (
-    MAX_CONTENT_BYTES, MAX_WIRE_BYTES, MeshEnvelopeError, Peer, SIGN_DOMAIN,
+    MAX_CONTENT_BYTES, MAX_LIFETIME_SECONDS, MAX_WIRE_BYTES, MeshEnvelopeError, Peer, SIGN_DOMAIN,
     WIRE_PREFIX, correlate_receipt, open_envelope, seal_delivery_receipt, seal_message, seal_read_receipt,
 )
 
@@ -79,7 +79,8 @@ def test_wrong_decryption_key_and_signing_identity():
 
 @pytest.mark.parametrize("change", [dict(content=""), dict(content="\0secret"),
     dict(content="a" * (MAX_CONTENT_BYTES + 1)), dict(content="é" * 257), dict(content="\ud800"),
-    dict(issued_at=True), dict(expires_at=True), dict(expires_at=100), dict(expires_at=3701),
+        dict(issued_at=True), dict(expires_at=True), dict(expires_at=100),
+        dict(expires_at=100 + MAX_LIFETIME_SECONDS + 1),
     dict(message_id="not-uuid"), dict(message_id="00000000-0000-0000-0000-000000000000")])
 def test_invalid_message_parameters(change):
     with pytest.raises(MeshEnvelopeError):

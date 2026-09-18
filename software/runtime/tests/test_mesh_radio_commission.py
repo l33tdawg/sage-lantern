@@ -92,7 +92,7 @@ def test_authority_rejected_before_serial(request_data, change):
         module.validate(request, config, 'b' * 32, 'e' * 32)
 
 
-@pytest.mark.parametrize('failure', ['self', 'profile', 'prior', 'readback', 'timeout', 'revoked'])
+@pytest.mark.parametrize('failure', ['self', 'profile', 'prior', 'readback', 'timeout'])
 def test_failure_poison_no_retry(request_data, failure):
     config, request, contact = request_data
     raw = incoming(request, contact)
@@ -107,10 +107,8 @@ def test_failure_poison_no_retry(request_data, failure):
         raw = incoming(request, contact, prior=contact)
     elif failure == 'readback':
         raw = incoming(request, contact, readback=contact[:-1] + b'\xff')
-    elif failure == 'timeout':
-        raw = profile_bytes(request) + frame(b'\x01\x02')
     else:
-        guard = lambda: False
+        raw = profile_bytes(request) + frame(b'\x01\x02')
     device, stream = client(raw)
     intents = []
     with pytest.raises(MeshCoreError):
@@ -120,6 +118,18 @@ def test_failure_poison_no_retry(request_data, failure):
         module.wire(device, request, contact, lambda: True, lambda: None)
     assert bytes(stream.output) == before
     assert bool(intents) == (failure in ('readback', 'timeout'))
+
+
+def test_pre_wire_guard_refusal_does_not_poison_or_ban_retry(request_data):
+    """A revoked guard before the first write costs no cold start."""
+    config, request, contact = request_data
+    device, stream = client(incoming(request, contact))
+    intents = []
+    with pytest.raises(MeshCoreError) as error:
+        module.wire(device, request, contact, lambda: False, lambda: intents.append(True))
+    assert error.value.outcome_unknown is False and not stream.output and not intents
+    assert module.wire(device, request, contact, lambda: True, lambda: None) is True
+    assert not intents
 
 
 @pytest.fixture

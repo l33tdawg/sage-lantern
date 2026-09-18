@@ -20,7 +20,7 @@ def frame(payload):
     return b">" + struct.pack("<H", len(payload)) + payload
 
 
-def handshake_bytes(key=KEY, version=FIRMWARE):
+def handshake_parts(key=KEY, version=FIRMWARE):
     info = bytearray(82)
     info[0:2] = bytes((13, 13))
     info[4:8] = b"PIN!"
@@ -28,7 +28,11 @@ def handshake_bytes(key=KEY, version=FIRMWARE):
     identity = bytearray(58)
     identity[0] = 5
     identity[4:36] = key
-    return frame(bytes(info)) + frame(bytes(identity))
+    return frame(bytes(info)), frame(bytes(identity))
+
+
+def handshake_bytes(key=KEY, version=FIRMWARE):
+    return b"".join(handshake_parts(key, version))
 
 
 class SerialDouble:
@@ -49,6 +53,41 @@ class SerialDouble:
         size = min(len(data), self.chunk)
         self.output.extend(data[:size])
         return size
+
+
+class LateTailStream(SerialDouble):
+    """Serves `head`, goes quiet for `quiet_reads` calls, then serves `tail`.
+
+    This is the shape the stock firmware shows on unit A: a frame is declared,
+    part of its body arrives, the rest does not arrive inside the read deadline,
+    and then it arrives afterwards.
+    """
+
+    def __init__(self, head, tail, quiet_reads=1, chunk=1):
+        super().__init__(head, chunk)
+        self._tail = bytearray(tail)
+        self._quiet_reads = quiet_reads
+        self._quiet = 0
+
+    def read(self, size, timeout):
+        if not self.incoming and self._tail:
+            if self._quiet < self._quiet_reads:
+                self._quiet += 1
+                return b""
+            self.incoming = self._tail
+            self._tail = bytearray()
+        return super().read(size, timeout)
+
+
+def truncated_handshake(tail_bytes=48):
+    """handshake_bytes() with the identity frame cut short, plus its late tail."""
+    full = handshake_bytes()
+    split = full.index(b">", 3)
+    body = bytearray(58)
+    body[0] = 5
+    body[4:36] = KEY
+    head = full[:split] + b">" + struct.pack("<H", 58) + bytes(body[:58 - tail_bytes])
+    return head, bytes(body[58 - tail_bytes:])
 
 
 def client(incoming, chunk=1):
@@ -130,6 +169,59 @@ def test_health_falls_back_to_radio_stats_once_packet_signal_ages_out():
     assert aged["last_snr_db"] == 6.25
 
 
+def test_health_caches_the_firmware_airtime_counters():
+    device, stream = client(handshake_bytes() + stats_frames(-75, 25))
+    device.handshake()
+    assert device.airtime_sample is None
+    device.health(authorize=lambda: True)
+    sample = device.airtime_sample
+    assert sample.tx_airtime_seconds == 3.0
+    assert sample.rx_airtime_seconds == 4.0
+    assert sample.monotonic >= 0
+
+
+def test_messages_waiting_push_inside_exchange_is_captured_not_dropped():
+    info, identity = handshake_parts()
+    device, stream = client(info + frame(bytes((0x83,))) + identity)
+    device.handshake()
+    assert [event["name"] for event in device.push_events] == ["messages_waiting"]
+    assert device.take_messages_waiting() is True
+    assert device.take_messages_waiting() is False
+
+
+def test_contact_table_pushes_mark_the_directory_dirty():
+    info, identity = handshake_parts()
+    device, stream = client(info + frame(bytes((0x8F,)) + KEY) + frame(bytes((0x90,))) + identity)
+    device.handshake()
+    assert device.take_contact_table_dirty() is True
+    assert device.take_contact_table_dirty() is False
+    assert [event["name"] for event in device.push_events] == ["contact_deleted", "contacts_full"]
+
+
+def test_send_confirmation_push_is_a_radio_observation_not_delivery():
+    info, identity = handshake_parts()
+    ack = bytes.fromhex("aabbccdd")
+    device, stream = client(info + frame(b"\x82" + ack + struct.pack("<I", 1234)) + identity)
+    device.handshake()
+    confirmation = device.send_confirmation
+    assert confirmation["ack_crc"] == ack.hex()
+    assert confirmation["trip_time_ms"] == 1234
+    assert "delivered" not in confirmation and "read" not in confirmation
+
+
+def test_push_events_are_bounded_and_payload_free():
+    info, identity = handshake_parts()
+    push = frame(b"\x8E" + b"PRIVATE-PAYLOAD")
+    round_trip = info + push * 32 + identity
+    device, stream = client(round_trip * 3)
+    for _ in range(3):
+        device.handshake()
+    events = device.push_events
+    assert len(events) == 64
+    assert all(event["name"] == "control_data" for event in events)
+    assert "PRIVATE" not in repr(events)
+
+
 @pytest.mark.parametrize("location_policy", [0, 1])
 def test_discovery_beacon_is_zero_hop_location_free_and_rate_limited(location_policy):
     identity = bytearray(58)
@@ -185,13 +277,68 @@ def test_bad_outgoing_frame(payload):
 @pytest.mark.parametrize("incoming", [b"", b">", b">\x01", b">\x01\x00", b"<\x01\x00x",
     b">\x00\x00", b">\xff\xff", frame(b"\x00"), frame(b"\x01\x02"),
     handshake_bytes(key=b"z" * 32), handshake_bytes(version="unknown")])
-def test_failure_poison_no_retry(incoming):
+def test_read_only_failure_does_not_poison_and_retry_is_allowed(incoming):
+    """A failed read-only exchange leaves the radio usable.
+
+    Nothing can have been sent or dequeued by a read-only command and the
+    firmware re-sends a whole record for the next read, so a stall must not cost
+    a process restart. The failure is still reported for that one call, and the
+    command is never retried inside the call.
+    """
     device, stream = client(incoming)
     with pytest.raises(MeshCoreError):
         device.handshake()
+    assert device.poisoned is False and device.poisoned_by is None
+    before = bytes(stream.output)
+    with pytest.raises(MeshCoreError):
+        device.handshake()
+    assert bytes(stream.output) != before
+
+
+def test_read_only_stall_discards_the_late_tail_and_stays_usable():
+    head, tail = truncated_handshake(48)
+    stream = LateTailStream(head, tail, quiet_reads=1)
+    device = MeshCoreClient(stream, expected_public_key=KEY)
+    with pytest.raises(MeshCoreError) as error:
+        device.handshake()
+    assert error.value.code == "serial_unavailable" and error.value.outcome_unknown is False
+    assert device.poisoned is False
+    # Both handshake commands (0x16 then 0x01) were written before the read
+    # stalled; the failing call is still reported once, with no retry inside it.
+    assert device.read_failure == {"command": "01", "sending": False, "receiving": False,
+                                   "error": "serial_incomplete", "frames": 2}
+    assert device.discarded_bytes == len(tail)
+    written = bytes(stream.output)
+    assert written == encode_frame(bytes((22, 13))) + encode_frame(b"\x01" + bytes(7) + b"Lantern")
+    with pytest.raises(MeshCoreError) as retry:
+        device.handshake()
+    assert retry.value.code == "serial_unavailable"
+    assert bytes(stream.output) != written
+
+
+def test_read_only_stall_discard_is_bounded():
+    head, _ = truncated_handshake(48)
+    stream = LateTailStream(head, b"\x00" * 20000, quiet_reads=1)
+    device = MeshCoreClient(stream, expected_public_key=KEY)
+    with pytest.raises(MeshCoreError):
+        device.handshake()
+    assert device.poisoned is False
+    assert device.discarded_bytes == 4096
+    assert bytes(stream.output) == encode_frame(bytes((22, 13))) + encode_frame(b"\x01" + bytes(7) + b"Lantern")
+
+
+def test_send_stall_still_poisons_and_records_the_cause():
+    device, stream = client(handshake_bytes())
+    device.handshake()
+    with pytest.raises(MeshCoreError) as error:
+        send(device)
+    assert error.value.code == "send_unconfirmed" and error.value.outcome_unknown is True
+    assert device.poisoned is True
+    assert device.poisoned_by == {"command": "02", "sending": True, "receiving": False,
+                                  "error": "serial_incomplete", "frames": 1}
     before = bytes(stream.output)
     with pytest.raises(MeshCoreError, match="reconciliation_required"):
-        device.handshake()
+        send(device)
     assert bytes(stream.output) == before
 
 
@@ -377,12 +524,18 @@ def test_receive_no_handshake_or_authorization_no_io():
     with pytest.raises(MeshCoreError):
         device.receive_next(authorize=lambda: True, persist=lambda message: True)
     assert not stream.output
-    device, stream = client(handshake_bytes())
+    device, stream = client(handshake_bytes() + frame(b"\x0a"))
     device.handshake()
     before = bytes(stream.output)
+    written = device.wire_frames
     with pytest.raises(MeshCoreError):
         device.receive_next(authorize=lambda: False, persist=lambda message: True)
-    assert bytes(stream.output) == before
+    assert bytes(stream.output) == before and device.wire_frames == written
+    # A refusal issued before the first write leaves firmware state untouched,
+    # so the next authorized operation runs instead of a cold start.
+    assert device.receive_next(authorize=lambda: True,
+                               persist=lambda message: True) is None
+    assert device.wire_frames == written + 1
 
 
 def test_signed_subtype_payload_not_misrepresented_as_verified_text():

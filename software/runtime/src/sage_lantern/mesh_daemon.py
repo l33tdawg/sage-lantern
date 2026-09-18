@@ -58,6 +58,12 @@ SCHEMA = "sage.lantern.mesh-runtime.v1"
 # zero-hop and location-free; the firmware location policy still suppresses it
 # and the client's own advertisement throttle prevents duplicates.
 BEACON_SECONDS = 60.0
+# The messaging worker retires when an owner session rotates the storage epoch
+# under a live capture grant. A supervisor thread restarts it under the current
+# epoch; a request must never join it (a failed join left the runtime pausing and
+# answered 503 on every route until a process restart, 2026-09-18).
+BACKGROUND_SUPERVISOR_SECONDS = 1.0
+BACKGROUND_SUPERVISOR_MAX_SECONDS = 30.0
 
 
 def load_config(path=CONFIG):
@@ -72,7 +78,7 @@ def load_config(path=CONFIG):
 
 
 def validate_config(value):
-    require(type(value) is dict and set(value) - {"public_mesh", "public_gateway", "delivery_receipts_enabled"} == {"schema", "unit_id", "voice_uid", "endpoint", "chain_id",
+    require(type(value) is dict and set(value) - {"public_mesh", "public_gateway", "delivery_receipts_enabled", "airtime"} == {"schema", "unit_id", "voice_uid", "endpoint", "chain_id",
         "identity_file", "agent_id", "receiver_slot", "radio", "peers", "approve_initial_open", "acknowledge_reset",
         "messaging_enabled", "receive_while_locked", "dispatch_enabled", "dispatch_while_locked"})
     require(value["schema"] == SCHEMA and type(value["voice_uid"]) is int and value["voice_uid"] > 0)
@@ -94,6 +100,9 @@ def validate_config(value):
     delivery_receipts = value.get("delivery_receipts_enabled", False)
     require(type(delivery_receipts) is bool)
     require(not delivery_receipts or (value["messaging_enabled"] and value["dispatch_enabled"]))
+    if "airtime" in value:
+        from .airtime_budget import policy_from_settings
+        policy_from_settings(value["airtime"])
     require(value["approve_initial_open"] and value["acknowledge_reset"])
     require(type(value["peers"]) is list and len(value["peers"]) <= 256)
     seen = set()
@@ -171,6 +180,10 @@ class HardwareRuntime:
         self._public_contact_check = public_contact_check
         self._initializing = False
         self._reconciled = None
+        self._closing = False
+        self._background_stop = threading.Event()
+        threading.Thread(target=self._supervise_background,
+                         name="lantern-mesh-background-supervisor", daemon=True).start()
         from .mesh_radio_events import RadioEvents
         self._radio_events = RadioEvents()
         self._radio_observer = None
@@ -298,7 +311,10 @@ class HardwareRuntime:
     def provider(self, guard):
         require(guard() and self.active())
         if self._provider is not None:
-            self.resume_background(guard)
+            # A retired worker is restarted by the supervisor thread, never
+            # here: a request must not wait on a join, and a failed pause used to
+            # leave the runtime pausing (every route 503) until a process
+            # restart. This request proceeds against the runtime as it stands.
             return self._provider
         require(not self._attempted)
         store = WorkflowStore(self.probe.client, storage=self.probe)
@@ -343,7 +359,12 @@ class HardwareRuntime:
                 self._radio_events.observe(event, epoch)
             self._radio_observer = observe
             coordinator.submit(lambda client: client.set_receive_observer(observe)).result(timeout=3)
-            config = MeshRuntimeConfig(self.config["endpoint"], self.config["chain_id"], self.identity_path, self.config["receiver_slot"], 10)
+            airtime = None
+            if "airtime" in self.config:
+                from .airtime_budget import policy_from_settings
+                airtime = policy_from_settings(self.config["airtime"])
+            config = MeshRuntimeConfig(self.config["endpoint"], self.config["chain_id"], self.identity_path,
+                                       self.config["receiver_slot"], 10, airtime)
             self._provider = self._provider_factory(config, coordinator=coordinator, activation_check=self.active,
                 verify_binding=self.binding, storage_lifecycle_check=self.supervisor.resource_lifecycle_check)
             from .mesh_read_root import RootReadReceipts
@@ -380,10 +401,51 @@ class HardwareRuntime:
         if poller is not None and poller.is_alive():
             return
         require(guard() and self.active())
-        require(self._provider.pause_receiving(timeout=3) is True)
+        require(self._provider.restart_receiving(consent_reader=self.consent, lease_factory=self.capture_lease,
+                                                 unlocked_check=lambda: self._epoch() is not None) is True)
         require(guard() and self.active())
-        self._provider.start_receiving(consent_reader=self.consent, lease_factory=self.capture_lease,
-                                      unlocked_check=lambda: self._epoch() is not None)
+
+    def _supervise_background(self):
+        """Bring the messaging worker back under the current epoch, off every request.
+
+        The worker retires when its capture grant is denied - most often an
+        owner session rotating the storage epoch while a wake is admitted. The
+        restart used to happen inside the request that followed
+        (resume_background -> pause_receiving); a join that could not observe the
+        retired thread left the runtime pausing, so every route answered 503
+        until a process restart (units A and B, 2026-09-18 18:16-18:39).
+        This thread owns that job instead: it never holds a request, takes the
+        resource mutex without waiting, and never marks the runtime as pausing.
+        """
+        backoff = BACKGROUND_SUPERVISOR_SECONDS
+        while not self._background_stop.wait(backoff):
+            try:
+                if (self._closing or self._closed or "public_gateway" in self.config
+                        or not self.config["messaging_enabled"] or not self.active()):
+                    backoff = BACKGROUND_SUPERVISOR_SECONDS
+                    continue
+                provider = self._provider
+                if provider is None:
+                    continue
+                poller = provider._runtime._poller
+                if poller is not None and poller.is_alive():
+                    backoff = BACKGROUND_SUPERVISOR_SECONDS
+                    continue
+                if not self._mutex.acquire(blocking=False):
+                    continue
+                try:
+                    started = (not self._closing and not self._closed and self._provider is provider
+                               and self.active()
+                               and provider.restart_receiving(consent_reader=self.consent,
+                                       lease_factory=self.capture_lease,
+                                       unlocked_check=lambda: self._epoch() is not None) is True)
+                finally:
+                    self._mutex.release()
+            except Exception:
+                backoff = min(max(backoff, BACKGROUND_SUPERVISOR_SECONDS) * 2, BACKGROUND_SUPERVISOR_MAX_SECONDS)
+                continue
+            backoff = (BACKGROUND_SUPERVISOR_SECONDS if started
+                       else min(max(backoff, BACKGROUND_SUPERVISOR_SECONDS) * 2, BACKGROUND_SUPERVISOR_MAX_SECONDS))
 
     def consent(self):
         require(self.configured())
@@ -621,6 +683,8 @@ class HardwareRuntime:
 
     def close(self, timeout):
         self._radio_events.clear()
+        self._closing = True
+        self._background_stop.set()
         deadline = time.monotonic() + timeout
         if not self._mutex.acquire(timeout=max(0, timeout)):
             return False

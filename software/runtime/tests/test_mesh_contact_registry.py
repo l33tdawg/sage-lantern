@@ -12,7 +12,7 @@ from nacl.signing import SigningKey
 import pytest
 from sage_sdk import AgentIdentity, SageClient
 
-from sage_lantern.mesh_contacts import HistoricalMeshContact, sign_contact_card
+from sage_lantern.mesh_contacts import MAX_WINDOW_SECONDS, HistoricalMeshContact, sign_contact_card
 from sage_lantern.mesh_contact_registry import (
     CONTACT_SCHEMA, INDEX_SCHEMA, KIND, METHOD, PATH, MeshContactRegistry,
     RegistryError, RegistryOutcomeUnknown, contact_record_id, registry_index_id,
@@ -143,6 +143,32 @@ def test_expired_previous_signature_allows_only_new_revision_and_keeps_revocatio
             put(setup, setup.card(revision=revision, issued_at=300, expires_at=360, now=300))
     assert setup.registry.list_current(access_check=setup.access) == ()
     assert len(setup.read(setup.registry.index_id)['payload']['body']['members']) == 1
+
+
+def test_revocation_takes_effect_on_delivery_not_at_the_day_long_ttl(setup):
+    """A 24-hour card is still revoked the moment the superseding card arrives.
+
+    The TTL is only the worst-case staleness bound for a revocation that cannot
+    be delivered; it must never be what makes a revocation effective, and it must
+    never let an unexpired older card be replayed back over a newer one.
+    """
+    live = setup.card(expires_at=100 + MAX_WINDOW_SECONDS)
+    put(setup, live)
+    assert [value.revision for value in setup.registry.list_current(access_check=setup.access)] == [1]
+    setup.now = 200
+    revoked = setup.card(revision=2, issued_at=120, expires_at=120 + MAX_WINDOW_SECONDS, now=120,
+                         findable=False, messaging_allowed=False)
+    put(setup, revoked)
+    assert setup.registry.list_current(access_check=setup.access) == ()
+    assert setup.registry.historical(setup.actor, access_check=setup.access).revision == 2
+    # the original card is still inside its 24-hour validity, and still refused
+    assert 100 <= setup.now < 100 + MAX_WINDOW_SECONDS
+    with pytest.raises(RegistryError):
+        put(setup, live, actor=setup.actor)
+    inventory = ContactInventory((RadioContact(setup.radio, 1, 0, 1),), 1)
+    registry = setup.make(inventory=lambda: inventory, verify_binding=lambda *arguments: True)
+    with pytest.raises(RegistryError):
+        registry.resolve(setup.radio, access_check=setup.access)
 
 
 @pytest.mark.parametrize('schema', [INDEX_SCHEMA, CONTACT_SCHEMA])

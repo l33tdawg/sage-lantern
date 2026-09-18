@@ -24,7 +24,16 @@ SCHEMA = 'sage.lantern.mesh-contact.v1'
 SIGN_METHOD = 'LANTERN-CONTACT'
 SIGN_PATH = '/sage-lantern/mesh-contact/v1'
 MAX_CARD_BYTES = 4096
-MAX_TTL_SECONDS = 3600
+# The single ceiling for every Lantern mesh artifact that carries its own
+# issued_at/expires_at: the self-consent contact card, the owner's message
+# approval, the sealed wire envelope and the fragment assembly window all read
+# this value. The owner's decision (2026-09-13) is a 24-hour window for an
+# explicitly approved message, and the message approval is bound to the card it
+# was consented from, so the card cap has to move with it. Raising any one of
+# them alone silently breaks delivery: the peer re-validates the envelope
+# lifetime on receipt. Keep them equal; tests/test_mesh_window.py pins that.
+MAX_WINDOW_SECONDS = 24 * 60 * 60
+MAX_TTL_SECONDS = MAX_WINDOW_SECONDS
 MAX_INTEGER = (1 << 53) - 1
 _FIELDS = {'schema', 'chain_id', 'agent_id', 'radio_public_key', 'display_name',
            'revision', 'issued_at', 'expires_at', 'findable', 'messaging_allowed'}

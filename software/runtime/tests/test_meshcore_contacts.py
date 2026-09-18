@@ -127,15 +127,22 @@ def test_six_byte_collision_and_missing_full_key_fail_closed():
 
 @pytest.mark.parametrize('incoming', [b'', frame(start(1)), frame(start(257)),
                                       frame(start(1)) + frame(contact()) + frame(end(0))])
-def test_real_client_failure_poison_no_retry(incoming):
+def test_real_client_read_failure_no_poison_and_retry_allowed(incoming):
+    """The contact-list read is read-only: a stall costs one call, not the radio.
+
+    The per-operation inventory refresh in mesh_runtime means this path runs
+    before every radio operation, so poisoning here took messaging down for
+    hours on unit A while the firmware was healthy.
+    """
     device, stream = client(handshake_bytes() + incoming)
     device.handshake()
     with pytest.raises(MeshCoreError, match='serial_unavailable'):
         device.get_contacts(authorize=lambda: True)
+    assert device.poisoned is False and device.read_failure is not None
     before = bytes(stream.output)
-    with pytest.raises(MeshCoreError, match='reconciliation_required'):
+    with pytest.raises(MeshCoreError, match='serial_unavailable'):
         device.get_contacts(authorize=lambda: True)
-    assert bytes(stream.output) == before
+    assert bytes(stream.output) != before
 
 
 def test_real_client_busy_and_unhandshaken_emit_nothing():
@@ -164,19 +171,37 @@ def test_authorization_before_during_and_after_scan():
         assert len(calls) == (0 if decisions == [False] else 1)
 
 
-@pytest.mark.parametrize('decisions', [[False], [True, False], [True, True, False]])
-def test_public_method_authorization_failure_poison(decisions):
+def test_pre_wire_authorization_refusal_does_not_poison():
+    device, stream = client(handshake_bytes() + frame(start(0)) + frame(end(0)))
+    device.handshake()
+    before = bytes(stream.output)
+    written = device.wire_frames
+    with pytest.raises(MeshCoreError, match='serial_unavailable') as error:
+        device.get_contacts(authorize=lambda: False)
+    assert error.value.outcome_unknown is False
+    assert bytes(stream.output) == before and device.wire_frames == written
+    assert device.get_contacts(authorize=lambda: True) is not None
+    assert device.wire_frames == written + 1
+
+
+@pytest.mark.parametrize('decisions', [[True, False], [True, True, False]])
+def test_post_wire_authorization_failure_on_read_does_not_poison(decisions):
     device, stream = client(handshake_bytes() + frame(start(0)) + frame(end(0)))
     device.handshake()
     before = bytes(stream.output)
     responses = iter(decisions)
     with pytest.raises(MeshCoreError, match='serial_unavailable'):
         device.get_contacts(authorize=lambda: next(responses))
-    expected = before if decisions == [False] else before + encode_frame(b'\x04')
+    expected = before + encode_frame(b'\x04')
     assert bytes(stream.output) == expected
-    with pytest.raises(MeshCoreError, match='reconciliation_required'):
+    assert device.poisoned is False
+    # The refusal is reported for that call only: the transport is not latched,
+    # so the next command reaches the wire instead of being refused with
+    # reconciliation_required.
+    with pytest.raises(MeshCoreError) as retry:
         device.get_contacts(authorize=lambda: True)
-    assert bytes(stream.output) == expected
+    assert 'reconciliation_required' not in str(retry.value)
+    assert bytes(stream.output) != expected
 
 
 def test_shared_deadline_and_sanitized_transport_failure():

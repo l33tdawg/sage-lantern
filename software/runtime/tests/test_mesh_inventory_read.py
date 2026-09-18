@@ -121,6 +121,24 @@ def test_a_read_only_stall_reuses_the_last_inventory_any_operation_read():
     assert device.calls == 1
 
 
+def test_a_dispatch_wake_reuses_a_fresh_inventory_without_touching_the_serial(monkeypatch):
+    """The wake whose completion the owner's send waits on must not pay the
+    serial round trip the receive wakes already keep current."""
+    import sage_lantern.mesh_runtime as runtime_module
+    now = [100.0]
+    monkeypatch.setattr(runtime_module, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+    stub = runtime()
+    stub._last_inventory = 'cached'
+    stub._last_inventory_at = 95.0
+    device = Device([True])
+    assert MeshRuntime._inventory(stub, device, lambda: True, fresh=20.0) == 'cached'
+    assert device.calls == 0
+    now[0] = 130.0
+    stale = Device([True, True, True, True])
+    assert MeshRuntime._inventory(stub, stale, lambda: True, fresh=20.0) == 'cached'
+    assert stale.calls == INVENTORY_ATTEMPTS, 'an expired window reads again and falls back'
+
+
 def test_a_send_or_receive_failure_never_reuses_an_inventory():
     device = Device([True, True, True],
         read_failure=dict(command='send', sending=True, receiving=False, error='serial_timeout', frames=1))

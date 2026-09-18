@@ -22,6 +22,8 @@ from sage_lantern.mesh_inbox import inbox_id
 from sage_lantern.mesh_inbox import MeshInbox
 from sage_lantern.mesh_contacts import sign_contact_card, verify_contact_card
 from sage_lantern.mesh_receipt_sender import MeshReceiptSender, ReceiptPermit
+from sage_lantern.mesh_outbox import OutboxProgress
+from sage_lantern.mesh_runtime import CAPTURE_RESERVE_SECONDS, DISPATCH_BURST
 from sage_lantern.meshcore_transport import MeshCoreClient, decode_incoming
 from sage_lantern.message_contacts import RecipientID
 from sage_lantern.message_storage import MessageStorageProbe
@@ -63,6 +65,7 @@ def background(integrated):
     state.held = set()
     state.finished = 0
     state.lease_live = True
+    state.revoked = set()
     state.stop_after = None
     def transport(body):
         if body["op"] == "acquire":
@@ -71,7 +74,11 @@ def background(integrated):
             state.held.add(token)
             return {"lease": token}
         if body["op"] == "check":
-            return {"allowed": state.lease_live and body["lease"] in state.held}
+            # revoked models an owner session rotating the storage epoch: the
+            # leases admitted under the old one stay in the bookkeeping (so they
+            # still close cleanly) but no longer authorize anything.
+            return {"allowed": state.lease_live and body["lease"] in state.held
+                    and body["lease"] not in state.revoked}
         assert body["op"] == "finish"
         state.held.remove(body["lease"])
         state.finished += 1
@@ -166,15 +173,19 @@ def test_locked_receive_persists_without_disclosure_or_receipt(background):
 
 def test_simulated_background_roundtrip_reconstructs_bytes_and_receipt_after_restart(background, recipient):
     state = background
+    # Multi-fragment (the mesh path caps a message's text at 512 bytes, and the
+    # fragment transport at 48 bytes per fragment), so the stop_after below leaves
+    # this genuinely mid-flight for the restart to pick up.
     state.body["paragraphs"] = ["é" * 200, "Remaining authorized fragments"]
     assert state.call("messages/send", state.body)["state"] == "queued"
     identifier = state.body["request_id"]
     original = dict(state.rows[identifier]["payload"]["body"]["approved"])
-    state.stop_after = lambda: len(state.transmits) == 1
+    state.stop_after = lambda: bool(state.transmits)
     state.start()
     wait_until(lambda: state.runtime._receive_stop.is_set())
     assert state.provider.pause_receiving(timeout=5) is True
-    assert state.rows[identifier]["payload"]["body"]["next_fragment"] == 1
+    # A wake sends a burst of fragments, not one (see DISPATCH_BURST).
+    assert state.rows[identifier]["payload"]["body"]["next_fragment"] == DISPATCH_BURST
     assert state.service.close(timeout=5) is True
     state.scheduler = SerialScheduler(state.device, release=lambda: setattr(state, "released", True))
     state.provider = CommunityMeshProvider.from_config(state.config, coordinator=state.scheduler,
@@ -247,23 +258,99 @@ def test_simulated_background_roundtrip_reconstructs_bytes_and_receipt_after_res
     assert state.service.close(timeout=5) is True
 
 
-def test_uncertain_dispatch_is_never_automatically_retried(background, monkeypatch):
+def test_unknown_dispatch_inside_the_window_is_retried_by_the_worker(background, monkeypatch):
+    """Owner decision 2026-09-13: a lost acknowledgement is retryable, not a park.
+
+    The fragment reached the wire, so the row is left in 'dispatching' with its
+    cursor intact; the unit must not sit at not_ready until a human restarts it.
+    Inside the approval window the background worker drives the audited
+    retry_decision itself and re-sends the *same* fragment.
+    """
     state = background
     state.call("messages/send", state.body)
+    identifier = state.body["request_id"]
+    attempted = []
+    delivered = state.device.send_text
+    def lost_once(**kwargs):
+        attempted.append(kwargs)
+        if len(attempted) == 1:
+            raise TimeoutError("synthetic serial acknowledgment lost")
+        return delivered(**kwargs)
+    monkeypatch.setattr(state.device, "send_text", lost_once)
+    monkeypatch.setattr("sage_lantern.mesh_runtime.RETRY_BACKOFF_SECONDS", (0.05, 0.1))
+    state.start()
+    wait_until(lambda: len(attempted) == 1)
+    wait_until(lambda: identifier in state.runtime.outbox.unresolved())
+    body = state.rows[identifier]["payload"]["body"]
+    assert body["state"] == "dispatching" and body["next_fragment"] == 0
+    # inside the window this is retryable, so nothing is latched
+    assert state.runtime.outbox.latching_unknown() is False
+    assert state.runtime.admission_safe() is True
+    # the worker itself requeues the row, re-sends the same first fragment and
+    # the message keeps making progress without any restart
+    wait_until(lambda: len(attempted) >= 2)
+    wait_until(lambda: state.rows[identifier]["payload"]["body"]["next_fragment"] >= 1)
+    assert state.runtime.outbox.unresolved() == frozenset()
+    assert state.runtime.outbox.latching_unknown() is False
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
+def test_timed_out_dispatch_inside_the_window_recovers_without_restart(background, monkeypatch):
+    """Unit A's 2026-09-13 failure: the job budget expired with a frame on the wire.
+
+    The abandoned job is fenced, allowed to unwind, and the worker keeps living:
+    the row is requeued through the audited retry decision and the message makes
+    progress in the same process, with no owner restart and no not_ready park.
+    """
+    state = background
+    # Long enough that the dispatch reaches the wire write, short enough that the
+    # stalled acknowledgement cannot outlast the job budget.
+    shorten_job_budget(state, 1.5)
+    state.call("messages/send", state.body)
+    identifier = state.body["request_id"]
+    attempted = []
+    entered = threading.Event()
+    delivered = state.device.send_text
+    def stalled_once(**kwargs):
+        attempted.append(kwargs)
+        if len(attempted) > 1:
+            return delivered(**kwargs)
+        entered.set()
+        while not state.runtime._receive_stop.wait(0.01):
+            pass
+        raise TimeoutError("synthetic stalled acknowledgment")
+    monkeypatch.setattr(state.device, "send_text", stalled_once)
+    monkeypatch.setattr("sage_lantern.mesh_runtime.RETRY_BACKOFF_SECONDS", (0.05, 0.1))
+    state.start()
+    assert entered.wait(5)
+    wait_until(lambda: state.rows[identifier]["payload"]["body"]["state"] == "dispatching")
+    assert len(attempted) == 1
+    # the worker survived the timed-out job instead of parking the unit
+    wait_until(lambda: len(attempted) >= 2)
+    wait_until(lambda: state.rows[identifier]["payload"]["body"]["next_fragment"] >= 1)
+    assert state.runtime._uncertain is False and state.runtime.admission_safe() is True
+    assert state.runtime.outbox.unresolved() == frozenset()
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
+def test_unknown_dispatch_outside_the_window_never_retries_and_stays_closed(background, monkeypatch):
+    state = background
+    state.call("messages/send", state.body)
+    identifier = state.body["request_id"]
     attempted = []
     def lost_ack(**kwargs):
         attempted.append(kwargs)
         raise TimeoutError("synthetic serial acknowledgment lost")
     monkeypatch.setattr(state.device, "send_text", lost_ack)
     state.start()
-    wait_until(lambda: state.runtime._receive_stop.is_set())
-    assert state.provider.pause_receiving(timeout=5) is False
+    wait_until(lambda: len(attempted) == 1)
+    wait_until(lambda: identifier in state.runtime.outbox.unresolved())
+    # the signed window has run out: escalate to the owner instead of retrying
+    state.runtime.outbox.clock = lambda: int(time.time()) + 90000
+    assert state.runtime.outbox.latching_unknown() is True
+    wait_until(lambda: state.runtime.admission_safe() is False)
     assert len(attempted) == 1
-    assert state.rows[state.body["request_id"]]["payload"]["body"]["state"] == "dispatching"
-    state.stop_after = lambda: state.finished >= 4
-    with pytest.raises(RuntimeError):
-        state.start()
-    assert len(attempted) == 1
+    assert state.rows[identifier]["payload"]["body"]["state"] == "dispatching"
     assert state.service.close(timeout=5) is False
 
 
@@ -353,10 +440,20 @@ def test_unlocked_only_worker_waits_on_lock_and_joins_or_resumes(background, mon
     assert state.finished == completed and not state.held
     assert len(state.pending) == count and local_id not in state.rows and not state.transmits
     if resume:
-        state.stop_after = lambda: local_id in state.rows
+        served = threading.Event()
+        def served_by_this_worker():
+            if local_id in state.rows:
+                served.set()
+            # Do not stop the worker from here: the point is that the *same*
+            # thread resumes. A retired worker now clears its own _poller
+            # reference, so a stop signal here would race that cleanup instead
+            # of proving the resume.
+            return False
+        state.stop_after = served_by_this_worker
         state.authorized = True
-        wait_until(lambda: state.runtime._receive_stop.is_set())
+        wait_until(lambda: served.is_set())
         assert state.runtime._poller is poller and local_id in state.rows
+        assert not state.runtime._receive_stop.is_set()
         assert state.finished > completed and not state.held and not state.transmits
     assert state.provider.pause_receiving(timeout=5) is True
     assert not poller.is_alive() and state.service.close(timeout=5) is True
@@ -424,3 +521,245 @@ def test_unknown_supervisor_lease_outcome_blocks_clean_close(background, operati
     wait_until(lambda: state.runtime._receive_stop.is_set())
     assert state.provider.pause_receiving(timeout=5) is False
     assert state.service.close(timeout=5) is False
+
+
+def shorten_job_budget(state, seconds):
+    state.runtime.config = replace(state.runtime.config, operation_timeout=seconds)
+
+
+def test_background_timeout_before_destructive_step_keeps_messaging_usable(background, monkeypatch):
+    """A stalled pre-capture check must not cost a cold start.
+
+    The job never reached the destructive dequeue, so nothing was sent or
+    consumed: the worker retires, local messaging still answers, and the next
+    request restarts the reviewed worker in the same process.
+    """
+    state = background
+    shorten_job_budget(state, 0.4)
+    stalled = threading.Event()
+    original = state.device.get_contacts
+
+    def stalled_contacts(*, authorize):
+        assert authorize() is True
+        stalled.set()
+        while not state.runtime._receive_stop.wait(0.01):
+            pass
+        return ()
+
+    monkeypatch.setattr(state.device, "get_contacts", stalled_contacts)
+    written = state.device.wire_frames
+    state.start()
+    assert stalled.wait(5)
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.device.wire_frames == written and not state.transmits
+    assert state.runtime._uncertain is False and state.runtime.admission_safe() is True
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert state.call("messages/list", {"box": "inbox"})["items"] == []
+    monkeypatch.setattr(state.device, "get_contacts", original)
+    state.start()
+    wait_until(lambda: state.finished >= 1)
+    assert state.runtime._uncertain is False and state.provider.pause_receiving(timeout=5) is True
+
+
+def test_background_timeout_after_destructive_step_stays_fail_closed(background, monkeypatch):
+    """Reaching the dequeue keeps the previous behaviour, even without a reply."""
+    state = background
+    shorten_job_budget(state, 0.6)
+    entered = threading.Event()
+
+    def stalled_receive(*, authorize, persist):
+        entered.set()
+        while not state.runtime._receive_stop.wait(0.01):
+            pass
+        return None
+
+    monkeypatch.setattr(state.device, "get_contacts", lambda *, authorize: ())
+    monkeypatch.setattr(state.device, "receive_next", stalled_receive)
+    state.start()
+    assert entered.wait(5)
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.runtime._uncertain is True and state.runtime.admission_safe() is False
+    assert state.provider.pause_receiving(timeout=5) is False
+    with pytest.raises(RuntimeError):
+        state.start()
+
+
+def test_dispatch_path_does_not_mark_the_destructive_step_up_front(background, monkeypatch):
+    """The dispatch layers own the destructive-action marker, not the worker.
+
+    mesh_outbox.dispatch_one reads the contact inventory before it makes the row
+    'dispatching' and sets its own uncertainty only after a fragment actually
+    reached the wire. If the worker pre-set the job marker for this path, a stall
+    in that read would be classified post-wire and latch the runtime until a
+    process restart - which is exactly what happened on unit A on 2026-09-13.
+    """
+    state = background
+    shorten_job_budget(state, 0.4)
+    state.call("messages/send", state.body)
+    seen = {}
+
+    def stalled_dispatch(device):
+        job = getattr(state.runtime._local, "job", None)
+        seen["radio_action"] = None if job is None else job.radio_action.is_set()
+        raise TimeoutError("synthetic stall in the read-only inventory step")
+
+    monkeypatch.setattr(state.runtime, "_dispatch_pending", stalled_dispatch)
+    state.start()
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert seen.get("radio_action") is False
+    assert state.runtime._uncertain is False and state.runtime.admission_safe() is True
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert state.rows[state.body["request_id"]]["payload"]["body"]["state"] == "queued"
+
+
+def test_background_dispatch_spends_the_inventory_the_wake_refreshed(background, monkeypatch):
+    """One fragment, one contact read on the worker path too.
+
+    The worker refreshes the inventory at the top of every wake; the outbox must
+    dispatch against that same inventory instead of reading the contact list a
+    second time. This is the path that could not deliver on unit A on
+    2026-09-13 - a stall in either read ended the wake before any fragment
+    reached the wire.
+    """
+    state = background
+    state.call("messages/send", state.body)
+    seen = {}
+    def capture(message_id, **kwargs):
+        seen.update(kwargs)
+        seen["refreshed"] = state.runtime._local.inventory
+        # A real dispatch returns progress; the burst loop reads it to decide
+        # whether this row has another fragment to spend the same inventory on.
+        return OutboxProgress(message_id=message_id, revision=2, state="awaiting_receipt",
+                              next_fragment=1, fragment_count=1)
+    monkeypatch.setattr(state.runtime.outbox, "dispatch_one", capture)
+    state.stop_after = lambda: "refreshed" in seen
+    state.start()
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert "read_contacts" not in seen
+    assert seen["inventory"] is seen["refreshed"]
+
+
+def test_background_dispatch_bursts_fragments_in_one_wake(background):
+    """One wake sends DISPATCH_BURST fragments, not one.
+
+    Wakes alternate with the receive path and sleep `interval` between them, so
+    the old one-fragment-per-wake shape made the pacing - two seconds of it - the
+    limit for every message longer than a single frame, whatever the radio could
+    carry. The public-mesh path in the same file always sent a burst.
+    """
+    state = background
+    # 484 bytes is under the 512-byte mesh-path limit and still ~17 fragments at
+    # 48 bytes each, so one wake cannot possibly finish it.
+    state.body["paragraphs"] = ["y" * 240, "z" * 240]
+    assert state.call("messages/send", state.body)["state"] == "queued"
+    identifier = state.body["request_id"]
+    state.stop_after = lambda: bool(state.transmits)
+    state.start()
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.provider.pause_receiving(timeout=5) is True
+    body = state.rows[identifier]["payload"]["body"]
+    assert len(state.transmits) == DISPATCH_BURST
+    assert body["next_fragment"] == DISPATCH_BURST
+    assert body["state"] == "queued"
+
+
+def test_capture_reserve_is_wired_from_the_job_budget(background, monkeypatch):
+    state = background
+    seen = []
+
+    def receive(*, authorize, persist):
+        seen.append((state.runtime._local.capture_reserve, state.runtime._local.background_deadline))
+        return None
+
+    monkeypatch.setattr(state.device, "get_contacts", lambda *, authorize: ())
+    monkeypatch.setattr(state.device, "receive_next", receive)
+    state.stop_after = lambda: bool(seen)
+    state.start()
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert seen and seen[0][0] == CAPTURE_RESERVE_SECONDS and seen[0][1] > 0
+
+
+def test_capture_deadline_only_restricts_background_jobs(background):
+    state = background
+    runtime = state.runtime
+    assert runtime._capture_deadline_open() is True
+    runtime._local.capture_reserve = 1.0
+    runtime._local.background_deadline = time.monotonic() + 0.05
+    assert runtime._capture_deadline_open() is False
+    runtime._local.background_deadline = time.monotonic() + 5
+    assert runtime._capture_deadline_open() is True
+
+
+def test_rotated_capture_grant_retires_clean_and_restarts_under_the_new_epoch(background, monkeypatch):
+    """An owner session rotation must not strand the worker or the queued row.
+
+    Units A and B, 2026-09-18 18:16-18:39: the storage epoch rotated under a
+    live dispatch grant, every store call admitted under it was denied
+    (``background_dispatch WorkflowUnavailable access_denied
+    authorize_context``), the wake retired the worker, and nothing
+    authenticated again inside the process - the row stayed queued and the
+    owner's own send was answered 503. Retiring must leave no stale worker or
+    pause state behind, and the restart path the daemon supervisor drives must
+    re-admit under the new epoch without any request joining the old worker.
+    """
+    state = background
+    assert state.call("messages/send", state.body)["state"] == "queued"
+    identifier = state.body["request_id"]
+    entered = threading.Event()
+    release = threading.Event()
+    original = state.runtime._inventory
+    def gated(device, authorize, *, fresh=0.0):
+        # Hold the dispatch wake - and only that wake - once it is admitted and
+        # before it can touch the store, so the rotation below lands on a job
+        # that holds the old grant.
+        if getattr(state.runtime._local, "operation", None) == "background_dispatch":
+            entered.set()
+            assert release.wait(5)
+        return original(device, authorize, fresh=fresh)
+    monkeypatch.setattr(state.runtime, "_inventory", gated)
+    state.start()
+    assert entered.wait(5)
+    # The rotation happens while the wake is admitted and on the radio: the
+    # lease it holds is revoked, while the next job may still authenticate.
+    assert state.held
+    state.revoked.update(state.held)
+    release.set()
+    retired = state.runtime._poller
+    wait_until(lambda: not retired.is_alive())
+    assert state.runtime._receive_pausing is False
+    assert state.runtime._uncertain is False and state.runtime.admission_safe() is True
+    assert state.rows[identifier]["payload"]["body"]["state"] == "queued" and not state.transmits
+    # The daemon supervisor's path, off every request: a fresh grant under the
+    # current epoch, and the row it was carrying reaches the wire.
+    assert state.provider.restart_receiving(consent_reader=lambda: state.consent,
+        lease_factory=state.lease_factory, unlocked_check=lambda: state.authorized) is True
+    assert state.runtime._poller is not retired and state.runtime._poller.is_alive()
+    wait_until(lambda: bool(state.transmits))
+    assert state.rows[identifier]["payload"]["body"]["state"] != "queued"
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
+def test_restart_receiving_refuses_a_latched_runtime(background):
+    """A latched runtime must never be re-admitted by the supervisor.
+
+    The restart path exists for a rotated capture epoch, not for an unknown
+    write: when any target reports a latching unknown, admission is unsafe, a
+    retried restart refuses outright, and no replacement worker starts.
+    """
+    state = background
+    state.start()
+    wait_until(lambda: state.runtime._poller.is_alive())
+    running = state.runtime._poller
+    state.runtime.receiver._uncertain = True
+    assert state.runtime.admission_safe() is False
+    # A worker that is already running is left exactly where it is: its own
+    # access checks deny every job from here, and no replacement is started.
+    assert state.provider.restart_receiving(consent_reader=lambda: state.consent,
+        lease_factory=state.lease_factory, unlocked_check=lambda: state.authorized) is True
+    assert state.runtime._poller is running
+    # Once it has retired on its own, the same call refuses to re-admit it.
+    wait_until(lambda: not running.is_alive())
+    assert state.provider.restart_receiving(consent_reader=lambda: state.consent,
+        lease_factory=state.lease_factory, unlocked_check=lambda: state.authorized) is False
+    assert state.runtime._poller is running and not running.is_alive()

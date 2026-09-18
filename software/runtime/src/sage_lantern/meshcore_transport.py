@@ -7,6 +7,7 @@ Uncertain IO poisons this client. Reopening is not permission to retry a send.
 No discovery, contact modification, automatic receiver draining, logs or SAGE binding.
 """
 
+import collections
 from dataclasses import dataclass
 import hashlib
 import math
@@ -15,6 +16,8 @@ import select
 import struct
 import threading
 import time
+
+from .airtime_budget import AirtimeSample
 
 
 BAUD = 115200
@@ -25,6 +28,41 @@ MAX_TEXT = 128
 PACKET_SIGNAL_WINDOW = 300
 FIRMWARE = "v1.17.1-d929643"
 SUPPORTED_FIRMWARE = (FIRMWARE, "v1.17.1-d929643-r1", "v1.17.1-d929643-r2")
+# Every response code >= 0x80 is an asynchronous push (PUSH_CODE_* in
+# examples/companion_radio/MyMesh.cpp) and can arrive at any point, including in
+# the middle of another command's response. The host owns no push callback, so
+# before this map existed a push that landed inside an exchange was read and
+# silently discarded: a dropped MSG_WAITING delayed a fetch, a dropped
+# CONTACT_DELETED/CONTACTS_FULL left a stale directory until the next poll, and a
+# dropped SEND_CONFIRMED destroyed the only in-band radio-ACK observation.
+PUSH_CODES = {
+    0x80: "advert",
+    0x81: "path_updated",
+    0x82: "send_confirmed",
+    0x83: "messages_waiting",
+    0x84: "raw_data",
+    0x85: "login_success",
+    0x86: "login_fail",
+    0x87: "status_response",
+    0x88: "log_rx_data",
+    0x89: "trace_data",
+    0x8A: "new_advert",
+    0x8B: "telemetry_response",
+    0x8C: "binary_response",
+    0x8D: "path_discovery_response",
+    0x8E: "control_data",
+    0x8F: "contact_deleted",
+    0x90: "contacts_full",
+}
+# Bounded, payload-free observation record. Pushes carry other people's traffic
+# (contact messages, raw data, telemetry), so only code, size and clock are kept.
+PUSH_EVENT_LIMIT = 64
+
+# Read-only failures that leave the port mid-stream: the frame body was cut short
+# (unit A's stock firmware stalls part-way through a 148-byte contact record) or
+# the header itself was unparsable. Only these need a bounded resynchronisation;
+# a refusal raised by the caller leaves the port on a frame boundary.
+WIRE_RESYNC_CODES = ("serial_timeout", "serial_incomplete", "invalid_frame")
 PROTOCOL_VERSION = 13
 
 
@@ -160,6 +198,10 @@ class MeshCoreClient:
         self._last_clock = None
         self._mutex = threading.Lock()
         self._poisoned = False
+        self._poisoned_by = None
+        self._read_failure = None
+        self._last_command = None
+        self._last_discard = 0
         self._identity = None
         self._last_receipt = None
         self._receive_observer = None
@@ -167,6 +209,78 @@ class MeshCoreClient:
         self._next_advertisement = 0
         self._last_received_signal = None
         self._last_signal_at = None
+        self._push_events = collections.deque(maxlen=PUSH_EVENT_LIMIT)
+        self._messages_waiting = False
+        self._contact_table_dirty = False
+        self._last_send_confirmation = None
+        self._airtime_sample = None
+        self._written = 0
+
+    @property
+    def poisoned(self):
+        """True once a failure after the first write left the radio unreconciled."""
+        return self._poisoned
+
+    @property
+    def poisoned_by(self):
+        """Why the transport was poisoned (diagnostic only)."""
+        return self._poisoned_by
+
+    @property
+    def read_failure(self):
+        """The last read-only exchange that stalled without poisoning (diagnostic)."""
+        return self._read_failure
+
+    @property
+    def discarded_bytes(self):
+        """Bytes discarded by the last bounded resynchronisation (diagnostic)."""
+        return self._last_discard
+
+    @property
+    def wire_frames(self):
+        """Count of command frames whose write loop has been entered.
+
+        Diagnostic only: the caller uses the count to tell a provably pre-wire
+        failure (nothing was written, so firmware state is untouched) from an
+        unknown mid-exchange outcome. It is never authorization or delivery
+        evidence, and it is incremented before the first byte is written so a
+        partial write still counts.
+        """
+        return self._written
+
+    @property
+    def push_events(self):
+        """Bounded, payload-free record of asynchronous push frames observed.
+
+        A snapshot, newest last. Entries carry the PUSH_CODES name, size and
+        clock; only the send confirmation parses further (ACK CRC, trip time).
+        """
+        return tuple(dict(event) for event in self._push_events)
+
+    def take_messages_waiting(self):
+        """Consume the firmware's "messages are queued" notification, if seen."""
+        value, self._messages_waiting = self._messages_waiting, False
+        return value
+
+    def take_contact_table_dirty(self):
+        """Consume a deleted-contact / contacts-full notification, if seen."""
+        value, self._contact_table_dirty = self._contact_table_dirty, False
+        return value
+
+    @property
+    def send_confirmation(self):
+        """Last in-band send confirmation (0x82), or None.
+
+        This is a radio-level observation only: the firmware reports that a
+        matching ACK arrived. It is not delivery or read evidence, and the same
+        ACK can be reported more than once.
+        """
+        return None if self._last_send_confirmation is None else dict(self._last_send_confirmation)
+
+    @property
+    def airtime_sample(self):
+        """Latest cumulative TX/RX airtime reading from a health() stats read."""
+        return self._airtime_sample
 
     def set_receive_observer(self, observer):
         if not callable(observer) or not self._mutex.acquire(blocking=False):
@@ -209,11 +323,59 @@ class MeshCoreClient:
             raise MeshCoreError("invalid_frame")
         frame = self._read(size, deadline)
         if frame[0] >= 0x80:
-            self._observe_discovery(frame)
+            self._observe_push(frame)
         return frame
+
+    def _observe_push(self, frame):
+        """Record an asynchronous push frame instead of silently dropping it.
+
+        Pushes land inside command exchanges by design, so "_exchange skipped a
+        frame it was not waiting for" must not mean "the event never existed".
+        Only bounded, payload-free summaries are retained; discovery pushes keep
+        their existing parsing (including the malformed-length contract).
+        """
+        code = frame[0]
+        if code == 0x82 and len(frame) == 9:
+            self._last_send_confirmation = dict(ack_crc=frame[1:5].hex(),
+                trip_time_ms=int.from_bytes(frame[5:9], "little"), observed_monotonic=self._now())
+        elif code == 0x83:
+            self._messages_waiting = True
+        elif code in (0x8F, 0x90):
+            self._contact_table_dirty = True
+        self._push_events.append(dict(code=code, name=PUSH_CODES.get(code, "unknown"),
+                                      size=len(frame), observed_monotonic=self._now()))
+        if code in (0x80, 0x88, 0x8A):
+            self._observe_discovery(frame)
+
+    def _discard_pending(self, *, limit=4096, window=0.25):
+        """Bounded resynchronisation after a read-only exchange stalled.
+
+        A read-only command cannot have sent or dequeued user traffic, so the
+        only damage a stall leaves behind is part of a response still sitting in
+        the port. Read and discard a bounded amount within a bounded window so the
+        next command starts on a frame boundary; never writes a command, never
+        retries, never blocks past the window. Returns the discarded byte count.
+        """
+        dropped = 0
+        try:
+            deadline = self._now() + window
+            while dropped < limit:
+                remaining = deadline - self._now()
+                if remaining <= 0:
+                    break
+                chunk = self._stream.read(min(256, limit - dropped), remaining)
+                if type(chunk) is not bytes or not chunk:
+                    break
+                dropped += len(chunk)
+        except Exception:
+            pass
+        self._last_discard = dropped
+        return dropped
 
     def _exchange(self, payload, expected_code, deadline):
         wire = encode_frame(payload)
+        self._last_command = payload[:1].hex() if payload else None
+        self._written += 1
         offset = 0
         while offset < len(wire):
             sent = self._stream.write(wire[offset:], self._remaining(deadline))
@@ -289,6 +451,12 @@ class MeshCoreClient:
                 if len(response) != 2 + struct.calcsize(layout) or response[1] != subtype:
                     raise MeshCoreError("invalid_stats_response")
                 result.update(zip(names, struct.unpack(layout, response[2:])))
+            # The firmware's own cumulative airtime counters are the only honest
+            # duty-cycle source (they include ACKs the radio sends by itself).
+            # Cache the reading so a dispatch gate never pays a radio exchange.
+            self._airtime_sample = AirtimeSample(monotonic=self._now(),
+                tx_airtime_seconds=float(result["tx_airtime_seconds"]),
+                rx_airtime_seconds=float(result["rx_airtime_seconds"]))
             if authorize() is not True:
                 raise MeshCoreError("access_revoked")
             now = self._now()
@@ -311,15 +479,54 @@ class MeshCoreClient:
         try:
             if self._poisoned:
                 raise MeshCoreError("reconciliation_required")
+            written = self._written
             try:
                 return operation(self._now() + self._timeout)
             except BaseException as error:
-                self._poisoned = True
-                self._identity = None
+                # No command byte reached the radio in this operation, so nothing
+                # can have been sent or dequeued: a refusal raised before the
+                # first write (denied authorization, missing handshake, identity
+                # gate) is reported under the existing error contract without
+                # poisoning the transport, so it never costs a cold start.
+                pre_wire = self._written == written
                 if not isinstance(error, Exception):
+                    # A non-Exception (process shutdown and friends) is not
+                    # classified: keep the fail-closed rule exactly as before.
+                    if not pre_wire:
+                        self._poisoned = True
+                        self._identity = None
                     raise
+                if not pre_wire:
+                    code_name = str(error.args[0]) if error.args else type(error).__name__
+                    cause = dict(command=self._last_command, sending=bool(sending),
+                                 receiving=bool(receiving),
+                                 error=code_name,
+                                 frames=self._written - written)
+                    if sending or receiving:
+                        # A command that could have sent or dequeued a user message
+                        # failed after the wire: firmware state is unknown, so keep
+                        # the existing fail-closed rule and require a reviewed
+                        # recovery before this radio is used again.
+                        self._poisoned = True
+                        self._poisoned_by = cause
+                        self._identity = None
+                    else:
+                        # A read-only command (contact list, health) stalled. It
+                        # cannot have sent or dequeued user traffic - the dequeue
+                        # path is the receive command, which runs receiving=True -
+                        # and the firmware re-sends a whole record for the next
+                        # read. Drop the abandoned tail and keep the radio usable
+                        # instead of latching it until a process restart.
+                        self._read_failure = cause
+                        if code_name in WIRE_RESYNC_CODES:
+                            # Only a partially read or unparsable frame leaves the
+                            # port mid-stream. A refusal raised by the caller (or a
+                            # complete frame the caller rejected) leaves the port on
+                            # a frame boundary, and those bytes may belong to the
+                            # next response, so they must not be thrown away.
+                            self._discard_pending()
                 code = "send_unconfirmed" if sending else "receive_unconfirmed" if receiving else "serial_unavailable"
-                raise MeshCoreError(code, outcome_unknown=sending or receiving) from None
+                raise MeshCoreError(code, outcome_unknown=not pre_wire and (sending or receiving)) from None
         finally:
             self._mutex.release()
 

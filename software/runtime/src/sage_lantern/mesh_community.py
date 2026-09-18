@@ -151,7 +151,9 @@ class MeshActionAuthority:
             if type(action) is not OutboxAction:
                 return False
             if record.get("background") is True:
-                return (operation, action.operation) in {("receive", "receipt"), ("background_dispatch", "dispatch")}
+                return (operation, action.operation) in {
+                    ("receive", "receipt"), ("background_dispatch", "dispatch"),
+                    ("background_dispatch", "retry")}
             expected = record["message"]
             if expected is None:
                 return operation in ("list_messages", "open_message") and action.operation == "read_sent"
