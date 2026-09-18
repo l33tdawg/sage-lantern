@@ -164,3 +164,22 @@ was found on, and the two units now run identical startup artifacts.
    that lapses between the window and the verification is waited out rather than
    charged. This is the defect that refused Unit A's boot on 2026-09-18 and it is
    fixed in the coordinator this release installs.
+
+## Second generation, same evening — the airtime-gate re-anchor (2026-09-18 late)
+
+Release `sage.lantern-release-lantern-b-20260918-214500` took the release channel
+over the messaging session's epoch-restart build *with* the airtime gate and push
+capture: wheel `e236036f…`, collector `df9ab182…`, coordinator `019e1781…`,
+adapter `88d180a8…`, helper `9d28f920…`. It needed an allowance for one
+broker-scoped fence deviation and no inventory delta; both cold boots
+(`19b890ee`, `9279602f`) reached `operational` and advanced the pointer, the
+second on the strict binding. `accept` recorded `another_reboot_tested: true`.
+Unit A took the same generation as
+`sage.lantern-release-lantern-a-20260918-221500` (identical wheel and tool
+digests, its own baseline and allowance) once the owner powered it back on at
+22:07 — it had dropped off the network at 21:36 with nothing installed. Both of
+its cold boots (`89e06274`, `f3b603c0`) also reached `operational` on the strict
+binding for the second, and `accept` recorded `another_reboot_tested: true`.
+Both units now run byte-identical runtime modules with the gate installed
+dormant (no `airtime` config key). The run is
+`work/reanchor-gate-20260918/README.md`.
