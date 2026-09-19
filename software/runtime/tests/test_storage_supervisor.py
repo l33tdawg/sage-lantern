@@ -112,6 +112,84 @@ def test_diagnostic_io_releases_state_lock_and_revalidates(setup, method, change
     assert result is (not change_phase)
 
 
+def test_admission_checks_reuse_one_verification_per_window(setup):
+    """A dispatch wake makes ~165 admission checks; each one used to pay its own
+    signed snapshot plus two systemctl reads, which saturated the unit's SAGE
+    replay window (unit A 2026-09-19 17:02: 503 Replay window saturated)."""
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    probes, vaults, producers = [], [], []
+    supervisor._snapshot = lambda: probes.append(state["now"]) or state["snapshot"]
+    original_vault, original_producer = backend.vault_identity, backend.producer
+    backend.vault_identity = lambda: vaults.append(state["now"]) or original_vault()
+    backend.producer = lambda *, stopping=False: producers.append(stopping) or original_producer(stopping=stopping)
+    for _ in range(40):
+        assert supervisor.voice_peer(pid=901, uid=1001) is True
+        assert supervisor.check(token, pid=901, uid=1001) is True
+        assert supervisor.verified_epoch() == state["snapshot"].epoch
+        state["now"] += module.LIVE_CHECK_SECONDS / 200
+    assert (len(probes), len(vaults), producers) == (1, 1, [False])
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert (len(probes), len(vaults)) == (2, 2)
+
+
+def test_admission_checks_observe_a_new_vault_within_one_window(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    state["snapshot"] = MessageStorageSnapshot("e" * 64, "2")
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert supervisor.check(token, pid=901, uid=1001) is True
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.voice_peer(pid=901, uid=1001) is False
+    assert supervisor.check(token, pid=901, uid=1001) is False
+    with pytest.raises(StorageSupervisorError):
+        supervisor.verified_epoch()
+
+
+def test_admission_checks_observe_a_new_producer_within_one_window(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    backend.instance = Producer(902, 1001, {"instance_id": str(uuid.uuid4())})
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.voice_peer(pid=901, uid=1001) is False
+
+
+def test_reuse_never_outlives_an_in_process_change(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert supervisor.check(token, pid=901, uid=1001) is True
+    supervisor.phase = "recovery_required"
+    assert supervisor.voice_peer(pid=901, uid=1001) is False
+    assert supervisor.check(token, pid=901, uid=1001) is False
+    with pytest.raises(StorageSupervisorError):
+        supervisor.verified_epoch()
+
+
+def test_drain_never_reads_the_reused_live_producer(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    stops = []
+    original = backend.producer
+    backend.producer = lambda *, stopping=False: stops.append(stopping) or original(stopping=stopping)
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert stops == [False]
+    backend.running = False
+    assert supervisor.voice_peer(pid=901, uid=1001, draining=True) is False
+    assert stops[-1] is True
+
+
 def test_real_lifetime_order_and_explicit_vault_gate(setup):
     supervisor, backend, state = setup
     supervisor.start()

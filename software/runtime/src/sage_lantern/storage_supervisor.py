@@ -49,6 +49,20 @@ CHECKS = {"http_drained", "http_outcome_known", "session_finalized", "child_grou
 # radio budget) inside one fragment and timed out before the wire. One window
 # keeps a change observable within a second; the admission paths (`check`,
 # `_live`, `voice_peer`) keep their own immediate verification.
+#
+# The window now covers the admission paths too, and it is load-bearing beyond
+# wake latency: the unit's own SAGE node fails the *whole* signed surface closed
+# once 10,000 distinct request signatures land inside five minutes (33/s). Every
+# guarded call pays a signed snapshot, so one 10 s dispatch wake (~165 guarded
+# calls) plus the kiosk's own polls saturated that replay window on unit A
+# 2026-09-19 17:00-17:03 (2,928+2,597 storage probes in two minutes; 54 requests
+# answered `503 Replay window saturated`), which denied `authorize_context`,
+# retired the receive/dispatch workers and left the A->B row undelivered. The
+# reuse is bounded to one window and keyed on the broker's whole in-process
+# state, so a phase, broker, baseline, vault, producer, resource or shutdown
+# change invalidates it immediately; only a change made by another process is
+# observable within the window. Store operations keep their own uncached
+# before/after snapshot (see workflow_store._invoke).
 LIVE_CHECK_SECONDS = 1.0
 
 
@@ -230,6 +244,7 @@ class RootStorageSupervisor:
         self._shutdown_requested = False
         self._backend, self._snapshot, self._access, self._clock = backend, snapshot, access_epoch, clock
         self._live_cache = None
+        self._producer_cache = None
         self.directory = Path(directory)
         self._owner = owner_uid
         try:
@@ -291,13 +306,19 @@ class RootStorageSupervisor:
             raise StorageSupervisorError()
         return value.epoch
 
+    def _live_key(self):
+        """Everything the reuse must be invalidated by, as one comparable tuple."""
+        return (self.broker_id, self.phase, self._baseline, self._vault, self._producer,
+                self._shutdown_requested, self._resource is not None, self._resource_joined)
+
     def _live_identity(self, key):
         """The verified (epoch, vault identity) pair, reused for LIVE_CHECK_SECONDS.
 
         The pair is re-derived on every guarded call, which is what a dispatch
-        wake cannot afford (see LIVE_CHECK_SECONDS). Any phase, ownership or
-        broker change invalidates the reuse immediately because `key` carries
-        them, and a change in the identity itself is observed within one window.
+        wake cannot afford (see LIVE_CHECK_SECONDS). Any phase, ownership,
+        broker, expected-identity or resource change invalidates the reuse
+        immediately because `key` carries them, and a change in the external
+        identity itself is observed within one window.
         """
         now = self._clock()
         cached = self._live_cache
@@ -307,6 +328,50 @@ class RootStorageSupervisor:
         vault = self._backend.vault_identity()
         self._live_cache = (key, now, epoch, vault)
         return epoch, vault
+
+    def _live_producer(self, key):
+        """The live voice producer identity, reused for LIVE_CHECK_SECONDS.
+
+        Same window and same key discipline as _live_identity: this is the
+        `systemctl show` half of a peer check, and a dispatch wake makes ~165 of
+        them. A drain asks for the stopping producer explicitly and is never
+        served from here, because the voice unit is legitimately gone by then.
+        """
+        now = self._clock()
+        cached = self._producer_cache
+        if cached is not None and cached[0] == key and now - cached[1] < LIVE_CHECK_SECONDS:
+            return cached[2]
+        producer = self._backend.producer()
+        self._producer_cache = (key, now, producer)
+        return producer
+
+    def verified_epoch(self):
+        """The epoch this broker has verified inside the current window.
+
+        Callers that must compare an admission-time epoch use this instead of
+        their own signed snapshot per check: same comparison, one derivation
+        per window, fail-closed on any refusal or on a state change. It stays
+        true for exactly the lifetime window `resource_lifecycle_check` admits
+        (active, or draining/stopping inside the drain deadline), because an
+        admitted capture must stay checkable while the unit shuts down.
+        """
+        with self._mutex:
+            self._held()
+            if not self._accepting():
+                raise StorageSupervisorError()
+            key = self._live_key()
+        epoch = self._live_identity(key)[0]
+        with self._mutex:
+            self._held()
+            if self._live_key() != key or epoch != self._baseline or not self._accepting():
+                raise StorageSupervisorError()
+        return epoch
+
+    def _accepting(self):
+        """Active, or draining/stopping while inside the drain deadline."""
+        return (self.phase == "active"
+                or self.phase in {"draining", "stopping"}
+                and self._clock() < getattr(self, "_drain_deadline", 0))
 
     def _live(self):
         self._held()
@@ -367,8 +432,11 @@ class RootStorageSupervisor:
                         and type(pid) is int and type(uid) is int
                         and (pid, uid) == (self._producer.pid, self._producer.uid)):
                     return False
-            if (self._epoch() != before[2] or self._backend.vault_identity() != before[3]
-                    or self._backend.producer(stopping=draining) != before[4]):
+                key = self._live_key()
+            epoch, vault = self._live_identity(key)
+            producer = (self._backend.producer(stopping=True) if draining
+                        else self._live_producer(key))
+            if (epoch != before[2] or vault != before[3] or producer != before[4]):
                 return False
             with self._mutex:
                 self._held()
@@ -391,8 +459,8 @@ class RootStorageSupervisor:
                     self._resource, self._resource_joined, getattr(self, '_drain_deadline', None))
                 if self._resource is None or self._resource_joined:
                     return False
-            epoch, vault = self._live_identity((self.broker_id, self.phase, self._resource is not None,
-                                                self._resource_joined, self._vault))
+                key = self._live_key()
+            epoch, vault = self._live_identity(key)
             if epoch != before[2] or vault != before[3]:
                 return False
             with self._mutex:
@@ -430,8 +498,12 @@ class RootStorageSupervisor:
                     self._producer, self._leases.get(token, -math.inf))
                 if (pid, uid) != (self._producer.pid, self._producer.uid) or self._clock() >= before[5]:
                     return False
-            if (self._epoch() != before[2] or self._backend.vault_identity() != before[3]
-                    or self._backend.producer(stopping=before[1] == "draining") != before[4]):
+                key = self._live_key()
+            stopping = before[1] == "draining"
+            epoch, vault = self._live_identity(key)
+            producer = (self._backend.producer(stopping=True) if stopping
+                        else self._live_producer(key))
+            if epoch != before[2] or vault != before[3] or producer != before[4]:
                 return False
             with self._mutex:
                 self._held()

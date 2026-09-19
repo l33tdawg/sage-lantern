@@ -586,9 +586,17 @@ class HardwareRuntime:
                 return {"finished": True}
             require(value["op"] == "check")
             try:
+                # The epoch comparison rides the broker's own bounded
+                # verification instead of a signed snapshot per admission
+                # check: a 10 s dispatch wake makes ~165 of these, and a signed
+                # request each saturated the local SAGE node's replay window
+                # (503 Replay window saturated) on unit A 2026-09-19 17:02. The
+                # check is still fail-closed: any refusal, phase change or moved
+                # epoch inside the window denies the capture (see
+                # LIVE_CHECK_SECONDS).
                 allowed = (not ended and time.monotonic() < deadline and self.supervisor is supervisor
                     and supervisor.broker_id == broker and supervisor.resource_lifecycle_check() is True
-                    and self.probe.snapshot().epoch == epoch and time.monotonic() < deadline)
+                    and supervisor.verified_epoch() == epoch and time.monotonic() < deadline)
             except Exception:
                 allowed = False
             return {"allowed": allowed}

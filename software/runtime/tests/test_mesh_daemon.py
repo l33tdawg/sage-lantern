@@ -33,6 +33,10 @@ def configuration(state):
 class Supervisor:
     phase = "active"
     broker_id = "b" * 32
+    # The synthetic node answers one instance id and one vault generation
+    # (test_mesh_runtime.factory), so this is the epoch the real broker would
+    # have verified inside its window.
+    epoch = "d" * 64 + ":1"
     def __init__(self):
         self.alive = True
         self.resource = None
@@ -40,6 +44,10 @@ class Supervisor:
         return self.alive and (pid, uid) == (901, 1001) and broker_id in (None, self.broker_id) and (self.phase == "active" or draining)
     def resource_lifecycle_check(self):
         return self.alive and self.phase in ("active", "draining")
+    def verified_epoch(self):
+        if not (self.alive and self.phase in ("active", "draining", "stopping")):
+            raise MeshIPCError()
+        return self.epoch
     def resource_drain(self, timeout):
         return self.phase == "draining" and self.resource.close(timeout)
 
@@ -358,6 +366,24 @@ def test_admitted_root_lease_survives_user_lock_but_not_owner_loss(runtime):
     assert lease.check() is False
     lease.close()
     assert lease.check() is False
+
+
+def test_capture_lease_check_issues_no_signed_snapshot_per_check(runtime):
+    """The per-admission epoch comparison rides the broker's bounded window.
+
+    Each check used to issue its own signed /v1/messages/storage request; a
+    dispatch wake makes ~165 of them inside a 10 s radio budget, and the unit's
+    SAGE node fails its whole signed surface closed once 10,000 signatures land
+    inside five minutes (unit A 2026-09-19 17:02: 54 `503 Replay window
+    saturated` answers, A->B dispatch dead).
+    """
+    state, supervisor, resource, config, opened = runtime
+    lease = resource.capture_lease(resource.consent())
+    probes = [path for _, path in state.requests].count("/v1/messages/storage")
+    for _ in range(20):
+        assert lease.check() is True
+    assert [path for _, path in state.requests].count("/v1/messages/storage") == probes
+    lease.close()
 
 
 def test_bad_method_or_arguments_never_opens_usb(runtime):
