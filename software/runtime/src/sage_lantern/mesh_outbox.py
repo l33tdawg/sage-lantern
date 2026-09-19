@@ -332,9 +332,59 @@ class MeshOutbox:
             result = self.store.put(body['message_id'], 'mesh_outbound', expected_revision, proof,
                                     access_check=access_check)
         except WorkflowOutcomeUnknown:
-            self._untracked = True
-            raise
+            # Only the queued/dispatching lifecycle is resolved this way: those
+            # are the writes a dispatch wake makes, and the row's own signed
+            # window already governs how they may be retried. Receipt and
+            # delivery promotions keep the fail-closed latch they had.
+            if body['state'] not in ('queued', 'dispatching'):
+                self._untracked = True
+                raise
+            # The acknowledgement was lost, not necessarily the write. The
+            # durable record still tells us which of the two happened, and a
+            # denial in the access fence - the common cause on the units
+            # (2026-09-19: an owner-session rotation denied the CAS mid-call) -
+            # clears on the next request, so a bounded re-read resolves it. Only
+            # a record that cannot be read at all keeps the fail-closed latch.
+            observed = self._resolve_unknown_put(body['message_id'], expected_revision, proof, access_check)
+            if observed is None:
+                self._untracked = True
+                raise
+            if observed is False:
+                raise MeshOutboxError()
+            if body['state'] == 'dispatching':
+                # The write landed and the row is mid-dispatch: this is exactly
+                # the row-scoped unknown the retry driver reconciles inside the
+                # row's own signed window (owner decision 2026-09-13).
+                self._unknown[body['message_id']] = body['approved']['expires_at']
+            raise MeshOutboxError()
         return self._verified(result)
+
+    def _resolve_unknown_put(self, message_id, expected_revision, proof, access_check, attempts=3):
+        """Read back a CAS write whose acknowledgement was lost.
+
+        True  - this write landed (the record is at expected_revision + 1 and
+                carries this exact proof);
+        False - it did not land (the record is still at expected_revision);
+        None  - the durable state cannot be read, so the caller keeps the latch.
+        """
+        for attempt in range(attempts):
+            try:
+                record = self.store.get(message_id, kind='mesh_outbound', access_check=access_check)
+            except WorkflowNotFound:
+                return False
+            except Exception:
+                time.sleep(0.25)
+                continue
+            if record['revision'] == expected_revision + 1:
+                try:
+                    self._verify_proof(record['payload'], expected=proof['body'])
+                except Exception:
+                    return None
+                return record
+            if record['revision'] == expected_revision:
+                return False
+            return None
+        return None
 
     def _progress(self, body):
         return OutboxProgress(body['message_id'], body['revision'], body['state'], body['next_fragment'],

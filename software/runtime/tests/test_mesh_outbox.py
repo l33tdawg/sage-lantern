@@ -20,7 +20,7 @@ from sage_lantern.meshcore_contacts import ContactInventory
 from sage_lantern.mesh_outbox import MeshOutbox, MeshOutboxError
 from sage_lantern.message_contacts import RecipientID
 from sage_lantern.message_storage import MessageStorageProbe
-from sage_lantern.workflow_store import WorkflowStore
+from sage_lantern.workflow_store import WorkflowNotFound, WorkflowOutcomeUnknown, WorkflowStore, WorkflowUnavailable
 from test_meshcore_contacts import contact, start, end
 from test_meshcore_transport import client as radio_client, frame, handshake_bytes, KEY as RADIO_SELF
 
@@ -393,6 +393,67 @@ def test_failed_progress_commit_retains_dispatching(setup):
         dispatch(setup, fail_progress=True)
     assert len(setup.radios) == 1
     assert setup.stored()['body']['state'] == 'dispatching'
+
+
+def test_lost_cas_ack_is_resolved_from_the_durable_row(setup):
+    """A lost acknowledgement is not an unknown state while the row can be read.
+
+    Landed -> the durable record; not landed -> False; unreadable -> None, which
+    is the only case that may latch (unit A/B, 2026-09-19: a denied dispatch CAS
+    parked a unit until a cold start because the write's fate was never read).
+    """
+    setup.queue()
+    body = setup.stored()['body']
+    proof = setup.outbox._proof(body)
+
+    original = setup.outbox.store
+
+    def resolve(record_or_error):
+        class Store:
+            def get(self, record_id, *, kind, access_check):
+                if isinstance(record_or_error, Exception):
+                    raise record_or_error
+                return record_or_error
+        setup.outbox.store = Store()
+        try:
+            return setup.outbox._resolve_unknown_put(body['message_id'], body['revision'], proof,
+                                                     lambda: True)
+        finally:
+            setup.outbox.store = original
+
+    landed = dict(schema='sage.workflow-journal.v1', agent_id=setup.identity.agent_id,
+                  record_id=body['message_id'], revision=body['revision'] + 1, kind='mesh_outbound',
+                  payload=proof)
+    assert resolve(landed) == landed
+    assert resolve(dict(landed, revision=body['revision'])) is False
+    assert resolve(WorkflowNotFound()) is False
+    assert resolve(WorkflowUnavailable()) is None
+    assert resolve(dict(landed, revision=body['revision'] + 2)) is None
+
+
+def test_lost_dispatch_cas_leaves_a_row_scoped_unknown_not_a_latch(setup, monkeypatch):
+    setup.queue()
+    body = setup.stored()['body']
+    records = {}
+
+    class Store:
+        def get(self, record_id, *, kind, access_check):
+            return records[record_id]
+
+        def put(self, record_id, kind, expected_revision, payload, *, access_check):
+            records[record_id] = dict(schema='sage.workflow-journal.v1', agent_id=setup.identity.agent_id,
+                                      record_id=record_id, revision=expected_revision + 1, kind=kind,
+                                      payload=payload)
+            raise WorkflowOutcomeUnknown()
+
+    monkeypatch.setattr(setup.outbox, 'store', Store())
+    dispatching = {**body, 'state': 'dispatching', 'attempts': 1, 'dispatch_timestamp': 500}
+    with pytest.raises(MeshOutboxError):
+        setup.outbox._put(dispatching, body['revision'], setup.access)
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    assert setup.outbox.latching_unknown() is False
+    setup.now = body['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True  # a lapsed window still latches
 
 
 @pytest.mark.parametrize('change', ['guard', 'consent', 'expiry'])
