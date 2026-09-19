@@ -2,8 +2,9 @@
 
 Status: design + core codec/store/ingest/handover built 2026-09-19. The
 depositor-side routing and on-device acceptance are open; the forward-path
-airtime budget (r5) is built (default off; not yet deployed) with upstream
-PR meshcore-dev/MeshCore#3450. This document
+airtime budget (r5, upstream PR meshcore-dev/MeshCore#3450) is deployed on both
+units with the relay cap defaulted to 10%, but repeat is still switched off, so
+nothing is relayed yet. This document
 supersedes the "absent-recipient store-and-forward" bullet in
 `MESHCORE_CAPABILITY_ROADMAP.md` as the concrete plan; the roadmap keeps the
 upstream analysis, this is what Lantern builds in its own layer.
