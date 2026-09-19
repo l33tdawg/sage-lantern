@@ -505,6 +505,7 @@ class MeshOutbox:
         if not self._mutex.acquire(blocking=False):
             raise MeshOutboxError()
         rf_started = False
+        cas_done = False
         window_end = None
         try:
             if type(device) is not MeshCoreClient:
@@ -544,6 +545,7 @@ class MeshOutbox:
             stamp = body['dispatch_timestamp'] or radio_timestamp
             body = self._put({**body, 'state': 'dispatching', 'dispatch_timestamp': stamp,
                               'attempts': body['attempts'] + 1}, body['revision'], check)
+            cas_done = True
             if check() is not True:
                 raise MeshOutboxError()
             fragments = split_envelope(body['approved']['wire'].encode('ascii'))
@@ -559,11 +561,17 @@ class MeshOutbox:
                               'retry_binding': ''}, body['revision'], check)
             return self._progress(body)
         except Exception:
-            if rf_started:
+            if rf_started or cas_done:
                 # The row is left 'dispatching' at a known revision with its
                 # fragment cursor and wire intact. Record the unknown against
                 # that row and its own window so the driver can retry it inside
                 # the window and escalation happens only once the window lapses.
+                # This includes a failure BEFORE the first fragment: the CAS has
+                # already moved the row to 'dispatching', so without the entry
+                # nothing would ever requeue it (measured on unit A 2026-09-19:
+                # a pre-wire timeout after the CAS left the row dispatching with
+                # next_fragment 0, invisible to the retry driver and blocking
+                # provider construction at the next restart).
                 self._unknown[message_id] = window_end
             raise MeshOutboxError() from None
         finally:

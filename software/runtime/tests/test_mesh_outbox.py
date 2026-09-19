@@ -395,6 +395,31 @@ def test_failed_progress_commit_retains_dispatching(setup):
     assert setup.stored()['body']['state'] == 'dispatching'
 
 
+def test_pre_wire_failure_after_the_cas_is_tracked_for_the_retry_driver(setup, monkeypatch):
+    """A CAS that landed and then failed before the wire leaves the row
+    'dispatching': it must be recorded against its window, or nothing requeues
+    it and it blocks provider construction at the next restart (unit A,
+    2026-09-19)."""
+    setup.queue()
+    device = setup.radio()
+    original = setup.outbox._contact
+    denied = {'done': False}
+    def contact(action):
+        stored = setup.stored()
+        if not denied['done'] and stored is not None and stored['body']['state'] == 'dispatching':
+            denied['done'] = True  # one denied contact check after the CAS, then the fence returns
+            raise MeshOutboxError()
+        return original(action)
+    monkeypatch.setattr(setup.outbox, '_contact', contact)
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'dispatching'
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    assert setup.outbox.latching_unknown() is False
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+
+
 def test_lost_cas_ack_is_resolved_from_the_durable_row(setup):
     """A lost acknowledgement is not an unknown state while the row can be read.
 
