@@ -1173,6 +1173,12 @@ class MeshRuntime:
                 continue
             approved = body["approved"]
             if body["state"] != "dispatching":
+                # The durable row answered the lost write by observation: a
+                # landed CAS is queued again, or the row has already moved past
+                # dispatch. Either way no retry decision is owed, and keeping
+                # the row-scoped unknown would latch the unit when its window
+                # lapses even though nothing is unresolved (unit B, 2026-09-19).
+                outbox.resolve_unknown(identifier)
                 state["next"].pop(identifier, None)
                 state["attempts"].pop(identifier, None)
                 continue

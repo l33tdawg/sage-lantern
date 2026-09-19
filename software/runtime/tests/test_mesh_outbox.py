@@ -481,6 +481,64 @@ def test_lost_dispatch_cas_leaves_a_row_scoped_unknown_not_a_latch(setup, monkey
     assert setup.outbox.latching_unknown() is True  # a lapsed window still latches
 
 
+def test_fence_closed_cas_re_read_keeps_the_row_scoped_unknown(setup, monkeypatch):
+    """Unit B 2026-09-19 07:24: the bounded re-read ran entirely inside a lock.
+
+    Every read is denied while the owner session holds the rotation, so the
+    outbox used to set the fail-closed ``_untracked`` latch and every route
+    answered 503 until a cold start. A queued/dispatching CAS precedes RF: a
+    fence that is still closed must leave the row scoped to its own signed
+    window instead, for the retry driver to judge once access returns.
+    """
+    setup.queue()
+    body = setup.stored()['body']
+
+    class Store:
+        def get(self, record_id, *, kind, access_check):
+            raise WorkflowUnavailable()
+
+        def put(self, record_id, kind, expected_revision, payload, *, access_check):
+            fence['open'] = False  # the owner rotation lands mid-CAS
+            raise WorkflowOutcomeUnknown()
+
+    monkeypatch.setattr(setup.outbox, 'store', Store())
+    monkeypatch.setattr('sage_lantern.mesh_outbox.time.sleep', lambda _seconds: None)
+    fence = {'open': True}
+    dispatching = {**body, 'state': 'dispatching', 'attempts': 1, 'dispatch_timestamp': 500}
+    with pytest.raises(MeshOutboxError):
+        setup.outbox._put(dispatching, body['revision'], lambda: fence['open'])
+    assert setup.outbox._untracked is False
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    assert setup.outbox.latching_unknown() is False
+    # The escalation is unchanged: an unresolved row whose window lapses still
+    # latches for the owner.
+    setup.now = body['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+
+
+def test_fence_open_but_unreadable_cas_re_read_still_latches(setup, monkeypatch):
+    """The fail-closed case is only a fence-open row that cannot be read."""
+    setup.queue()
+    body = setup.stored()['body']
+
+    class Store:
+        def get(self, record_id, *, kind, access_check):
+            raise WorkflowUnavailable()
+
+        def put(self, record_id, kind, expected_revision, payload, *, access_check):
+            raise WorkflowOutcomeUnknown()
+
+    monkeypatch.setattr(setup.outbox, 'store', Store())
+    monkeypatch.setattr('sage_lantern.mesh_outbox.time.sleep', lambda _seconds: None)
+    dispatching = {**body, 'state': 'dispatching', 'attempts': 1, 'dispatch_timestamp': 500}
+    # A direct _put call leaks the store error; the @_admitted callers convert
+    # it to MeshOutboxError. Either way the latch must be set.
+    with pytest.raises((MeshOutboxError, WorkflowOutcomeUnknown)):
+        setup.outbox._put(dispatching, body['revision'], lambda: True)
+    assert setup.outbox._untracked is True
+    assert setup.outbox.latching_unknown() is True
+
+
 @pytest.mark.parametrize('change', ['guard', 'consent', 'expiry'])
 def test_revocation_after_dispatch_commit_stops_rf(setup, change):
     setup.queue()

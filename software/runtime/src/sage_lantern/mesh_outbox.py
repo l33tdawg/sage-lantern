@@ -357,10 +357,21 @@ class MeshOutbox:
             # durable record still tells us which of the two happened, and a
             # denial in the access fence - the common cause on the units
             # (2026-09-19: an owner-session rotation denied the CAS mid-call) -
-            # clears on the next request, so a bounded re-read resolves it. Only
-            # a record that cannot be read at all keeps the fail-closed latch.
+            # clears on the next request, so a bounded re-read resolves it. A
+            # fence that is still closed, though, denies every one of those
+            # re-reads: that is not an unreadable row, it is a write this
+            # process may judge later. The CAS lifecycle here precedes RF, so
+            # the row stays scoped to its own signed window and the retry
+            # driver resolves it once the owner session returns (unit B
+            # 2026-09-19 07:24 - the 0.75 s re-read ran inside a lock window,
+            # set the fail-closed latch, and every route answered 503 until a
+            # cold start). Only a row that cannot be read with the fence open
+            # keeps the fail-closed latch.
             observed = self._resolve_unknown_put(body['message_id'], expected_revision, proof, access_check)
             if observed is None:
+                if self._fence_denied(access_check):
+                    self._unknown[body['message_id']] = body['approved']['expires_at']
+                    raise MeshOutboxError()
                 self._untracked = True
                 raise
             if observed is False:
@@ -379,7 +390,9 @@ class MeshOutbox:
         True  - this write landed (the record is at expected_revision + 1 and
                 carries this exact proof);
         False - it did not land (the record is still at expected_revision);
-        None  - the durable state cannot be read, so the caller keeps the latch.
+        None  - the durable state cannot be read right now; the caller decides
+                between a row-scoped unknown (fence closed) and the fail-closed
+                latch (fence open but the row is still unreadable).
         """
         for attempt in range(attempts):
             try:
@@ -399,6 +412,31 @@ class MeshOutbox:
                 return False
             return None
         return None
+
+    def _fence_denied(self, access_check):
+        """True when the access fence, not the durable store, is refusing reads.
+
+        This is the difference between a row that cannot be judged yet and a row
+        that cannot be judged at all. The caller keeps the fail-closed latch for
+        the second case only.
+        """
+        try:
+            return access_check() is not True
+        except Exception:
+            return True
+
+    def resolve_unknown(self, message_id):
+        """Drop a tracked unknown the durable row has answered by observation.
+
+        The retry driver calls this when it reads a row and finds a state other
+        than 'dispatching': a landed CAS is queued (or has already moved past
+        dispatch), so no retry decision is owed. Without this a row-scoped
+        unknown that resolved itself would still latch the unit at its window
+        lapse (unit B, 2026-09-19).
+        """
+        _uuid(message_id)
+        with self._condition:
+            self._unknown.pop(message_id, None)
 
     def _progress(self, body):
         return OutboxProgress(body['message_id'], body['revision'], body['state'], body['next_fragment'],

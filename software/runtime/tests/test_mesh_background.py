@@ -295,6 +295,32 @@ def test_unknown_dispatch_inside_the_window_is_retried_by_the_worker(background,
     assert state.provider.pause_receiving(timeout=5) is True
 
 
+def test_queued_row_resolves_a_tracked_unknown_by_observation(background):
+    """A row-scoped unknown is answered by the durable row, not only by a CAS.
+
+    A fence-closed CAS that turns out to have landed leaves the row 'queued'
+    with its unknown still recorded. The retry driver must drop that unknown on
+    the observation, or the unit latches at the window lapse even though the
+    message is healthy (unit B, 2026-09-19).
+    """
+    state = background
+    state.call("messages/send", state.body)
+    identifier = state.body["request_id"]
+    approved = state.rows[identifier]["payload"]["body"]["approved"]
+    state.runtime.outbox.track_unknown(identifier, approved["expires_at"])
+    assert state.runtime.outbox.unresolved() == frozenset({identifier})
+    live_clock = state.runtime.outbox.clock
+    state.start()
+    wait_until(lambda: state.runtime.outbox.unresolved() == frozenset())
+    wait_until(lambda: state.rows[identifier]["payload"]["body"]["next_fragment"] >= 1)
+    assert state.runtime.outbox.latching_unknown() is False
+    # Even at the window lapse a resolved row must not park the unit.
+    state.runtime.outbox.clock = lambda: approved["expires_at"] + 1
+    assert state.runtime.outbox.latching_unknown() is False
+    state.runtime.outbox.clock = live_clock
+    assert state.provider.pause_receiving(timeout=5) is True
+
+
 def test_timed_out_dispatch_inside_the_window_recovers_without_restart(background, monkeypatch):
     """Unit A's 2026-09-13 failure: the job budget expired with a frame on the wire.
 
