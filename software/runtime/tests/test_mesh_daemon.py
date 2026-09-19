@@ -13,9 +13,11 @@ import pytest
 import sage_lantern.mesh_daemon as module
 
 from sage_lantern.mesh_daemon import HardwareRuntime, MeshDaemon, SCHEMA, device_policy, validate_config
+from sage_lantern.mesh_usb_opener import USBOpenError
 from sage_lantern.mesh_voice_ipc import MeshIPCError, MeshVoiceFacade, receive, send
 from sage_lantern.mesh_community import MeshRequestAccess
 from sage_lantern.mesh_contacts import verify_contact_card
+from sage_lantern.meshcore_transport import MeshCoreError
 from test_mesh_runtime import factory
 
 
@@ -253,6 +255,95 @@ def test_unresolved_receive_blocks_first_open_and_retry(runtime):
             resource.invoke("ready", {}, lambda: True)
     assert opened == [] and resource._uncertain
     assert resource.close(1) is False
+
+
+def flaky_resource(factory, monkeypatch, outcomes, *, mutate=None):
+    """Build a HardwareRuntime whose opener replays `outcomes` in order.
+
+    Each entry is an exception to raise, or None to succeed. `opened` records
+    one entry per physical open attempt, so a test can prove how many times the
+    radio was actually touched. `mutate(index, state, supervisor)` runs before a
+    planned failure is raised.
+    """
+    import sage_lantern.mesh_radio_commission as commission
+    monkeypatch.setattr(commission, 'no_unknown', lambda: True)
+    state = factory
+    state.adopt()
+    supervisor = Supervisor()
+    config = configuration(state)
+    opened = []
+    plan = list(outcomes)
+    class Opener:
+        def __init__(self, *, policy, startup_fence, journals_reconciled):
+            self.fence, self.reconciled = startup_fence, journals_reconciled
+            assert policy.allow_initial_open is True and policy.acknowledge_possible_reset is True
+        def open(self, **kwargs):
+            with self.fence() as check:
+                assert check() is True and self.reconciled() is True
+                opened.append(kwargs)
+                failure = plan.pop(0) if plan else None
+                if failure is not None:
+                    if mutate is not None:
+                        mutate(len(opened), state, supervisor)
+                    raise failure
+                return state.scheduler
+    resource = HardwareRuntime(supervisor, config, state.identity, state.runtime.store.storage,
+        identity_path=Path("/proc/self/fd/12345"),
+        config_reader=lambda: copy.deepcopy(config), opener_factory=Opener, epoch_reader=lambda: "e" * 32,
+        lock_marker_check=lambda: True)
+    supervisor.resource = resource
+    return state, supervisor, resource, opened
+
+
+@pytest.mark.parametrize("error,retryable", [
+    (MeshCoreError("serial_unavailable"), True),
+    (MeshCoreError("send_unconfirmed", outcome_unknown=True), False),
+    (OSError("no such device"), True),
+    (MeshIPCError(), False),
+    (USBOpenError("initial_open_not_approved"), False),
+])
+def test_only_a_pre_wire_open_failure_is_retryable(error, retryable):
+    assert module.retryable_radio_open(error) is retryable
+
+
+def test_one_flaky_pre_wire_open_is_retried_in_the_same_construction(factory, monkeypatch):
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("serial_unavailable"), None])
+    assert resource.invoke("ready", {}, lambda: True) is True
+    assert len(opened) == 2 and resource._provider is not None
+    assert resource.active() and not resource._uncertain and resource._attempted
+    assert resource.invoke("contacts", {}, lambda: True) is not None
+    assert len(opened) == 2
+
+
+def test_an_exhausted_open_retry_stays_fail_closed_and_single_attempted(factory, monkeypatch):
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("serial_unavailable") for _ in range(module.RADIO_OPEN_ATTEMPTS)])
+    with pytest.raises(MeshCoreError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == module.RADIO_OPEN_ATTEMPTS
+    assert resource._uncertain and not resource.active() and state.transmits == []
+    with pytest.raises(MeshIPCError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == module.RADIO_OPEN_ATTEMPTS
+
+
+def test_a_post_wire_open_failure_is_never_retried(factory, monkeypatch):
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("send_unconfirmed", outcome_unknown=True), None])
+    with pytest.raises(MeshCoreError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == 1 and resource._uncertain and not resource.active()
+
+
+def test_open_retry_stops_when_the_lifecycle_leaves_active(factory, monkeypatch):
+    def leave_active(index, state, supervisor):
+        supervisor.phase = "draining"
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("serial_unavailable"), None], mutate=leave_active)
+    with pytest.raises(MeshCoreError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == 1 and resource._uncertain and state.transmits == []
 
 
 def test_admitted_root_lease_survives_user_lock_but_not_owner_loss(runtime):

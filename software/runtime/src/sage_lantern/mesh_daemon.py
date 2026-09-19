@@ -42,6 +42,7 @@ from .mesh_runtime import MeshRuntimeConfig
 from .mesh_serial_owner import RadioBinding
 from .mesh_usb_opener import InitialUSBOpener, USBStartupPolicy
 from .mesh_voice_ipc import CONFIG, SOCKET, MeshIPCError, card, peer, receive, require, send
+from .meshcore_transport import MeshCoreError
 from .message_contacts import RecipientID
 from .message_storage import MessageStorageProbe
 from .storage_supervisor import RootStorageSupervisor, RootVoiceBackend
@@ -65,6 +66,27 @@ BEACON_SECONDS = 60.0
 # answered 503 on every route until a process restart, 2026-09-18).
 BACKGROUND_SUPERVISOR_SECONDS = 1.0
 BACKGROUND_SUPERVISOR_MAX_SECONDS = 30.0
+# A construction whose radio open fails before any command byte reached the
+# radio leaves no session, no wire state and no lock: the transport classifies
+# the failure `outcome_unknown=False` and does not poison itself, and the
+# opener's own failure path closes the descriptor and every lock it held. One
+# flaky handshake is therefore retryable, and without a bounded retry it pinned
+# every community route until the next cold start (unit A 2026-09-19 16:14:07:
+# the first construction after a cold start failed at
+# `mesh_usb_opener -> meshcore_transport.handshake`). Each attempt uses a fresh
+# single-use opener under a freshly checked startup fence, so the unit's own
+# quiescence/epoch reconciliation gate is re-proved for every physical open.
+# A policy refusal, a fence refusal, a poisoned device or any post-wire failure
+# stays single-shot and fail-closed.
+RADIO_OPEN_ATTEMPTS = 3
+RADIO_OPEN_RETRY_SECONDS = 0.35
+
+
+def retryable_radio_open(error):
+    """Only a pre-wire transport failure or a raw device error is retryable."""
+    if isinstance(error, MeshCoreError):
+        return error.outcome_unknown is False
+    return isinstance(error, OSError)
 
 
 def load_config(path=CONFIG):
@@ -375,10 +397,26 @@ class HardwareRuntime:
                 return (self._initializing and self._reconciled is not None and self.active() and guard()
                         and self.probe.snapshot().epoch == self._reconciled)
             policy = USBStartupPolicy(True, True, "quiescent_startup")
-            opener = self._opener_factory(policy=policy, startup_fence=startup_fence, journals_reconciled=reconciled)
             radio = dict(self.config["radio"])
             radio["public_key"] = bytes.fromhex(radio["public_key"])
-            coordinator = opener.open(binding=RadioBinding(unit_id=self.config["unit_id"], **radio), lock_directory=STATE / "serial", timeout=3)
+            binding = RadioBinding(unit_id=self.config["unit_id"], **radio)
+            coordinator = None
+            for attempt in range(1, RADIO_OPEN_ATTEMPTS + 1):
+                opener = self._opener_factory(policy=policy, startup_fence=startup_fence, journals_reconciled=reconciled)
+                try:
+                    coordinator = opener.open(binding=binding, lock_directory=STATE / "serial", timeout=3)
+                    break
+                except Exception as error:
+                    if attempt == RADIO_OPEN_ATTEMPTS or not retryable_radio_open(error):
+                        raise
+                    if not (guard() and self.active() and reconciled()):
+                        raise
+                    import syslog
+                    syslog.syslog(syslog.LOG_WARNING, json.dumps(dict(event="radio_open_retry",
+                        attempt=attempt, error=str(error),
+                        outcome_unknown=bool(getattr(error, "outcome_unknown", False)))))
+                    time.sleep(RADIO_OPEN_RETRY_SECONDS)
+            require(coordinator is not None)
             self._coordinator = coordinator
             require(guard() and self.active())
             def observe(event):
