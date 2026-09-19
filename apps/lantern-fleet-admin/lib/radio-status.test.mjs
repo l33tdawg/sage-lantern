@@ -6,6 +6,7 @@ function fixture() {
   return { schema: 'sage.lantern.radio-events.v1', observed_at_unix_ms: 1000,
     valid_for_ms: 2000, window_ms: 60000, serial_identity_verified: true,
     firmware: 'v1.17.1-d929643', receiving: true, profile: null,
+    repeater: { enabled: false, source: 'firmware_info' },
     saved_contacts: { available: false, count: null },
     neighbors: { available: false, reason: 'no_rf_neighbor_discovery' },
     last_heard: { source: 'firmware_dequeued_contact_messages', entries: [{
@@ -23,12 +24,26 @@ test('radio parser retains actual SNR without claiming neighbors or reception ti
   value.receiving = false;
   value.serial_identity_verified = false;
   value.firmware = null;
+  value.repeater = null;
+  assert.ok(parseRadioStatus(value));
+});
+
+test('radio parser reports repeater state and admits r3/r4 firmware', () => {
+  const value = fixture();
+  value.firmware = 'v1.17.1-d929643-r4';
+  value.repeater = { enabled: true, source: 'firmware_info' };
+  assert.deepEqual(parseRadioStatus(value), value);
+  value.firmware = 'v1.17.1-d929643-r3';
   assert.ok(parseRadioStatus(value));
 });
 
 test('radio parser refuses forged capabilities, extra content and invalid observations', () => {
   const mutations = [
     value => { value.secret = 'text'; },
+    value => { value.repeater = { enabled: true, source: 'guess' }; },
+    value => { value.repeater = { enabled: 'yes', source: 'firmware_info' }; },
+    value => { value.repeater = null; },
+    value => { delete value.repeater; },
     value => { value.neighbors.available = true; },
     value => { value.saved_contacts.count = 0; },
     value => { value.receiving = false; },

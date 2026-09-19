@@ -115,7 +115,7 @@ export function communityLabel(state: MessageState | ShareState): string {
   return { queued: 'Waiting to send', sent: 'Sent · delivery unconfirmed', delivered: 'Delivered', read: 'Read', unknown: 'Status unconfirmed', failed: 'Not sent', pending: 'Under review', accepted: 'Accepted publicly', rejected: 'Not accepted', superseded: 'Replaced by newer information', challenged: 'Being challenged', deprecated: 'Withdrawn from use' }[state];
 }
 
-export type CommunityAction = 'status' | 'radio/status' | 'messages/list' | 'contacts/list' | 'contacts/radio' | 'messages/send' | 'messages/open' | 'messages/render-challenge' | 'messages/rendered' | 'shares/preview' | 'shares/submit' | 'shares/list' | 'shares/status' | 'shares/refresh' | 'shares/inspect';
+export type CommunityAction = 'status' | 'radio/status' | 'custody/status' | 'messages/list' | 'contacts/list' | 'contacts/radio' | 'messages/send' | 'messages/open' | 'messages/render-challenge' | 'messages/rendered' | 'shares/preview' | 'shares/submit' | 'shares/list' | 'shares/status' | 'shares/refresh' | 'shares/inspect';
 export async function communityRequest(action: CommunityAction, body: Record<string, unknown> = {}, signal?: AbortSignal): Promise<unknown> {
   const token = getDeviceToken();
   if (!token || signal?.aborted || (typeof document !== 'undefined' && document.hidden)) throw new Error('Device locked');

@@ -1,0 +1,44 @@
+# Lantern r4: allow the companion to repeat on the commissioned 917.375 MHz
+# channel, and identify the build as r4.
+#
+# Base: the pinned MeshCore d9296435 tree with the r3 patch set already applied
+# (contacts-response-atomic + packet-rssi), i.e. the tree the units run today.
+#
+# MeshCore already implements companion forwarding: examples/companion_radio
+# MyMesh::allowPacketForward() returns _prefs.isRepeatEn(), and the companion
+# protocol carries the repeat bit in CMD_SET_RADIO_PARAMS (v9+). The only thing
+# that stops our units is the frequency allowlist in
+# MyMesh::isValidClientRepeatFreq(): without a build-time override it accepts
+# repeat only on 433.000 / 869.495 / 918.000 MHz, and the Lanterns are
+# commissioned on 917.375 MHz. ALLOWED_REPEAT_FREQ_RANGE is upstream's own
+# override for exactly this case; keep it pinned to the exact channel rather
+# than a wide range.
+#
+# Build: pio run -e heltec_v4_companion_radio_usb
+#
+# This makes the radio a node *and* a repeater on the same channel. It does not
+# add duty-cycle accounting to the forward path, so the host airtime gate stays
+# mandatory and the unit remains subject to the band's duty-cycle rules.
+
+--- a/examples/companion_radio/MyMesh.h
++++ b/examples/companion_radio/MyMesh.h
+@@ -12,7 +12,7 @@
+ #endif
+ 
+ #ifndef FIRMWARE_VERSION
+-#define FIRMWARE_VERSION "v1.17.1-d929643-r3"
++#define FIRMWARE_VERSION "v1.17.1-d929643-r4"
+ #endif
+ 
+ #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+--- a/variants/heltec_v4/platformio.ini
++++ b/variants/heltec_v4/platformio.ini
+@@ -182,6 +182,7 @@
+ [env:heltec_v4_companion_radio_usb]
+ extends = heltec_v4_oled
+ build_flags =
+   ${heltec_v4_oled.build_flags}
++  -D ALLOWED_REPEAT_FREQ_RANGE={917375,917375}
+   -I examples/companion_radio/ui-new
+   -D MAX_CONTACTS=350
+   -D MAX_GROUP_CHANNELS=40

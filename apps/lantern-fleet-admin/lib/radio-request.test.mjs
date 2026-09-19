@@ -22,7 +22,7 @@ test('radio reads use the authenticated local route and reject revoked sessions'
   const original = globalThis.fetch;
   const value = { schema: 'sage.lantern.radio-events.v1', observed_at_unix_ms: 1000,
     valid_for_ms: 2000, window_ms: 60000, serial_identity_verified: false,
-    firmware: null, receiving: false, profile: null,
+    firmware: null, receiving: false, repeater: null, profile: null,
     saved_contacts: { available: false, count: null },
     neighbors: { available: false, reason: 'no_rf_neighbor_discovery' },
     last_heard: { source: 'firmware_dequeued_contact_messages', entries: [] } };
