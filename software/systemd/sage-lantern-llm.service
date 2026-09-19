@@ -1,6 +1,14 @@
 [Unit]
-Description=SAGE Lantern local llama.cpp server
-After=local-fs.target
+# Swapped 2026-09-19: the NPU RKLLM 2B now owns the runtime's chat port (8081) because it
+# answers the production prompt shape in ~2.4 s p50 versus ~10.3 s for the CPU 4B, and
+# scores higher on the frozen acceptance set (49/60 vs 46/60). The CPU 4B stays resident
+# as sage-lantern-llm-cpu.service on 8082 for photo questions only, because the 2B has no
+# vision projector; this unit proxies image requests to it via --fallback-url.
+# Rollback: stop this unit, put the CPU unit back on 8081, restart, and re-run the runtime
+# client check. Evidence: work/npu-llm-20260919/.
+Description=SAGE Lantern local RKLLM (NPU) chat server
+After=local-fs.target sage-lantern-llm-cpu.service
+Wants=sage-lantern-llm-cpu.service
 ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
 ConditionPathExists=!/run/sage-lantern-sleep.fenced
 
@@ -8,15 +16,17 @@ ConditionPathExists=!/run/sage-lantern-sleep.fenced
 Type=simple
 User=sage-lantern
 Group=sage-lantern
-Environment=LD_LIBRARY_PATH=/opt/sage-lantern/llama.cpp
-ExecStart=/opt/sage-lantern/llama.cpp/llama-server --model /opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf --host 127.0.0.1 --port 8081 --ctx-size 4096 --threads 6
+# render: /dev/dri/renderD129 (the RKNPU node). video: /dev/dma_heap/*, which the RKNPU
+# runtime allocates through. Without both, rkllm_init fails with "Device is not available".
+SupplementaryGroups=render video
+Environment=LD_LIBRARY_PATH=/opt/sage-lantern/npu/lib
+ExecStart=/usr/bin/python3 /opt/sage-lantern/npu/libexec/rkllm_server.py --engine /opt/sage-lantern/npu/bin/rkllm_engine --model /opt/sage-lantern/npu/models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm --host 127.0.0.1 --port 8081 --model-name lantern-native5-2b --context 2048 --cpus 4 --max-new-tokens 256 --fallback-url http://127.0.0.1:8082
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/sage-lantern
 
 [Install]
 WantedBy=multi-user.target

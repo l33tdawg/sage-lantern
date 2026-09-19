@@ -1,0 +1,32 @@
+[Unit]
+Description=SAGE Lantern CPU llama.cpp server (vision fallback for the NPU chat path)
+After=local-fs.target
+ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
+ConditionPathExists=!/run/sage-lantern-sleep.fenced
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+Environment=LD_LIBRARY_PATH=/opt/sage-lantern/llama.cpp
+# Thread count promoted 2026-09-13 from option 1 of docs/lantern/RK3588_PERFORMANCE_OPTIONS.md.
+# Measured on Unit A: work/cpu-tier-prefill-20260913/REPORT.md (11-arm bisect, noise band 0.57%,
+# production server never restarted). Four threads is ~25-30% faster than six on the warm path
+# that a question pays; eight threads gains ~4% on a cold full prefill and loses ~24% warm.
+# CPUAffinity is deliberately NOT set here: pinning to cores 4-7 measured neutral on text
+# (-0.2% cold, +0.0% warm) and worse on photos (37.2 s vs 41.9 s TTFT), and Unit A's
+# unit-local 45-cpu-profile.conf applied that affinity outside the reviewed unit.
+# --cache-ram 0 is retained: prompt reuse comes from llama.cpp context checkpoints.
+# Since the 2026-09-19 swap this unit only serves photo requests proxied from the NPU
+# chat server; its port moved from 8081 to 8082. Unit B still runs a 6-thread profile.
+ExecStart=/opt/sage-lantern/llama.cpp/llama-server --model /opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf --host 127.0.0.1 --port 8082 --ctx-size 4096 --threads 4 --threads-batch 4 --parallel 1 --cache-ram 0 --n-gpu-layers 0 --mmproj /opt/sage-lantern/models/mmproj-BF16.gguf --image-max-tokens 64 --image-min-tokens 64
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sage-lantern
+
+[Install]
+WantedBy=multi-user.target
