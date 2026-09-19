@@ -1,5 +1,21 @@
 # Lantern MeshCore patches
 
+## companion-bridge-lane-selection.patch - upstream PR #3454, 2026-09-19
+
+Turns the companion bridge into a real fast lane: a packet whose destination is
+known to be on the bridge goes over ESP-NOW only (the radio's airtime is not
+spent, and its counters stay flat), everything else is mirrored **before** the
+radio transmit rather than after it, acknowledgements travel the lane too, and
+the bridge reports its counters through companion stats sub-type 3.
+
+Measured on the two bench units: 25/25 confirmed frames, 583 B/s against 89.1 B/s
+on the commissioned LoRa profile, zero radio frames sent by either unit, and the
+same result with the peer's LoRa moved out of band. The image is
+`work/espnow-20260919/images/firmware-bridge-lane3.bin` (sha `d3e91106…`); both
+radios were restored to the r5 image afterwards. PR:
+[meshcore-dev/MeshCore#3454](https://github.com/meshcore-dev/MeshCore/pull/3454),
+on top of #3410. Session record: `work/espnow-20260919/REPORT.md` (round 2).
+
 ## Upstream PR status — revalidated 2026-09-19 19:00 +08
 
 Three pull requests and one issue are open against `meshcore-dev/MeshCore`
@@ -54,6 +70,17 @@ settled before it is switched on. Build record:
 `work/mesh-repeat-sf-20260919/README.md`.
 
 ## companion-bridge.patch - submitted upstream 2026-09-14
+
+**Hardware fix (2026-09-19):** the submitted patch cannot work on a board - the
+companion never calls `bridge.begin()` and sets no bridge defaults, so the
+ESP-NOW lane never starts (and an empty `bridge_secret` would fault
+`xorCrypt()`). `companion-bridge-20260919-hardware-fix.patch` applies on top:
+repeater-shaped defaults in the companion constructor, `bridge.begin()` in
+`MyMesh::begin()`, and a `BRIDGE_DELAY_MS` build flag. Both units were flashed
+with that image and measured: the lane carries mesh traffic (16/25 frames
+confirmed with the LoRa path physically blocked) but is not a speed lane while
+the bridge mirrors *after* the radio finishes transmitting. Session record:
+`work/espnow-20260919/REPORT.md`.
 
 Lets a **companion** radio use a bridge, which is the piece Lantern's two-tier
 plan needs: LoRa stays the long-range transport and ESP-NOW carries the same mesh
