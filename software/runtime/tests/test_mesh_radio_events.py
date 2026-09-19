@@ -1,6 +1,6 @@
 import pytest
 
-from sage_lantern.mesh_radio_events import RadioEvents, validate_status
+from sage_lantern.mesh_radio_events import RadioEvents, validate_bridge, validate_health, validate_status
 from sage_lantern.meshcore_transport import MeshCoreError, encode_frame
 from test_meshcore_transport import client, frame, handshake_bytes, incoming, PREFIX
 from test_mesh_daemon import runtime, socket_connector
@@ -152,6 +152,56 @@ def test_status_validator_rejects_private_fields_and_fake_neighbor():
     result['neighbors']['available'] = True
     with pytest.raises(Exception):
         validate_status(result)
+
+
+def health_document(**overrides):
+    value = dict(battery_mv=4100, uptime_seconds=300, error_flags=0, tx_queue=0,
+                 tx_airtime_seconds=3, rx_airtime_seconds=4, packets_received=12, packets_sent=10,
+                 sent_flood=6, sent_direct=4, received_flood=7, received_direct=5, receive_errors=1,
+                 noise_floor_dbm=-110, last_rssi_dbm=-75, last_snr_db=6.25, discovered_nodes=[])
+    value.update(overrides)
+    return value
+
+
+def bridge_document(**overrides):
+    value = dict(espnow_tx=27, espnow_tx_announce=9, espnow_tx_unicast=27, espnow_tx_failed=0,
+                 espnow_tx_done=36, espnow_tx_error=0, espnow_rx=27, espnow_rx_announce=8,
+                 espnow_rx_bad=0, fastlane_tx=27, mirror_tx=0, fastlane_miss=0, fastlane_fallback=0,
+                 peer_unicast_failed=0, fastlane_ack_tx=0, rx_to_queue_last_ms=1, rx_to_queue_max_ms=1,
+                 inject_to_process_last_ms=2, inject_to_process_max_ms=233, dropped_dup=0,
+                 dropped_other=0, injected=27, bridge_delay_ms=0, peers_known=1, running=True,
+                 self_hash=117)
+    value.update(overrides)
+    return value
+
+
+def test_health_validator_accepts_bridge_counters_only_where_a_bridge_runs():
+    """A radio without a bridge reports no `bridge` key; a lane firmware reports
+    the bridge's own counters, and both shapes stay valid health documents."""
+    assert validate_health(health_document())['last_snr_db'] == 6.25
+    assert validate_health(health_document(bridge=bridge_document()))['bridge']['fastlane_tx'] == 27
+
+
+@pytest.mark.parametrize("broken", [
+    {"fastlane_tx": -1},                       # out of range
+    {"running": 1},                            # not a bool
+    {"peers_known": "1"},                      # not an int
+    {"espnow_tx_done": 2 ** 32},               # over the wire width
+])
+def test_health_validator_rejects_a_malformed_bridge_block(broken):
+    with pytest.raises(Exception):
+        validate_bridge(bridge_document(**broken))
+    with pytest.raises(Exception):
+        validate_health(health_document(bridge=bridge_document(**broken)))
+
+
+def test_bridge_validator_rejects_missing_and_extra_fields():
+    value = bridge_document()
+    del value['self_hash']
+    with pytest.raises(Exception):
+        validate_bridge(value)
+    with pytest.raises(Exception):
+        validate_bridge(bridge_document(leaked='PRIVATE'))
 
 
 def test_real_enabled_receive_worker_projects_without_extra_reader(runtime):

@@ -131,8 +131,12 @@ def validate_health(value):
     counters = {'battery_mv', 'uptime_seconds', 'error_flags', 'tx_queue', 'tx_airtime_seconds',
         'rx_airtime_seconds', 'packets_received', 'packets_sent', 'sent_flood', 'sent_direct',
         'received_flood', 'received_direct', 'receive_errors'}
-    require(type(value) is dict and set(value) == counters | {
-        'noise_floor_dbm', 'last_rssi_dbm', 'last_snr_db', 'discovered_nodes'})
+    keys = counters | {'noise_floor_dbm', 'last_rssi_dbm', 'last_snr_db', 'discovered_nodes'}
+    # `bridge` is present only on a firmware that runs a bridge (r6 and later on
+    # Lantern): the lane's own counters, so a lane result the appliance reports is
+    # measured rather than inferred. Absent means the radio has no bridge, which is
+    # not a health failure.
+    require(type(value) is dict and set(value) in (keys, keys | {'bridge'}))
     require(all(type(value[key]) is int and 0 <= value[key] <= 0xffffffff for key in counters))
     require(type(value['noise_floor_dbm']) is int and -32768 <= value['noise_floor_dbm'] <= 32767)
     require(type(value['last_rssi_dbm']) is int and -128 <= value['last_rssi_dbm'] <= 127)
@@ -148,4 +152,25 @@ def validate_health(value):
             and all(character.isprintable() for character in node['name']))
         require(type(node['age_seconds']) in (int, float) and 0 <= node['age_seconds'] < 300
             and node['source'] == 'firmware_advertisement' and node['direct_neighbor_verified'] is False)
+    if 'bridge' in value:
+        validate_bridge(value['bridge'])
+    return value
+
+
+def validate_bridge(value):
+    """The bridge counters, in the wire order the companion reports them.
+
+    Strict like the rest of this document: exactly these fields, bounded, and
+    `running` a real bool, so nothing unvalidated reaches the screen.
+    """
+    fields = {'espnow_tx', 'espnow_tx_announce', 'espnow_tx_unicast', 'espnow_tx_failed',
+        'espnow_tx_done', 'espnow_tx_error', 'espnow_rx', 'espnow_rx_announce', 'espnow_rx_bad',
+        'fastlane_tx', 'mirror_tx', 'fastlane_miss', 'fastlane_fallback', 'peer_unicast_failed',
+        'fastlane_ack_tx', 'rx_to_queue_last_ms', 'rx_to_queue_max_ms', 'inject_to_process_last_ms',
+        'inject_to_process_max_ms', 'dropped_dup', 'dropped_other', 'injected', 'bridge_delay_ms',
+        'peers_known', 'running', 'self_hash'}
+    require(type(value) is dict and set(value) == fields)
+    require(all(type(value[name]) is int and 0 <= value[name] <= 0xffffffff
+        for name in fields if name != 'running'))
+    require(type(value['running']) is bool)
     return value

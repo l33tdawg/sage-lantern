@@ -39,9 +39,31 @@ FIRMWARE = "v1.17.1-d929643"
 # airtime is accounted in a rolling window and the relay role is capped by the
 # radio's own duty-cycle setting. The Lantern build defaults that cap to 10% of
 # the window; like r4 it changes nothing on air until the repeat bit is set.
+# r6 is r5 plus the companion bridge and its transport selection (upstream PRs
+# #3410 and #3454): a packet whose single-hop destination is known to be on the
+# 2.4 GHz lane goes over ESP-NOW only - the LoRa radio is not keyed for it - and
+# everything else keeps the radio and is mirrored before the transmit. It also
+# reports the bridge's own counters as stats sub-type 3, which this module reads
+# for the firmware that serves it.
 SUPPORTED_FIRMWARE = (FIRMWARE, "v1.17.1-d929643-r1", "v1.17.1-d929643-r2",
                       "v1.17.1-d929643-r3", "v1.17.1-d929643-r4",
-                      "v1.17.1-d929643-r5")
+                      "v1.17.1-d929643-r5", "v1.17.1-d929643-r6")
+# Bridge counters are a sub-type of their own (STATS_TYPE_BRIDGE in the
+# companion), not more fields on the frames above: a host that does not know it
+# never asks, and a firmware without a bridge answers with an error frame. Only
+# these builds serve it, so the read is gated on the exact version the way the
+# rest of the transport gates capability.
+BRIDGE_STATS_FIRMWARE = ("v1.17.1-d929643-r6",)
+STATS_TYPE_BRIDGE = 3
+BRIDGE_STATS_LAYOUT = "<22I4B"
+BRIDGE_STATS_NAMES = (
+    "espnow_tx", "espnow_tx_announce", "espnow_tx_unicast", "espnow_tx_failed",
+    "espnow_tx_done", "espnow_tx_error", "espnow_rx", "espnow_rx_announce",
+    "espnow_rx_bad", "fastlane_tx", "mirror_tx", "fastlane_miss", "fastlane_fallback",
+    "peer_unicast_failed", "fastlane_ack_tx", "rx_to_queue_last_ms", "rx_to_queue_max_ms",
+    "inject_to_process_last_ms", "inject_to_process_max_ms", "dropped_dup",
+    "dropped_other", "injected", "bridge_delay_ms", "peers_known", "running", "self_hash",
+)
 # Every response code >= 0x80 is an asynchronous push (PUSH_CODE_* in
 # examples/companion_radio/MyMesh.cpp) and can arrive at any point, including in
 # the middle of another command's response. The host owns no push callback, so
@@ -470,6 +492,22 @@ class MeshCoreClient:
                 if len(response) != 2 + struct.calcsize(layout) or response[1] != subtype:
                     raise MeshCoreError("invalid_stats_response")
                 result.update(zip(names, struct.unpack(layout, response[2:])))
+            # The bridge's own view of the lane, on the firmware that serves it:
+            # how many frames crossed it, how many packets skipped the radio
+            # entirely, and how much of an injected packet's trip was the
+            # bridge's. Without this a lane result can only be inferred from
+            # timing; with it the counters are the measurement.
+            if self._identity.firmware in BRIDGE_STATS_FIRMWARE:
+                if authorize() is not True:
+                    raise MeshCoreError("access_revoked")
+                response = self._exchange(bytes((56, STATS_TYPE_BRIDGE)), 24, deadline)
+                if (len(response) != 2 + struct.calcsize(BRIDGE_STATS_LAYOUT)
+                        or response[1] != STATS_TYPE_BRIDGE):
+                    raise MeshCoreError("invalid_stats_response")
+                bridge = dict(zip(BRIDGE_STATS_NAMES,
+                                  struct.unpack(BRIDGE_STATS_LAYOUT, response[2:])))
+                bridge["running"] = bool(bridge["running"])
+                result["bridge"] = bridge
             # The firmware's own cumulative airtime counters are the only honest
             # duty-cycle source (they include ACKs the radio sends by itself).
             # Cache the reading so a dispatch gate never pays a radio exchange.
