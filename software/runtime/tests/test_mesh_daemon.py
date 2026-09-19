@@ -230,6 +230,20 @@ def test_exact_device_policy_no_broad_serial_group(factory):
     assert "*" not in policy and "char-" not in policy
 
 
+def test_custody_config_is_optional_strict_and_requires_a_depositor(factory):
+    value = configuration(factory)
+    validate_config(value)  # no custody key: unchanged
+    value["messaging_enabled"] = True
+    value["custody"] = {"enabled": True, "depositors": ["peer-chain:" + "ab" * 32]}
+    validate_config(value)
+    for broken in ({"enabled": True, "depositors": []},
+                   {"enabled": True, "depositors": ["not-a-source"]},
+                   {"enabled": "yes", "depositors": ["peer-chain:" + "ab" * 32]},
+                   {"enabled": False, "depositors": [], "extra": 1}):
+        with pytest.raises((MeshIPCError, ValueError)):
+            validate_config({**value, "custody": broken})
+
+
 def test_unresolved_receive_blocks_first_open_and_retry(runtime):
     state, supervisor, resource, config, opened = runtime
     row = state.rows[config["receiver_slot"]]

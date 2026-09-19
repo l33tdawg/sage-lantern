@@ -108,6 +108,26 @@ def test_real_authenticated_facade_status_never_initializes_or_reads_serial(runt
         assert not worker.is_alive()
 
 
+def test_real_authenticated_facade_custody_status_is_counts_only(runtime):
+    from sage_lantern.mesh_daemon import MeshDaemon
+    from sage_lantern.mesh_voice_ipc import MeshVoiceFacade
+    from sage_lantern.community_service import CommunityService, CommunityError
+    state, supervisor, resource, config, opened = runtime
+    daemon = MeshDaemon(supervisor, resource, epoch_reader=lambda: 'e' * 32)
+    connector, workers = socket_connector(daemon)
+    facade = MeshVoiceFacade(connector=connector, epoch_reader=lambda: 'e' * 32)
+    service = CommunityService(mesh_provider=facade)
+    response = service.dispatch('/community/custody/status', {}, lambda: True, session_id='synthetic')
+    assert response == dict(schema='sage.lantern.mesh-custody-status.v1', enabled=False, held=0,
+                            bytes=0, recipients=0, oldest_expires_at=None, delivered=0, depositors=0)
+    assert resource._provider is None and not opened
+    with pytest.raises(CommunityError):
+        service.dispatch('/community/custody/status', {}, lambda: False, session_id='synthetic')
+    for worker in workers:
+        worker.join(2)
+        assert not worker.is_alive()
+
+
 def test_status_body_cannot_trigger_radio_commands(runtime):
     state, supervisor, resource, config, opened = runtime
     with pytest.raises(Exception):

@@ -99,7 +99,7 @@ MAX_ITEMS = 20
 MAX_PREVIEWS = 32
 PREVIEW_TTL = 300
 ROUTES = frozenset("/community/" + route for route in (
-    "status", "radio/status", "messages/list", "contacts/list", "contacts/radio", "messages/send", "messages/open",
+    "status", "radio/status", "custody/status", "messages/list", "contacts/list", "contacts/radio", "messages/send", "messages/open",
     "messages/render-challenge", "messages/rendered",
     "shares/preview", "shares/submit", "shares/list", "shares/status", "shares/refresh", "shares/inspect",
 ))
@@ -650,7 +650,7 @@ class CommunityService:
     @staticmethod
     def _validate(path, body):
         fields = {
-            "status": set(), "radio/status": set(), "messages/list": {"box"}, "contacts/list": set(), "contacts/radio": set(),
+            "status": set(), "radio/status": set(), "custody/status": set(), "messages/list": {"box"}, "contacts/list": set(), "contacts/radio": set(),
             "messages/send": {"recipient_id", "paragraphs", "request_id", "consent"},
             "messages/open": {"id", "share_read_receipt"},
             "messages/render-challenge": {"id", "rendered"},
@@ -1029,6 +1029,10 @@ class CommunityService:
             if type(self._mesh) is not MeshVoiceFacade:
                 _error()
             return self._call(self._mesh.radio_status, access_check=self._mesh_access())
+        if section == 'custody' and action == 'status':
+            if type(self._mesh) is not MeshVoiceFacade:
+                _error()
+            return self._call(self._mesh.custody_status, access_check=self._mesh_access())
         if action == "status":
             return self._status()
         if section == "messages":
@@ -1222,6 +1226,10 @@ class CommunityService:
     def _validate_response(path, response):
         if path == '/community/radio/status':
             from .mesh_radio_events import validate_status
+            validate_status(response)
+            return
+        if path == '/community/custody/status':
+            from .mesh_custodian import validate_status
             validate_status(response)
             return
         def exact(value, keys):

@@ -207,6 +207,10 @@ class MeshVoiceFacade:
         from .mesh_radio_events import validate_status
         return validate_status(self._call('radio_status', {}, access_check, timeout=30))
 
+    def custody_status(self, *, access_check):
+        from .mesh_custodian import validate_status
+        return validate_status(self._call('custody_status', {}, access_check))
+
     def contacts(self, *, access_check):
         result = self._call("contacts", {}, access_check)
         require(type(result) is list and len(result) <= 21)

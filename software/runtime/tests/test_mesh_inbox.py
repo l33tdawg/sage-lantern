@@ -98,6 +98,36 @@ def feed(inbox, wire):
             for text in split_envelope(wire)]
 
 
+def test_custody_deposit_is_stored_without_opening(rig):
+    from sage_lantern.mesh_custody import wrap_custody
+    calls = []
+
+    class Sink:
+        def admit(self, deposit, *, source, operation_id=None):
+            calls.append((deposit, source, operation_id))
+            return "stored"
+
+    inbox = MeshInbox(rig.store, recipient=RECIPIENT, recipient_signing_key=KEY,
+        resolve_peer=lambda message: rig.peer, access_check=lambda: rig.live,
+        storage_check=lambda: rig.storage, clock=lambda: rig.now, custody=Sink())
+    final = bytes.fromhex("aabbccddeeff")
+    wire = wrap_custody(recipient_prefix=final, message_id=REMOTE, envelope_wire=sealed().decode(),
+                        expires_at=900, envelope_expires_at=900, now=rig.now).encode()
+    results = feed(inbox, wire)
+    assert results[-1].status == "custodied"
+    assert len(calls) == 1
+    deposit, source, operation_id = calls[0]
+    assert deposit.recipient_prefix == final
+    assert source == f"{SENDER.chain_id}:{SENDER.public_key.hex()}"
+    assert uuid.UUID(operation_id)
+    # Custody off: the same shape is refused, not silently admitted.
+    other = "00000000-0000-4000-8000-000000000009"
+    wire = wrap_custody(recipient_prefix=final, message_id=other, envelope_wire=sealed().decode(),
+                        expires_at=900, envelope_expires_at=900, now=rig.now).encode()
+    results = feed(rig.new(), wire)
+    assert results[-1].status == "rejected" and results[-1].reason == "unsupported"
+
+
 def records(rig):
     return [record for record in rig.rows.values() if record["payload"]["schema"] == INBOX_SCHEMA]
 

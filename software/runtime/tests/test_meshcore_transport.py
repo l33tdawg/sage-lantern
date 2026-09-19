@@ -95,7 +95,8 @@ def client(incoming, chunk=1):
     return MeshCoreClient(stream, expected_public_key=KEY), stream
 
 
-@pytest.mark.parametrize("version", ["v1.17.1-d929643-r1", "v1.17.1-d929643-r2", "v1.17.1-d929643-r3"])
+@pytest.mark.parametrize("version", ["v1.17.1-d929643-r1", "v1.17.1-d929643-r2", "v1.17.1-d929643-r3",
+                                     "v1.17.1-d929643-r4", "v1.17.1-d929643-r5"])
 def test_packet_rssi_candidate_reports_its_actual_version(version):
     device, stream = client(handshake_bytes(version=version))
     assert device.handshake().firmware == version

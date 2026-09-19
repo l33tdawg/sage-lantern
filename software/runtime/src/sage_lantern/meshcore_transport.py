@@ -31,8 +31,17 @@ FIRMWARE = "v1.17.1-d929643"
 # #3403, the interleaved-push defect that poisoned contact reads) and the
 # packet-RSSI capture. A radio admits itself by this exact string, so the host
 # release that admits r3 ships before the flash.
+# r4 is r3 plus the client-repeat frequency allowance for the commissioned
+# 917.375 MHz channel (ALLOWED_REPEAT_FREQ_RANGE). It changes nothing on air
+# until the radio's repeat bit is set through CMD_SET_RADIO_PARAMS; the host
+# release that admits r4 still ships before the flash.
+# r5 is r4 plus the forward-path airtime budget (upstream PR #3450): relayed
+# airtime is accounted in a rolling window and the relay role is capped by the
+# radio's own duty-cycle setting. The Lantern build defaults that cap to 10% of
+# the window; like r4 it changes nothing on air until the repeat bit is set.
 SUPPORTED_FIRMWARE = (FIRMWARE, "v1.17.1-d929643-r1", "v1.17.1-d929643-r2",
-                      "v1.17.1-d929643-r3")
+                      "v1.17.1-d929643-r3", "v1.17.1-d929643-r4",
+                      "v1.17.1-d929643-r5")
 # Every response code >= 0x80 is an asynchronous push (PUSH_CODE_* in
 # examples/companion_radio/MyMesh.cpp) and can arrive at any point, including in
 # the middle of another command's response. The host owns no push callback, so
@@ -113,6 +122,11 @@ class DeviceIdentity:
     public_key: bytes
     firmware: str
     protocol_version: int
+    # Firmware info flags (protocol v9+): the companion's own repeat bit and
+    # the path-hash mode. Repeat means this radio forwards flood traffic for
+    # other nodes; it says nothing about duty-cycle policy.
+    repeat: bool = False
+    path_hash_mode: int = 0
 
 
 @dataclass(frozen=True)
@@ -541,10 +555,13 @@ class MeshCoreClient:
             if (len(info) != 82 or info[1] != PROTOCOL_VERSION
                     or info[60:80].split(b"\0", 1)[0] not in tuple(version.encode("ascii") for version in SUPPORTED_FIRMWARE)):
                 raise MeshCoreError("firmware_mismatch")
+            if info[80] not in (0, 1) or info[81] not in (0, 1, 2):
+                raise MeshCoreError("firmware_flags_invalid")
             identity = self._exchange(b"\x01" + bytes(7) + b"Lantern", 5, deadline)
             if not 58 <= len(identity) <= 90 or identity[4:36] != self._key:
                 raise MeshCoreError("identity_mismatch")
-            self._identity = DeviceIdentity(self._key, info[60:80].split(b"\0", 1)[0].decode("ascii"), PROTOCOL_VERSION)
+            self._identity = DeviceIdentity(self._key, info[60:80].split(b"\0", 1)[0].decode("ascii"),
+                                            PROTOCOL_VERSION, bool(info[80]), info[81])
             return self._identity
         return self._run(operation)
 

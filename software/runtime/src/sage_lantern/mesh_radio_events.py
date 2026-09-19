@@ -61,10 +61,15 @@ class RadioEvents:
                 del self._entries[next(iter(self._entries))]
             self._entries[identifier] = (now, wall, snr)
 
-    def snapshot(self, epoch, *, identity_verified, receiving):
+    def snapshot(self, epoch, *, identity_verified, receiving, repeat=None):
         with self._mutex:
             now, wall = self._current(epoch)
             require(type(identity_verified) is bool and type(receiving) is bool)
+            require(repeat is None or type(repeat) is bool)
+            if identity_verified and repeat is None:
+                repeat = False
+            if not identity_verified:
+                repeat = None
             if not identity_verified or not receiving:
                 self._entries.clear()
             entries = [dict(id=key, dequeued_at_unix_ms=item[1], age_ms=int((now-item[0])*1000),
@@ -74,6 +79,7 @@ class RadioEvents:
             return dict(schema='sage.lantern.radio-events.v1', observed_at_unix_ms=wall,
                 valid_for_ms=2000, window_ms=WINDOW_MS, serial_identity_verified=identity_verified,
                 firmware=FIRMWARE if identity_verified else None, receiving=receiving,
+                repeater=None if repeat is None else dict(enabled=repeat, source='firmware_info'),
                 profile=None, saved_contacts=dict(available=False, count=None),
                 neighbors=dict(available=False, reason='no_rf_neighbor_discovery'),
                 last_heard=dict(source='firmware_dequeued_contact_messages', entries=entries))
@@ -86,11 +92,18 @@ def validate_status(value):
         validate_health(health)
         return value
     require(type(value) is dict and set(value) == {'schema', 'observed_at_unix_ms', 'valid_for_ms',
-        'window_ms', 'serial_identity_verified', 'firmware', 'receiving', 'profile', 'saved_contacts', 'neighbors', 'last_heard'})
+        'window_ms', 'serial_identity_verified', 'firmware', 'receiving', 'repeater', 'profile',
+        'saved_contacts', 'neighbors', 'last_heard'})
     require(value['schema'] == 'sage.lantern.radio-events.v1' and value['valid_for_ms'] == 2000
         and value['window_ms'] == WINDOW_MS and type(value['observed_at_unix_ms']) is int and value['observed_at_unix_ms'] > 0)
     require(type(value['serial_identity_verified']) is bool and type(value['receiving']) is bool
         and (value['firmware'] in SUPPORTED_FIRMWARE if value['serial_identity_verified'] else value['firmware'] is None) and value['profile'] is None)
+    if value['serial_identity_verified']:
+        repeater = value['repeater']
+        require(type(repeater) is dict and set(repeater) == {'enabled', 'source'}
+                and type(repeater['enabled']) is bool and repeater['source'] == 'firmware_info')
+    else:
+        require(value['repeater'] is None)
     require(not value['receiving'] or value['serial_identity_verified'])
     require(value['saved_contacts'] == dict(available=False, count=None)
         and value['neighbors'] == dict(available=False, reason='no_rf_neighbor_discovery'))

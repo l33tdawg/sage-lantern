@@ -45,6 +45,7 @@ from typing import Literal
 
 from nacl.signing import SigningKey
 
+from .mesh_custody import CustodyError, PREFIX as CUSTODY_PREFIX, parse_custody
 from .mesh_envelope import MeshEnvelopeError, Peer, open_envelope
 from .mesh_fragments import ASSEMBLY_SECONDS, MAX_ASSEMBLIES, MAX_PER_PEER, FragmentError, decode_fragment
 from .meshcore_transport import IncomingMessage, decode_incoming
@@ -57,7 +58,7 @@ ADMISSION_SCHEMA = "sage.lantern.mesh-admission.v1"
 ADMISSION_DOMAIN = b"sage.lantern.mesh-admission.v1/signature\x00"
 REJECTION_SCHEMA = "sage.lantern.mesh-rejection.v1"
 REASONS = frozenset(("unsupported", "unknown_peer", "invalid_fragment", "fragment_conflict",
-                     "invalid_envelope", "equivocation"))
+                     "invalid_envelope", "equivocation", "custody_refused"))
 
 
 class _Reject(Exception):
@@ -72,7 +73,7 @@ class InboxError(RuntimeError):
 
 @dataclass(frozen=True)
 class IngestResult:
-    status: Literal["partial", "admitted", "duplicate", "rejected"]
+    status: Literal["partial", "admitted", "duplicate", "custodied", "rejected"]
     record_id: str | None = None
     remote_id: str | None = None
     envelope_kind: str | None = None
@@ -113,7 +114,7 @@ def _peer(value):
 
 class MeshInbox:
     def __init__(self, store, *, recipient, recipient_signing_key, resolve_peer,
-                 access_check, storage_check, clock=time.time):
+                 access_check, storage_check, clock=time.time, custody=None):
         if (type(store) is not WorkflowStore or type(recipient) is not Peer
                 or not isinstance(recipient_signing_key, SigningKey)
                 or bytes(recipient_signing_key.verify_key) != recipient.public_key
@@ -121,8 +122,11 @@ class MeshInbox:
                 or store.storage.actor.agent_id != recipient.public_key.hex()
                 or not all(callable(callback) for callback in (resolve_peer, access_check, storage_check, clock))):
             raise InboxError()
+        if custody is not None and not callable(getattr(custody, "admit", None)):
+            raise InboxError()
         self._store, self._recipient, self._key = store, recipient, recipient_signing_key
         self._resolve, self._access, self._storage, self._clock = resolve_peer, access_check, storage_check, clock
+        self._custody = custody
         self._mutex = threading.Lock()
         self._last = None
         self._uncertain = False
@@ -365,9 +369,32 @@ class MeshInbox:
         if self._access() is not True:
             raise InboxError()
         try:
-            opened = open_envelope(wire.decode("ascii"), self._key, expected_sender=sender,
+            text = wire.decode("ascii")
+        except UnicodeError:
+            raise _Reject("invalid_envelope") from None
+        if text.startswith(CUSTODY_PREFIX):
+            if self._custody is None:
+                raise _Reject("unsupported")
+            try:
+                deposit = parse_custody(text)
+            except CustodyError:
+                raise _Reject("invalid_envelope") from None
+            source = f"{sender.chain_id}:{sender.public_key.hex()}"
+            try:
+                status = self._custody.admit(deposit, source=source, operation_id=value["operation_id"])
+            except Exception:
+                raise InboxError() from None
+            if status not in ("stored", "duplicate"):
+                raise _Reject("custody_refused")
+            if value["state"] != "complete":
+                self._put(identifier, record["revision"], {**value, "state": "complete"})
+            if self._resolve(message) != sender or self._access() is not True:
+                raise InboxError()
+            return IngestResult("custodied", identifier)
+        try:
+            opened = open_envelope(text, self._key, expected_sender=sender,
                                    expected_recipient=self._recipient, now=now)
-        except (MeshEnvelopeError, UnicodeError):
+        except MeshEnvelopeError:
             raise _Reject("invalid_envelope") from None
         local_id = inbox_id(sender, opened.message_id)
         existing = self._get(local_id)
@@ -379,7 +406,7 @@ class MeshInbox:
         else:
             admitted_at = self._now()
             try:
-                open_envelope(wire.decode("ascii"), self._key, expected_sender=sender,
+                open_envelope(text, self._key, expected_sender=sender,
                               expected_recipient=self._recipient, now=admitted_at)
             except MeshEnvelopeError:
                 raise _Reject("invalid_envelope") from None
