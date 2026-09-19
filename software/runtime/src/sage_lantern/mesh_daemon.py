@@ -35,6 +35,7 @@ from .mesh_community import MeshReceiveConsent, MeshRequestAccess
 from .mesh_envelope import Peer
 from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
 from .mesh_inbox import MeshInbox
+from .mesh_custodian import STATUS_SCHEMA as CUSTODY_STATUS_SCHEMA, MeshCustodian, valid_source
 from .mesh_receipt_sender import MeshReceiptSender, SCHEMA as RECEIPT_SCHEMA
 from .mesh_receiver import SCHEMA as RECEIVER_SCHEMA, _validate as validate_receiver
 from .mesh_runtime import MeshRuntimeConfig
@@ -78,7 +79,7 @@ def load_config(path=CONFIG):
 
 
 def validate_config(value):
-    require(type(value) is dict and set(value) - {"public_mesh", "public_gateway", "delivery_receipts_enabled", "airtime"} == {"schema", "unit_id", "voice_uid", "endpoint", "chain_id",
+    require(type(value) is dict and set(value) - {"public_mesh", "public_gateway", "delivery_receipts_enabled", "airtime", "custody"} == {"schema", "unit_id", "voice_uid", "endpoint", "chain_id",
         "identity_file", "agent_id", "receiver_slot", "radio", "peers", "approve_initial_open", "acknowledge_reset",
         "messaging_enabled", "receive_while_locked", "dispatch_enabled", "dispatch_while_locked"})
     require(value["schema"] == SCHEMA and type(value["voice_uid"]) is int and value["voice_uid"] > 0)
@@ -103,6 +104,13 @@ def validate_config(value):
     if "airtime" in value:
         from .airtime_budget import policy_from_settings
         policy_from_settings(value["airtime"])
+    if "custody" in value:
+        custody = value["custody"]
+        require(type(custody) is dict and set(custody) == {"enabled", "depositors"})
+        require(type(custody["enabled"]) is bool)
+        require(type(custody["depositors"]) is list and len(custody["depositors"]) <= 64
+                and all(valid_source(item) is True for item in custody["depositors"]))
+        require(not custody["enabled"] or (custody["depositors"] and value["messaging_enabled"]))
     require(value["approve_initial_open"] and value["acknowledge_reset"])
     require(type(value["peers"]) is list and len(value["peers"]) <= 256)
     seen = set()
@@ -237,6 +245,19 @@ class HardwareRuntime:
         finally:
             self._mutex.release()
 
+    def custody_stats(self, guard):
+        """Counts-only custody view. No deposit wire, source or recipient key."""
+        settings = self.config.get("custody")
+        if not settings or not settings["enabled"]:
+            return dict(schema=CUSTODY_STATUS_SCHEMA, enabled=False, held=0, bytes=0,
+                        recipients=0, oldest_expires_at=None, delivered=0, depositors=0)
+        store = WorkflowStore(self.probe.client, storage=self.probe)
+        custodian = MeshCustodian(store, access_check=guard,
+                                  depositors=tuple(settings["depositors"]))
+        result = custodian.stats()
+        require(guard() and self.active())
+        return result
+
     def reconcile(self, guard):
         require(self._initializing and self._coordinator is None and self.active() and guard())
         store = WorkflowStore(self.probe.client, storage=self.probe)
@@ -251,7 +272,16 @@ class HardwareRuntime:
             if row["kind"] == "mesh_outbound":
                 schema = row["payload"].get("body", {}).get("schema")
                 if schema == OUTBOX_SCHEMA:
-                    require(outbox._verified(row)["state"] != "dispatching")
+                    body = outbox._verified(row)
+                    if body["state"] == "dispatching":
+                        # An unknown dispatch outcome inside the row's own signed
+                        # window is retryable (owner decision 2026-09-13): the
+                        # runtime adopts the row on its first scan and the retry
+                        # driver requeues it, so construction proceeds instead of
+                        # refusing every route until an operator intervenes. A
+                        # lapsed window still refuses right here.
+                        require(body["approved"]["issued_at"] <= int(time.time())
+                                < body["approved"]["expires_at"])
                 elif schema == RECEIPT_SCHEMA:
                     require(receipts._verified(row)[0]["state"] != "dispatching")
                 elif schema == "sage.lantern.mesh-read-consent.v1":
@@ -363,8 +393,11 @@ class HardwareRuntime:
             if "airtime" in self.config:
                 from .airtime_budget import policy_from_settings
                 airtime = policy_from_settings(self.config["airtime"])
+            custody = None
+            if "custody" in self.config and self.config["custody"]["enabled"]:
+                custody = tuple(self.config["custody"]["depositors"])
             config = MeshRuntimeConfig(self.config["endpoint"], self.config["chain_id"], self.identity_path,
-                                       self.config["receiver_slot"], 10, airtime)
+                                       self.config["receiver_slot"], 10, airtime, custody)
             self._provider = self._provider_factory(config, coordinator=coordinator, activation_check=self.active,
                 verify_binding=self.binding, storage_lifecycle_check=self.supervisor.resource_lifecycle_check)
             from .mesh_read_root import RootReadReceipts
@@ -537,6 +570,9 @@ class HardwareRuntime:
     def invoke(self, method, arguments, guard, *, request_binding=None, background_check=None):
         require(self._mutex.acquire(blocking=False))
         try:
+            if method == 'custody_status':
+                require(arguments == {} and guard() and self.active())
+                return self.custody_stats(guard)
             if method in ('radio_status', 'contacts'):
                 require(arguments == {} and guard() and self.active())
                 self.release_failed_health_radio(guard)
@@ -590,7 +626,8 @@ class HardwareRuntime:
                 worker = None if self._provider is None else self._provider._runtime._poller
                 receiving = (identity and worker is not None and worker.is_alive()
                     and device._receive_observer is self._radio_observer)
-                result = self._radio_events.snapshot(epoch, identity_verified=identity, receiving=receiving)
+                result = self._radio_events.snapshot(epoch, identity_verified=identity, receiving=receiving,
+                    repeat=device._identity.repeat if identity else None)
                 if identity:
                     result['firmware'] = device._identity.firmware
                     result['health'] = coordinator.submit(lambda radio: radio.health(

@@ -46,8 +46,10 @@ import uuid
 from sage_sdk import AgentIdentity, SageClient
 
 from .airtime_budget import AirtimeLedger, AirtimePolicy
+from .mesh_custodian import CustodianError, MeshCustodian
 from .mesh_contact_registry import MeshContactRegistry
 from .mesh_envelope import Peer
+from .mesh_fragments import split_envelope
 from .mesh_inbox import MeshInbox
 from .mesh_mailbox import MeshMailbox
 from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
@@ -98,6 +100,8 @@ DISPATCH_BURST = 4
 # outcome, and while the outbox makes it retryable inside the row's window it is
 # still evidence we would rather not manufacture.
 DISPATCH_RESERVE_SECONDS = 1.0
+HANDOVER_BURST = 4
+HANDOVER_RETRY_SECONDS = 300.0
 # Retry cadence for a message row whose fragment reached the wire and was never
 # acknowledged. Owner decision 2026-09-13: that outcome is retryable inside the
 # row's own 24-hour window, escalated only once the window lapses. One attempt
@@ -279,6 +283,9 @@ class MeshRuntimeConfig:
     receiver_slot: str
     operation_timeout: float = 10
     airtime: AirtimePolicy | None = None
+    # None disables store-and-forward custody; a non-empty tuple of
+    # "chain_id:radio-public-key" strings enables it for those depositors only.
+    custody: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, repr=False)
@@ -310,6 +317,9 @@ class MeshRuntime:
             _require(type(config.operation_timeout) in (int, float) and math.isfinite(config.operation_timeout)
                      and 0 < config.operation_timeout <= 30)
             _require(config.airtime is None or type(config.airtime) is AirtimePolicy)
+            _require(config.custody is None or (type(config.custody) is tuple
+                     and 1 <= len(config.custody) <= 64
+                     and all(type(item) is str for item in config.custody)))
             _require(isinstance(config.identity_path, Path) and config.identity_path.is_absolute())
             _require(type(config.receiver_slot) is str and str(uuid.UUID(config.receiver_slot)) == config.receiver_slot
                      and uuid.UUID(config.receiver_slot).int != 0)
@@ -341,6 +351,11 @@ class MeshRuntime:
             service._airtime_deferrals = 0
             service._close_mutex = threading.Lock()
             service.store = WorkflowStore(client, storage=probe)
+            try:
+                service._custodian = None if config.custody is None else MeshCustodian(
+                    service.store, access_check=service._access, depositors=config.custody)
+            except CustodianError:
+                raise ValueError("invalid_custody_policy") from None
             def initialize(device):
                 service._local.mode = "initialize"
                 try:
@@ -352,7 +367,8 @@ class MeshRuntime:
                     service.outbox = MeshOutbox(service.store, identity, sender=peer, guard=service._outbox_guard,
                                                verify_contact=service._contact, clock=lambda: int(time.time()))
                     service.inbox = MeshInbox(service.store, recipient=peer, recipient_signing_key=identity._signing_key,
-                        resolve_peer=service._resolve, access_check=service._access, storage_check=service._access)
+                        resolve_peer=service._resolve, access_check=service._access, storage_check=service._access,
+                        custody=getattr(service, "_custodian", None))
                     service.receipts = MeshReceiptSender(service.store, identity, inbox=service.inbox, sender=peer,
                         guard=lambda action: service._access(), policy=service._receipt_permit, verify_contact=service._contact)
                     service.receiver = MeshReceiver(service.store, device, slot_id=config.receiver_slot,
@@ -953,6 +969,15 @@ class MeshRuntime:
             if row["kind"] != "mesh_outbound" or row["payload"].get("body", {}).get("schema") != OUTBOX_SCHEMA:
                 continue
             body = self.outbox._verified(row)
+            if body["state"] == "dispatching":
+                # Adopt a durable 'dispatching' row the construction scan let
+                # through (in-window unknowns are retryable, owner decision
+                # 2026-09-13). Recording it here hands it to the retry driver on
+                # this same wake; a lapsed window is never adopted and keeps its
+                # own fail-closed handling.
+                if body["approved"]["issued_at"] <= int(time.time()) < body["approved"]["expires_at"]:
+                    self.outbox.track_unknown(body["message_id"], body["approved"]["expires_at"])
+                continue
             if body["state"] != "queued" or not body["approved"]["issued_at"] <= int(time.time()) < body["approved"]["expires_at"]:
                 continue
             self._queued_rows().add(body["message_id"])
@@ -960,6 +985,7 @@ class MeshRuntime:
             if progress is None or progress.state != "queued":
                 self._queued_rows().discard(body["message_id"])
             return
+        self._handover_custody(device)
 
     def _queued_rows(self):
         """Message ids known to be queued, so a wake need not scan the journal."""
@@ -1020,6 +1046,58 @@ class MeshRuntime:
             if progress.state != "queued" or progress.next_fragment >= progress.fragment_count:
                 return progress
         return progress
+
+    def _handover_custody(self, device):
+        """Hand one held deposit to a present recipient, bounded per wake.
+
+        Presence is a contact in the inventory this wake just read, nothing
+        stronger. The inner sealed envelope is sent exactly as its original
+        sender would have sent it, so the recipient's existing signature check
+        and (sender, message_id) dedupe apply unchanged. Sending fragments is
+        not delivery: the copy stays held until its TTL or an explicit
+        confirmation, and the recipient's own receipt goes to the original
+        sender.
+        """
+        custodian = getattr(self, "_custodian", None)
+        inventory = getattr(self._local, "inventory", None)
+        if custodian is None or inventory is None or self._access() is not True:
+            return False
+        now = int(time.time())
+        deadline = getattr(self._local, "background_deadline", None)
+        for contact in inventory.contacts:
+            prefix = contact.public_key[:6]
+            try:
+                pending = custodian.handover_for(prefix, now=now, min_interval=HANDOVER_RETRY_SECONDS)
+            except CustodianError:
+                return False
+            if not pending:
+                continue
+            try:
+                target = inventory.unique_prefix(contact.public_key)
+            except Exception:
+                continue
+            deposit, next_index, _ = pending[0]
+            try:
+                fragments = split_envelope(deposit.envelope_wire.encode("ascii"))
+            except Exception:
+                return False
+            index = next_index
+            while index < len(fragments) and index - next_index < HANDOVER_BURST:
+                if deadline is not None and time.monotonic() >= deadline - DISPATCH_RESERVE_SECONDS:
+                    break
+                with self._airtime_reservation(device) as allowed:
+                    if not allowed:
+                        return True
+                    device.send_text(recipient_prefix=target, text=fragments[index],
+                                     timestamp=int(time.time()), authorize=self._access)
+                index += 1
+            try:
+                custodian.note_handover(prefix, deposit.message_digest, next_index=index,
+                                        complete=index >= len(fragments), now=int(time.time()))
+            except CustodianError:
+                return False
+            return True
+        return False
 
     def _retry_state(self):
         state = getattr(self, "_retry_pending", None)

@@ -155,6 +155,20 @@ class MeshOutbox:
         """Message ids whose dispatch outcome is unknown, for the retry driver."""
         return frozenset(self._unknown)
 
+    def track_unknown(self, message_id, expires_at):
+        """Adopt a durable 'dispatching' row found by a construction-time scan.
+
+        The row's own signed window decides what it is: inside the window this is
+        the same row-scoped unknown dispatch_one records, and the retry driver
+        requeues it; a lapsed window is the caller's refusal to make, not this
+        method's, because only the scan knows the row's revision.
+        """
+        _uuid(message_id)
+        _integer(expires_at, 1, (1 << 53) - 1)
+        with self._condition:
+            if not self._closing:
+                self._unknown[message_id] = expires_at
+
     @property
     def _uncertain(self):
         """Any unresolved outcome, retryable or not, for existing observers."""
