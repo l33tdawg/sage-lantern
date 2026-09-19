@@ -14,6 +14,13 @@
 # override for exactly this case; keep it pinned to the exact channel rather
 # than a wide range.
 #
+# The flag MUST be quoted: unquoted, `{917375,917375}` is brace-expanded by
+# the shell the build runs through, the macro lands as a bare `917375`, and
+# the compiled table is `{917375, 0}` — which silently refuses repeat on the
+# commissioned channel (found 2026-09-19 by reading the table out of the
+# built ELF after the first r5 image refused the repeat write with
+# ERR_CODE_ILLEGAL_ARG).
+#
 # Build: pio run -e heltec_v4_companion_radio_usb
 #
 # This makes the radio a node *and* a repeater on the same channel. It does not
@@ -38,7 +45,7 @@
  extends = heltec_v4_oled
  build_flags =
    ${heltec_v4_oled.build_flags}
-+  -D ALLOWED_REPEAT_FREQ_RANGE={917375,917375}
++  "-D ALLOWED_REPEAT_FREQ_RANGE={917375,917375}"
    -I examples/companion_radio/ui-new
    -D MAX_CONTACTS=350
    -D MAX_GROUP_CHANNELS=40
