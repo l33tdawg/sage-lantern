@@ -5,6 +5,7 @@ import re
 OPEN = '\n<followups>'
 CLOSE = '</followups>'
 LIST_ITEM = re.compile(r'^[ \t]*(?:[-*•]|\d{1,2}[.)])[ \t]+(.+?)[ \t]*$')
+ECHO_MINIMUM = 40
 POLICY = (
     ' After the complete answer, optionally append a separate <followups> section on a new line '
     'containing a JSON array of at most two short, specific questions the user could ask next, '
@@ -48,6 +49,63 @@ def parse_list(value):
             return []
         items.append(match.group(1))
     return items
+
+
+_WINDOW_CACHE: dict[str, frozenset] = {}
+
+
+def _echo_windows(policy):
+    """Every 40-character run of one instruction text, memoised."""
+    if policy not in _WINDOW_CACHE:
+        _WINDOW_CACHE[policy] = frozenset(
+            policy[start:start + ECHO_MINIMUM]
+            for start in range(max(0, len(policy) - ECHO_MINIMUM + 1)))
+    return _WINDOW_CACHE[policy]
+
+
+def strip_policy_echo(value, policy):
+    """Drop a verbatim run of our own instruction text the model echoed back.
+
+    The stage-5 2B sometimes continues the system prompt after finishing its
+    answer; that put the policy tail (including the literal "append a
+    <followups> section" sentence) on the screen and stopped the trailer from
+    parsing. Only verbatim runs of >= 40 characters are treated as echo.
+    """
+    if type(value) is not str or not value or type(policy) is not str or not policy:
+        return value
+    windows = _echo_windows(policy)
+    position = None
+    for fragment in windows:
+        found = value.find(fragment)
+        if found >= 0 and (position is None or found < position):
+            position = found
+    if position is None:
+        return value
+    while position > 0 and value[position - 1:position - 1 + ECHO_MINIMUM] in windows:
+        position -= 1
+    return value[:position].rstrip()
+
+
+class PolicyEcho:
+    """Stop streaming deltas once the answer starts repeating its instructions."""
+
+    def __init__(self, policy, *, window=512):
+        self.windows = _echo_windows(policy)
+        self.window = window
+        self.tail = ''
+        self.tripped = False
+
+    def feed(self, text):
+        if self.tripped:
+            return False
+        self.tail = (self.tail + text)[-self.window:]
+        scan_start = max(0, len(self.tail) - (len(text) + ECHO_MINIMUM - 1))
+        scan_end = max(scan_start, len(self.tail) - ECHO_MINIMUM + 1)
+        for index in range(scan_start, scan_end):
+            if self.tail[index:index + ECHO_MINIMUM] in self.windows:
+                self.tripped = True
+                return False
+        return True
 
 
 def split_answer(text):
