@@ -1,5 +1,39 @@
 # Lantern MeshCore patches
 
+## Upstream PR status — revalidated 2026-09-19 19:00 +08
+
+Three pull requests and one issue are open against `meshcore-dev/MeshCore`
+(all from `l33tdawg`, all against `dev`). All three were re-checked against
+`dev` @ `166f75c1` (their base `34404309` had moved 24 commits) and all three
+still merge with **no conflict**; with all three merged together — they overlap
+in `examples/companion_radio/MyMesh.cpp` and `.h`, `NodePrefs.h` and
+`src/helpers/CommonCLI.h` — five environments build with PlatformIO 6.2.0:
+
+| environment | RAM | flash |
+|---|---|---|
+| `heltec_v4_companion_radio_usb` | 105,024 B (5.0%) | 651,801 B (9.9%) |
+| `heltec_v4_companion_radio_usb_bridge_espnow` | 130,364 B (6.2%) | 1,064,981 B (16.3%) |
+| `heltec_v4_repeater` | 61,892 B (3.0%) | 1,172,297 B (17.9%) |
+| `heltec_v4_repeater_bridge_espnow` | 63,556 B (3.0%) | 1,182,733 B (18.0%) |
+| `RAK_4631_companion_radio_ble` | 151,448 B (64.3%) | 479,096 B (67.2%) |
+
+The `heltec_v4_repeater_bridge_espnow` environment that could not be built while
+PR #3410 was written (ESPAsyncWebServer download failure) now builds, so no
+configuration in this set is left un-compiled. PR bodies were refreshed with
+these results, the hardware-validation note for #3403, and the fact that the
+ESP-NOW lane is still unflashed.
+
+| | PR / issue | state 2026-09-19 | mergeable | checks | maintainer response |
+|---|---|---|---|---|---|
+| contacts-response atomicity | [meshcore-dev/MeshCore#3403](https://github.com/meshcore-dev/MeshCore/pull/3403) | open | yes (clean onto `dev` @ 166f75c1) | never ran (fork PRs need approval) | none |
+| companion bridge + `BridgePrefs` | [meshcore-dev/MeshCore#3410](https://github.com/meshcore-dev/MeshCore/pull/3410) | open | yes | never ran | none |
+| rolling-window relay airtime budget (r5) | [meshcore-dev/MeshCore#3450](https://github.com/meshcore-dev/MeshCore/pull/3450) | open, submitted 2026-09-19 04:47Z | yes | never ran | none |
+| windowed bulk mode (measured case) | [meshcore-dev/MeshCore#3404](https://github.com/meshcore-dev/MeshCore/issues/3404) | open, no reply, no labels | — | — | none |
+
+Nothing here needs a rebase: the branches merge cleanly, and the PR descriptions
+now state the current build and hardware status. The blocker is review
+attention, not the patches.
+
 ## client-repeat-917.patch — r4 node + repeater, built 2026-09-19
 
 Lets the companion firmware enable its own repeat bit on the commissioned

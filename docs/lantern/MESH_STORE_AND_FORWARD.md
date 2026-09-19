@@ -1,10 +1,13 @@
 # Mesh store-and-forward: Lanterns as repeaters and custodians
 
 Status: design + core codec/store/ingest/handover built 2026-09-19. The
-depositor-side routing and on-device acceptance are open; the forward-path
+depositor-side routing and on-device acceptance are open. The forward-path
 airtime budget (r5, upstream PR meshcore-dev/MeshCore#3450) is deployed on both
-units with the relay cap defaulted to 10%, but repeat is still switched off, so
-nothing is relayed yet. This document
+units with the relay cap defaulted to 10%, and repeat is **on** on both units —
+`repeat = 1` read back from each device — with relay+node concurrency measured
+in both directions (`work/openretry-20260919/REPORT.md` §2). Custody itself is
+not yet enabled in either unit's `mesh-runtime.json`, so no deposit is taken or
+handed over in the field yet. This document
 supersedes the "absent-recipient store-and-forward" bullet in
 `MESHCORE_CAPABILITY_ROADMAP.md` as the concrete plan; the roadmap keeps the
 upstream analysis, this is what Lantern builds in its own layer.
