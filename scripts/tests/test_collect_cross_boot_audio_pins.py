@@ -106,7 +106,7 @@ def test_npu_swap_supersedes_the_llama_cpp_baseline_once():
                 '/opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf': 'c' * 64}
     helper = SimpleNamespace(file_hash=lambda name: 'd' * 64)
     files = MODULE.model_files(helper, NPU_ARGV, model, retained)
-    assert set(files) == {model['FragmentPath'], NPU_ARGV[0],
+    assert set(files) == {model['FragmentPath'], NPU_ARGV[1], NPU_ARGV[NPU_ARGV.index('--engine') + 1],
                           NPU_ARGV[NPU_ARGV.index('--model') + 1]}
     with pytest.raises(ValueError):
         MODULE.model_files(helper, NPU_ARGV, model, {**retained, '/tmp/evil': 'e' * 64})

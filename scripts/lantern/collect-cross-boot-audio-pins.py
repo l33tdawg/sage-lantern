@@ -272,12 +272,22 @@ def superseded_by_npu(argv, retained):
 
 
 def model_files(helper, argv, model, retained_model_files=None):
-    paths = {model['FragmentPath'], *model['DropInPaths'].split(), argv[0]}
+    paths = {model['FragmentPath'], *model['DropInPaths'].split()}
     require(argv.count('--model') == 1 and argv.index('--model') + 1 < len(argv))
     paths.add(argv[argv.index('--model') + 1])
-    if '--mmproj' in argv:
-        require(argv.count('--mmproj') == 1 and argv.index('--mmproj') + 1 < len(argv))
-        paths.add(argv[argv.index('--mmproj') + 1])
+    if argv and argv[0] == '/usr/bin/python3':
+        # The NPU shape: the interpreter is a symlink and is not a pinned file.
+        # The artifacts that matter are the server script and the engine beside
+        # the shared model, and they are hashed instead.
+        require(len(argv) > 1 and argv[1].endswith('.py'))
+        paths.add(argv[1])
+        require(argv.count('--engine') == 1)
+        paths.add(argv[argv.index('--engine') + 1])
+    else:
+        paths.add(argv[0])
+        if '--mmproj' in argv:
+            require(argv.count('--mmproj') == 1 and argv.index('--mmproj') + 1 < len(argv))
+            paths.add(argv[argv.index('--mmproj') + 1])
     if retained_model_files is not None:
         require(type(retained_model_files) is dict
             and all(type(name) is str and type(digest) is str
