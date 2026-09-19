@@ -27,7 +27,12 @@ MAX_TEXT = 128
 # the advertisement/discovery freshness window used for radio observations.
 PACKET_SIGNAL_WINDOW = 300
 FIRMWARE = "v1.17.1-d929643"
-SUPPORTED_FIRMWARE = (FIRMWARE, "v1.17.1-d929643-r1", "v1.17.1-d929643-r2")
+# r3 is the pinned base plus the contacts-response atomicity fix (upstream PR
+# #3403, the interleaved-push defect that poisoned contact reads) and the
+# packet-RSSI capture. A radio admits itself by this exact string, so the host
+# release that admits r3 ships before the flash.
+SUPPORTED_FIRMWARE = (FIRMWARE, "v1.17.1-d929643-r1", "v1.17.1-d929643-r2",
+                      "v1.17.1-d929643-r3")
 # Every response code >= 0x80 is an asynchronous push (PUSH_CODE_* in
 # examples/companion_radio/MyMesh.cpp) and can arrive at any point, including in
 # the middle of another command's response. The host owns no push callback, so
