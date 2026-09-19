@@ -99,6 +99,21 @@ def test_npu_server_argv_refuses_unpinned_or_malformed(mutate):
         MODULE.model_argv(system, HELPER)
 
 
+def test_npu_swap_supersedes_the_llama_cpp_baseline_once():
+    model = {'FragmentPath': '/etc/systemd/system/sage-lantern-llm.service', 'DropInPaths': ''}
+    retained = {'/etc/systemd/system/sage-lantern-llm.service': 'a' * 64,
+                '/opt/sage-lantern/llama.cpp/llama-server': 'b' * 64,
+                '/opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf': 'c' * 64}
+    helper = SimpleNamespace(file_hash=lambda name: 'd' * 64)
+    files = MODULE.model_files(helper, NPU_ARGV, model, retained)
+    assert set(files) == {model['FragmentPath'], NPU_ARGV[0],
+                          NPU_ARGV[NPU_ARGV.index('--model') + 1]}
+    with pytest.raises(ValueError):
+        MODULE.model_files(helper, NPU_ARGV, model, {**retained, '/tmp/evil': 'e' * 64})
+    with pytest.raises(ValueError):
+        MODULE.model_files(helper, NPU_ARGV, model, {})
+
+
 @pytest.mark.parametrize('fault', [None, 'wheel_hash', 'installed_changed', 'extra_source', 'missing_source'])
 def test_runtime_must_match_exact_wheel_not_host(tmp_path, monkeypatch, fault):
     package = tmp_path / 'sage_lantern'

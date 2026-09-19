@@ -249,6 +249,28 @@ def bootstrap_inventory(helper, system):
 PROJECTOR = '/opt/sage-lantern/models/mmproj-BF16.gguf'
 
 
+# The reviewed LLM swap of 2026-09-19: the NPU serving shape replaces the
+# llama.cpp shape on the same unit. A release pin may move from the llama.cpp
+# artifacts below to the NPU shape exactly once; every other model-file change
+# still refuses, and after the swap the NPU paths are compared like any other
+# baseline.
+LLAMA_CPP_ARTIFACTS = {'/opt/sage-lantern/llama.cpp/llama-server',
+                       '/opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf',
+                       '/opt/sage-lantern/models/mmproj-BF16.gguf'}
+LLAMA_CPP_UNIT = '/etc/systemd/system/sage-lantern-llm.service'
+LLAMA_CPP_DROPINS = {LLAMA_CPP_UNIT + '.d/' + name for name in
+                     ('45-cpu-profile.conf', '46-vision.conf', 'zzzz-fresh-native-update.conf')}
+
+
+def superseded_by_npu(argv, retained):
+    """True when a retained pin holds only reviewed llama.cpp-era artifacts and
+    the live unit now runs the reviewed NPU shape."""
+    if type(argv) is not list or not argv or argv[0] != '/usr/bin/python3':
+        return False
+    names = set(retained)
+    return bool(names) and names <= (LLAMA_CPP_ARTIFACTS | LLAMA_CPP_DROPINS | {LLAMA_CPP_UNIT})
+
+
 def model_files(helper, argv, model, retained_model_files=None):
     paths = {model['FragmentPath'], *model['DropInPaths'].split(), argv[0]}
     require(argv.count('--model') == 1 and argv.index('--model') + 1 < len(argv))
@@ -261,7 +283,10 @@ def model_files(helper, argv, model, retained_model_files=None):
             and all(type(name) is str and type(digest) is str
                 and re.fullmatch('[0-9a-f]{64}', digest)
                 for name, digest in retained_model_files.items())
-            and set(retained_model_files) in (paths, paths | {PROJECTOR}))
+            and (set(retained_model_files) in (paths, paths | {PROJECTOR})
+                 or superseded_by_npu(argv, retained_model_files)))
+        if superseded_by_npu(argv, retained_model_files):
+            return {name: helper.file_hash(name) for name in sorted(paths)}
         paths = set(retained_model_files)
     files = {name: helper.file_hash(name) for name in sorted(paths)}
     if retained_model_files is not None:
