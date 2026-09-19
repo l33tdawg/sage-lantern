@@ -106,8 +106,19 @@ def model_argv(system, helper):
     entry = value['data'][0]
     require(type(entry) is list and len(entry) == 10 and entry[2] is False)
     argv = entry[1]
-    require(type(argv) is list and argv and all(type(arg) is str for arg in argv)
-            and argv[0] == entry[0] == '/opt/sage-lantern/llama.cpp/llama-server')
+    require(type(argv) is list and argv and all(type(arg) is str for arg in argv) and argv[0] == entry[0])
+    if argv[0] == '/opt/sage-lantern/llama.cpp/llama-server':
+        return _llama_cpp_argv(argv)
+    # The NPU serving shape (productionised 2026-09-19): the stage-5 RKLLM
+    # engine behind rkllm_server.py on the production port, with the CPU
+    # llama.cpp retained as the vision fallback. Its flags are held to the same
+    # public-only, pinned-path standard as the llama.cpp shape.
+    require(argv[0] == '/usr/bin/python3' and len(argv) > 1
+            and argv[1] == '/opt/sage-lantern/npu/libexec/rkllm_server.py')
+    return _npu_server_argv(argv)
+
+
+def _llama_cpp_argv(argv):
     index = 1
     seen = set()
     while index < len(argv):
@@ -132,6 +143,38 @@ def model_argv(system, helper):
                 require(value == '8081')
         index += 2
     require({'--model', '--host', '--port'} <= seen)
+    return argv
+
+
+def _npu_server_argv(argv):
+    pinned = {'--engine': '/opt/sage-lantern/npu/bin/rkllm_engine',
+              '--model': '/opt/sage-lantern/npu/models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm',
+              '--host': '127.0.0.1', '--port': '8081',
+              '--fallback-url': 'http://127.0.0.1:8082'}
+    numeric = {'--max-new-tokens': 6}
+    index = 2
+    seen = set()
+    while index < len(argv):
+        flag = argv[index]
+        require(flag not in seen)
+        seen.add(flag)
+        require(index + 1 < len(argv))
+        value = argv[index + 1]
+        if flag in pinned:
+            require(value == pinned[flag])
+        elif flag in numeric:
+            require(value.isascii() and value.isdecimal() and 1 <= len(value) <= numeric[flag])
+        elif flag == '--cpus':
+            require(value in {'1', '2', '3', '4', '5', '6', '7', '8'})
+        elif flag == '--context':
+            require(value in {'1024', '2048', '4096'})
+        elif flag == '--model-name':
+            require(value.isascii() and 1 <= len(value) <= 32
+                    and all(character.isalnum() or character in '-_.' for character in value))
+        else:
+            require(False)
+        index += 2
+    require({'--engine', '--model', '--host', '--port', '--model-name'} <= seen)
     return argv
 
 

@@ -63,6 +63,42 @@ def test_cpu_profile_options_remain_numeric_unique_and_public(extra, accepted):
             MODULE.model_argv(system, HELPER)
 
 
+NPU_ARGV = ['/usr/bin/python3', '/opt/sage-lantern/npu/libexec/rkllm_server.py',
+            '--engine', '/opt/sage-lantern/npu/bin/rkllm_engine',
+            '--model', '/opt/sage-lantern/npu/models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm',
+            '--host', '127.0.0.1', '--port', '8081', '--model-name', 'lantern-native5-2b',
+            '--context', '2048', '--cpus', '4', '--max-new-tokens', '256',
+            '--fallback-url', 'http://127.0.0.1:8082']
+
+
+def npu_value(argv):
+    return dict(type='a(sasbttttuii)', data=[[argv[0], list(argv), False, 0, 0, 0, 0, 0, 0, 0]])
+
+
+def test_npu_server_argv_is_accepted_when_pinned():
+    system = SimpleNamespace(clock=lambda: 0, _execute=lambda *args: json.dumps(npu_value(NPU_ARGV)))
+    assert MODULE.model_argv(system, HELPER) == NPU_ARGV
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda argv: [*argv, '--api-key', 'not-public'],
+    lambda argv: [*argv, '--cpus', '8'],
+    lambda argv: ['/usr/bin/python3.11', *argv[1:]],
+    lambda argv: [('/tmp/engine' if item == '/opt/sage-lantern/npu/bin/rkllm_engine' else item) for item in argv],
+    lambda argv: [('http://0.0.0.0:8082/' if item == 'http://127.0.0.1:8082' else item) for item in argv],
+    lambda argv: [('12' if item == '4' else item) for item in argv],
+    lambda argv: [item for item in argv if item != '--model-name' and item != 'lantern-native5-2b'],
+    lambda argv: argv[:-1],
+    lambda argv: [('8192' if item == '2048' else item) for item in argv],
+], ids=['secret_flag', 'duplicate_cpus', 'foreign_interpreter', 'foreign_engine', 'foreign_fallback',
+        'bad_cpus', 'missing_model_name', 'truncated', 'unbounded_context'])
+def test_npu_server_argv_refuses_unpinned_or_malformed(mutate):
+    argv = mutate(NPU_ARGV)
+    system = SimpleNamespace(clock=lambda: 0, _execute=lambda *args: json.dumps(npu_value(argv)))
+    with pytest.raises(ValueError):
+        MODULE.model_argv(system, HELPER)
+
+
 @pytest.mark.parametrize('fault', [None, 'wheel_hash', 'installed_changed', 'extra_source', 'missing_source'])
 def test_runtime_must_match_exact_wheel_not_host(tmp_path, monkeypatch, fault):
     package = tmp_path / 'sage_lantern'
