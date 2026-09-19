@@ -1,8 +1,10 @@
 """Optional, bounded question suggestions, kept out of answer text and speech."""
 import json
+import re
 
 OPEN = '\n<followups>'
 CLOSE = '</followups>'
+LIST_ITEM = re.compile(r'^[ \t]*(?:[-*•]|\d{1,2}[.)])[ \t]+(.+?)[ \t]*$')
 POLICY = (
     ' After the complete answer, optionally append a separate <followups> section on a new line '
     'containing a JSON array of at most two short, specific questions the user could ask next, '
@@ -33,6 +35,21 @@ def validate_suggestions(value):
     return result
 
 
+def parse_list(value):
+    """Accept the bullet list a small model writes when it ignores the JSON wording."""
+    if type(value) is not str or len(value.encode('utf-8', 'surrogatepass')) > 2048:
+        return []
+    items = []
+    for line in value.splitlines():
+        if not line.strip():
+            continue
+        match = LIST_ITEM.match(line)
+        if match is None:
+            return []
+        items.append(match.group(1))
+    return items
+
+
 def split_answer(text):
     # A metadata-only completion has no answer, even if transport trimming
     # removed the leading newline. Never speak or display its JSON.
@@ -44,10 +61,11 @@ def split_answer(text):
     trailer = trailer.strip()
     if not trailer.endswith(CLOSE):
         return answer.strip(), []
+    body = trailer[:-len(CLOSE)].strip()
     try:
-        questions = validate_suggestions(json.loads(trailer[:-len(CLOSE)].strip()))
+        questions = validate_suggestions(json.loads(body))
     except (ValueError, UnicodeError, RecursionError):
-        questions = []
+        questions = validate_suggestions(parse_list(body))
     return answer.strip(), questions
 
 

@@ -27,6 +27,11 @@ TEXT_POLICY = (
     "You have no live web access: never invent current facts, searches, or a cutoff date. Queued does not mean delivered or read."
 )
 
+# The NPU server (rkllm_server.py) caps generation at the request's max_tokens,
+# or 128 tokens when the field is absent. Complete answers need roughly 150–250
+# tokens; streaming still returns the first text within about two seconds.
+TEXT_MAX_TOKENS = 512
+
 # Lab-only candidate: semantic checks have not qualified this for device rollout.
 EXPERIMENTAL_TEXT_POLICY = (
     "You are SAGE Lantern. Give a complete, direct answer. For explanations, give useful context and concrete examples in 2–4 short paragraphs when warranted. "
@@ -114,8 +119,11 @@ class LlamaCppHTTP:
     supports_images = True
     supports_conversation = True
 
-    def __init__(self, base_url: str, model: str, timeout_seconds: float = 120.0, max_response_bytes: int = 65536, *, experimental_answer_suggestions: bool = False) -> None:
+    def __init__(self, base_url: str, model: str, timeout_seconds: float = 120.0, max_response_bytes: int = 65536, *, experimental_answer_suggestions: bool = False, max_tokens: int = TEXT_MAX_TOKENS) -> None:
         self.experimental_answer_suggestions = experimental_answer_suggestions
+        if type(max_tokens) is not int or not 1 <= max_tokens <= 4096:
+            raise ValueError("max_tokens must be an integer between 1 and 4096")
+        self.max_tokens = max_tokens
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
@@ -196,6 +204,8 @@ class LlamaCppHTTP:
                 {"role": "user", "content": f"Local SAGE context:\n{context_block}\n\nQuestion:\n{query}"},
             ],
         }
+        if image_path is None:
+            body["max_tokens"] = self.max_tokens
         if image_path is not None:
             image_uri = self._jpeg_data_uri(image_path)
             body["messages"][0]["content"] = (

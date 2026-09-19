@@ -41,6 +41,42 @@ def test_malformed_trailer_keeps_answer_without_metadata(trailer):
     assert split_answer('Answer\n<followups>' + trailer) == ('Answer', [])
 
 
+@pytest.mark.parametrize('body,expected', [
+    ('- What else should I check?', ['What else should I check?']),
+    ('- What else should I check?\n- How do I start?', ['What else should I check?', 'How do I start?']),
+    ('* Why does that happen?', ['Why does that happen?']),
+    ('• What next?\n• And after that?', ['What next?', 'And after that?']),
+    ('1. First question?\n2) Second question?', ['First question?', 'Second question?']),
+])
+def test_markdown_list_trailer_is_accepted(body, expected):
+    raw = 'Answer\n<followups>\n' + body + '\n</followups>'
+    assert split_answer(raw) == ('Answer', expected)
+
+
+@pytest.mark.parametrize('body', [
+    'not a list',
+    '- one?\n- two?\n- three?',
+    '- <script>alert(1)</script>',
+    '- ' + '界' * 81,
+    '- valid?\ntrailing words',
+])
+def test_markdown_list_trailer_is_still_bounded(body):
+    assert split_answer('Answer\n<followups>\n' + body + '\n</followups>') == ('Answer', [])
+
+
+@pytest.mark.parametrize('chunk_size', range(1, 20))
+def test_stream_hides_a_list_trailer_at_every_chunk_boundary(chunk_size):
+    answer = 'A complete answer with enough detail.'
+    raw = answer + '\n<followups>\n- What else should I check?\n- How do I start?\n</followups>'
+    pieces = []
+    stream = AnswerStream(pieces.append)
+    for offset in range(0, len(raw), chunk_size):
+        stream.feed(raw[offset:offset + chunk_size])
+    stream.finish()
+    assert ''.join(pieces) == answer
+    assert split_answer(raw) == (answer, ['What else should I check?', 'How do I start?'])
+
+
 def test_duplicates_and_whitespace():
     assert validate_suggestions(['  How? ', 'how?']) == ['How?']
 

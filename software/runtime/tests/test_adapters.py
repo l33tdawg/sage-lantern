@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from sage_lantern.adapters import LlamaCppHTTP, NoSpeechDetected, WhisperCppSTT
+from sage_lantern.adapters import TEXT_MAX_TOKENS, LlamaCppHTTP, NoSpeechDetected, WhisperCppSTT
 
 
 @pytest.mark.parametrize("transcript", ["", "[music]", "( MUSIC )", "[BLANK_AUDIO]", "[noise] [applause]", "♪♫", "[silence]..."])
@@ -67,6 +67,20 @@ def test_qwen_voice_request_disables_hidden_thinking() -> None:
     assert response == "ready"
     assert captured["body"]["chat_template_kwargs"] == {"enable_thinking": False}
     assert captured["timeout"] == 3.0
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_text_requests_carry_an_explicit_completion_budget(stream) -> None:
+    request = LlamaCppHTTP("http://localhost", "qwen")._request("hello", [], stream=stream)
+    assert json.loads(request.data)["max_tokens"] == TEXT_MAX_TOKENS
+    tuned = LlamaCppHTTP("http://localhost", "qwen", max_tokens=384)._request("hello", [], stream=stream)
+    assert json.loads(tuned.data)["max_tokens"] == 384
+
+
+@pytest.mark.parametrize("value", [0, -1, 4097, True, "512"])
+def test_invalid_completion_budget_is_rejected(value) -> None:
+    with pytest.raises(ValueError):
+        LlamaCppHTTP("http://localhost", "qwen", max_tokens=value)
 
 
 @pytest.mark.parametrize("stream", [False, True])
