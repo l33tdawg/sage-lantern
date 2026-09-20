@@ -125,3 +125,24 @@ Foundation page content present in the served HTML. Rollback configuration
 Note: this release publishes the per-part licence names on the owner's
 instruction. The papers' own licence is stated as "published openly" pending his
 call (CC BY, CC BY-SA or CC BY-NC).
+
+## Release 20260920-08d0d307bed5 — the commons parts as a modern flow
+
+Owner direction: "make the org chart super modern — and clear / easy to read".
+The five-box chart became one vertical flow. Each part is a numbered row
+(01–05) with its icon, a one-line job, sentence-case owner and licence tags, and
+a `+` control that expands the row in place for the detail and the boundary
+facts. The first row opens by default, so the section never shows an empty
+drawer; the side panel, connector arcs, dotted field, glow and the 9.5px
+uppercase chips are gone. The flow is capped at 1080px so the copy keeps a
+readable measure, and the 390px layout drops the icon column instead of
+squeezing the text. The old interactions are kept: hover, focus and click open
+a row, Escape closes it, one row is open at a time, and every row is a real
+button with `aria-expanded` / `aria-controls`.
+
+Same pipeline: 46 verified files, tarball sha256 `aca3fc4f…`, digest check
+passed before the symlink moved. Verified publicly: `/`, `/commons/`,
+`/hardware/` and `/foundation/` all 200; the served HTML carries the new
+`.flow-` markup and no `.org-` markup is left. Rollback configuration
+`/var/www/sage-website/backup-20260920T115921Z`; prior release
+`20260920-997818d270e9` remains under `releases/`.
