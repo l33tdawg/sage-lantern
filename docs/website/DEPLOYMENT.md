@@ -10,3 +10,28 @@ A certificate was initially prepared for natter.sage.delivery but no website rel
 Final release: `20260909-638366e018ff`, 39 verified files. Activated on sage.ngo with nginx validation and configuration rollback backup. Added the rural family connectivity concept to the homepage; MeshCore and planned Starlink messaging appear on both homepage and hardware page. All exported images use static URLs. Original Natter service routes remain in place.
 
 Pitch deck companion: `docs/SAGE_Foundation_Updated_September_2026.pptx` and `.pdf`. The 26-slide edition uses Geist/Georgia, the navy/amber website palette, selected Commons mark and current concept imagery. Added hardware slide 5 and strengthened network slide 21. Original September deck preserved. Same copywriting skill applied across visible slide copy. Speculative radio modifications are not added to the public promise. PPTX package, geometry, fonts and reimport passed; all slide renders inspected. PDF is a fixed visual sharing copy; PPTX retains editable text and diagrams.
+
+## Release 20260920-ab8cc68b10b3 — the Commons page
+
+Added `/commons/`: the distinction the owner asked for, in one place. Four parts
+(SAGE Foundation as a steward in formation; SAGE Commons as the shared knowledge;
+community networks as the way it travels, MeshCore radio plus planned backhaul;
+the Lantern as the device at the edge), an ownership table (private knowledge,
+the shared commons, the radio standard, signed releases, the device), why the
+separation matters, and an honest status note. Nav and footer gained "The
+Commons"; the homepage commons section links to it; the export verifier now
+covers the third page.
+
+Copy was reviewed with the writing skill against the existing site voice: the
+third part is "Community networks" rather than a new term, and the closing line
+matches the homepage's register. Claims stay inside what is true today —
+Foundation in formation, nothing a live service, backhaul planned.
+
+Packaged by the new `scripts/build-release.py` (41 verified files, tarball
+sha256 `c1355a38…`) and activated by `deploy/install-release.py`. Verified on the
+origin and publicly: nginx, natter and sage-call-relay active, call-relay
+healthz 200, and `/`, `/commons/`, `/hardware/` all 200 on
+`https://sage.ngo`. Rollback configuration:
+`/var/www/sage-website/backup-20260920T063743Z`; the previous release
+`20260909-638366e018ff` stays under `releases/` and can be re-activated by
+pointing `current` back at it.
