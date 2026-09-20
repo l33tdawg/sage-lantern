@@ -81,3 +81,18 @@ which opens publicly in 2027): the host is reachable with the local
 Still outstanding: the concept render regeneration. The owner has not yet
 chosen between one antenna and two, or between the detached pack and the tray;
 the generation spec is kept in the private `internal-docs` tree.
+
+## Release 20260920-74fe31c6e884 — a map of the four parts on the commons page
+
+Owner suggestion: the commons page could use a diagram. The page now carries one
+above the four part descriptions: a labelled stack — SAGE Foundation (signs and
+publishes) → SAGE Commons (carries) → community networks (reaches) → SAGE
+Lantern — with the boundary drawn inside the last card as a dashed "your private
+knowledge" plane. Built from the page's own parts and icons in the site palette,
+not a pasted graphic; checked at desktop and 390px widths.
+
+Same pipeline: 41 verified files, tarball sha256 `ac3add4a…`, digest check
+passed before the symlink moved. Verified publicly: `/`, `/commons/` and
+`/hardware/` return 200 and the diagram's text is present in the served HTML.
+Rollback configuration `/var/www/sage-website/backup-20260920T095823Z`; prior
+release `20260920-5993d0b08c1c` remains under `releases/`.
