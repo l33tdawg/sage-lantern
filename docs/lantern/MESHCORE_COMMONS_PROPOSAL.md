@@ -1,6 +1,9 @@
 # Commons over MeshCore — a proposal to the MeshCore community
 
-**Status:** draft for the MeshCore maintainers and community, 2026-09-20. Not a
+**Status:** draft, held. Owner direction 2026-09-20: this is not for the
+MeshCore community yet — it is scheduled to be proposed around **December 2026**,
+ahead of the January 2027 public launch. Do not send, post or circulate it before
+then; revisit it against what has actually shipped by December. Not a
 specification and not an announcement. Nothing here is adopted, and the name in
 the last section is the community's to accept, change or refuse.
 
