@@ -1,5 +1,14 @@
 {
   "schema": "sage.knowledge-pack.trust-root.v1",
   "note": "Foundation pack signing keys. This file is the trust anchor a unit carries: a pack is trusted when it is signed by one of these keys. The private half is held by the Foundation with out-of-band backups and never enters this repository. Add a key by running scripts/lantern/pack-signing-key.py entry --key <file> and committing the entry under review. Status active signs new packs and verifies; retired verifies existing packs only (rotation); revoked is refused even though the signature verifies.",
-  "keys": []
+  "keys": [
+    {
+      "key_id": "pk-1b7a5f4ee2c66492",
+      "algorithm": "ed25519",
+      "public_key_hex": "c024154a7d50daa19316e719bd9a97447f5e847b82ad43d30f5e67bba5c6d07b",
+      "status": "active",
+      "created_at": "2026-09-20T02:33:57Z",
+      "note": "Foundation pack key 1"
+    }
+  ]
 }

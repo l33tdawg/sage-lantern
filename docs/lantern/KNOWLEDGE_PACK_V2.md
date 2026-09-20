@@ -130,22 +130,34 @@ repository, prints the trust-root entry to commit, and can read a *backup* to
 prove it still derives the key the root records:
 
 Like every tool in `scripts/lantern/`, these run through the interpreter rather
-than from `PATH` (`python3 scripts/lantern/...`, from the repository root or any
-other directory):
+than from `PATH`: there is no exec bit and no shell alias, so the path you type
+has to match where you are standing. From the repository root:
 
 ```sh
-python3 scripts/lantern/pack-signing-key.py generate \
-    --out ~/sage-foundation/pack-signing-1.key --note "Foundation pack key 1"
+python3 scripts/lantern/pack-signing-key.py generate --out /Users/<you>/sage-foundation/pack-signing-1.key --note "Foundation pack key 1"
+```
+
+From `scripts/`, that same tool is `python3 lantern/pack-signing-key.py`, and from
+anywhere else it is the absolute path. Do not escape the `~` in a path
+(`\~/...` is a directory literally named `~`, not your home directory); an
+absolute path is the least surprising option.
+
+```sh
+python3 scripts/lantern/pack-signing-key.py generate --out /Users/<you>/sage-foundation/pack-signing-1.key --note "Foundation pack key 1"
 python3 scripts/lantern/pack-signing-key.py entry \
     --key ~/sage-foundation/pack-signing-1.key      # paste into the trust root
 python3 scripts/lantern/pack-signing-key.py check \
     --key ~/backups/pack-signing-1.key              # backup drill against the root
 ```
 
-The shipped trust root currently holds **no keys**, so today an unsigned pack is
-the only thing that can pass. `--allow-unsigned` remains the explicit escape
-hatch for local packs, and every run reports `unsigned_accepted` in its JSON so a
-provisioning log never quietly records an unverified pack as verified.
+The shipped trust root holds **Foundation pack key 1**
+(`pk-1b7a5f4ee2c66492`, active), so an unsigned pack no longer passes on its own.
+The private half lives outside the repository at
+`~/sage-foundation/pack-signing-1.key` (0600), and it is the Foundation's to back
+up: the tool can prove a backup against the root, but it cannot create the
+off-disk copies. `--allow-unsigned` remains the explicit escape hatch for local
+packs, and every run reports `unsigned_accepted` in its JSON so a provisioning log
+never quietly records an unverified pack as verified.
 
 ## Installing, checking, moving and removing
 
@@ -173,7 +185,7 @@ python3 scripts/lantern/build-knowledge-pack.py work/knowledge-pack-20260920/pac
     --source-label curated:owner-notes-2026-09-20 --created-at 2026-09-20T00:00:00Z \
     --default-date 2026-09-20 --default-tag malaysia \
     --signing-key ~/sage-foundation/pack-signing-1.key --archive
-# -> work/.../malaysia-v1.tar.gz   (sha256 160d81ba... for the current pack #1)
+# -> work/.../malaysia-v1.tar.gz   (sha256 0cea5c80... for the signed pack #1)
 ```
 
 Attach the archive to a GitHub release, with the manifest digest and the archive
@@ -265,9 +277,10 @@ chunks stay valid (they are content-addressed) until someone retires them.
   tag scoping between versions, parked challenges, an indeterminate commit, and a
   copy-incomplete migration that must not retire the source.
 * Pack #1 rebuilt in this format: `work/knowledge-pack-20260920/pack-malaysia-v1/`
-  (40 chunks, manifest `6ab58f40...`) plus the delivery archive
-  `malaysia-v1.tar.gz` (sha256 `160d81ba...`), both verified byte-identical on
-  rebuild. `--verify` on the archive passes with no node contact.
+  (40 chunks, manifest `6ab58f40...`) plus the signed delivery archive
+  `malaysia-v1.tar.gz` (sha256 `0cea5c80...`, member count 43 including
+  `manifest.sig.json`). `--verify` on the archive passes with no node contact and
+  reports `key_status: active, unsigned_accepted: false`.
 
 ## Not settled here
 

@@ -81,10 +81,14 @@ def test_check_reports_membership_and_status_against_a_trust_root(tmp_path):
     assert empty['in_trust_root'] is False and empty['status'] is None
 
 
-def test_shipped_trust_root_is_valid_and_deliberately_empty():
+def test_shipped_trust_root_is_valid_and_pins_the_foundation_key():
     root = pack_format.load_trust_root(ROOT / 'lantern/pack-trust-root.json')
-    assert root['keys'] == []
-    assert pack_format.active_key_ids(root) == []
+    assert root['keys'], 'the trust root must name at least the Foundation signer'
+    for entry in root['keys']:
+        assert entry['key_id'] == pack_format.key_id_for(entry['public_key_hex'])
+        assert entry['status'] in pack_format.KEY_STATUSES
+    assert pack_format.active_key_ids(root) == [entry['key_id'] for entry in root['keys']
+                                                if entry['status'] == 'active']
 
 
 def test_trust_root_validation_refuses_a_mismatched_key_id():
