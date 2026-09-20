@@ -25,10 +25,11 @@ delta between versions.
 | Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
 | Pack #1 | `reference` class, Malaysia v1: signed, per-chunk licence, archive `91c5ba0c` |
 | Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, per-chunk licence, signed, archive `11dad074` |
+| Reference pack: world facts | `world-facts` v1 (Wikidata, CC0): 191 facts - 19 heights, 70 populations, 13 straight-line distances, 89 administrative rows, every chunk CC0-1.0 and sourced to its entity URL; signed, archive `7734508d` |
 | Published | release assets `pack/malaysia-v1` and `pack/world-brief-v20260920` in `l33tdawg/sage-lantern`; the repo stays **private until the public launch on 2027-01-01** (owner direction 2026-09-20), so fetch is credentialed and distribution stays out of band until then |
 | Window roll | `--roll-from <old>`: install the successor, then retire the chunks it dropped; rehearsed on two real overlapping windows (13 in, 275 out, 1,764 shared) |
 | Device window | owner direction 2026-09-20: **one month max**. A brief installs its newest 31 days by default (647 of the shipped brief's 2,052 events), `--window-days` goes narrower, `--window-all` is the explicit archive/lab install |
-| Device install | **nothing installed** — see the two gates below |
+| Device install | `world-facts` v1 is installed on unit A (191/191, `--check` complete, recall measured 2026-09-20 - `work/reference-facts-20260920/RESULTS.md`); unit B is untouched and a **brief** install still cannot land anywhere until the node grows a public cache domain (`bbd52246`) |
 
 The class, per-chunk confidence and per-item licence fields changed the prototype
 schema on 2026-09-20. Nothing had been published, so both packs were rebuilt and
@@ -36,10 +37,13 @@ re-signed rather than teaching readers several manifest shapes; the superseded
 generations sit beside them under `superseded-pre-class/` and
 `superseded-pre-licence/`.
 
-Next: the next source adapter and reference pack (Wikidata/CC0 for the measured
-numeric gaps, then arXiv and agency material with the per-item licence gate now
-in the format), then the device install itself once the node grows a public cache
-domain (`bbd52246`) so a brief does not land in the private home domain. The
+Next: the arXiv and agency adapters with the per-item licence gate now in the
+format. The Wikidata/CC0 adapter for the measured numeric gaps is done
+(`scripts/lantern/fetch-wikidata-facts.py`, pack `world-facts` v1 signed,
+installed on unit A and measured: the exact fact ranks first for all five probes
+and the 2B answers from it - `work/reference-facts-20260920/RESULTS.md`). Then
+the device install of a brief once the node grows a public cache domain
+(`bbd52246`) so a brief does not land in the private home domain. The
 snapshot-pack lane stays blocked until `SAGE-EXPORT` and `OPEN-COM-003` land — see
 [DUAL_HOME_AND_PUBLICATION_CONTRACT.md](DUAL_HOME_AND_PUBLICATION_CONTRACT.md) §10.1.
 
@@ -354,10 +358,13 @@ licences per channel) is not decided. The candidates, cheapest first:
 * **Public domain and permissive sources** — Project Gutenberg, national archives,
   government open-data portals, CC0 datasets. Attribution is still recorded in
   `provenance`.
-* **Share-alike and attribution sources** — Wikipedia/Wikidata dumps (CC BY-SA)
-  and most open-access papers. Usable, but the licence travels with the pack:
-  `licence` and `provenance` are mandatory fields for exactly this reason, and
-  redistribution terms have to be checked per source, not per pack.
+* **Share-alike and attribution sources** — Wikipedia dumps (CC BY-SA) and most
+  open-access papers. Usable, but the licence travels with the pack: `licence`
+  and `provenance` are mandatory fields for exactly this reason, and
+  redistribution terms have to be checked per source, not per pack. Wikidata
+  structured statements are separate: they are CC0, and
+  `scripts/lantern/fetch-wikidata-facts.py` writes that licence on every row it
+  emits, so a pack that mixes them with article text has to declare `mixed`.
 * **Anything requiring a licence we do not hold** — out of scope until
   `OPEN-PUB-001` says otherwise.
 
@@ -538,3 +545,9 @@ chunks stay valid (they are content-addressed) until someone retires them.
 * The sharded chunk store and chunk-index tree the 1-10 GB class needs.
 * Whether a pack signature should ever be held by something other than the
   Foundation (a curator key, a device key), and what that would let a device do.
+* Overlapping reference packs. Pack #1 carries Ipoh's 2020 census population
+  (759,000) and `world-facts` carries the 2016 Wikidata estimate (866,772); on
+  the undated probe the 2B answered from the newer pack-1 line while the
+  world-facts chunk ranked first. Whether a successor pack should retire the
+  facts it supersedes, or every overlapping chunk should carry its as-of in the
+  text, is not decided (`work/reference-facts-20260920/RESULTS.md`).
