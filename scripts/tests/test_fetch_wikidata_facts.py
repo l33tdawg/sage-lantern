@@ -119,6 +119,183 @@ def test_every_row_is_cc0_with_its_entity_url():
         assert wd.LICENCE == 'CC0-1.0'
 
 
+def test_scope_drives_the_rows_not_the_curated_globals():
+    # A scaled pack passes its own lists; the committed globals are only one
+    # possible scope, so a scope of one entity must produce that entity's rows.
+    scope = {'heights': [], 'populations': ['Q271619'], 'countries': [], 'pairs': []}
+    labels = wd.collect_response(SAMPLE)
+    labels.update(LABEL_MAP)
+    rows, skipped = wd.fact_rows(SAMPLE, labels, ['populations', 'geography'], [], scope)
+    assert [item['id'] for item in rows] == ['wd-q271619-located-in', 'wd-q271619-population']
+    assert skipped == []
+
+
+def test_scope_file_round_trip_and_refusals(tmp_path):
+    path = tmp_path / 'scope.json'
+    path.write_text(json.dumps({
+        'heights': ['Q12495'],
+        'populations': ['Q1865', 'Q271619'],
+        'countries': [],
+        'pairs': [['Q1490', 'Q35765']],
+        '_provenance': {'generator': 'enumerate-wikidata-entities.py'},
+    }), 'utf-8')
+    scope = wd.load_scope(path)
+    assert scope['heights'] == ['Q12495']
+    assert scope['populations'] == ['Q1865', 'Q271619']
+    assert scope['pairs'] == [['Q1490', 'Q35765']]
+    # A missing section is empty, not an error: a distances-only scope is legal.
+    path.write_text(json.dumps({'pairs': [['Q1490', 'Q35765']]}), 'utf-8')
+    assert wd.load_scope(path) == {'heights': [], 'populations': [], 'countries': [],
+                                   'pairs': [['Q1490', 'Q35765']]}
+    for bad in ('Q0', '1490', 'not-a-qid', ''):
+        path.write_text(json.dumps({'populations': [bad]}), 'utf-8')
+        with pytest.raises(wd.FactError):
+            wd.load_scope(path)
+    path.write_text(json.dumps({'pairs': [['Q1490']]}), 'utf-8')
+    with pytest.raises(wd.FactError):
+        wd.load_scope(path)
+    path.write_text('[]', 'utf-8')
+    with pytest.raises(wd.FactError):
+        wd.load_scope(path)
+
+
+def test_slim_dump_rebuilds_the_same_rows():
+    # The live payload is ~180 KB per entity; a scaled scope cannot keep that.
+    # The slim copy must still rebuild the identical rows off-line.
+    slim = wd.slim_response(SAMPLE)
+    assert set(slim['entities']) == set(SAMPLE['entities'])
+    for identifier, entity in slim['entities'].items():
+        assert set(entity['claims']) <= set(wd.SCOPE_PROPERTIES)
+        assert entity['labels'] == SAMPLE['entities'][identifier]['labels']
+    full_labels = wd.collect_response(SAMPLE)
+    full_labels.update(LABEL_MAP)
+    slim_labels = wd.collect_response(slim)
+    slim_labels.update(LABEL_MAP)
+    for facts in ('heights,populations,distances,geography', 'geography'):
+        assert (wd.fact_rows(slim, slim_labels, facts.split(','), PAIRS)[0]
+                == wd.fact_rows(SAMPLE, full_labels, facts.split(','), PAIRS)[0])
+    assert len(json.dumps(slim)) < len(json.dumps(SAMPLE))
+
+
+def test_entity_without_an_english_label_is_skipped_not_fatal():
+    # The scaled scope (3,900 entities) contains 13 items with no English
+    # label; a pack cannot ship a fact without a name, and it must not crash
+    # the run either - the skip is reported.
+    response = {'entities': {'Q1': {
+        'id': 'Q1', 'labels': {},
+        'claims': {
+            'P1082': [{'rank': 'normal', 'mainsnak': {'snaktype': 'value', 'datavalue': {
+                'type': 'quantity', 'value': {'amount': '+1000', 'unit': '1'}}},
+                'qualifiers': {'P585': [{'datavalue': {
+                    'type': 'time', 'value': {'time': '+2020-00-00T00:00:00Z', 'precision': 9}}}]}}],
+            'P131': [{'rank': 'normal', 'mainsnak': {'snaktype': 'value', 'datavalue': {
+                'type': 'wikibase-entityid', 'value': {'entity-type': 'item', 'id': 'Q2'}}}}],
+        }}}}
+    scope = {'heights': [], 'populations': ['Q1'], 'countries': [], 'pairs': []}
+    rows, skipped = wd.fact_rows(response, {'Q2': 'Somewhere'}, ['populations', 'geography'], [],
+                                 scope)
+    assert rows == []
+    assert skipped == ['Q1: no English label in the response']
+
+
+def test_distance_pair_without_a_label_is_skipped():
+    response = {'entities': {
+        'Q1': {'id': 'Q1', 'labels': {'en': {'value': 'One'}},
+               'claims': {'P625': [{'rank': 'normal', 'mainsnak': {
+                   'snaktype': 'value', 'datavalue': {'type': 'globecoordinate', 'value': {
+                       'latitude': 1.0, 'longitude': 101.0, 'globe': ''}}}}]}},
+        'Q2': {'id': 'Q2', 'labels': {}, 'claims': {'P625': [{'rank': 'normal', 'mainsnak': {
+            'snaktype': 'value', 'datavalue': {'type': 'globecoordinate', 'value': {
+                'latitude': 2.0, 'longitude': 102.0, 'globe': ''}}}}]}},
+    }}
+    scope = {'heights': [], 'populations': [], 'countries': [], 'pairs': [['Q1', 'Q2']]}
+    rows, skipped = wd.fact_rows(response, wd.collect_response(response), ['distances'],
+                                 [('Q1', 'Q2')], scope)
+    assert rows == []
+    assert skipped == ['Q1-Q2: an endpoint has no English label']
+
+
+def test_repeated_pairs_collapse_to_one_chunk():
+    # A chunk is addressed by its content, so the same pair twice is the same
+    # chunk twice - the builder refuses that, correctly.
+    assert wd.dedupe_pairs([('Q1', 'Q2'), ('Q2', 'Q1'), ('Q1', 'Q3')]) == [
+        ('Q1', 'Q2'), ('Q1', 'Q3')]
+
+
+def _population_claim(amount, year='2020'):
+    return {'rank': 'normal', 'mainsnak': {'snaktype': 'value', 'datavalue': {
+        'type': 'quantity', 'value': {'amount': amount, 'unit': '1'}}},
+        'qualifiers': {'P585': [{'datavalue': {
+            'type': 'time', 'value': {'time': f'+{year}-00-00T00:00:00Z',
+                                      'precision': 9}}}]}}
+
+
+def _coordinate_claim(latitude, longitude):
+    return {'rank': 'normal', 'mainsnak': {'snaktype': 'value', 'datavalue': {
+        'type': 'globecoordinate', 'value': {'latitude': latitude,
+                                             'longitude': longitude, 'globe': ''}}}}
+
+
+def test_entity_in_both_lists_is_parsed_once():
+    # Singapore is a city and a sovereign state; one entity, one chunk - two
+    # identical content objects are one content address.
+    response = {'entities': {'Q334': {
+        'id': 'Q334', 'labels': {'en': {'value': 'Singapore'}},
+        'claims': {'P1082': [_population_claim('+5866139', '2021')]}}}}
+    scope = {'heights': [], 'populations': ['Q334'], 'countries': ['Q334'],
+             'pairs': []}
+    rows, skipped = wd.fact_rows(response, wd.collect_response(response),
+                                 ['populations'], [], scope)
+    assert [item['id'] for item in rows] == ['wd-q334-population']
+    assert skipped == []
+
+
+def test_an_ambiguous_place_name_carries_its_country():
+    # Two cities named Yulin in different countries: without the country the
+    # two distance rows are the same sentence about different places.
+    response = {'entities': {
+        'Q1': {'id': 'Q1', 'labels': {'en': {'value': 'Yulin'}},
+               'claims': {'P625': [_coordinate_claim(22.63, 110.15)],
+                          'P17': [{'rank': 'normal', 'mainsnak': {'snaktype': 'value',
+                                  'datavalue': {'type': 'wikibase-entityid', 'value': {
+                                      'entity-type': 'item', 'id': 'Q148'}}}}]}},
+        'Q2': {'id': 'Q2', 'labels': {'en': {'value': 'Yulin'}},
+               'claims': {'P625': [_coordinate_claim(38.28, 109.73)],
+                          'P17': [{'rank': 'normal', 'mainsnak': {'snaktype': 'value',
+                                  'datavalue': {'type': 'wikibase-entityid', 'value': {
+                                      'entity-type': 'item', 'id': 'Q148'}}}}]}},
+        'Q3': {'id': 'Q3', 'labels': {'en': {'value': 'Huanggang'}},
+               'claims': {'P625': [_coordinate_claim(30.45, 114.87)],
+                          'P17': [{'rank': 'normal', 'mainsnak': {'snaktype': 'value',
+                                  'datavalue': {'type': 'wikibase-entityid', 'value': {
+                                      'entity-type': 'item', 'id': 'Q148'}}}}]}},
+    }}
+    labels = wd.collect_response(response)
+    labels['Q148'] = 'China'
+    scope = {'heights': [], 'populations': ['Q1', 'Q2', 'Q3'], 'countries': [],
+             'pairs': [['Q1', 'Q3']]}
+    rows, _ = wd.fact_rows(response, labels, ['distances', 'geography'], [('Q1', 'Q3')], scope)
+    distance = [item for item in rows if 'distance' in item['tags']][0]
+    assert distance['text'].startswith('Yulin, China and Huanggang are about')
+    # An unambiguous name stays plain.
+    assert not any('Huanggang, China' in item['text'] for item in rows)
+
+
+def test_duplicate_items_with_the_same_sentence_ship_once():
+    # Wikidata holds duplicate items; two rows with identical text are one fact.
+    response = {'entities': {
+        'Q1': {'id': 'Q1', 'labels': {'en': {'value': 'Minna'}},
+               'claims': {'P1082': [_population_claim('+304113')]}},
+        'Q2': {'id': 'Q2', 'labels': {'en': {'value': 'Minna'}},
+               'claims': {'P1082': [_population_claim('+304113')]}},
+    }}
+    scope = {'heights': [], 'populations': ['Q1', 'Q2'], 'countries': [], 'pairs': []}
+    rows, skipped = wd.fact_rows(response, wd.collect_response(response),
+                                 ['populations'], [], scope)
+    assert [item['id'] for item in rows] == ['wd-q1-population']
+    assert skipped == ['wd-q2-population: same text as wd-q1-population']
+
+
 def test_malaysian_entries_carry_the_malaysia_tag():
     rows = sample_rows()
     ipoh = row_for(rows, 'wd-q271619-population')

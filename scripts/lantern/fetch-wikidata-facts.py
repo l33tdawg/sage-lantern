@@ -53,10 +53,12 @@ without the network.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import math
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+import re
 import sys
 import time
 import urllib.error
@@ -234,9 +236,95 @@ FACT_TAG = {"height": "heights", "population": "populations", "distance": "dista
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August",
           "September", "October", "November", "December")
 
+# The properties this parser reads. A scope file (and the slim raw dump) name
+# exactly these, so nothing else has to be fetched, cached or re-read.
+SCOPE_SECTIONS = ("heights", "populations", "countries", "pairs")
+SCOPE_PROPERTIES = (P_HEIGHT, P_POPULATION, P_POINT_IN_TIME, P_COORDINATES,
+                    P_LOCATED_IN, P_COUNTRY, P_CAPITAL, P_METHOD)
+
 
 class FactError(RuntimeError):
     pass
+
+
+def curated_scope() -> dict:
+    """The hand-curated list, as a scope: what a build is scoped to."""
+    return {
+        "heights": list(HEIGHT_ENTITIES),
+        "populations": list(POPULATION_ENTITIES),
+        "countries": list(COUNTRY_ENTITIES),
+        "pairs": [list(pair) for pair in DISTANCE_PAIRS],
+    }
+
+
+def scope_qid(value, where: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"Q[1-9][0-9]*", value.strip()):
+        raise FactError(f"{where} holds {value!r}, expected a QID like Q1490")
+    return value.strip()
+
+
+def load_scope(path: Path) -> dict:
+    """A scope file: the entity lists and distance pairs one build covers.
+
+    Written by ``enumerate-wikidata-entities.py`` for a scaled pack (a regional
+    or world extract), or by hand for a small one. Sections are ``heights``,
+    ``populations`` and ``countries`` (QID lists) and ``pairs`` (two-QID lists
+    for straight-line distances); a missing section is empty rather than an
+    error so a distances-only or heights-only scope stays writable.
+    """
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise FactError(f"could not read {path}: {error}") from error
+    if not isinstance(payload, dict):
+        raise FactError(f"{path} must hold a JSON object")
+    scope = {}
+    for section in SCOPE_SECTIONS:
+        values = payload.get(section) or []
+        if not isinstance(values, list):
+            raise FactError(f"{path}: {section} must be a list")
+        if section == "pairs":
+            pairs = []
+            for entry in values:
+                if not isinstance(entry, list) or len(entry) != 2:
+                    raise FactError(f'{path}: pairs entries look like ["Q1490", "Q35765"]')
+                pairs.append([scope_qid(entry[0], "pairs"), scope_qid(entry[1], "pairs")])
+            scope[section] = pairs
+        else:
+            scope[section] = [scope_qid(entry, section) for entry in values]
+    return scope
+
+
+def slim_response(response: dict) -> dict:
+    """The response with only the properties this parser reads, references dropped.
+
+    A live wbgetentities payload carries every statement of every entity - the
+    six-entity fixture is 4 MB and the 191-entity pack dumped 35 MB - so a
+    scope of thousands of entities would write gigabytes that no re-read needs.
+    The slim copy keeps the same statements with their ranks and qualifiers for
+    the properties the parser actually uses, so ``--offline`` still rebuilds
+    byte-identically from a file that stays small enough to keep.
+    """
+    entities = {}
+    for identifier, entity in (response.get("entities") or {}).items():
+        if not isinstance(entity, dict):
+            continue
+        claims = {}
+        for prop in SCOPE_PROPERTIES:
+            statements = (entity.get("claims") or {}).get(prop)
+            if not isinstance(statements, list):
+                continue
+            claims[prop] = [
+                {key: statement[key] for key in ("mainsnak", "qualifiers", "rank")
+                 if key in statement}
+                for statement in statements if isinstance(statement, dict)
+            ]
+        entities[identifier] = {
+            "id": entity.get("id", identifier),
+            "labels": entity.get("labels") or {},
+            "claims": claims,
+        }
+    return {"entities": entities, "success": response.get("success", 1)}
 
 
 def entity_qid(value) -> str:
@@ -485,14 +573,28 @@ def row(identifier: str, text: str, *, title: str, tags: list, source: str,
     }
 
 
-def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
+def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
     """Parse a wbgetentities response into (rows, skipped).
 
     skipped names each entity/fact that produced nothing, so a run reports what
-    it could not pin down instead of quietly shipping a thinner pack.
+    it could not pin down instead of quietly shipping a thinner pack. ``scope``
+    is the entity lists this build covers; omitted, the curated lists are used.
     """
+    scope = scope or curated_scope()
     entities = response.get("entities") or {}
     rows, skipped = [], []
+
+    # One pass per entity: a city that is also a sovereign state (Singapore) is
+    # in both lists, and two identical content objects are one chunk, which the
+    # builder refuses rather than merging silently.
+    scope_ids = list(dict.fromkeys(list(scope["heights"]) + list(scope["populations"])
+                                   + list(scope["countries"])))
+    # A label carried by more than one entity cannot stand alone in a sentence
+    # ("Huanggang and Yulin" names several pairs); where it happens the country
+    # is appended so the two rows are about distinguishable places.
+    ambiguous = {name for name, count in
+                 Counter(labels.get(identifier, "") for identifier in scope_ids).items()
+                 if name and count > 1}
 
     def known(identifier: str):
         entity = entities.get(identifier)
@@ -510,6 +612,16 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
             tags.append("malaysia")
         return tags
 
+    def place_name(identifier: str, entity: dict) -> str:
+        name = labels.get(identifier, "")
+        if not name or name not in ambiguous:
+            return name
+        for statement in ranked(statements(entity, P_COUNTRY)):
+            target = entity_qid(snak_value(statement))
+            if target and labels.get(target):
+                return f"{name}, {display_label(target, labels)}"
+        return name
+
     def add_location(identifier: str, fact: str):
         entity = known(identifier)
         if entity is None:
@@ -522,7 +634,7 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
                 tags=tags_for(entity, fact), source=ENTITY_URL + identifier)))
 
     if "heights" in facts:
-        for identifier in HEIGHT_ENTITIES:
+        for identifier in dict.fromkeys(scope["heights"]):
             entity = known(identifier)
             if entity is None:
                 skipped.append(f"{identifier}: missing from the response")
@@ -531,17 +643,21 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
             if fact is None:
                 skipped.append(f"{identifier}: no usable P2048 height")
                 continue
+            name = display_label(identifier, labels)
+            if not name:
+                skipped.append(f"{identifier}: no English label in the response")
+                continue
             metres = f"about {fact['metres']}" if fact["converted"] else fact["metres"]
-            text = f"{labels[identifier]} is {metres} metres"
+            text = f"{name} is {metres} metres"
             if fact["feet"]:
                 text += f" ({fact['feet']} feet)"
             rows.append(licence_gate(row(
                 f"wd-{identifier.lower()}-height", text + " tall.",
-                title=f"{labels[identifier]}: height",
+                title=f"{name}: height",
                 tags=tags_for(entity, "height"), source=ENTITY_URL + identifier)))
 
     if "populations" in facts:
-        for identifier in POPULATION_ENTITIES + COUNTRY_ENTITIES:
+        for identifier in dict.fromkeys(list(scope["populations"]) + list(scope["countries"])):
             entity = known(identifier)
             if entity is None:
                 skipped.append(f"{identifier}: missing from the response")
@@ -550,22 +666,26 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
             if fact is None:
                 skipped.append(f"{identifier}: no dated P1082 population")
                 continue
+            name = display_label(identifier, labels)
+            if not name:
+                skipped.append(f"{identifier}: no English label in the response")
+                continue
             if fact["census"]:
-                text = (f"The population of {display_label(identifier, labels)} was {fact['number']} "
+                text = (f"The population of {name} was {fact['number']} "
                         f"at the {fact['date'][:4]} census.")
             else:
-                text = (f"The population of {display_label(identifier, labels)} was {fact['number']} "
+                text = (f"The population of {name} was {fact['number']} "
                         f"as of {fact['display']}.")
             rows.append(licence_gate(row(
                 f"wd-{identifier.lower()}-population", text,
-                title=f"{labels[identifier]}: population (as of {fact['display']})",
+                title=f"{name}: population (as of {fact['display']})",
                 tags=tags_for(entity, "population"),
                 source=ENTITY_URL + identifier, date=fact["date"])))
 
     if "geography" in facts:
-        for identifier in list(HEIGHT_ENTITIES) + list(POPULATION_ENTITIES):
+        for identifier in dict.fromkeys(list(scope["heights"]) + list(scope["populations"])):
             add_location(identifier, "geography")
-        for identifier in COUNTRY_ENTITIES:
+        for identifier in dict.fromkeys(scope["countries"]):
             entity = known(identifier)
             if entity is None:
                 continue
@@ -579,6 +699,8 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
 
     if "distances" in facts:
         for first, second in pairs:
+            if first == second:
+                continue
             one, two = known(first), known(second)
             if one is None or two is None:
                 skipped.append(f"{first}-{second}: an endpoint is missing from the response")
@@ -587,6 +709,10 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
             if first_coordinate is None or second_coordinate is None:
                 skipped.append(f"{first}-{second}: an endpoint has no Earth coordinates")
                 continue
+            first_name, second_name = place_name(first, one), place_name(second, two)
+            if not first_name or not second_name:
+                skipped.append(f"{first}-{second}: an endpoint has no English label")
+                continue
             kilometres = round(haversine_km(first_coordinate, second_coordinate))
             tags = ["world-facts", "distance"]
             if malaysian(one) or malaysian(two):
@@ -594,15 +720,26 @@ def fact_rows(response: dict, labels: dict, facts, pairs) -> tuple:
             rows.append(licence_gate(row(
                 f"wd-distance-{first.lower()}-{second.lower()}",
                 text=(
-                    f"{labels[first]} and {labels[second]} are about "
+                    f"{first_name} and {second_name} are about "
                     f"{kilometres:,} kilometres "
                     f"({round(kilometres / float(KM_PER_MILE)):,} miles) apart "
                     "in a straight line."),
-                title=f"{labels[first]}-{labels[second]}: straight-line distance",
+                title=f"{first_name}-{second_name}: straight-line distance",
                 tags=tags, source=ENTITY_URL + first)))
 
-    rows.sort(key=lambda item: item["id"])
-    return rows, skipped
+    # Wikidata carries duplicate items (two "Minna" objects with the same
+    # population): the same sentence about the same place is one fact, so the
+    # later copy is reported as a skip instead of shipping twice.
+    unique, by_text = [], {}
+    for item in rows:
+        earlier = by_text.get(item["text"])
+        if earlier is not None:
+            skipped.append(f"{item['id']}: same text as {earlier}")
+            continue
+        by_text[item["text"]] = item["id"]
+        unique.append(item)
+    unique.sort(key=lambda item: item["id"])
+    return unique, skipped
 
 
 def collect_response(response: dict) -> dict:
@@ -695,11 +832,32 @@ def parse_pairs(value: str) -> list:
     return pairs
 
 
+def dedupe_pairs(pairs) -> list:
+    """One entry per unordered pair: a repeated pair is a repeated chunk.
+
+    Chunks are content-addressed, so two identical rows are one chunk and the
+    builder refuses the pack rather than silently merging them. An anchor list
+    that overlaps a pairwise list (Kuala Lumpur is inside both) produces
+    exactly that, and neither file has to carry the duplicate.
+    """
+    seen, unique = set(), []
+    for first, second in pairs:
+        key = tuple(sorted((first, second)))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append((first, second))
+    return unique
+
+
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--out", type=Path, required=True, help="pack-source JSONL to write")
     parser.add_argument("--entities", default="",
                         help="comma-separated QIDs to fetch (default: the curated list)")
+    parser.add_argument("--scope", type=Path, default=None,
+                        help="scope file with heights/populations/countries/pairs "
+                             "(default: the curated lists)")
     parser.add_argument("--pairs", default="",
                         help="comma-separated QID-QID pairs for straight-line distances "
                              "(default: the curated list)")
@@ -709,6 +867,9 @@ def main():
                         help="parse a saved wbgetentities response instead of fetching")
     parser.add_argument("--dump-raw", type=Path, default=None,
                         help="write the fetched response here for reproducible rebuilds")
+    parser.add_argument("--dump-raw-slim", type=Path, default=None,
+                        help="write the response reduced to the properties this parser "
+                             "reads (keeps a scaled scope re-readable off-line)")
     parser.add_argument("--dump-labels", type=Path, default=None,
                         help="write the fetched administrative-parent labels here; "
                              "pass the file back with --labels for an offline rebuild")
@@ -727,11 +888,14 @@ def main():
     if not facts:
         raise FactError("--facts selected nothing")
 
-    pair_list = parse_pairs(args.pairs) if args.pairs else list(DISTANCE_PAIRS)
+    scope = load_scope(args.scope) if args.scope else curated_scope()
+    pair_list = parse_pairs(args.pairs) if args.pairs else [tuple(pair) for pair in scope["pairs"]]
+    pair_list = dedupe_pairs(pair_list)
     if args.entities:
         wanted = list(dict.fromkeys(parse_comma_list(args.entities)))
     else:
-        wanted = list(dict.fromkeys(HEIGHT_ENTITIES + POPULATION_ENTITIES + COUNTRY_ENTITIES))
+        wanted = list(dict.fromkeys(scope["heights"] + scope["populations"]
+                                    + scope["countries"]))
     if "distances" in facts:
         for first, second in pair_list:
             for identifier in (first, second):
@@ -751,6 +915,10 @@ def main():
             args.dump_raw.parent.mkdir(parents=True, exist_ok=True)
             args.dump_raw.write_text(
                 json.dumps(response, ensure_ascii=False, sort_keys=True), "utf-8")
+        if args.dump_raw_slim is not None:
+            args.dump_raw_slim.parent.mkdir(parents=True, exist_ok=True)
+            args.dump_raw_slim.write_text(
+                json.dumps(slim_response(response), ensure_ascii=False, sort_keys=True), "utf-8")
 
     entities = response.get("entities") or {}
     missing = [identifier for identifier in wanted
@@ -780,7 +948,7 @@ def main():
                 json.dumps(parent_labels, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
                 "utf-8")
 
-    rows, skipped = fact_rows(response, labels, facts, pair_list)
+    rows, skipped = fact_rows(response, labels, facts, pair_list, scope)
     if not rows:
         raise FactError("no facts parsed; check --facts and the response")
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -793,6 +961,7 @@ def main():
         fact = next((FACT_TAG[tag] for tag in item["tags"] if tag in FACT_TAG), "?")
         by_fact[fact] = by_fact.get(fact, 0) + 1
     print(json.dumps({"out": str(args.out), "entities": len(wanted), "facts": len(rows),
+                      "scope": {section: len(scope[section]) for section in SCOPE_SECTIONS},
                       "by_fact": by_fact, "skipped": skipped, "licence": LICENCE,
                       "source": "wikidata:cc0"}, sort_keys=True))
 
