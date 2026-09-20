@@ -32,17 +32,24 @@ identity. Embedding provenance lives in the manifest.
 from __future__ import annotations
 
 import base64
+import contextlib
+import gzip
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
+import shutil
 import struct
+import tarfile
+import tempfile
 
 
 SCHEMA_CHUNK = "sage.knowledge-pack.chunk.v2"
 SCHEMA_MANIFEST = "sage.knowledge-pack.manifest.v2"
 SCHEMA_DELTA = "sage.knowledge-pack.delta.v2"
 SCHEMA_SIGNATURE = "sage.knowledge-pack.signature.v1"
+SCHEMA_TRUST_ROOT = "sage.knowledge-pack.trust-root.v1"
 
 CHUNK_CONTENT_FIELDS = ("id", "title", "text", "tags", "source", "date")
 CHUNK_RECORD_FIELDS = set(CHUNK_CONTENT_FIELDS) | {"schema", "sha256", "embedding"}
@@ -54,7 +61,11 @@ MANIFEST_CHUNK_FIELDS = {"id", "sha256", "bytes", "title", "tags"}
 TOTALS_FIELDS = {"chunks", "text_bytes", "chunk_bytes", "embedded_chunks"}
 DELTA_FIELDS = {"schema", "pack_id", "from_version", "to_version", "from_manifest_sha256",
                 "to_manifest_sha256", "added", "removed", "unchanged", "added_bytes"}
-SIGNATURE_FIELDS = {"schema", "algorithm", "public_key_hex", "manifest_sha256", "signature_base64"}
+SIGNATURE_FIELDS = {"schema", "algorithm", "key_id", "public_key_hex", "manifest_sha256",
+                    "signature_base64"}
+TRUST_ROOT_FIELDS = {"schema", "note", "keys"}
+TRUST_KEY_FIELDS = {"key_id", "algorithm", "public_key_hex", "status", "created_at", "note"}
+KEY_STATUSES = ("active", "retired", "revoked")
 VECTOR_FIELDS = {"model", "dimension", "vector_f32_le"}
 
 PACK_ID = re.compile(r"[a-z0-9][a-z0-9.-]{0,63}\Z")
@@ -390,20 +401,38 @@ def public_key_hex(private_key) -> str:
         format=serialization.PublicFormat.Raw).hex()
 
 
-def sign_manifest(raw: bytes, private_key) -> dict:
-    from cryptography.hazmat.primitives import serialization
+def key_id_for(public_hex: str) -> str:
+    """Self-certifying key id: ``pk-`` plus the first 16 hex of the key's own digest.
 
+    A key id that is derived from the key cannot be mismatched with it by
+    accident, which is the whole point: the trust root names keys by id, and the
+    id names the key back.
+    """
+    require(HEX_KEY.match(public_hex or ""), "public key must be 32-byte lowercase hex")
+    return "pk-" + sha256_hex(bytes.fromhex(public_hex))[:16]
+
+
+def sign_manifest(raw: bytes, private_key) -> dict:
     signature = private_key.sign(raw)
+    public_hex = public_key_hex(private_key)
     return {
         "schema": SCHEMA_SIGNATURE,
         "algorithm": "ed25519",
-        "public_key_hex": public_key_hex(private_key),
+        "key_id": key_id_for(public_hex),
+        "public_key_hex": public_hex,
         "manifest_sha256": sha256_hex(raw),
         "signature_base64": base64.b64encode(signature).decode("ascii"),
     }
 
 
-def verify_manifest_signature(raw: bytes, document, trusted_public_hex: str | None = None) -> str:
+def verify_manifest_signature(raw: bytes, document, *, trust_root: dict | None = None,
+                              trusted_public_hex: str | None = None) -> dict:
+    """Verify a detached signature and place its signer in the trust model.
+
+    Cryptographic validity is not authorization: a signature by a revoked key
+    verifies and is still refused. Old packs signed by a retired key stay valid,
+    which is what makes rotation possible without re-signing the archive.
+    """
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -412,6 +441,8 @@ def verify_manifest_signature(raw: bytes, document, trusted_public_hex: str | No
     require(document["schema"] == SCHEMA_SIGNATURE, f"signature schema must be {SCHEMA_SIGNATURE}")
     require(document["algorithm"] == "ed25519", "signature algorithm must be ed25519")
     require(HEX_KEY.match(document["public_key_hex"] or ""), "signature public key must be 32-byte hex")
+    require(document["key_id"] == key_id_for(document["public_key_hex"]),
+            "signature key id does not match the key it carries")
     require(document["manifest_sha256"] == sha256_hex(raw),
             "signature covers a different manifest than the one present")
     try:
@@ -422,11 +453,73 @@ def verify_manifest_signature(raw: bytes, document, trusted_public_hex: str | No
         key.verify(base64.b64decode(document["signature_base64"], validate=True), raw)
     except (InvalidSignature, ValueError, TypeError) as error:
         raise PackFormatError("manifest signature does not verify") from error
+
+    status = None
+    if trust_root is not None:
+        entry = trust_root_entry(trust_root, document["key_id"])
+        require(entry["public_key_hex"] == document["public_key_hex"],
+                f"trust root entry {entry['key_id']} carries a different public key")
+        require(entry["status"] != "revoked",
+                f"manifest is signed by {entry['key_id']}, which the trust root marks revoked")
+        status = entry["status"]
     if trusted_public_hex is not None:
         require(HEX_KEY.match(trusted_public_hex or ""), "trusted public key must be 32-byte hex")
         require(document["public_key_hex"] == trusted_public_hex,
                 f"manifest is signed by {document['public_key_hex']}, not the trusted key")
-    return document["public_key_hex"]
+    return {"key_id": document["key_id"], "public_key_hex": document["public_key_hex"],
+            "key_status": status}
+
+
+# --- trust root -------------------------------------------------------------
+
+def validate_trust_root(document) -> None:
+    require(isinstance(document, dict) and set(document) == TRUST_ROOT_FIELDS,
+            f"trust root fields must be {sorted(TRUST_ROOT_FIELDS)}")
+    require(document["schema"] == SCHEMA_TRUST_ROOT, f"trust root schema must be {SCHEMA_TRUST_ROOT}")
+    require(isinstance(document["note"], str), "trust root note must be a string")
+    keys = document["keys"]
+    require(isinstance(keys, list), "trust root keys must be a list")
+    seen_ids, seen_keys = set(), set()
+    for entry in keys:
+        require(isinstance(entry, dict) and set(entry) == TRUST_KEY_FIELDS,
+                f"trust root key fields must be {sorted(TRUST_KEY_FIELDS)}")
+        require(entry["algorithm"] == "ed25519", "trust root keys must be ed25519")
+        require(HEX_KEY.match(entry["public_key_hex"] or ""),
+                "trust root public keys must be 32-byte lowercase hex")
+        require(entry["key_id"] == key_id_for(entry["public_key_hex"]),
+                f"trust root key id {entry['key_id']} is not derived from its public key")
+        require(entry["status"] in KEY_STATUSES,
+                f"trust root key status must be one of {list(KEY_STATUSES)}")
+        require(re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z", entry["created_at"] or ""),
+                "trust root keys need an RFC3339 UTC created_at")
+        require(isinstance(entry["note"], str), "trust root key note must be a string")
+        require(entry["key_id"] not in seen_ids and entry["public_key_hex"] not in seen_keys,
+                f"trust root repeats key {entry['key_id']}")
+        seen_ids.add(entry["key_id"])
+        seen_keys.add(entry["public_key_hex"])
+
+
+def load_trust_root(path) -> dict:
+    """Load the reviewed key list. A malformed root refuses; it never degrades to empty."""
+    try:
+        document = json.loads(Path(path).read_text("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise PackFormatError(f"trust root {path} is unreadable: {error}") from error
+    validate_trust_root(document)
+    return document
+
+
+def trust_root_entry(root: dict, identifier: str) -> dict:
+    for entry in root["keys"]:
+        if entry["key_id"] == identifier:
+            return entry
+    known = ", ".join(entry["key_id"] for entry in root["keys"]) or "none"
+    raise PackFormatError(
+        f"manifest is signed by {identifier}, which is not in the trust root (known keys: {known})")
+
+
+def active_key_ids(root: dict) -> list[str]:
+    return [entry["key_id"] for entry in root["keys"] if entry["status"] == "active"]
 
 
 # --- pack directories -------------------------------------------------------
@@ -434,12 +527,26 @@ def verify_manifest_signature(raw: bytes, document, trusted_public_hex: str | No
 class Pack:
     """A loaded, verified pack directory."""
 
-    def __init__(self, directory: Path, manifest: dict, raw: bytes, chunks: dict, signer: str | None):
+    def __init__(self, directory: Path, manifest: dict, raw: bytes, chunks: dict,
+                 signature: dict | None, trust: dict | None):
         self.directory = Path(directory)
         self.manifest = manifest
         self.raw = raw
         self.chunks = chunks
-        self.signer = signer
+        self.signature = signature
+        self.trust = trust
+
+    @property
+    def signer(self) -> str | None:
+        return self.trust["public_key_hex"] if self.trust else None
+
+    @property
+    def key_id(self) -> str | None:
+        return self.trust["key_id"] if self.trust else None
+
+    @property
+    def key_status(self) -> str | None:
+        return self.trust["key_status"] if self.trust else None
 
     @property
     def pack_id(self) -> str:
@@ -471,11 +578,13 @@ class Pack:
                 "text_bytes": self.manifest["totals"]["text_bytes"],
                 "chunk_bytes": self.manifest["totals"]["chunk_bytes"],
                 "embedded_chunks": self.manifest["totals"]["embedded_chunks"],
-                "manifest_sha256": sha256_hex(self.raw), "signer": self.signer,
+                "manifest_sha256": sha256_hex(self.raw), "signed": self.signature is not None,
+                "key_id": self.key_id, "key_status": self.key_status, "signer": self.signer,
                 "licence": self.manifest["pack"]["licence"]}
 
 
-def load_pack(directory, trusted_public_hex: str | None = None, allow_unsigned: bool = False) -> Pack:
+def load_pack(directory, *, trust_root: dict | None = None, trusted_public_hex: str | None = None,
+              allow_unsigned: bool = False) -> Pack:
     """Verify a pack directory and return it. Every check is fail-closed."""
     directory = Path(directory)
     manifest_path = directory / "manifest.json"
@@ -491,7 +600,7 @@ def load_pack(directory, trusted_public_hex: str | None = None, allow_unsigned: 
             "manifest.json is not in canonical form; re-run the builder instead of editing it")
 
     signature_path = directory / "manifest.sig.json"
-    signer = None
+    signature = trust = None
     if signature_path.is_file():
         payload = signature_path.read_bytes()
         try:
@@ -500,7 +609,9 @@ def load_pack(directory, trusted_public_hex: str | None = None, allow_unsigned: 
             raise PackFormatError(f"manifest.sig.json is not valid UTF-8 JSON: {error}") from error
         require(canonical_json(document) + b"\n" == payload,
                 "manifest.sig.json is not in canonical form")
-        signer = verify_manifest_signature(raw, document, trusted_public_hex)
+        trust = verify_manifest_signature(raw, document, trust_root=trust_root,
+                                          trusted_public_hex=trusted_public_hex)
+        signature = document
     else:
         require(allow_unsigned, f"{signature_path} is missing and unsigned packs are not accepted here")
         require(trusted_public_hex is None, "a trusted public key was supplied but the pack is unsigned")
@@ -535,13 +646,103 @@ def load_pack(directory, trusted_public_hex: str | None = None, allow_unsigned: 
         raise PackFormatError(
             f"chunk store holds {len(stray)} file(s) the manifest does not list "
             f"(first: {stray[0]}); build into a fresh directory rather than reusing one")
-    return Pack(directory, manifest, raw, chunks, signer)
+    return Pack(directory, manifest, raw, chunks, signature, trust)
 
 
 def load_delta(path) -> dict:
     document = json.loads(Path(path).read_text("utf-8"))
     validate_delta(document)
     return document
+
+
+ARCHIVE_SUFFIX = ".tar.gz"
+# Prototype guards on a delivery archive. The 1-10 GB class is not supported yet;
+# these exist so a hostile or corrupt archive cannot fill the disk anyway.
+MAX_ARCHIVE_MEMBERS = 400000
+MAX_ARCHIVE_BYTES = 16 * 1024 ** 3
+
+
+def write_archive(directory, destination) -> dict:
+    """Deterministic ``.tar.gz`` of a pack directory - the unit a release ships.
+
+    Fixed mtimes, ids, owners, modes and member order, so the same pack produces
+    the same archive bytes and the archive digest is a stable release identifier
+    rather than a build timestamp.
+    """
+    directory, destination = Path(directory), Path(destination)
+    require(destination.is_absolute() or destination.parent != Path(""),
+            "an archive needs a destination path")
+    require(not destination.resolve().is_relative_to(directory.resolve()),
+            "the archive must live outside the pack directory, which holds only verified pack bytes")
+    buffer, members = io.BytesIO(), 0
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+        for path in sorted(directory.rglob("*")):
+            relative = path.relative_to(directory).as_posix()
+            info = tarfile.TarInfo(relative)
+            info.mtime, info.uid, info.gid, info.uname, info.gname = 0, 0, 0, "", ""
+            if path.is_dir():
+                info.type, info.mode, info.size = tarfile.DIRTYPE, 0o755, 0
+                archive.addfile(info)
+            else:
+                payload = path.read_bytes()
+                info.type, info.mode, info.size = tarfile.REGTYPE, 0o644, len(payload)
+                archive.addfile(info, io.BytesIO(payload))
+            members += 1
+    raw = gzip.compress(buffer.getvalue(), compresslevel=9, mtime=0)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(raw)
+    return {"archive": str(destination), "bytes": len(raw), "sha256": sha256_hex(raw),
+            "members": members}
+
+
+def _extract_pack_archive(source: Path, destination: Path) -> None:
+    """Extract a delivery archive without ever trusting a member name or type."""
+    with tarfile.open(source, "r:gz") as archive:
+        members = archive.getmembers()
+        require(len(members) <= MAX_ARCHIVE_MEMBERS,
+                f"archive holds {len(members)} members, over the {MAX_ARCHIVE_MEMBERS} prototype limit")
+        total = 0
+        for member in members:
+            parts = Path(member.name).parts
+            require(parts and not Path(member.name).is_absolute() and ".." not in parts,
+                    f"archive member {member.name} escapes the pack root")
+            require(member.isdir() or member.isreg(),
+                    f"archive member {member.name} is neither a file nor a directory")
+            total += member.size
+            require(total <= MAX_ARCHIVE_BYTES,
+                    f"archive expands past the {MAX_ARCHIVE_BYTES}-byte prototype limit")
+        for member in members:
+            target = destination / member.name
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            payload = archive.extractfile(member)
+            require(payload is not None, f"archive member {member.name} has no content")
+            with payload, open(target, "wb") as handle:
+                shutil.copyfileobj(payload, handle, 1024 * 1024)
+
+
+@contextlib.contextmanager
+def pack_directory(source):
+    """Yield a pack directory for a directory or a ``.tar.gz`` delivery archive."""
+    source = Path(source)
+    if source.is_dir():
+        yield source
+        return
+    require(source.is_file(), f"{source} is neither a pack directory nor a {ARCHIVE_SUFFIX} archive")
+    temporary = tempfile.mkdtemp(prefix="sage-pack-")
+    try:
+        _extract_pack_archive(source, Path(temporary))
+        root = Path(temporary)
+        if not (root / "manifest.json").is_file():
+            entries = sorted(root.iterdir())
+            require(len(entries) == 1 and entries[0].is_dir(),
+                    "the archive must hold the pack at its root or inside exactly one directory")
+            root = entries[0]
+        yield root
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
 
 
 def write_pack(directory, manifest: dict, chunks, signature: dict | None = None,

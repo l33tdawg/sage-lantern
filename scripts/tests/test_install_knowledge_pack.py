@@ -280,3 +280,93 @@ def test_ambiguous_home_domain_is_refused_rather_than_guessed(tmp_path):
         installer.retire(client, pack.tag, domain=None, reason='test')
     summary = installer.install(client, pack, domain='public-knowledge')
     assert summary['installed'] == 2 and summary['domain'] == 'public-knowledge'
+
+
+def sign_pack(directory):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    key = ed25519.Ed25519PrivateKey.generate()
+    signature = pack_format.sign_manifest((directory / 'manifest.json').read_bytes(), key)
+    (directory / 'manifest.sig.json').write_bytes(pack_format.canonical_json(signature) + b'\n')
+    return key
+
+
+def write_root(path, keys):
+    path.write_text(json.dumps({'schema': pack_format.SCHEMA_TRUST_ROOT, 'note': 'test root',
+                                'keys': keys}))
+    return path
+
+
+def entry(public_hex, status='active'):
+    return {'key_id': pack_format.key_id_for(public_hex), 'algorithm': 'ed25519',
+            'public_key_hex': public_hex, 'status': status,
+            'created_at': '2026-09-20T00:00:00Z', 'note': ''}
+
+
+def test_verify_contacting_the_node_is_a_failure(tmp_path, monkeypatch, capsys):
+    pack = make_pack(tmp_path)
+    monkeypatch.setattr(installer, 'build_client',
+                        lambda args: pytest.fail('--verify must not build a client'))
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(pack.directory), '--verify',
+                                      '--allow-unsigned'])
+    assert installer.main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['verified'] is True and summary['signed'] is False
+    assert summary['unsigned_accepted'] is True
+
+
+def test_verify_refuses_an_unsigned_pack_by_default(tmp_path, monkeypatch):
+    pack = make_pack(tmp_path)
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(pack.directory), '--verify'])
+    with pytest.raises(pack_format.PackFormatError) as error:
+        installer.main()
+    assert 'unsigned packs are not accepted' in str(error.value)
+
+
+def test_verify_accepts_a_foundation_signed_pack_and_names_the_signer(tmp_path, monkeypatch, capsys):
+    pack = make_pack(tmp_path)
+    key = sign_pack(pack.directory)
+    root = write_root(tmp_path / 'pack-trust-root.json',
+                      [entry(pack_format.public_key_hex(key))])
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(pack.directory), '--verify',
+                                      '--trust-root', str(root)])
+    assert installer.main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['signed'] is True and summary['key_status'] == 'active'
+    assert summary['key_id'] == pack_format.key_id_for(pack_format.public_key_hex(key))
+    assert summary['active_keys'] == [summary['key_id']]
+
+
+def test_verify_refuses_a_revoked_foundation_key(tmp_path, monkeypatch):
+    pack = make_pack(tmp_path)
+    key = sign_pack(pack.directory)
+    root = write_root(tmp_path / 'pack-trust-root.json',
+                      [entry(pack_format.public_key_hex(key), status='revoked')])
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(pack.directory), '--verify',
+                                      '--trust-root', str(root)])
+    with pytest.raises(pack_format.PackFormatError) as error:
+        installer.main()
+    assert 'revoked' in str(error.value)
+
+
+def test_install_from_a_delivery_archive_through_the_client(tmp_path, monkeypatch):
+    pack = make_pack(tmp_path)
+    archive = pack_format.write_archive(pack.directory, tmp_path / 'malaysia-v1.tar.gz')
+    client = FakeClient()
+    monkeypatch.setattr(installer, 'build_client', lambda args: client)
+    ledger = tmp_path / 'ledger.json'
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(archive['archive']),
+                                      '--allow-unsigned', '--ledger', str(ledger)])
+    assert installer.main() == 0
+    assert len(client.proposals) == 2
+    assert set(json.loads(ledger.read_text())['chunks']) == set(pack.chunks)
+
+
+def test_verify_rejects_ledger_and_registration_flags(tmp_path, monkeypatch):
+    pack = make_pack(tmp_path)
+    for extra in (['--ledger', str(tmp_path / 'x.json')], ['--register-domain']):
+        monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(pack.directory),
+                                          '--verify', '--allow-unsigned', *extra])
+        with pytest.raises(installer.PackInstallError) as error:
+            installer.main()
+        assert 'writes nothing' in str(error.value)

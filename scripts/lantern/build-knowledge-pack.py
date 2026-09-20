@@ -172,6 +172,9 @@ def main():
     parser.add_argument('--embed-dimension', type=int, default=768)
     parser.add_argument('--embed-timeout', type=float, default=60.0)
     parser.add_argument('--signing-key', type=Path, default=None)
+    parser.add_argument('--archive', nargs='?', const='', default=None, metavar='PATH',
+                        help='also write a deterministic .tar.gz for delivery; default '
+                             '<pack-id>-v<version>.tar.gz beside the pack directory')
     args = parser.parse_args()
 
     defaults = {'tags': args.default_tag, 'source': args.default_source or args.source_label,
@@ -243,6 +246,10 @@ def main():
                     'delta': None if delta is None else {'added': len(delta['added']),
                                                          'removed': len(delta['removed']),
                                                          'unchanged': delta['unchanged']}})
+    if args.archive is not None:
+        target = Path(args.archive) if args.archive else \
+            args.out.parent / f"{args.pack_id}-v{args.version}{knowledge_pack.ARCHIVE_SUFFIX}"
+        summary['archive'] = knowledge_pack.write_archive(args.out, target)
     print(json.dumps(summary, sort_keys=True))
 
 

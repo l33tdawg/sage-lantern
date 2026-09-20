@@ -10,6 +10,16 @@ Every run verifies the pack first: manifest canonical form, signature (unless
 --allow-unsigned), each chunk's content address, and that the chunk store holds
 exactly what the manifest lists. A carrier is never trusted (SYS-008).
 
+The pack may be a directory or the ``.tar.gz`` a release ships, which is how a
+pack travels from GitHub to a unit that has no route to the internet: fetch the
+asset, move it to the unit however it moves, then ``--verify`` before ``--install``.
+
+Signature trust comes from ``pack-trust-root.json`` next to this script - the
+Foundation's pack keys, edited by hand under review. A pack signed by a key that
+is not in the root is refused; so is a revoked key, even though its signature
+verifies cryptographically. ``--verify`` runs that whole check with no node
+contact at all.
+
 Idempotency is by content address, not by similarity: each memory carries
 ``chunk:<sha256>`` and ``pack:<id>-v<version>`` tags, and the installer asks the
 node for memories tagged with the chunk address before proposing anything. That
@@ -56,6 +66,7 @@ SPEC.loader.exec_module(knowledge_pack)
 DEFAULT_IDENTITY = Path('/var/lib/sage-lantern/identity/lantern-agent.key')
 DEFAULT_BASE_URL = 'http://127.0.0.1:8080'
 DEFAULT_LEDGER_DIR = Path('/var/lib/sage-lantern/knowledge-packs')
+DEFAULT_TRUST_ROOT = Path(__file__).with_name('pack-trust-root.json')
 APPLIANCE_SITE_PACKAGES = Path('/opt/sage-lantern/venv/lib/python3.11/site-packages')
 PAGE = 50
 
@@ -279,17 +290,23 @@ def main():
     parser.add_argument('--base-url', default=DEFAULT_BASE_URL)
     parser.add_argument('--domain', default='',
                         help='target domain; empty means the node\'s own home domain')
+    parser.add_argument('--trust-root', type=Path, default=DEFAULT_TRUST_ROOT,
+                        help='reviewed key list that authorizes pack signatures')
+    parser.add_argument('--no-trust-root', action='store_true',
+                        help='ignore the shipped trust root (verification by pinned key only)')
     parser.add_argument('--public-key-hex', default=None,
                         help='require the manifest to be signed by exactly this ed25519 key')
     parser.add_argument('--trusted-key', type=Path, default=None,
                         help='file holding the trusted ed25519 public key as lowercase hex')
     parser.add_argument('--allow-unsigned', action='store_true',
-                        help='accept a pack with no signature (interim: no pack signing key exists)')
+                        help='accept a pack with no signature; the escape hatch, not the plan')
     parser.add_argument('--register-domain', action='store_true',
                         help='register the target domain first; fails loudly if policy refuses it')
     parser.add_argument('--ledger', type=Path, default=None)
     parser.add_argument('--no-ledger', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--verify', action='store_true',
+                        help='verify the pack and stop; no node, no identity, no writes')
     parser.add_argument('--check', action='store_true', help='report coverage and write nothing')
     parser.add_argument('--retire', action='store_true',
                         help='forget every memory carrying the pack tag in --domain')
@@ -298,11 +315,13 @@ def main():
     parser.add_argument('--reason', default='')
     args = parser.parse_args()
 
-    selected = [name for name in ('check', 'retire') if getattr(args, name)]
+    selected = [name for name in ('check', 'retire', 'verify') if getattr(args, name)]
     if bool(args.migrate_to) and selected:
-        raise PackInstallError('--migrate-to does not combine with --check or --retire')
+        raise PackInstallError('--migrate-to does not combine with --verify, --check or --retire')
     if selected and args.dry_run:
         raise PackInstallError('--dry-run applies to install and --migrate-to only')
+    if args.verify and (args.ledger or args.register_domain):
+        raise PackInstallError('--verify writes nothing; drop --ledger and --register-domain')
 
     trusted = args.public_key_hex
     if args.trusted_key is not None:
@@ -310,9 +329,27 @@ def main():
         if trusted is not None and trusted != candidate:
             raise PackInstallError('--trusted-key and --public-key-hex disagree')
         trusted = candidate
-    pack = knowledge_pack.load_pack(args.pack, trusted_public_hex=trusted,
-                                    allow_unsigned=args.allow_unsigned)
+    trust_root = None if args.no_trust_root or trusted is not None \
+        else knowledge_pack.load_trust_root(args.trust_root)
+    with knowledge_pack.pack_directory(args.pack) as directory:
+        pack = knowledge_pack.load_pack(directory, trust_root=trust_root,
+                                        trusted_public_hex=trusted,
+                                        allow_unsigned=args.allow_unsigned)
+        return dispatch(args, pack, trust_root)
+
+
+def dispatch(args, pack, trust_root) -> int:
     domain = args.domain or None
+    common = {'pack': pack.pack_id, 'version': pack.version, 'signed': pack.signature is not None,
+              'key_id': pack.key_id, 'key_status': pack.key_status,
+              'trust_root': None if trust_root is None else str(args.trust_root),
+              'active_keys': None if trust_root is None else knowledge_pack.active_key_ids(trust_root)}
+    if args.verify:
+        summary = dict(common, pack_dir=str(args.pack), verified=True,
+                       unsigned_accepted=pack.signature is None)
+        print(json.dumps(summary, sort_keys=True))
+        return 0
+
     client = build_client(args)
     if args.register_domain:
         client.register_domain(domain or '', description='Curated knowledge packs')
@@ -335,6 +372,8 @@ def main():
         if ledger is not None and not args.dry_run:
             write_ledger(ledger, summary)
             summary['ledger'] = str(ledger)
+    summary.update(common)
+    summary['unsigned_accepted'] = pack.signature is None
     print(json.dumps(summary, sort_keys=True))
     if summary.get('failures') or summary.get('install', {}).get('failures'):
         return 1

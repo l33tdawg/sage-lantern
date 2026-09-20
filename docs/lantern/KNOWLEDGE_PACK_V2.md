@@ -100,13 +100,45 @@ already holds the previous version fetches only `added`.
 ### Signatures
 
 `manifest.sig.json` is a detached ed25519 signature over the manifest file bytes,
-carrying `public_key_hex` and `manifest_sha256`. Verification can pin a trusted
-key (`--public-key-hex`, `--trusted-key`), and a manifest signed by a different
-key is refused rather than accepted on trust.
+carrying `key_id`, `public_key_hex` and `manifest_sha256`. `key_id` is derived
+from the key itself (`pk-` plus the first 16 hex of its digest), so the trust root
+and the signature cannot disagree about which key signed.
 
-**There is no pack signing key or authority yet.** Until one exists, `--allow-unsigned`
-is available for local packs, and it is a deliberate interim hole: who signs packs,
-and under which authority, is not decided here.
+**The Foundation signs packs as the authority of truth.** Custody follows the
+model we use for an Apple Developer ID: one organisation key, generated once,
+held by the Foundation, backed up out of band in more than one place, and never
+in this repository. One thing does not transfer: a field unit is offline and
+cannot call a notarisation service, so there is no online check to make. The
+trust anchor ships with the verifier instead, as
+`scripts/lantern/pack-trust-root.json` — a reviewed list of the Foundation's
+public keys. A pack is trusted because a key in that file signed it, not because
+an authority answered a request.
+
+Key status is a three-state decision, not a boolean:
+
+| Status | Signs new packs | Verifies existing packs |
+|---|---|---|
+| `active` | yes | yes |
+| `retired` | no (rotation is over) | yes - old archives stay valid without re-signing |
+| `revoked` | no | **no** - the signature verifies cryptographically and is still refused |
+
+Rotation and revocation are ordinary reviewed commits to the trust root, which
+is why nothing else has to change: a new key is added `active`, the old one moves
+to `retired`, and a compromised key moves to `revoked` without touching a single
+pack. `scripts/lantern/pack-signing-key.py` generates a key outside the
+repository, prints the trust-root entry to commit, and can read a *backup* to
+prove it still derives the key the root records:
+
+```
+pack-signing-key.py generate --out ~/sage-foundation/pack-signing-1.key --note "Foundation pack key 1"
+pack-signing-key.py entry    --key ~/sage-foundation/pack-signing-1.key   # paste into the trust root
+pack-signing-key.py check    --key ~/backups/pack-signing-1.key           # backup drill
+```
+
+The shipped trust root currently holds **no keys**, so today an unsigned pack is
+the only thing that can pass. `--allow-unsigned` remains the explicit escape
+hatch for local packs, and every run reports `unsigned_accepted` in its JSON so a
+provisioning log never quietly records an unverified pack as verified.
 
 ## Installing, checking, moving and removing
 
@@ -117,9 +149,56 @@ the node's own tag index. Every memory carries `pack:<id>-v<version>` and
 | Operation | Behaviour |
 |---|---|
 | install | Asks for the chunk tag first; only proposes what is missing. One local request per chunk; re-running converges |
+| `--verify` | Verifies the pack and stops: no node, no identity, no writes. This is the gate a delivered archive must pass first |
 | `--check` | Coverage report (`present`/`missing`) and nothing written; exit 1 when a chunk is missing |
 | `--retire` | Forgets every memory carrying the pack tag, and reports what the node actually did |
 | `--migrate-to <domain>` | Copies the pack into another domain, verifies completeness there, and only then retires the source copies |
+
+## Delivery: GitHub release to offline unit
+
+A pack travels as one deterministic archive, so the release asset has a stable
+identity: same pack in, same bytes out.
+
+```
+build-knowledge-pack.py source.jsonl --out pack-malaysia-v1 --pack-id malaysia \
+    --version 1 --licence CC-BY-4.0 --source-label curated:... \
+    --created-at 2026-09-20T00:00:00Z --signing-key ~/sage-foundation/pack-signing-1.key \
+    --archive
+# -> work/.../malaysia-v1.tar.gz   (sha256 160d81ba... for the current pack #1)
+```
+
+Attach the archive to a GitHub release, with the manifest digest and the archive
+digest in the release notes. On the receiving side — which may be a laptop, a
+USB stick, a LAN transfer or, later, a swarm chunk exchange — the sequence is
+
+```
+install-knowledge-pack.py malaysia-v1.tar.gz --verify      # refuses anything unverified
+install-knowledge-pack.py malaysia-v1.tar.gz               # then install
+```
+
+`--verify` resolves the signature against `pack-trust-root.json`, checks every
+chunk hash, refuses a stray or missing chunk file, refuses an archive member that
+escapes the pack root, and needs no node. Extraction is bounded (400,000 members,
+16 GiB expanded) so a corrupt or hostile archive cannot fill a unit's disk.
+GitHub is the distribution channel; the signature, not the channel, is what makes
+a pack true.
+
+## Where pack content comes from
+
+Still a curation question rather than a format one, and `OPEN-PUB-001` (accepted
+licences per channel) is not decided. The candidates, cheapest first:
+
+* **Owner-curated notes** — what pack #1 is today; no licence question because we
+  wrote it.
+* **Public domain and permissive sources** — Project Gutenberg, national archives,
+  government open-data portals, CC0 datasets. Attribution is still recorded in
+  `provenance`.
+* **Share-alike and attribution sources** — Wikipedia/Wikidata dumps (CC BY-SA)
+  and most open-access papers. Usable, but the licence travels with the pack:
+  `licence` and `provenance` are mandatory fields for exactly this reason, and
+  redistribution terms have to be checked per source, not per pack.
+* **Anything requiring a licence we do not hold** — out of scope until
+  `OPEN-PUB-001` says otherwise.
 
 Two semantics matter here and both are enforced in code:
 
@@ -164,21 +243,27 @@ chunks stay valid (they are content-addressed) until someone retires them.
 ## Evidence
 
 * Format, builder and installer: `scripts/lantern/knowledge_pack.py`,
-  `scripts/lantern/build-knowledge-pack.py`, `scripts/lantern/install-knowledge-pack.py`.
-* Conformance suite (43 tests): `scripts/tests/test_knowledge_pack.py`,
+  `scripts/lantern/build-knowledge-pack.py`, `scripts/lantern/install-knowledge-pack.py`,
+  `scripts/lantern/pack-signing-key.py`, `scripts/lantern/pack-trust-root.json`.
+* Conformance suite (70 tests): `scripts/tests/test_knowledge_pack.py`,
   `scripts/tests/test_build_knowledge_pack.py`,
-  `scripts/tests/test_install_knowledge_pack.py`. It covers tampered chunks, stray
-  and missing chunk files, an edited manifest, a manifest swapped under a valid
-  signature, a wrong trusted key, byte-identical rebuilds, delta arithmetic, tag
-  scoping between versions, parked challenges, an indeterminate commit and a
+  `scripts/tests/test_install_knowledge_pack.py`,
+  `scripts/tests/test_pack_signing_key.py`. It covers tampered chunks, stray and
+  missing chunk files, an edited manifest, a manifest swapped under a valid
+  signature, a wrong trusted key, a revoked key, an unknown signer, byte-identical
+  rebuilds, byte-identical archives, archive traversal and link members, a key
+  file inside the repository, a mismatched trust-root key id, delta arithmetic,
+  tag scoping between versions, parked challenges, an indeterminate commit, and a
   copy-incomplete migration that must not retire the source.
 * Pack #1 rebuilt in this format: `work/knowledge-pack-20260920/pack-malaysia-v1/`
-  (40 chunks, manifest `6ab58f40...`), verified byte-identical on rebuild.
+  (40 chunks, manifest `6ab58f40...`) plus the delivery archive
+  `malaysia-v1.tar.gz` (sha256 `160d81ba...`), both verified byte-identical on
+  rebuild. `--verify` on the archive passes with no node contact.
 
 ## Not settled here
 
 * `OPEN-DST-001` - canonical encoding freeze, compression, POUF.
-* Who signs packs, and whether a pack signature is device, curator or Foundation
-  authority.
 * `OPEN-PUB-001` - which licences may travel on the public channel.
 * The sharded chunk store and chunk-index tree the 1-10 GB class needs.
+* Whether a pack signature should ever be held by something other than the
+  Foundation (a curator key, a device key), and what that would let a device do.

@@ -45,10 +45,14 @@ the budgets change enough to revisit three decisions before provisioning.
    start, and archive a stale `/var/lib/sage-lantern-mesh-supervisor` if the
    runtime refuses with `storage_supervisor_unavailable`.*
 5. **Packs**: build with `scripts/lantern/build-knowledge-pack.py <source.jsonl|.md>`
-   and install with `scripts/lantern/install-knowledge-pack.py <pack-dir>` (then
-   `--check` for coverage); verify that the probe questions rank the exact fact
-   #1. `ingest-knowledge-pack.py` is the pre-v2 flat-JSONL path and stays only for
-   the copies already on the test units.
+   (`--archive` for the GitHub release asset) and install with
+   `scripts/lantern/install-knowledge-pack.py <pack-dir|.tar.gz>` after
+   `--verify`; then `--check` for coverage, and verify that the probe questions
+   rank the exact fact #1. Verification resolves against
+   `scripts/lantern/pack-trust-root.json`, so the Foundation pack key has to be in
+   that file on the unit before a signed pack is accepted.
+   `ingest-knowledge-pack.py` is the pre-v2 flat-JSONL path and stays only for the
+   copies already on the test units.
 6. **Audio commission** after every runtime byte change (the gate hashes all
    `sage_lantern/*.py` plus `lantern.toml` and the voice-loop script), then
    cold start and **first release pin** (`release.py` two-pass, verify all six

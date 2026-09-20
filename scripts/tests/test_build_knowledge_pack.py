@@ -174,3 +174,23 @@ def test_embed_service_dimension_mismatch_refused(tmp_path, monkeypatch):
     with pytest.raises(pack_format.PackFormatError) as error:
         builder.main()
     assert 'dimensions' in str(error.value)
+
+
+def test_archive_flag_writes_a_delivery_archive_beside_the_pack(tmp_path, monkeypatch, capsys):
+    directory = tmp_path / 'packed'
+    build(monkeypatch, JSONL, directory, '--archive')
+    summary = json.loads(capsys.readouterr().out)
+    archive = tmp_path / 'malaysia-v1.tar.gz'
+    assert Path(summary['archive']['archive']) == archive
+    assert archive.is_file() and summary['archive']['members'] == 4
+    with pack_format.pack_directory(archive) as extracted:
+        assert pack_format.load_pack(extracted, allow_unsigned=True).pack_id == 'malaysia'
+
+
+def test_archive_flag_takes_an_explicit_path(tmp_path, monkeypatch, capsys):
+    directory = tmp_path / 'packed'
+    target = tmp_path / 'releases' / 'malaysia-v1.tar.gz'
+    build(monkeypatch, JSONL, directory, '--archive', str(target))
+    summary = json.loads(capsys.readouterr().out)
+    assert Path(summary['archive']['archive']) == target and target.is_file()
+    assert not (tmp_path / 'malaysia-v1.tar.gz').exists()

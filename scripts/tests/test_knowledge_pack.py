@@ -195,3 +195,123 @@ def test_parent_must_be_an_earlier_version_of_the_same_pack(tmp_path):
                                    embedding_model='m', embedding_dimension=768,
                                    parent={'version': 1,
                                            'manifest_sha256': 'a' * 64})
+
+
+def sign(directory, key):
+    signature = pack_format.sign_manifest((directory / 'manifest.json').read_bytes(), key)
+    (directory / 'manifest.sig.json').write_bytes(pack_format.canonical_json(signature) + b'\n')
+    return signature
+
+
+def trust_root(entries):
+    return {'schema': pack_format.SCHEMA_TRUST_ROOT, 'note': 'test root', 'keys': entries}
+
+
+def root_entry(public_hex, status='active'):
+    return {'key_id': pack_format.key_id_for(public_hex), 'algorithm': 'ed25519',
+            'public_key_hex': public_hex, 'status': status, 'created_at': CREATED, 'note': ''}
+
+
+def test_signature_document_names_its_key(tmp_path):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    directory = build(tmp_path, name='named')
+    key = ed25519.Ed25519PrivateKey.generate()
+    document = sign(directory, key)
+    assert set(document) == pack_format.SIGNATURE_FIELDS
+    assert document['key_id'] == pack_format.key_id_for(pack_format.public_key_hex(key))
+    assert pack_format.load_pack(directory).key_id == document['key_id']
+
+
+@pytest.mark.parametrize('status,accepted', [('active', True), ('retired', True), ('revoked', False)])
+def test_trust_root_status_decides_acceptance(tmp_path, status, accepted):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    directory = build(tmp_path, name=f'root-{status}')
+    key = ed25519.Ed25519PrivateKey.generate()
+    sign(directory, key)
+    root = trust_root([root_entry(pack_format.public_key_hex(key), status)])
+    if not accepted:
+        with pytest.raises(pack_format.PackFormatError) as error:
+            pack_format.load_pack(directory, trust_root=root)
+        assert 'revoked' in str(error.value)
+        return
+    pack = pack_format.load_pack(directory, trust_root=root)
+    assert pack.key_status == status
+    assert pack.summary()['key_status'] == status
+
+
+def test_trust_root_refuses_a_signer_it_does_not_know(tmp_path):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    directory = build(tmp_path, name='stranger')
+    sign(directory, ed25519.Ed25519PrivateKey.generate())
+    root = trust_root([root_entry(pack_format.public_key_hex(ed25519.Ed25519PrivateKey.generate()))])
+    with pytest.raises(pack_format.PackFormatError) as error:
+        pack_format.load_pack(directory, trust_root=root)
+    assert 'not in the trust root' in str(error.value)
+
+
+def test_archive_round_trips_and_is_byte_identical(tmp_path):
+    directory = build(tmp_path, name='archived')
+    first = pack_format.write_archive(directory, tmp_path / 'one.tar.gz')
+    second = pack_format.write_archive(directory, tmp_path / 'two.tar.gz')
+    assert first['sha256'] == second['sha256']
+    assert (tmp_path / 'one.tar.gz').read_bytes() == (tmp_path / 'two.tar.gz').read_bytes()
+    assert first['members'] == 4  # chunks dir, two chunks, manifest
+    with pack_format.pack_directory(tmp_path / 'one.tar.gz') as extracted:
+        pack = pack_format.load_pack(extracted, allow_unsigned=True)
+        assert pack.pack_id == 'malaysia' and len(pack.chunks) == 2
+
+
+def test_archive_accepts_a_pack_nested_in_one_directory(tmp_path):
+    directory = build(tmp_path, name='nested')
+    import tarfile
+
+    archive_path = tmp_path / 'nested.tar.gz'
+    with tarfile.open(archive_path, 'w:gz') as archive:
+        archive.add(directory, arcname='malaysia-v1')
+    with pack_format.pack_directory(archive_path) as extracted:
+        assert pack_format.load_pack(extracted, allow_unsigned=True).pack_id == 'malaysia'
+
+
+def test_archive_refuses_a_destination_inside_the_pack(tmp_path):
+    directory = build(tmp_path, name='inner')
+    with pytest.raises(pack_format.PackFormatError) as error:
+        pack_format.write_archive(directory, directory / 'pack.tar.gz')
+    assert 'outside the pack directory' in str(error.value)
+
+
+def test_archive_extraction_refuses_traversal_and_links(tmp_path):
+    import tarfile
+    from io import BytesIO
+
+    def member(name, **attributes):
+        info = tarfile.TarInfo(name)
+        for key, value in attributes.items():
+            setattr(info, key, value)
+        return info
+
+    traversal = tmp_path / 'traversal.tar.gz'
+    with tarfile.open(traversal, 'w:gz') as archive:
+        payload = BytesIO(b'x')
+        archive.addfile(member('../escape.txt', size=1), payload)
+    with pytest.raises(pack_format.PackFormatError) as error:
+        with pack_format.pack_directory(traversal):
+            pass
+    assert 'escapes the pack root' in str(error.value)
+    assert not (tmp_path.parent / 'escape.txt').exists()
+
+    linked = tmp_path / 'linked.tar.gz'
+    with tarfile.open(linked, 'w:gz') as archive:
+        archive.addfile(member('manifest.json', type=tarfile.SYMTYPE, linkname='../../etc/passwd'))
+    with pytest.raises(pack_format.PackFormatError) as error:
+        with pack_format.pack_directory(linked):
+            pass
+    assert 'neither a file nor a directory' in str(error.value)
+
+
+def test_pack_directory_passes_a_plain_directory_through(tmp_path):
+    directory = build(tmp_path, name='plain')
+    with pack_format.pack_directory(directory) as source:
+        assert source == directory
