@@ -8,6 +8,14 @@ on the units). The domain is registered once and is the public side of the
 store: private/local knowledge stays in local-field-knowledge, curated packs
 live in a domain that can be shared, mirrored and versioned. Re-running skips
 chunks whose tag is already present in the domain.
+
+SUPERSEDED - use scripts/lantern/build-knowledge-pack.py with
+scripts/lantern/install-knowledge-pack.py for anything new. This script stays
+only to describe the copies already on the test units. Two things it got wrong:
+the skip check reads `record.tags`, which the SDK's MemoryRecord does not
+expose, so it never matched (a re-run re-proposes content the node answers as a
+replay rather than a duplicate); and `--domain public-knowledge` cannot be
+registered by the vendored agent today (403), so packs land in the home domain.
 """
 import argparse
 import hashlib

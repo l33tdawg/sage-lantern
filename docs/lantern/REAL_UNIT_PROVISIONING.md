@@ -44,8 +44,11 @@ the budgets change enough to revisit three decisions before provisioning.
    *Node restart locks the vault — hold an owner session before the cold
    start, and archive a stale `/var/lib/sage-lantern-mesh-supervisor` if the
    runtime refuses with `storage_supervisor_unavailable`.*
-5. **Packs**: `scripts/lantern/ingest-knowledge-pack.py <pack.jsonl>`; verify
-   that the probe questions rank the exact fact #1.
+5. **Packs**: build with `scripts/lantern/build-knowledge-pack.py <source.jsonl|.md>`
+   and install with `scripts/lantern/install-knowledge-pack.py <pack-dir>` (then
+   `--check` for coverage); verify that the probe questions rank the exact fact
+   #1. `ingest-knowledge-pack.py` is the pre-v2 flat-JSONL path and stays only for
+   the copies already on the test units.
 6. **Audio commission** after every runtime byte change (the gate hashes all
    `sage_lantern/*.py` plus `lantern.toml` and the voice-loop script), then
    cold start and **first release pin** (`release.py` two-pass, verify all six
@@ -54,15 +57,18 @@ the budgets change enough to revisit three decisions before provisioning.
    device (first text, total time, follow-up bubbles), and the cross-unit
    message exchange.
 
-## Pack shape for torrent-style delivery (decide before the library grows)
+## Pack shape for torrent-style delivery
 
-Content-addressed chunks with a signed manifest: each chunk carries
-`{id, title, text, tags, source, date, sha256}` and its embedding; the manifest
-carries pack id, version, chunk list, total size and provenance. Devices seed
-what they hold; updates ship as new versions plus per-chunk deltas, not full
-re-downloads. Suggested sizes: practical/regional packs 10–100 MB, a dense
-encyclopedia subset 1–10 GB — trivial for 256 GB, and the test units have room
-to prototype the same shape.
+Implemented as a prototype in [KNOWLEDGE_PACK_V2.md](KNOWLEDGE_PACK_V2.md):
+content-addressed chunks (`{id, title, text, tags, source, date, sha256}`, plus an
+optional embedding that is deliberately outside the content address) behind a
+signed manifest carrying pack id, version, chunk list, totals, licence and
+provenance. Devices seed what they hold; updates ship as new versions plus
+per-chunk deltas, not full re-downloads. Size classes: practical/regional packs
+10–100 MB work today, a dense encyclopedia subset 1–10 GB needs the sharded chunk
+store and chunk-index tree that the note lists as not yet built. The format is
+explicitly non-normative until `OPEN-DST-001` (canonical encoding, chunking,
+compression, POUF) is decided.
 
 ## Also open
 
