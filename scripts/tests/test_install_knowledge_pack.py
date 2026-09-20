@@ -313,6 +313,30 @@ def test_rolling_the_same_window_twice_converges(tmp_path):
     assert len(client.forgets) == 1
 
 
+def test_roll_works_for_reference_packs_too(tmp_path):
+    # Reference packs install whole and carry no window flags; the roll must not
+    # hand the successor's window (all_chunks=True) to a reference parent, which
+    # is refused by design. Found rolling world-facts v1 -> v2 on a unit.
+    first = make_pack(tmp_path, version=1, pack_class='reference', rows=[
+        {'id': 'wd-1', 'text': 'Fact one.'},
+        {'id': 'wd-2', 'text': 'Fact two.'}])
+    second = make_pack(
+        tmp_path, version=2, pack_class='reference',
+        rows=[{'id': 'wd-2', 'text': 'Fact two.'},
+              {'id': 'wd-3', 'text': 'Fact three.'}],
+        parent={'version': 1, 'manifest_sha256': pack_format.manifest_digest(first.manifest)},
+        write_delta_from=first)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    summary = installer.roll(client, second, first, domain=None)
+    assert summary['phase'] == 'rolled'
+    assert (summary['added'], summary['removed'], summary['unchanged']) == (1, 1, 1)
+    assert summary['install']['installed'] == 1 and summary['install']['skipped'] == 1
+    assert summary['retire']['memories'] == 1
+    assert installer.coverage(client, second, domain=None)['complete']
+    assert len(client.proposals) == 3
+
+
 def test_roll_failure_leaves_the_old_window_alone(tmp_path):
     first, second = roll_packs(tmp_path)
     client = FakeClient()
@@ -593,3 +617,32 @@ def test_verify_rejects_ledger_and_registration_flags(tmp_path, monkeypatch):
         with pytest.raises(installer.PackInstallError) as error:
             installer.main()
         assert 'writes nothing' in str(error.value)
+
+
+def test_with_retry_waits_out_a_full_replay_window(monkeypatch):
+    # The node answers 503 "replay-protection window is temporarily full" under
+    # load; one such answer must not end a 27k-chunk install (seen on unit A).
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError('HTTP 503: The replay-protection window is '
+                               'temporarily full. Retry shortly.')
+        return 'ok'
+
+    monkeypatch.setattr(installer.time, 'sleep', lambda seconds: None)
+    assert installer.with_retry(flaky) == 'ok'
+    assert len(calls) == 3
+
+
+def test_with_retry_does_not_retry_a_real_error():
+    calls = []
+
+    def broken():
+        calls.append(1)
+        raise RuntimeError('HTTP 400: bad request')
+
+    with pytest.raises(RuntimeError):
+        installer.with_retry(broken)
+    assert len(calls) == 1

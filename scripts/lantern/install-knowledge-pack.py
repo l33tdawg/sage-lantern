@@ -79,6 +79,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 
 SPEC = importlib.util.spec_from_file_location('knowledge_pack', Path(__file__).with_name('knowledge_pack.py'))
@@ -194,6 +195,33 @@ def window_summary(window: dict) -> dict:
             'outside': window['outside']}
 
 
+RETRY_ATTEMPTS = 6
+RETRY_BASE_SECONDS = 2.0
+
+
+def transient(error: Exception) -> bool:
+    """A node-side condition worth waiting out rather than aborting a 27k install.
+
+    The node answers 503 "The replay-protection window is temporarily full.
+    Retry shortly." when its replay window is saturated - it clears on its own,
+    and one such answer must not end an install that is otherwise fine.
+    """
+    text = str(error).lower()
+    return ('503' in text or 'temporarily' in text or 'replay-protection' in text
+            or 'replay protection' in text)
+
+
+def with_retry(call, *args, **kwargs):
+    """Call, retrying only transient node conditions, with exponential backoff."""
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            return call(*args, **kwargs)
+        except Exception as error:  # noqa: BLE001 - re-raised when not transient
+            if attempt >= RETRY_ATTEMPTS or not transient(error):
+                raise
+            time.sleep(RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+
+
 def list_tagged(client, tag: str, domain: str | None, limit: int | None = None) -> list:
     """Every memory carrying a tag, paged. Tags are the pack's index, not its data."""
     collected, offset = [], 0
@@ -268,7 +296,7 @@ def install(client, pack, *, domain: str | None, window: dict | None = None,
         entry = manifest_entries[digest]
         confidence_bp = pack.chunks[digest]['confidence_bp']
         licence = pack.chunks[digest]['licence']
-        existing = list_tagged(client, pack.chunk_tag(digest), domain, limit=1)
+        existing = with_retry(list_tagged, client, pack.chunk_tag(digest), domain, limit=1)
         if existing:
             skipped += 1
             entries.append({'id': entry['id'], 'sha256': digest, 'present': True,
@@ -280,10 +308,11 @@ def install(client, pack, *, domain: str | None, window: dict | None = None,
                             'written': False, 'confidence_bp': confidence_bp, 'licence': licence})
             continue
         try:
-            response = client.propose(content=chunk_content(pack, digest), memory_type=memory_type,
-                                      domain_tag=domain, confidence=confidence_bp / 10000,
-                                      embedding=_vector_for(client, pack, digest),
-                                      tags=chunk_tags(pack, digest))
+            response = with_retry(client.propose, content=chunk_content(pack, digest),
+                                  memory_type=memory_type, domain_tag=domain,
+                                  confidence=confidence_bp / 10000,
+                                  embedding=_vector_for(client, pack, digest),
+                                  tags=chunk_tags(pack, digest))
         except Exception as error:  # noqa: BLE001 - reported per chunk, a re-run resumes
             failures += 1
             entries.append({'id': entry['id'], 'sha256': digest, 'present': False,
@@ -397,7 +426,14 @@ def roll(client, pack, previous, *, domain: str | None, window: dict | None = No
     if shipped is not None:
         knowledge_pack.check_delta_matches(shipped, delta)
     window = window or resolve_window(pack)
-    previous_window = resolve_window(previous, days=window['days'], all_chunks=window['all'])
+    # A reference pack has no window: it is installed whole, so its previous
+    # window is resolved without the successor's window flags (passing
+    # all_chunks=True into a reference pack is refused by design).
+    if previous.pack_class == 'brief':
+        previous_window = resolve_window(previous, days=window['days'],
+                                         all_chunks=window['all'])
+    else:
+        previous_window = resolve_window(previous)
     new_digests = set(window['digests'])
     retirement = sorted(digest for digest in previous_window['digests']
                         if digest not in new_digests)
