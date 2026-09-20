@@ -129,10 +129,17 @@ pack. `scripts/lantern/pack-signing-key.py` generates a key outside the
 repository, prints the trust-root entry to commit, and can read a *backup* to
 prove it still derives the key the root records:
 
-```
-pack-signing-key.py generate --out ~/sage-foundation/pack-signing-1.key --note "Foundation pack key 1"
-pack-signing-key.py entry    --key ~/sage-foundation/pack-signing-1.key   # paste into the trust root
-pack-signing-key.py check    --key ~/backups/pack-signing-1.key           # backup drill
+Like every tool in `scripts/lantern/`, these run through the interpreter rather
+than from `PATH` (`python3 scripts/lantern/...`, from the repository root or any
+other directory):
+
+```sh
+python3 scripts/lantern/pack-signing-key.py generate \
+    --out ~/sage-foundation/pack-signing-1.key --note "Foundation pack key 1"
+python3 scripts/lantern/pack-signing-key.py entry \
+    --key ~/sage-foundation/pack-signing-1.key      # paste into the trust root
+python3 scripts/lantern/pack-signing-key.py check \
+    --key ~/backups/pack-signing-1.key              # backup drill against the root
 ```
 
 The shipped trust root currently holds **no keys**, so today an unsigned pack is
@@ -159,11 +166,13 @@ the node's own tag index. Every memory carries `pack:<id>-v<version>` and
 A pack travels as one deterministic archive, so the release asset has a stable
 identity: same pack in, same bytes out.
 
-```
-build-knowledge-pack.py source.jsonl --out pack-malaysia-v1 --pack-id malaysia \
-    --version 1 --licence CC-BY-4.0 --source-label curated:... \
-    --created-at 2026-09-20T00:00:00Z --signing-key ~/sage-foundation/pack-signing-1.key \
-    --archive
+```sh
+python3 scripts/lantern/build-knowledge-pack.py work/knowledge-pack-20260920/pack-malaysia-v1.jsonl \
+    --out work/knowledge-pack-20260920/pack-malaysia-v1 --pack-id malaysia \
+    --version 1 --title "Malaysia - practical regional facts" --licence CC-BY-4.0 \
+    --source-label curated:owner-notes-2026-09-20 --created-at 2026-09-20T00:00:00Z \
+    --default-date 2026-09-20 --default-tag malaysia \
+    --signing-key ~/sage-foundation/pack-signing-1.key --archive
 # -> work/.../malaysia-v1.tar.gz   (sha256 160d81ba... for the current pack #1)
 ```
 
@@ -171,9 +180,9 @@ Attach the archive to a GitHub release, with the manifest digest and the archive
 digest in the release notes. On the receiving side — which may be a laptop, a
 USB stick, a LAN transfer or, later, a swarm chunk exchange — the sequence is
 
-```
-install-knowledge-pack.py malaysia-v1.tar.gz --verify      # refuses anything unverified
-install-knowledge-pack.py malaysia-v1.tar.gz               # then install
+```sh
+python3 scripts/lantern/install-knowledge-pack.py malaysia-v1.tar.gz --verify   # refuses anything unverified
+python3 scripts/lantern/install-knowledge-pack.py malaysia-v1.tar.gz            # then install
 ```
 
 `--verify` resolves the signature against `pack-trust-root.json`, checks every
