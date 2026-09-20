@@ -58,7 +58,7 @@ export default function Home() {
 
       <section className="section wrap" id="progress"><div className="progress-heading"><div><div className="eyebrow section-label">06 — THE ROAD AHEAD</div><h2>Big ambition.<br/><span className="muted">Practical next steps.</span></h2></div><Link prefetch={false} className="text-link" href="/sage-mission-brief.txt" download>Read the mission brief <Download size={17}/></Link></div><div className="roadmap">{[
         ['NOW','Build & prove','Two prototypes. Local AI and voice development. Testing the pieces together.','IN DEVELOPMENT'],
-        ['DECEMBER 2026','Six units. Measurements first.','Target: six demonstration Lanterns. The first-article print and a measured tolerance report come before any per-unit schedule, so the dates follow the measurements.','FLEET TARGET'],
+        ['DECEMBER 2026','Build the first six','Prints and a tolerance report come first. Dates follow.','FLEET TARGET'],
         ['JANUARY 2027','Open the invitation','Target: public campaign launch, demonstration evidence and ways to contribute.','PUBLIC LAUNCH TARGET'],
         ['NEXT, WITH FUNDING','Learn in the field','Prepare a supported 20–30-unit pilot, shaped with participating communities.','PROPOSED FIRST STAGE'],
       ].map(([date,title,body,status],i)=><article key={date} className={i===0?'roadmap-item current':'roadmap-item'}><div className="roadmap-track"><span/></div><div className="eyebrow">{date}</div><h3>{title}</h3><p>{body}</p><span className="status-label">{status}</span></article>)}</div></section>
