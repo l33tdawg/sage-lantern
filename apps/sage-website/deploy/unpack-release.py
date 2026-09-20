@@ -1,8 +1,8 @@
 from pathlib import Path
-import hashlib,json,tarfile
+import hashlib,json,re,tarfile
 manifest=json.loads(Path('/tmp/release-manifest.json').read_text())
 release=manifest['release']
-if not release.startswith('20260909-') or '/' in release: raise SystemExit('Invalid release')
+if not re.fullmatch(r'\d{8}-[0-9a-f]{12}',release) or '/' in release: raise SystemExit('Invalid release')
 root=Path('/var/www/sage-website/releases')/release
 root.mkdir(parents=True,exist_ok=False)
 with tarfile.open('/tmp/sage-website-release.tar.gz') as archive:
