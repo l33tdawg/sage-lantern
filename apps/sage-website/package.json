@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "lint": "oxlint app components/lantern-mark.tsx components/site-chrome.tsx lib vite.config.ts next.config.ts",
+    "lint": "oxlint app components/lantern-mark.tsx components/site-chrome.tsx components/commons-map.tsx lib vite.config.ts next.config.ts",
     "format": "oxfmt"
   },
   "dependencies": {
