@@ -37,6 +37,7 @@ def test_parse_day_extracts_dated_topic_rows():
     assert all(row['date'] == '2026-09-20' for row in rows)
     assert all(row['source'] == 'https://en.wikipedia.org/wiki/Portal:Current_events/2026_September_20'
                for row in rows)
+    assert all(row['licence'] == 'CC-BY-SA-4.0' for row in rows)
     first, second = rows
     assert first['title'] == 'Armed conflicts and attacks'
     assert first['tags'] == ['world-brief', 'armed-conflicts-and-attacks']

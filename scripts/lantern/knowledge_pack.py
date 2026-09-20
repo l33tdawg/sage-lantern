@@ -54,7 +54,8 @@ SCHEMA_DELTA = "sage.knowledge-pack.delta.v2"
 SCHEMA_SIGNATURE = "sage.knowledge-pack.signature.v1"
 SCHEMA_TRUST_ROOT = "sage.knowledge-pack.trust-root.v1"
 
-CHUNK_CONTENT_FIELDS = ("id", "title", "text", "tags", "source", "date", "confidence_bp")
+CHUNK_CONTENT_FIELDS = ("id", "title", "text", "tags", "source", "date", "confidence_bp",
+                        "licence")
 CHUNK_RECORD_FIELDS = set(CHUNK_CONTENT_FIELDS) | {"schema", "sha256", "embedding"}
 MANIFEST_FIELDS = {"schema", "pack", "embedding", "chunks", "totals", "parent"}
 PACK_FIELDS = {"id", "version", "class", "title", "licence", "provenance", "created_at"}
@@ -87,6 +88,13 @@ REFERENCE_CONFIDENCE_BP = 9500
 BRIEF_CONFIDENCE_BP = 8000
 MAX_CONFIDENCE_BP = 10000
 BRIEF_MAX_CONFIDENCE_BP = REFERENCE_CONFIDENCE_BP - 1
+
+# A pack licence is the umbrella declaration; a chunk licence is what that item
+# actually is. A uniform pack names its licence once and every chunk repeats it.
+# A pack that mixes sources - CC BY-SA article text beside CC0 structured data -
+# must declare ``mixed``, and then every chunk has to name its own licence; the
+# builder refuses an item that would otherwise inherit a licence it may not have.
+MIXED_LICENCE = "mixed"
 
 # Prototype chunk sizing: retrieval carries whole chunks, so a chunk has to stay
 # inside a comfortable context slice. Raise it only with retrieval evidence.
@@ -168,7 +176,7 @@ def decode_vector(text: str, dimension: int) -> list[float]:
 
 
 def build_chunk(identifier: str, text: str, *, title: str = "", tags=(), source: str = "",
-                date: str = "", confidence_bp: int = REFERENCE_CONFIDENCE_BP,
+                date: str = "", confidence_bp: int = REFERENCE_CONFIDENCE_BP, licence: str = "",
                 embedding=None, embedding_model=None) -> dict:
     record = {
         "schema": SCHEMA_CHUNK,
@@ -179,6 +187,7 @@ def build_chunk(identifier: str, text: str, *, title: str = "", tags=(), source:
         "source": source,
         "date": date,
         "confidence_bp": confidence_bp,
+        "licence": licence,
     }
     record["sha256"] = content_address(record)
     if embedding is not None:
@@ -212,6 +221,12 @@ def validate_chunk(record) -> None:
     require(isinstance(record["confidence_bp"], int) and not isinstance(record["confidence_bp"], bool)
             and 1 <= record["confidence_bp"] <= MAX_CONFIDENCE_BP,
             f"chunk {record['id']} confidence_bp must be an integer in 1..{MAX_CONFIDENCE_BP}")
+    require(isinstance(record["licence"], str) and record["licence"].strip(),
+            f"chunk {record['id']} needs a licence; an item whose licence is unknown "
+            "is not distributable")
+    require(record["licence"] != MIXED_LICENCE,
+            f"chunk {record['id']} must name its own concrete licence, not the pack-level "
+            f"{MIXED_LICENCE!r} marker")
     require(HEX64.match(record["sha256"] or ""), "chunk sha256 must be lowercase hex")
     require(record["sha256"] == content_address(record),
             f"chunk {record['id']} content address does not match its content")
@@ -227,24 +242,30 @@ def validate_chunk(record) -> None:
         decode_vector(embedding["vector_f32_le"], embedding["dimension"])
 
 
-def validate_pack_class_rules(manifest: dict, records) -> None:
-    """Class rules that need the manifest and the chunk records together.
+def validate_pack_rules(manifest: dict, records) -> None:
+    """Rules that need the manifest and the chunk records together.
 
     ``records`` is any iterable of chunk records (a list while building, the
     loaded dict values afterwards).
     """
-    if manifest["pack"]["class"] != "brief":
-        return
     for record in records:
-        require(record["confidence_bp"] <= BRIEF_MAX_CONFIDENCE_BP,
-                f"brief chunk {record['id']} carries confidence {record['confidence_bp'] / 10000:g}; "
-                "a brief is never a fact - keep it below 0.95")
-        require(DATE_ONLY.match(record["date"] or ""),
-                f"brief chunk {record['id']} needs a YYYY-MM-DD date; news without a day "
-                "cannot be answered 'as of'")
-        require(record["source"].strip(),
-                f"brief chunk {record['id']} needs a source; news without attribution "
-                "cannot be answered 'per'")
+        if manifest["pack"]["class"] == "brief":
+            require(record["confidence_bp"] <= BRIEF_MAX_CONFIDENCE_BP,
+                    f"brief chunk {record['id']} carries confidence "
+                    f"{record['confidence_bp'] / 10000:g}; a brief is never a fact - "
+                    "keep it below 0.95")
+            require(DATE_ONLY.match(record["date"] or ""),
+                    f"brief chunk {record['id']} needs a YYYY-MM-DD date; news without a day "
+                    "cannot be answered 'as of'")
+            require(record["source"].strip(),
+                    f"brief chunk {record['id']} needs a source; news without attribution "
+                    "cannot be answered 'per'")
+        pack_licence = manifest["pack"]["licence"]
+        if pack_licence != MIXED_LICENCE:
+            require(record["licence"] == pack_licence,
+                    f"chunk {record['id']} is licensed {record['licence']} but the pack "
+                    f"declares {pack_licence}; declare the pack licence {MIXED_LICENCE!r} "
+                    "to carry per-item licences")
 
 
 def build_manifest(*, pack_id: str, version: int, pack_class: str, title: str, licence: str,
@@ -277,7 +298,7 @@ def build_manifest(*, pack_id: str, version: int, pack_class: str, title: str, l
         "parent": parent,
     }
     validate_manifest(manifest)
-    validate_pack_class_rules(manifest, ordered)
+    validate_pack_rules(manifest, ordered)
     return manifest
 
 
@@ -694,7 +715,7 @@ def load_pack(directory, *, trust_root: dict | None = None, trusted_public_hex: 
         raise PackFormatError(
             f"chunk store holds {len(stray)} file(s) the manifest does not list "
             f"(first: {stray[0]}); build into a fresh directory rather than reusing one")
-    validate_pack_class_rules(manifest, chunks.values())
+    validate_pack_rules(manifest, chunks.values())
     return Pack(directory, manifest, raw, chunks, signature, trust)
 
 

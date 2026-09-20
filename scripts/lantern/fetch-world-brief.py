@@ -15,6 +15,8 @@ request carries a descriptive User-Agent because Wikimedia requires one.
 
 Output is pack-source JSONL for ``build-knowledge-pack.py``: one row per event,
 with the day as ``date``, the section as ``title``/tag, and the source page URL.
+Every row also carries the portal's licence (``CC-BY-SA-4.0``) so the pack audit
+does not have to trust a build-time flag for a share-alike source.
 """
 
 from __future__ import annotations
@@ -56,6 +58,7 @@ KEEP_LAST = re.compile(r"\{\{\s*(?:nowrap|nobr|lang|lang-\w+|mention|abbr|small)
 MIN_TEXT = 40
 MAX_TEXT = 1200
 BATCH = 50
+LICENCE = "CC-BY-SA-4.0"
 
 
 class BriefError(RuntimeError):
@@ -170,6 +173,7 @@ def parse_day(day: dt.date, wikitext: str):
             "tags": ["world-brief", slug(topic)] if slug(topic) else ["world-brief"],
             "source": page_url(day),
             "date": f"{day:%Y-%m-%d}",
+            "licence": LICENCE,
         })
     return rows
 
@@ -263,7 +267,7 @@ def main():
     print(json.dumps({"out": str(args.out), "from": f"{args.first:%Y-%m-%d}",
                       "to": f"{args.last:%Y-%m-%d}", "days": len(days),
                       "events": len(rows), "days_without_events": empty,
-                      "licence": "CC-BY-SA-4.0",
+                      "licence": LICENCE,
                       "source": "wikipedia:portal-current-events"}, sort_keys=True))
 
 

@@ -21,18 +21,19 @@ delta between versions.
 
 | | State |
 |---|---|
-| Format, builder, installer | built, 102 tests, prototype under `OPEN-DST-001` |
+| Format, builder, installer | built, 107 tests, prototype under `OPEN-DST-001` |
 | Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
-| Pack #1 | `reference` class, Malaysia v1: signed, archive `2f7dfce9` |
-| Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, signed, archive `7660413b` |
+| Pack #1 | `reference` class, Malaysia v1: signed, per-chunk licence, archive `91c5ba0c` |
+| Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, per-chunk licence, signed, archive `11dad074` |
 | Window roll | `--roll-from <old>`: install the successor, then retire the chunks it dropped; rehearsed on two real overlapping windows (13 in, 275 out, 1,764 shared) |
 | Device window | owner direction 2026-09-20: **one month max**. A brief installs its newest 31 days by default (647 of the shipped brief's 2,052 events), `--window-days` goes narrower, `--window-all` is the explicit archive/lab install |
 | Device install | **nothing installed** — see the two gates below |
 
-The class and confidence fields changed the prototype schema on 2026-09-20. Nothing
-had been published, so both packs were rebuilt and re-signed rather than teaching
-readers two manifest shapes; the superseded pre-class directories sit beside them
-under each pack's `superseded-pre-class/`.
+The class, per-chunk confidence and per-item licence fields changed the prototype
+schema on 2026-09-20. Nothing had been published, so both packs were rebuilt and
+re-signed rather than teaching readers several manifest shapes; the superseded
+generations sit beside them under `superseded-pre-class/` and
+`superseded-pre-licence/`.
 
 Next: the device install itself, once the node grows a public cache domain
 (`bbd52246`) so a brief does not land in the private home domain. The
@@ -62,7 +63,7 @@ was a no-op: it looked for an `id:` marker in `record.tags`, and the SDK's
 ```json
 {"date":"2026-09-20","id":"my-005","schema":"sage.knowledge-pack.chunk.v2",
  "sha256":"04970863...","source":"curated:owner-notes-2026-09-20",
- "confidence_bp":9500,"tags":["malaysia"],
+ "confidence_bp":9500,"licence":"CC-BY-4.0","tags":["malaysia"],
  "text":"Kuala Lumpur Tower (Menara Kuala Lumpur) is 421 metres tall...","title":""}
 ```
 
@@ -75,6 +76,11 @@ was a no-op: it looked for an `id:` marker in `record.tags`, and the SDK's
   of 10000). The canonical-bytes rule forbids floating point in signed
   structures, so 0.8 is stored as `8000`; the builder's CLI still takes ordinary
   decimals. A pack's class bounds what a chunk may claim - see below.
+* `licence` is what **that item** is. A uniform pack names its licence once and
+  every chunk repeats it; a mixed-source pack declares `--licence mixed` and then
+  every item must name its own, because one umbrella field cannot honestly
+  describe CC BY-SA article text sitting beside CC0 structured data. A chunk with
+  no licence is refused at build time.
 * The **embedding is not part of the address**. Re-embedding a pack with a better
   model must not change chunk identity, so provenance for embeddings lives in the
   manifest instead, and the installer verifies the two against each other.
@@ -145,6 +151,24 @@ That changes what a roll must retire. `--roll-from` retires
 which has aged past the window leaves the device too; a rolling archive would
 otherwise keep serving news the device is no longer allowed to hold. With
 `--window-all` the same rule collapses to the delta's removed addresses.
+
+### Per-item licence
+
+The manifest's `licence` is the pack's umbrella declaration; each chunk's
+`licence` is what that item actually is, and it rides in the content address for
+the same reason confidence does - re-licensing an item is a new chunk the delta
+reports, not a silent edit.
+
+| Pack build | Rule |
+|---|---|
+| `--licence CC-BY-4.0` (uniform) | Every chunk is stamped `CC-BY-4.0`; a row or `--default-licence` that contradicts it is refused |
+| `--licence mixed` | Every item must name its own concrete licence (row field or `--default-licence`); an item with none is refused rather than inheriting one it may not have |
+
+A chunk may never carry `mixed` itself: that is a pack-level marker, not a
+licence. `fetch-world-brief.py` stamps `CC-BY-SA-4.0` on every row it emits, so
+the brief's share-alike obligation travels with the source data rather than
+resting on a build flag. `--verify`, install summaries and the ledger all report
+the licence set, which is what makes a mixed pack auditable after the fact.
 
 ### Canonical bytes and the one digest
 
@@ -281,7 +305,7 @@ python3 scripts/lantern/build-knowledge-pack.py work/knowledge-pack-20260920/pac
     --source-label curated:owner-notes-2026-09-20 --created-at 2026-09-20T00:00:00Z \
     --default-date 2026-09-20 --default-tag malaysia \
     --signing-key ~/sage-foundation/pack-signing-1.key --archive
-# -> work/.../malaysia-v1.tar.gz   (sha256 2f7dfce9... for the signed pack #1)
+# -> work/.../malaysia-v1.tar.gz   (sha256 91c5ba0c... for the signed pack #1)
 ```
 
 Attach the archive to a GitHub release, with the manifest digest and the archive
@@ -357,8 +381,9 @@ Science and other open collections fit the same class with the same caveat: at
 arXiv, the *paper's own* licence decides (many are CC BY, plenty are arXiv's
 non-exclusive default, which is not redistribution rights), so a source adapter
 has to read the licence per item and the builder has to refuse an item with none.
-That is why mixed-source packs want a per-chunk `licence` beside `source`, which
-this format does not carry yet either.
+That is what the per-chunk `licence` beside `source` is for, and what `--licence
+mixed` enforces; the remaining per-source work is writing the adapters and
+reading each source's licence at fetch time.
 
 ## Curated packs are not the public chain's cache
 
@@ -448,7 +473,7 @@ chunks stay valid (they are content-addressed) until someone retires them.
 * Format, builder and installer: `scripts/lantern/knowledge_pack.py`,
   `scripts/lantern/build-knowledge-pack.py`, `scripts/lantern/install-knowledge-pack.py`,
   `scripts/lantern/pack-signing-key.py`, `scripts/lantern/pack-trust-root.json`.
-* Conformance suite (102 tests): `scripts/tests/test_knowledge_pack.py`,
+* Conformance suite (107 tests): `scripts/tests/test_knowledge_pack.py`,
   `scripts/tests/test_build_knowledge_pack.py`,
   `scripts/tests/test_install_knowledge_pack.py`,
   `scripts/tests/test_pack_signing_key.py`. It covers tampered chunks, stray and
@@ -464,15 +489,19 @@ chunks stay valid (they are content-addressed) until someone retires them.
   old window alone. The window rules are pinned too: a brief installs its newest
   month by default, refuses more than 31 days, leaves reference packs alone, and
   a roll retires a chunk that aged out of the window even when the successor
-  still carries it.
+  still carries it. Licence rules are pinned as well: a chunk without a licence
+  is refused, a uniform pack refuses a contradicting item, and a `mixed` pack
+  requires a concrete licence on every item.
 * Pack #1 rebuilt in this format: `work/knowledge-pack-20260920/pack-malaysia-v1/`
-  (40 chunks at 0.95, class `reference`, manifest `18a53510...`) plus the signed
-  delivery archive `malaysia-v1.tar.gz` (sha256 `2f7dfce9...`, member count 43
+  (40 chunks at 0.95, class `reference`, licence `CC-BY-4.0`, manifest
+  `8ac19c6e...`) plus the signed delivery archive `malaysia-v1.tar.gz`
+  (sha256 `91c5ba0c...`, member count 43
   including `manifest.sig.json`). `--verify` on the archive passes with no node
   contact and reports `key_status: active, unsigned_accepted: false`.
 * The world brief in this format: `work/world-brief-20260920/world-brief-v20260920/`
-  (2,052 events at 0.80, class `brief`, manifest `cc0a5fa8...`), archive
-  `world-brief-v20260920.tar.gz` sha256 `7660413b...`, member count 2,055.
+  (2,052 events at 0.80, class `brief`, per-item `CC-BY-SA-4.0`, manifest
+  `0bc86f9d...`), archive `world-brief-v20260920.tar.gz` sha256 `11dad074...`,
+  member count 2,055.
 * Two-window roll rehearsal on real portal data:
   `work/lantern-brief-roll-20260920/` (`rehearsal_roll.py` plus its two packs and
   the RESULTS record) - 2,039 memories installed, then 13 installed / 275 retired

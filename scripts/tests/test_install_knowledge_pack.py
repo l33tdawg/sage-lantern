@@ -98,6 +98,7 @@ def make_pack(tmp_path, *, version=1, texts=None, embedded=False, pack_id='malay
             row['id'], row['text'], title=row.get('title', ''), tags=row.get('tags', ()),
             source=row.get('source', 'curated:test'), date=row.get('date', '2026-09-20'),
             confidence_bp=row.get('confidence_bp', confidence_bp),
+            licence=row.get('licence', 'CC-BY-4.0'),
             embedding=[0.5, 0.25, 0.0] if embedded else None,
             embedding_model='nomic-embed-text-v1.5' if embedded else None))
     manifest = pack_format.build_manifest(
@@ -580,6 +581,8 @@ def test_roll_from_the_command_line_writes_a_ledger(tmp_path, monkeypatch, capsy
     recorded = json.loads(ledger.read_text())
     assert set(recorded['chunks']) == set(second.chunks)
     assert {row['confidence_bp'] for row in recorded['chunks'].values()} == {8000}
+    assert {row['licence'] for row in recorded['chunks'].values()} == {'CC-BY-4.0'}
+    assert recorded['window']['days'] == 31
 
 
 def test_verify_rejects_ledger_and_registration_flags(tmp_path, monkeypatch):

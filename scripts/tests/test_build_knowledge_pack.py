@@ -90,7 +90,7 @@ def test_markdown_heading_supplies_a_missing_title(tmp_path, monkeypatch):
 
 
 def test_unknown_jsonl_field_is_refused(tmp_path, monkeypatch):
-    source = json.dumps({'id': 'my-001', 'text': 'Text.', 'licence': 'CC0'}) + '\n'
+    source = json.dumps({'id': 'my-001', 'text': 'Text.', 'summary': 'not a field'}) + '\n'
     with pytest.raises(pack_format.PackFormatError) as error:
         build(monkeypatch, source, tmp_path / 'pack-unknown')
     assert 'unknown field' in str(error.value)
@@ -149,6 +149,48 @@ def test_confidence_must_be_a_number_in_range(tmp_path, monkeypatch):
         build(monkeypatch, JSONL, tmp_path / 'pack-fine',
               '--default-confidence', '0.81234')
     assert 'finer than one basis point' in str(error.value)
+
+
+def test_uniform_packs_stamp_their_licence_on_every_chunk(tmp_path, monkeypatch):
+    pack = build(monkeypatch, JSONL, tmp_path / 'pack-licence-default')
+    assert {record['licence'] for record in pack.chunks.values()} == {'CC-BY-4.0'}
+    stamped = build(monkeypatch, JSONL, tmp_path / 'pack-licence-explicit',
+                    '--default-licence', 'CC-BY-4.0')
+    assert {record['licence'] for record in stamped.chunks.values()} == {'CC-BY-4.0'}
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, JSONL, tmp_path / 'pack-licence-conflict',
+              '--default-licence', 'CC0-1.0')
+    assert 'declare --licence mixed' in str(error.value)
+
+
+def test_mixed_packs_require_a_licence_for_every_item(tmp_path, monkeypatch):
+    mixed = (json.dumps({'id': 'my-001', 'text': 'Article text.',
+                         'licence': 'CC-BY-SA-4.0'}) + '\n'
+             + json.dumps({'id': 'my-002', 'text': 'Structured number.',
+                           'licence': 'CC0-1.0'}) + '\n')
+    pack = build(monkeypatch, mixed, tmp_path / 'pack-mixed', '--licence', 'mixed')
+    assert pack.manifest['pack']['licence'] == 'mixed'
+    assert {record['licence'] for record in pack.chunks.values()} == {'CC-BY-SA-4.0', 'CC0-1.0'}
+    silent = json.dumps({'id': 'my-001', 'text': 'No licence anywhere.'}) + '\n'
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, silent, tmp_path / 'pack-mixed-silent', '--licence', 'mixed')
+    assert 'must name its licence' in str(error.value)
+    filled = build(monkeypatch, silent, tmp_path / 'pack-mixed-default', '--licence', 'mixed',
+                   '--default-licence', 'CC0-1.0')
+    assert next(iter(filled.chunks.values()))['licence'] == 'CC0-1.0'
+
+
+def test_markdown_licence_line_is_honoured(tmp_path, monkeypatch):
+    source = MARKDOWN.replace('Tags: distances, roads',
+                              'Tags: distances, roads\nLicence: CC-BY-SA-4.0')
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, source, tmp_path / 'pack-md-licence', name='facts.md')
+    assert 'declare --licence mixed' in str(error.value)
+    pack = build(monkeypatch, source, tmp_path / 'pack-md-mixed', '--licence', 'mixed',
+                 '--default-licence', 'CC-BY-4.0', name='facts.md')
+    entries = {entry['id']: entry for entry in pack.manifest['chunks']}
+    assert pack.chunks[entries['kuala-lumpur-to-ipoh-by-road']['sha256']]['licence'] == 'CC-BY-SA-4.0'
+    assert pack.chunks[entries['merdeka']['sha256']]['licence'] == 'CC-BY-4.0'
 
 
 def test_parent_build_records_a_per_chunk_delta(tmp_path, monkeypatch):

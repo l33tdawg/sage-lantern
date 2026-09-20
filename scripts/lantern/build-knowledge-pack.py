@@ -11,9 +11,10 @@ carry no timestamps for exactly that reason.
         --created-at 2026-09-20T00:00:00Z --default-date 2026-09-20 \
         --parent ../pack-malaysia-v1 --signing-key ~/.sage/pack-signing.key
 
-JSONL rows use {"id","text"} with optional {"title","tags","source","date","confidence"}.
+JSONL rows use {"id","text"} with optional {"title","tags","source","date","confidence","licence"}.
 Markdown sources use one "## Title" section per chunk, with optional leading
-"Tags:", "Source:", "Date:", "Confidence:" lines and an "<!-- id: slug -->" override.
+"Tags:", "Source:", "Date:", "Confidence:", "Licence:" lines and an
+"<!-- id: slug -->" override.
 
 A pack is either a ``reference`` (curated facts, confidence 0.95 by default) or a
 ``brief`` (dated third-party material, confidence 0.80 by default and never at or
@@ -21,6 +22,11 @@ above the fact band), and each chunk records its own confidence in basis points.
 The class is not decoration: it decides the memory type and confidence a node
 installs a chunk with, and whether the installed text carries an "as of <date>,
 per <source>" frame.
+
+Licences work the same way. A uniform pack names its licence once and every chunk
+repeats it. A mixed-source pack declares ``--licence mixed`` and then every item
+must name its own licence (row field or ``--default-licence``); an item with no
+licence is refused rather than inheriting one it may not have.
 
 Embeddings are optional and recorded per chunk. Pass --embed-url to precompute
 them (the field units then install without spending CPU on embedding); leave it
@@ -70,9 +76,37 @@ def confidence_bp(value, where: str) -> int:
     return int(points)
 
 
+def chunk_licence(pack_licence: str, default: str, row_value, identifier: str) -> str:
+    """The licence one chunk carries, or a refusal.
+
+    Uniform pack: the pack licence wins and any contradicting row or default is
+    an error. Mixed pack (``--licence mixed``): every item must name its own
+    concrete licence, and an item that names none is refused rather than
+    quietly inheriting one.
+    """
+    mixed = knowledge_pack.MIXED_LICENCE
+    if pack_licence == mixed:
+        licence = row_value or default
+        if not licence:
+            raise knowledge_pack.PackFormatError(
+                f"chunk {identifier} carries no licence and the pack declares "
+                f"{mixed!r}; every item in a mixed-source pack must name its licence")
+    else:
+        for value, where in ((row_value, 'the row'), (default, '--default-licence')):
+            if value and value != pack_licence:
+                raise knowledge_pack.PackFormatError(
+                    f"chunk {identifier} declares {value} but the pack licence is "
+                    f"{pack_licence}; declare --licence {mixed} to carry per-item licences")
+        licence = pack_licence
+    if licence == mixed:
+        raise knowledge_pack.PackFormatError(
+            f"chunk {identifier} must name a concrete licence, not {mixed!r}")
+    return licence
+
+
 def parse_jsonl(path: Path, defaults: dict):
     rows = []
-    allowed = {'id', 'text', 'title', 'tags', 'source', 'date', 'confidence'}
+    allowed = {'id', 'text', 'title', 'tags', 'source', 'date', 'confidence', 'licence'}
     for number, line in enumerate(path.read_text('utf-8').splitlines(), start=1):
         if not line.strip():
             continue
@@ -96,13 +130,14 @@ def parse_jsonl(path: Path, defaults: dict):
             'source': row.get('source') or defaults['source'],
             'date': row.get('date') or defaults['date'],
             'confidence': row.get('confidence'),
+            'licence': row.get('licence'),
         })
     if not rows:
         raise knowledge_pack.PackFormatError(f"{path}: no rows found")
     return rows
 
 
-METADATA = re.compile(r'^(Tags|Source|Date|Confidence|Id):\s*(.+?)\s*$')
+METADATA = re.compile(r'^(Tags|Source|Date|Confidence|Licence|Id):\s*(.+?)\s*$')
 ID_COMMENT = re.compile(r'<!--\s*id:\s*([A-Za-z0-9._-]+)\s*-->')
 
 
@@ -157,6 +192,7 @@ def parse_markdown(path: Path, defaults: dict):
             'source': metadata.get('source') or defaults['source'],
             'date': metadata.get('date') or defaults['date'],
             'confidence': confidence,
+            'licence': metadata.get('licence'),
         })
     return title, rows
 
@@ -195,7 +231,11 @@ def main():
                              'defaults to 0.95 for a reference and 0.80 for a brief')
     parser.add_argument('--licence', required=True,
                         help='licence identifier for the source material; a pack without '
-                             'provenance is not distributable')
+                             'provenance is not distributable. Pass "mixed" for a '
+                             'mixed-source pack, where every item names its own licence')
+    parser.add_argument('--default-licence', default='',
+                        help='licence for rows that do not carry one; must match --licence '
+                             'in a uniform pack, and may fill mixed-pack rows')
     parser.add_argument('--source-label', required=True,
                         help='where this content came from, e.g. curated:owner-notes-2026-09-20')
     parser.add_argument('--curator', default='')
@@ -272,7 +312,9 @@ def main():
                 "a brief is never a fact - keep it below 0.95")
         records.append(knowledge_pack.build_chunk(
             row['id'], row['text'], title=row['title'], tags=row['tags'], source=row['source'],
-            date=row['date'], confidence_bp=confidence, embedding=vector,
+            date=row['date'], confidence_bp=confidence,
+            licence=chunk_licence(args.licence, args.default_licence, row['licence'], row['id']),
+            embedding=vector,
             embedding_model=args.embed_model if vector else None))
     records.sort(key=lambda record: record['id'])
 

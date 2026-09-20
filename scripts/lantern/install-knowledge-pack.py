@@ -267,16 +267,17 @@ def install(client, pack, *, domain: str | None, window: dict | None = None,
     for digest in window['digests']:
         entry = manifest_entries[digest]
         confidence_bp = pack.chunks[digest]['confidence_bp']
+        licence = pack.chunks[digest]['licence']
         existing = list_tagged(client, pack.chunk_tag(digest), domain, limit=1)
         if existing:
             skipped += 1
             entries.append({'id': entry['id'], 'sha256': digest, 'present': True,
                             'memory_id': existing[0].memory_id, 'written': False,
-                            'confidence_bp': confidence_bp})
+                            'confidence_bp': confidence_bp, 'licence': licence})
             continue
         if dry_run:
             entries.append({'id': entry['id'], 'sha256': digest, 'present': False,
-                            'written': False, 'confidence_bp': confidence_bp})
+                            'written': False, 'confidence_bp': confidence_bp, 'licence': licence})
             continue
         try:
             response = client.propose(content=chunk_content(pack, digest), memory_type=memory_type,
@@ -287,6 +288,7 @@ def install(client, pack, *, domain: str | None, window: dict | None = None,
             failures += 1
             entries.append({'id': entry['id'], 'sha256': digest, 'present': False,
                             'written': False, 'confidence_bp': confidence_bp,
+                            'licence': licence,
                             'error': f'{type(error).__name__}: {error}'})
             continue
         _check_outcome(response, digest)
@@ -296,10 +298,11 @@ def install(client, pack, *, domain: str | None, window: dict | None = None,
         entries.append({'id': entry['id'], 'sha256': digest, 'present': True,
                         'memory_id': getattr(response, 'memory_id', None),
                         'written': not replay, 'replay': replay,
-                        'confidence_bp': confidence_bp})
+                        'confidence_bp': confidence_bp, 'licence': licence})
     return {'pack': pack.pack_id, 'version': pack.version, 'domain': domain,
             'class': pack.pack_class,
             'chunks': len(window['digests']), 'pack_chunks': len(pack.manifest['chunks']),
+            'chunk_licences': sorted({record['licence'] for record in pack.chunks.values()}),
             'window': window_summary(window),
             'installed': installed, 'skipped': skipped,
             'replays': replays, 'failures': failures, 'dry_run': dry_run, 'chunks_detail': entries}
@@ -491,7 +494,8 @@ def write_ledger(path: Path, summary: dict) -> None:
         'chunks': {row['sha256']: {'id': row['id'], 'memory_id': row.get('memory_id'),
                                    'written': row.get('written', False),
                                    'replay': row.get('replay', False),
-                                   'confidence_bp': row.get('confidence_bp')}
+                                   'confidence_bp': row.get('confidence_bp'),
+                                   'licence': row.get('licence')}
                    for row in summary['chunks_detail']}}
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=f'.{path.name}.')
@@ -587,6 +591,7 @@ def dispatch(args, pack, trust_root, previous=None) -> int:
     domain = args.domain or None
     common = {'pack': pack.pack_id, 'version': pack.version, 'signed': pack.signature is not None,
               'class': pack.pack_class,
+              'licence': pack.manifest['pack']['licence'],
               'key_id': pack.key_id, 'key_status': pack.key_status,
               'trust_root': None if trust_root is None else str(args.trust_root),
               'active_keys': None if trust_root is None else knowledge_pack.active_key_ids(trust_root)}

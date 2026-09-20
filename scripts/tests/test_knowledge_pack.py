@@ -16,7 +16,7 @@ PROVENANCE = {'source': 'curated:test-fixture'}
 
 def chunk(identifier, text, **overrides):
     return pack_format.build_chunk(identifier, text, source='curated:test-fixture',
-                                   date='2026-09-20', **overrides)
+                                   date='2026-09-20', licence='CC-BY-4.0', **overrides)
 
 
 def build(tmp_path, name='pack-v1', *, version=1, chunks=None, created=CREATED,
@@ -48,6 +48,7 @@ def test_content_address_ignores_embedding_provenance():
     plain = chunk('one', 'Text that does not move.')
     embedded = pack_format.build_chunk('one', 'Text that does not move.',
                                        source='curated:test-fixture', date='2026-09-20',
+                                       licence='CC-BY-4.0',
                                        embedding=[0.0] * 8, embedding_model='other-model')
     assert plain['sha256'] == embedded['sha256']
 
@@ -105,29 +106,31 @@ def test_manifest_refuses_unlicensed_or_unsourced_packs():
                                    chunks=records, embedding_model='m', embedding_dimension=768)
 
 
-def manifest_with(records, *, pack_class='reference', version=1, parent=None):
+def manifest_with(records, *, pack_class='reference', version=1, parent=None,
+                  licence='CC-BY-SA-4.0'):
     return pack_format.build_manifest(
         pack_id='world-brief', version=version, pack_class=pack_class, title='T',
-        licence='CC-BY-SA-4.0', provenance=PROVENANCE, created_at=CREATED, chunks=records,
+        licence=licence, provenance=PROVENANCE, created_at=CREATED, chunks=records,
         embedding_model='m', embedding_dimension=768, parent=parent)
 
 
 def news_chunk(identifier='wb-20260920-01', *, confidence_bp=8000, date='2026-09-20',
                source='https://en.wikipedia.org/wiki/Portal:Current_events/2026_September_20'):
     return pack_format.build_chunk(identifier, 'An event happened.', source=source, date=date,
-                                   confidence_bp=confidence_bp)
+                                   confidence_bp=confidence_bp, licence='CC-BY-SA-4.0')
 
 
 def test_confidence_is_part_of_the_content_address():
     default = chunk('one', 'Text that stays put.')
     lowered = pack_format.build_chunk('one', 'Text that stays put.', source='curated:test-fixture',
-                                      date='2026-09-20', confidence_bp=8000)
+                                      date='2026-09-20', confidence_bp=8000,
+                                      licence='CC-BY-4.0')
     assert default['confidence_bp'] == pack_format.REFERENCE_CONFIDENCE_BP == 9500
     assert default['sha256'] != lowered['sha256']
     for bad in (0, 10001, 0.95, True):
         with pytest.raises(pack_format.PackFormatError):
             pack_format.build_chunk('one', 'Text.', source='curated:test-fixture',
-                                    date='2026-09-20', confidence_bp=bad)
+                                    date='2026-09-20', confidence_bp=bad, licence='CC-BY-4.0')
 
 
 def test_manifest_refuses_an_unknown_class():
@@ -152,11 +155,43 @@ def test_brief_chunks_stay_below_the_fact_band_and_carry_day_and_source():
     assert reference['pack']['class'] == 'reference'
 
 
+def test_chunks_need_a_concrete_licence_and_uniform_packs_must_agree():
+    with pytest.raises(pack_format.PackFormatError) as error:
+        pack_format.build_chunk('one', 'Text.', source='curated:test-fixture',
+                                date='2026-09-20')
+    assert 'needs a licence' in str(error.value)
+    with pytest.raises(pack_format.PackFormatError) as error:
+        pack_format.build_chunk('one', 'Text.', source='curated:test-fixture',
+                                date='2026-09-20', licence='mixed')
+    assert 'concrete licence' in str(error.value)
+    foreign = pack_format.build_chunk('one', 'Text under another licence.',
+                                      source='curated:test-fixture', date='2026-09-20',
+                                      licence='CC-BY-4.0')
+    with pytest.raises(pack_format.PackFormatError) as error:
+        manifest_with([foreign], pack_class='reference')
+    assert 'is licensed CC-BY-4.0' in str(error.value)
+
+
+def test_a_mixed_pack_carries_per_item_licences():
+    rows = [
+        pack_format.build_chunk('one', 'Article text.', source='wikipedia',
+                                date='2026-09-20', licence='CC-BY-SA-4.0'),
+        pack_format.build_chunk('two', 'Structured number.', source='wikidata',
+                                date='2026-09-20', licence='CC0-1.0'),
+    ]
+    manifest = pack_format.build_manifest(
+        pack_id='world-brief', version=1, pack_class='reference', title='T',
+        licence=pack_format.MIXED_LICENCE, provenance=PROVENANCE, created_at=CREATED,
+        chunks=rows, embedding_model='m', embedding_dimension=768)
+    assert manifest['pack']['licence'] == 'mixed'
+    assert {record['licence'] for record in rows} == {'CC-BY-SA-4.0', 'CC0-1.0'}
+
+
 def test_shipped_delta_is_found_and_must_agree_with_the_manifests(tmp_path):
     first = [chunk('one', 'First.'), chunk('two', 'Second.')]
-    manifest1 = manifest_with(first, version=1)
+    manifest1 = manifest_with(first, version=1, licence='CC-BY-4.0')
     second = [chunk('one', 'First.'), chunk('three', 'Third.')]
-    manifest2 = manifest_with(second, version=2,
+    manifest2 = manifest_with(second, version=2, licence='CC-BY-4.0',
                               parent={'version': 1,
                                       'manifest_sha256': pack_format.manifest_digest(manifest1)})
     delta = pack_format.delta_document(manifest1, manifest2)
