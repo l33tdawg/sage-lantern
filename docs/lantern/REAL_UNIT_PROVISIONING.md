@@ -53,6 +53,10 @@ the budgets change enough to revisit three decisions before provisioning.
    that file on the unit before a signed pack is accepted.
    `ingest-knowledge-pack.py` is the pre-v2 flat-JSONL path and stays only for the
    copies already on the test units.
+   *Reference packs and a dated world brief are different cases: a brief is
+   third-party material with a date, so it belongs in a public cache domain rather
+   than the private home domain, and only a window sized to the recall budget
+   (four chunks) should be installed — the full archive is the release asset.*
 6. **Audio commission** after every runtime byte change (the gate hashes all
    `sage_lantern/*.py` plus `lantern.toml` and the voice-loop script), then
    cold start and **first release pin** (`release.py` two-pass, verify all six

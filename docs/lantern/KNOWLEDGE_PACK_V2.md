@@ -17,6 +17,25 @@ It also gives the swarm direction in
 a chunk named by its hash, a manifest that names the chunk list, and a per-chunk
 delta between versions.
 
+## Where this stands (2026-09-20)
+
+| | State |
+|---|---|
+| Format, builder, installer | built, 80 tests, prototype under `OPEN-DST-001` |
+| Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
+| Pack #1 | reference facts, Malaysia v1: signed, archive `0cea5c80` |
+| Pack #2 | world brief, 20 Jun – 20 Sep 2026: 2,052 events, signed, archive `6b57a57c` |
+| Device install | **nothing installed** — see the two gates below |
+
+Next, in order: (1) give a pack a class and a per-chunk confidence so a brief is not
+a 0.95 fact, and make its answers say when and per whom; (2) add the window-roll
+apply step that retires the chunks a rolling window dropped; (3) size the installed
+window to the device's four-chunk recall budget rather than to the archive; (4) only
+then consider a device install, and prefer a public cache domain over the private
+home domain (`bbd52246`). The snapshot-pack lane stays blocked until `SAGE-EXPORT`
+and `OPEN-COM-003` land — see
+[DUAL_HOME_AND_PUBLICATION_CONTRACT.md](DUAL_HOME_AND_PUBLICATION_CONTRACT.md) §10.1.
+
 ## Why the flat JSONL had to go
 
 Pack #1 was ingested as one `fact` memory per line of

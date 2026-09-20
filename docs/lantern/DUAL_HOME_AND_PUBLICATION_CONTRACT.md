@@ -300,6 +300,35 @@ The UI labels each answer source `personal`, `public-live`, `public-cached`, `pu
 
 There is no anonymous v11.18.4 SAGE read path. Live canonical reads use a registered/authenticated eligible identity and SAGE classification/RBAC. A future external Commons query service remains an application-owned boundary with its own abuse/privacy/cache policy and never makes the local cache canonical.
 
+### 10.1 Delivery of cached material by signed pack
+
+The bounded cache above MAY be filled in bulk from signed knowledge packs. Two pack
+classes exist and MUST NOT be conflated:
+
+* A **curated pack** is authored and signed by the Foundation through the trust root
+  shipped with the verifier. Its authority is its signer. It is neither chain state
+  nor a Commons cache entry, so an answer drawn from one MUST NOT be labelled
+  `public-live`, `public-cached` or `public-stale`.
+* A **Commons Snapshot Pack** is a deterministic read-only export of committed,
+  non-deprecated `PUBLIC` records (`DST-005`) and imports only into this cache. Its
+  manifest binds the frozen height, canonical ordering, record count and hashes,
+  source release, consensus app version and authenticated checkpoint. Without native
+  per-record inclusion proofs, the sorted-record Merkle root and exporter signature
+  are an off-chain export attestation and MUST NOT be represented as consensus proof.
+
+Material delivered by pack carries its anchor — public chain ID, committed height and
+time — and is subject to the same labelling, provenance and expiry rules as a live
+query result. A cached item whose named validity has lapsed is `public-stale`, and a
+pack older than the maximum export age requires re-sync rather than silent reuse.
+Cache loss MUST remain harmless: pack content is re-derivable from canonical state
+and MUST NOT become the only copy of anything canonical.
+
+The snapshot lane is gated on `SAGE-EXPORT` (`required-sage-v12`) and on
+`OPEN-COM-003`, which owns the normative deterministic export schema; the interim
+rule is that no Commons Snapshot Pack is publishable. Until those land, public
+material reaches a device only through the curated lane or a live authenticated
+query.
+
 ## 11. Provisioning and recovery
 
 ### 11.1 Golden image
