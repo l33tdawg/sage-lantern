@@ -35,3 +35,19 @@ healthz 200, and `/`, `/commons/`, `/hardware/` all 200 on
 `/var/www/sage-website/backup-20260920T063743Z`; the previous release
 `20260909-638366e018ff` stays under `releases/` and can be re-activated by
 pointing `current` back at it.
+
+## Release 20260920-e7182555e702 — measurements, not a December date
+
+Owner-confirmed correction relayed from the hardware agent: the live fleet is
+units C–F (G and H wait until C–F are printed and locked), and no fleet date is
+being worked to. The homepage roadmap and the downloadable mission brief
+therefore withdraw the December "six complete demonstration Lanterns" target;
+they now say first-article prints and a measured tolerance report come before
+locked hardware choices and before any dates. The January 2027 announcement
+target is unchanged.
+
+Same pipeline: 41 verified files, tarball sha256 `b6919551…`, activated on the
+origin with `/`, `/commons/`, `/hardware/` and `/sage-mission-brief.txt` all 200
+and the corrected copy confirmed through `https://sage.ngo`. Rollback
+configuration `/var/www/sage-website/backup-20260920T072849Z`; prior release
+`20260920-ab8cc68b10b3` remains on disk.
