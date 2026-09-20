@@ -96,3 +96,32 @@ passed before the symlink moved. Verified publicly: `/`, `/commons/` and
 `/hardware/` return 200 and the diagram's text is present in the served HTML.
 Rollback configuration `/var/www/sage-website/backup-20260920T095823Z`; prior
 release `20260920-5993d0b08c1c` remains under `releases/`.
+
+## Release 20260920-997818d270e9 — org chart with ownership and licences, and a Foundation page
+
+The commons diagram became an org chart on the owner's direction: the Foundation
+at the top, SAGE — the project and SAGE Commons beneath it, then community
+networks and the Lantern hanging off the commons. Every box carries who owns it
+and the licence it travels under (CERN-OHL-S 2.0 design, GPL-3.0 firmware,
+Apache-2.0 application and specifications, CC BY-SA 4.0 documentation, per-item
+licences in the commons, MeshCore's own standard), and hovering, focusing or
+tapping a box opens a detail drawer that closes on pointer leave, Escape or its
+close button. The chart was restyled to the site's language — gradient
+surfaces, icon chips, numbered eyebrows, glowing connectors, a soft field behind
+it.
+
+New `/foundation/` page: what the steward is and is not, the ownership and
+licence table in full, the people behind it, and the open-in-practice summary.
+Added to the header and footer navigation; the export verifier now covers four
+pages.
+
+Same pipeline: 46 verified files, tarball sha256 `41a339ed…`, digest check
+passed before the symlink moved. Verified publicly: `/`, `/commons/`,
+`/hardware/` and `/foundation/` all 200, with the new chart text and the
+Foundation page content present in the served HTML. Rollback configuration
+`/var/www/sage-website/backup-20260920T100835Z`; prior release
+`20260920-74fe31c6e884` remains under `releases/`.
+
+Note: this release publishes the per-part licence names on the owner's
+instruction. The papers' own licence is stated as "published openly" pending his
+call (CC BY, CC BY-SA or CC BY-NC).
