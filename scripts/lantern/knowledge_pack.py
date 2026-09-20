@@ -24,9 +24,12 @@ Layout of one pack directory::
     <pack>/delta-v1-to-v2.json      optional per-chunk delta against a parent
 
 A chunk record carries its own content address; the address covers the
-curatorial content (id, title, text, tags, source, date) and deliberately not
-the embedding, so re-embedding with a better model does not change chunk
-identity. Embedding provenance lives in the manifest.
+curatorial content (id, title, text, tags, source, date, confidence) and
+deliberately not the embedding, so re-embedding with a better model does not
+change chunk identity. Embedding provenance lives in the manifest. A pack also
+carries a class - ``reference`` (curated facts) or ``brief`` (dated third-party
+material) - which fixes how its chunks enter a node: a brief is an observation
+below the fact confidence and its answers carry the day and the source.
 """
 
 from __future__ import annotations
@@ -51,10 +54,10 @@ SCHEMA_DELTA = "sage.knowledge-pack.delta.v2"
 SCHEMA_SIGNATURE = "sage.knowledge-pack.signature.v1"
 SCHEMA_TRUST_ROOT = "sage.knowledge-pack.trust-root.v1"
 
-CHUNK_CONTENT_FIELDS = ("id", "title", "text", "tags", "source", "date")
+CHUNK_CONTENT_FIELDS = ("id", "title", "text", "tags", "source", "date", "confidence_bp")
 CHUNK_RECORD_FIELDS = set(CHUNK_CONTENT_FIELDS) | {"schema", "sha256", "embedding"}
 MANIFEST_FIELDS = {"schema", "pack", "embedding", "chunks", "totals", "parent"}
-PACK_FIELDS = {"id", "version", "title", "licence", "provenance", "created_at"}
+PACK_FIELDS = {"id", "version", "class", "title", "licence", "provenance", "created_at"}
 PROVENANCE_FIELDS = {"source", "curator", "url", "note"}
 EMBEDDING_FIELDS = {"model", "dimension", "normalized", "embedded_chunks"}
 MANIFEST_CHUNK_FIELDS = {"id", "sha256", "bytes", "title", "tags"}
@@ -72,6 +75,18 @@ PACK_ID = re.compile(r"[a-z0-9][a-z0-9.-]{0,63}\Z")
 CHUNK_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 HEX_KEY = re.compile(r"[0-9a-f]{64}\Z")
+DATE_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+
+# A pack has a class because reference material and dated news are different
+# claims. A reference pack is curated fact at the fact confidence (9500 bp); a
+# brief is third-party dated material that can be wrong, so it is an observation
+# at 8000 bp and MUST stay below the fact band - a rolling brief that enters the
+# node as a 0.95 fact would be asserting the morning's news as settled truth.
+PACK_CLASSES = ("reference", "brief")
+REFERENCE_CONFIDENCE_BP = 9500
+BRIEF_CONFIDENCE_BP = 8000
+MAX_CONFIDENCE_BP = 10000
+BRIEF_MAX_CONFIDENCE_BP = REFERENCE_CONFIDENCE_BP - 1
 
 # Prototype chunk sizing: retrieval carries whole chunks, so a chunk has to stay
 # inside a comfortable context slice. Raise it only with retrieval evidence.
@@ -153,7 +168,8 @@ def decode_vector(text: str, dimension: int) -> list[float]:
 
 
 def build_chunk(identifier: str, text: str, *, title: str = "", tags=(), source: str = "",
-                date: str = "", embedding=None, embedding_model=None) -> dict:
+                date: str = "", confidence_bp: int = REFERENCE_CONFIDENCE_BP,
+                embedding=None, embedding_model=None) -> dict:
     record = {
         "schema": SCHEMA_CHUNK,
         "id": identifier,
@@ -162,6 +178,7 @@ def build_chunk(identifier: str, text: str, *, title: str = "", tags=(), source:
         "tags": sorted({tag for tag in tags if tag}),
         "source": source,
         "date": date,
+        "confidence_bp": confidence_bp,
     }
     record["sha256"] = content_address(record)
     if embedding is not None:
@@ -192,6 +209,9 @@ def validate_chunk(record) -> None:
     require(isinstance(record["tags"], list) and all(isinstance(tag, str) and tag
             for tag in record["tags"]) and record["tags"] == sorted(set(record["tags"])),
             f"chunk {record['id']} tags must be a sorted list of unique non-empty strings")
+    require(isinstance(record["confidence_bp"], int) and not isinstance(record["confidence_bp"], bool)
+            and 1 <= record["confidence_bp"] <= MAX_CONFIDENCE_BP,
+            f"chunk {record['id']} confidence_bp must be an integer in 1..{MAX_CONFIDENCE_BP}")
     require(HEX64.match(record["sha256"] or ""), "chunk sha256 must be lowercase hex")
     require(record["sha256"] == content_address(record),
             f"chunk {record['id']} content address does not match its content")
@@ -207,9 +227,29 @@ def validate_chunk(record) -> None:
         decode_vector(embedding["vector_f32_le"], embedding["dimension"])
 
 
-def build_manifest(*, pack_id: str, version: int, title: str, licence: str, provenance: dict,
-                   created_at: str, chunks, embedding_model: str, embedding_dimension: int,
-                   parent=None) -> dict:
+def validate_pack_class_rules(manifest: dict, records) -> None:
+    """Class rules that need the manifest and the chunk records together.
+
+    ``records`` is any iterable of chunk records (a list while building, the
+    loaded dict values afterwards).
+    """
+    if manifest["pack"]["class"] != "brief":
+        return
+    for record in records:
+        require(record["confidence_bp"] <= BRIEF_MAX_CONFIDENCE_BP,
+                f"brief chunk {record['id']} carries confidence {record['confidence_bp'] / 10000:g}; "
+                "a brief is never a fact - keep it below 0.95")
+        require(DATE_ONLY.match(record["date"] or ""),
+                f"brief chunk {record['id']} needs a YYYY-MM-DD date; news without a day "
+                "cannot be answered 'as of'")
+        require(record["source"].strip(),
+                f"brief chunk {record['id']} needs a source; news without attribution "
+                "cannot be answered 'per'")
+
+
+def build_manifest(*, pack_id: str, version: int, pack_class: str, title: str, licence: str,
+                   provenance: dict, created_at: str, chunks, embedding_model: str,
+                   embedding_dimension: int, parent=None) -> dict:
     ordered = sorted(chunks, key=lambda record: record["id"])
     require(len({record["sha256"] for record in ordered}) == len(ordered),
             "two chunks share a content address; de-duplicate the source")
@@ -223,8 +263,8 @@ def build_manifest(*, pack_id: str, version: int, title: str, licence: str, prov
                     f"chunk {record['id']} embedding provenance contradicts the manifest")
     manifest = {
         "schema": SCHEMA_MANIFEST,
-        "pack": {"id": pack_id, "version": version, "title": title, "licence": licence,
-                 "provenance": provenance, "created_at": created_at},
+        "pack": {"id": pack_id, "version": version, "class": pack_class, "title": title,
+                 "licence": licence, "provenance": provenance, "created_at": created_at},
         "embedding": {"model": embedding_model, "dimension": embedding_dimension,
                       "normalized": True, "embedded_chunks": embedded},
         "chunks": [{"id": record["id"], "sha256": record["sha256"],
@@ -237,6 +277,7 @@ def build_manifest(*, pack_id: str, version: int, title: str, licence: str, prov
         "parent": parent,
     }
     validate_manifest(manifest)
+    validate_pack_class_rules(manifest, ordered)
     return manifest
 
 
@@ -265,6 +306,8 @@ def validate_manifest(manifest) -> None:
     require(PACK_ID.match(pack["id"] or ""), "pack id must be a lowercase slug")
     require(isinstance(pack["version"], int) and not isinstance(pack["version"], bool)
             and pack["version"] >= 1, "pack version must be an integer >= 1")
+    require(pack["class"] in PACK_CLASSES,
+            f"pack class must be one of {list(PACK_CLASSES)}")
     require(isinstance(pack["title"], str) and pack["title"], "pack title must be non-empty")
     require(isinstance(pack["licence"], str) and pack["licence"],
             "pack licence must be non-empty; a pack without provenance is not distributable")
@@ -557,6 +600,10 @@ class Pack:
         return self.manifest["pack"]["version"]
 
     @property
+    def pack_class(self) -> str:
+        return self.manifest["pack"]["class"]
+
+    @property
     def tag(self) -> str:
         return f"pack:{self.pack_id}-v{self.version}"
 
@@ -575,6 +622,7 @@ class Pack:
 
     def summary(self) -> dict:
         return {"pack": self.pack_id, "version": self.version, "chunks": len(self.chunks),
+                "class": self.pack_class,
                 "text_bytes": self.manifest["totals"]["text_bytes"],
                 "chunk_bytes": self.manifest["totals"]["chunk_bytes"],
                 "embedded_chunks": self.manifest["totals"]["embedded_chunks"],
@@ -646,6 +694,7 @@ def load_pack(directory, *, trust_root: dict | None = None, trusted_public_hex: 
         raise PackFormatError(
             f"chunk store holds {len(stray)} file(s) the manifest does not list "
             f"(first: {stray[0]}); build into a fresh directory rather than reusing one")
+    validate_pack_class_rules(manifest, chunks.values())
     return Pack(directory, manifest, raw, chunks, signature, trust)
 
 
@@ -653,6 +702,40 @@ def load_delta(path) -> dict:
     document = json.loads(Path(path).read_text("utf-8"))
     validate_delta(document)
     return document
+
+
+def delta_filename(from_version: int, to_version: int) -> str:
+    return f"delta-v{from_version}-to-v{to_version}.json"
+
+
+def find_pack_delta(directory, *, to_version: int | None = None) -> dict | None:
+    """The delta document a pack directory ships, if any.
+
+    A delta is a convenience for peers, never an authority: it is not covered by
+    the manifest signature, so the roll path recomputes the removed set from the
+    two manifests and only uses this document as a cross-check.
+    """
+    documents = []
+    for path in sorted(Path(directory).glob("delta-*.json")):
+        try:
+            document = json.loads(path.read_text("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise PackFormatError(f"delta {path} is unreadable: {error}") from error
+        validate_delta(document)
+        if to_version is None or document["to_version"] == to_version:
+            documents.append((path, document))
+    require(len(documents) <= 1,
+            f"{directory} holds {len(documents)} delta documents for version {to_version}; "
+            "a pack has at most one delta per target version")
+    return documents[0][1] if documents else None
+
+
+def check_delta_matches(document: dict, computed: dict) -> None:
+    """A shipped delta may only repeat what the two manifests already say."""
+    for field in ("pack_id", "from_version", "to_version", "from_manifest_sha256",
+                  "to_manifest_sha256", "added", "removed", "unchanged", "added_bytes"):
+        require(document[field] == computed[field],
+                f"delta {field} contradicts the manifests it claims to describe")
 
 
 ARCHIVE_SUFFIX = ".tar.gz"

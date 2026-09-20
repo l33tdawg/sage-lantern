@@ -3,6 +3,7 @@
 
     install-knowledge-pack.py <pack-dir> --check              # coverage, no writes
     install-knowledge-pack.py <pack-dir>                      # install missing chunks
+    install-knowledge-pack.py <pack-dir> --roll-from <old>   # new window in, dropped chunks out
     install-knowledge-pack.py <pack-dir> --retire --reason ...
     install-knowledge-pack.py <pack-dir> --migrate-to public-knowledge
 
@@ -24,6 +25,20 @@ Idempotency is by content address, not by similarity: each memory carries
 ``chunk:<sha256>`` and ``pack:<id>-v<version>`` tags, and the installer asks the
 node for memories tagged with the chunk address before proposing anything. That
 is one local request per chunk; re-running a pack of any size converges.
+
+The pack's class decides how a chunk enters the node. A ``reference`` chunk is a
+fact at its recorded confidence (0.95 by default) with the signed text verbatim.
+A ``brief`` chunk is an observation at its recorded confidence (0.80 by default,
+never 0.95 because news is third-party and can be wrong) and its installed text
+carries ``As of <date>, per <source>:`` because recall returns plain content and
+an answer about the news has to say when it was true and whose account it is.
+
+``--roll-from`` is the rolling-window apply step: it installs the successor and
+then retires the chunks the delta dropped, in that order, so a failed install
+never empties the old window. The old manifest is authenticated by the parent
+digest inside the signed successor, the removed set is recomputed from the two
+manifests, and the shipped delta document may only agree with that - it is not
+signed and never directs a forget on its own.
 
 Batch memories cannot carry an idempotency_key (the SDK rejects it for non-task
 types), so the derived-key replay the node performs on identical content is a
@@ -99,6 +114,26 @@ def chunk_tags(pack, digest: str) -> list[str]:
             'sage-knowledge-pack']
 
 
+def chunk_memory_type(pack) -> str:
+    """A reference pack is curated fact; a brief is dated third-party material."""
+    return 'observation' if pack.pack_class == 'brief' else 'fact'
+
+
+def chunk_content(pack, digest: str) -> str:
+    """The text a node stores for one chunk.
+
+    A reference installs the signed text verbatim. A brief gets its day and
+    source in front of the text, because recall hands the answering model a
+    plain string - the record's date and source fields never reach it, so the
+    framing has to be inside the content for an answer to say when the claim was
+    made and whose account it is.
+    """
+    record = pack.chunks[digest]
+    if pack.pack_class != 'brief':
+        return record['text']
+    return f"As of {record['date']}, per {record['source']}: {record['text']}"
+
+
 def list_tagged(client, tag: str, domain: str | None, limit: int | None = None) -> list:
     """Every memory carrying a tag, paged. Tags are the pack's index, not its data."""
     collected, offset = [], 0
@@ -142,6 +177,9 @@ def _vector_for(client, pack, digest: str):
     recorded = pack.vector(digest)
     if recorded is not None:
         return recorded
+    # Embeddings cover the signed text, not a brief's install-time frame: the
+    # frame is boilerplate, and the vector should describe the event a question
+    # is actually about.
     return client.embed(pack.chunks[digest]['text'])
 
 
@@ -160,28 +198,33 @@ def _check_outcome(record: dict, digest: str) -> None:
 
 def install(client, pack, *, domain: str | None, dry_run: bool = False) -> dict:
     domain = resolve_read_domain(client, domain, needed_by='install')
+    memory_type = chunk_memory_type(pack)
     entries = []
     installed = skipped = replays = failures = 0
     for entry in pack.manifest['chunks']:
         digest = entry['sha256']
+        confidence_bp = pack.chunks[digest]['confidence_bp']
         existing = list_tagged(client, pack.chunk_tag(digest), domain, limit=1)
         if existing:
             skipped += 1
             entries.append({'id': entry['id'], 'sha256': digest, 'present': True,
-                            'memory_id': existing[0].memory_id, 'written': False})
+                            'memory_id': existing[0].memory_id, 'written': False,
+                            'confidence_bp': confidence_bp})
             continue
         if dry_run:
-            entries.append({'id': entry['id'], 'sha256': digest, 'present': False, 'written': False})
+            entries.append({'id': entry['id'], 'sha256': digest, 'present': False,
+                            'written': False, 'confidence_bp': confidence_bp})
             continue
         try:
-            response = client.propose(content=pack.chunks[digest]['text'], memory_type='fact',
-                                      domain_tag=domain, confidence=0.95,
+            response = client.propose(content=chunk_content(pack, digest), memory_type=memory_type,
+                                      domain_tag=domain, confidence=confidence_bp / 10000,
                                       embedding=_vector_for(client, pack, digest),
                                       tags=chunk_tags(pack, digest))
         except Exception as error:  # noqa: BLE001 - reported per chunk, a re-run resumes
             failures += 1
             entries.append({'id': entry['id'], 'sha256': digest, 'present': False,
-                            'written': False, 'error': f'{type(error).__name__}: {error}'})
+                            'written': False, 'confidence_bp': confidence_bp,
+                            'error': f'{type(error).__name__}: {error}'})
             continue
         _check_outcome(response, digest)
         replay = _replay_of(response)
@@ -189,8 +232,10 @@ def install(client, pack, *, domain: str | None, dry_run: bool = False) -> dict:
         installed += int(not replay)
         entries.append({'id': entry['id'], 'sha256': digest, 'present': True,
                         'memory_id': getattr(response, 'memory_id', None),
-                        'written': not replay, 'replay': replay})
+                        'written': not replay, 'replay': replay,
+                        'confidence_bp': confidence_bp})
     return {'pack': pack.pack_id, 'version': pack.version, 'domain': domain,
+            'class': pack.pack_class,
             'chunks': len(pack.manifest['chunks']), 'installed': installed, 'skipped': skipped,
             'replays': replays, 'failures': failures, 'dry_run': dry_run, 'chunks_detail': entries}
 
@@ -209,8 +254,7 @@ def coverage(client, pack, *, domain: str | None) -> dict:
             'complete': not missing, 'chunks_detail': present}
 
 
-def retire(client, tag: str, *, domain: str | None, reason: str) -> dict:
-    domain = resolve_read_domain(client, domain, needed_by='--retire')
+def _forget_tagged(client, tag: str, *, domain: str, reason: str) -> dict:
     records = list_tagged(client, tag, domain)
     outcomes = {'deprecated': 0, 'parked': 0, 'failed': 0}
     detail = []
@@ -232,6 +276,83 @@ def retire(client, tag: str, *, domain: str | None, reason: str) -> dict:
     return {'tag': tag, 'domain': domain, 'memories': len(records),
             'outcomes': outcomes, 'retired': outcomes.get('deprecated', 0),
             'parked': outcomes.get('parked', 0), 'detail': detail}
+
+
+def retire(client, tag: str, *, domain: str | None, reason: str) -> dict:
+    domain = resolve_read_domain(client, domain, needed_by='--retire')
+    return _forget_tagged(client, tag, domain=domain, reason=reason)
+
+
+def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -> dict:
+    """Install a successor version, then retire the chunks the window dropped.
+
+    Order matters: install first, retire second. A run that fails while adding
+    chunks leaves the old window intact rather than emptying the index.
+
+    The old manifest is the new manifest's pinned parent - its digest is inside
+    the signed successor - so the removed set is recomputed from both manifests
+    and the shipped delta document is only allowed to agree with that. A delta
+    file is not signed, so it never directs a forget on its own.
+    """
+    domain = resolve_read_domain(client, domain, needed_by='--roll-from')
+    parent = pack.manifest['parent']
+    if parent is None:
+        raise PackInstallError(
+            f"pack {pack.tag} names no parent version; a window roll installs a successor")
+    if previous.pack_id != pack.pack_id:
+        raise PackInstallError(f"--roll-from is pack {previous.pack_id}, not {pack.pack_id}")
+    previous_digest = knowledge_pack.manifest_digest(previous.manifest)
+    if previous.version != parent['version'] or previous_digest != parent['manifest_sha256']:
+        raise PackInstallError(
+            f"--roll-from is {previous.pack_id} v{previous.version} ({previous_digest[:12]}...), "
+            f"but {pack.tag} names v{parent['version']} "
+            f"({parent['manifest_sha256'][:12]}...) as its parent")
+    delta = knowledge_pack.delta_document(previous.manifest, pack.manifest)
+    shipped = knowledge_pack.find_pack_delta(pack.directory, to_version=pack.version)
+    if shipped is not None:
+        knowledge_pack.check_delta_matches(shipped, delta)
+
+    summary = {'pack': pack.pack_id, 'version': pack.version, 'domain': domain,
+               'from_version': previous.version, 'added': len(delta['added']),
+               'removed': len(delta['removed']), 'unchanged': delta['unchanged'],
+               'delta': 'checked-against-manifests' if shipped is not None
+               else 'recomputed-from-manifests',
+               'phase': 'rolling', 'dry_run': dry_run, 'install': None, 'retire': None}
+    installed = install(client, pack, domain=domain, dry_run=dry_run)
+    summary['install'] = {key: installed[key] for key in
+                          ('chunks', 'installed', 'skipped', 'replays', 'failures')}
+    # The per-chunk detail is what the ledger records; the roll summary stays
+    # short because a rolling brief is re-applied on every window.
+    summary['install_detail'] = installed
+    if installed['failures']:
+        summary['phase'] = 'roll-incomplete'
+        return summary
+
+    if dry_run:
+        detail = [{'sha256': digest, 'memories': len(list_tagged(client, pack.chunk_tag(digest),
+                                                                 domain))}
+                  for digest in delta['removed']]
+        summary['phase'] = 'roll-dry-run'
+        summary['retire'] = {'removed': len(delta['removed']),
+                             'memories': sum(row['memories'] for row in detail),
+                             'detail': detail, 'dry_run': True}
+        return summary
+
+    reason = (f"knowledge pack {pack.tag} rolled from v{previous.version}; "
+              "the window no longer holds this chunk")
+    summary['retire'] = {'removed': len(delta['removed']), 'memories': 0,
+                         'deprecated': 0, 'parked': 0, 'failed': 0, 'detail': []}
+    for digest in delta['removed']:
+        outcome = _forget_tagged(client, pack.chunk_tag(digest), domain=domain, reason=reason)
+        summary['retire']['memories'] += outcome['memories']
+        for name in ('deprecated', 'parked', 'failed'):
+            summary['retire'][name] += outcome['outcomes'].get(name, 0)
+        summary['retire']['detail'].append({'sha256': digest, 'memories': outcome['memories'],
+                                            'deprecated': outcome['outcomes'].get('deprecated', 0),
+                                            'parked': outcome['outcomes'].get('parked', 0),
+                                            'failed': outcome['outcomes'].get('failed', 0)})
+    summary['phase'] = 'rolled'
+    return summary
 
 
 def migrate(client, pack, *, source_domain: str | None, dest_domain: str | None,
@@ -268,10 +389,11 @@ def write_ledger(path: Path, summary: dict) -> None:
     document = {'schema': 'sage.knowledge-pack.ledger.v1', 'pack': summary['pack'],
                 'version': summary['version'], 'domain': summary['domain'],
                 'updated_at': dt.datetime.now(dt.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                'chunks': {row['sha256']: {'id': row['id'], 'memory_id': row.get('memory_id'),
-                                           'written': row.get('written', False),
-                                           'replay': row.get('replay', False)}
-                           for row in summary['chunks_detail']}}
+        'chunks': {row['sha256']: {'id': row['id'], 'memory_id': row.get('memory_id'),
+                                   'written': row.get('written', False),
+                                   'replay': row.get('replay', False),
+                                   'confidence_bp': row.get('confidence_bp')}
+                   for row in summary['chunks_detail']}}
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=f'.{path.name}.')
     try:
@@ -310,6 +432,9 @@ def main():
     parser.add_argument('--check', action='store_true', help='report coverage and write nothing')
     parser.add_argument('--retire', action='store_true',
                         help='forget every memory carrying the pack tag in --domain')
+    parser.add_argument('--roll-from', type=Path, default=None,
+                        help='previous version of this pack (directory or archive); install this '
+                             'one, then retire the chunks the pinned delta dropped')
     parser.add_argument('--migrate-to', default='',
                         help='install into this domain, verify, then retire the source copies')
     parser.add_argument('--reason', default='')
@@ -318,6 +443,9 @@ def main():
     selected = [name for name in ('check', 'retire', 'verify') if getattr(args, name)]
     if bool(args.migrate_to) and selected:
         raise PackInstallError('--migrate-to does not combine with --verify, --check or --retire')
+    if args.roll_from is not None and (selected or bool(args.migrate_to)):
+        raise PackInstallError('--roll-from does not combine with --verify, --check, --retire '
+                               'or --migrate-to')
     if selected and args.dry_run:
         raise PackInstallError('--dry-run applies to install and --migrate-to only')
     if args.verify and (args.ledger or args.register_domain):
@@ -335,12 +463,19 @@ def main():
         pack = knowledge_pack.load_pack(directory, trust_root=trust_root,
                                         trusted_public_hex=trusted,
                                         allow_unsigned=args.allow_unsigned)
-        return dispatch(args, pack, trust_root)
+        previous = None
+        if args.roll_from is not None:
+            with knowledge_pack.pack_directory(args.roll_from) as previous_directory:
+                # The parent digest inside the signed successor is the authority;
+                # the old pack is loaded without a trust root for that reason.
+                previous = knowledge_pack.load_pack(previous_directory, allow_unsigned=True)
+        return dispatch(args, pack, trust_root, previous)
 
 
-def dispatch(args, pack, trust_root) -> int:
+def dispatch(args, pack, trust_root, previous=None) -> int:
     domain = args.domain or None
     common = {'pack': pack.pack_id, 'version': pack.version, 'signed': pack.signature is not None,
+              'class': pack.pack_class,
               'key_id': pack.key_id, 'key_status': pack.key_status,
               'trust_root': None if trust_root is None else str(args.trust_root),
               'active_keys': None if trust_root is None else knowledge_pack.active_key_ids(trust_root)}
@@ -355,6 +490,7 @@ def dispatch(args, pack, trust_root) -> int:
         client.register_domain(domain or '', description='Curated knowledge packs')
 
     reason = args.reason or f"knowledge pack {pack.tag} retired by operator"
+    recorded = None
     if args.retire:
         summary = retire(client, pack.tag, domain=domain, reason=reason)
         summary['pack'] = pack.pack_id
@@ -365,12 +501,19 @@ def dispatch(args, pack, trust_root) -> int:
     elif args.migrate_to:
         summary = migrate(client, pack, source_domain=domain, dest_domain=args.migrate_to or None,
                           dry_run=args.dry_run)
+    elif previous is not None:
+        summary = roll(client, pack, previous, domain=domain, dry_run=args.dry_run)
+        recorded = summary.pop('install_detail', None)
+        summary['pack_dir'] = str(args.pack)
+        summary['previous_pack_dir'] = str(args.roll_from)
     else:
         summary = install(client, pack, domain=domain, dry_run=args.dry_run)
+        recorded = summary
         summary['pack_dir'] = str(args.pack)
+    if recorded is not None and not args.dry_run:
         ledger = None if args.no_ledger else (args.ledger or DEFAULT_LEDGER_DIR / f'{pack.pack_id}.json')
-        if ledger is not None and not args.dry_run:
-            write_ledger(ledger, summary)
+        if ledger is not None:
+            write_ledger(ledger, recorded)
             summary['ledger'] = str(ledger)
     summary.update(common)
     summary['unsigned_accepted'] = pack.signature is None
@@ -381,7 +524,11 @@ def dispatch(args, pack, trust_root) -> int:
         return 1
     if summary.get('outcomes', {}).get('failed'):
         return 1
-    if summary.get('phase') == 'copy-incomplete':
+    if (summary.get('retire') or {}).get('outcomes', {}).get('failed'):
+        return 1
+    if (summary.get('retire') or {}).get('failed'):
+        return 1
+    if summary.get('phase') in ('copy-incomplete', 'roll-incomplete'):
         return 1
     return 0
 

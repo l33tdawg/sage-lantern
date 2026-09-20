@@ -11,9 +11,16 @@ carry no timestamps for exactly that reason.
         --created-at 2026-09-20T00:00:00Z --default-date 2026-09-20 \
         --parent ../pack-malaysia-v1 --signing-key ~/.sage/pack-signing.key
 
-JSONL rows use {"id","text"} with optional {"title","tags","source","date"}.
+JSONL rows use {"id","text"} with optional {"title","tags","source","date","confidence"}.
 Markdown sources use one "## Title" section per chunk, with optional leading
-"Tags:", "Source:", "Date:" lines and an "<!-- id: slug -->" override.
+"Tags:", "Source:", "Date:", "Confidence:" lines and an "<!-- id: slug -->" override.
+
+A pack is either a ``reference`` (curated facts, confidence 0.95 by default) or a
+``brief`` (dated third-party material, confidence 0.80 by default and never at or
+above the fact band), and each chunk records its own confidence in basis points.
+The class is not decoration: it decides the memory type and confidence a node
+installs a chunk with, and whether the installed text carries an "as of <date>,
+per <source>" frame.
 
 Embeddings are optional and recorded per chunk. Pass --embed-url to precompute
 them (the field units then install without spending CPU on embedding); leave it
@@ -45,9 +52,27 @@ def slug(value: str) -> str:
     return re.sub(r'-{2,}', '-', cleaned)
 
 
+def confidence_bp(value, where: str) -> int:
+    """A confidence as basis points (integer), the only canonical representation.
+
+    The canonical-bytes rule forbids floating point in hashed structures, so the
+    chunk record stores an integer out of 10000 and the CLI accepts ordinary
+    decimals like 0.8.
+    """
+    require = knowledge_pack.require
+    require(not isinstance(value, bool) and isinstance(value, (int, float)),
+            f"{where}: confidence must be a number")
+    number = float(value)
+    require(0 < number <= 1, f"{where}: confidence must be in (0, 1]")
+    points = round(number * 10000)
+    require(abs(number * 10000 - points) < 1e-6,
+            f"{where}: confidence is finer than one basis point (0.0001)")
+    return int(points)
+
+
 def parse_jsonl(path: Path, defaults: dict):
     rows = []
-    allowed = {'id', 'text', 'title', 'tags', 'source', 'date'}
+    allowed = {'id', 'text', 'title', 'tags', 'source', 'date', 'confidence'}
     for number, line in enumerate(path.read_text('utf-8').splitlines(), start=1):
         if not line.strip():
             continue
@@ -70,13 +95,14 @@ def parse_jsonl(path: Path, defaults: dict):
             'tags': list(tags) + list(defaults['tags']),
             'source': row.get('source') or defaults['source'],
             'date': row.get('date') or defaults['date'],
+            'confidence': row.get('confidence'),
         })
     if not rows:
         raise knowledge_pack.PackFormatError(f"{path}: no rows found")
     return rows
 
 
-METADATA = re.compile(r'^(Tags|Source|Date|Id):\s*(.+?)\s*$')
+METADATA = re.compile(r'^(Tags|Source|Date|Confidence|Id):\s*(.+?)\s*$')
 ID_COMMENT = re.compile(r'<!--\s*id:\s*([A-Za-z0-9._-]+)\s*-->')
 
 
@@ -116,12 +142,21 @@ def parse_markdown(path: Path, defaults: dict):
             raise knowledge_pack.PackFormatError(
                 f"{path}: section {index} derives a {len(identifier)}-character id; "
                 "add an explicit '<!-- id: slug -->' of at most 64 characters")
+        confidence = metadata.get('confidence')
+        if confidence is not None:
+            try:
+                confidence = float(confidence)
+            except ValueError as error:
+                raise knowledge_pack.PackFormatError(
+                    f"{path}: section {index} ({section['title']}) has a non-numeric "
+                    f"Confidence: {metadata['confidence']!r}") from error
         rows.append({
             'id': identifier, 'text': text, 'title': section['title'],
             'tags': [tag.strip() for tag in metadata.get('tags', '').split(',') if tag.strip()]
                     + list(defaults['tags']),
             'source': metadata.get('source') or defaults['source'],
             'date': metadata.get('date') or defaults['date'],
+            'confidence': confidence,
         })
     return title, rows
 
@@ -151,6 +186,13 @@ def main():
     parser.add_argument('--pack-id', required=True)
     parser.add_argument('--version', type=int, required=True)
     parser.add_argument('--title', default='')
+    parser.add_argument('--class', dest='pack_class', choices=knowledge_pack.PACK_CLASSES,
+                        default='reference',
+                        help='reference (curated facts, 0.95) or brief (dated third-party '
+                             'material, 0.80)')
+    parser.add_argument('--default-confidence', type=float, default=None,
+                        help='per-chunk confidence for source rows that do not carry one; '
+                             'defaults to 0.95 for a reference and 0.80 for a brief')
     parser.add_argument('--licence', required=True,
                         help='licence identifier for the source material; a pack without '
                              'provenance is not distributable')
@@ -188,6 +230,11 @@ def main():
     if not pack_title:
         raise knowledge_pack.PackFormatError('a pack needs a title, from --title or the source heading')
 
+    default_confidence = knowledge_pack.REFERENCE_CONFIDENCE_BP if args.pack_class == 'reference' \
+        else knowledge_pack.BRIEF_CONFIDENCE_BP
+    if args.default_confidence is not None:
+        default_confidence = confidence_bp(args.default_confidence, '--default-confidence')
+
     # A parent is loaded without a signature requirement: it is a source for the
     # delta, and the new manifest pins its digest, so the relationship is
     # verifiable later even while no pack signing key exists.
@@ -217,9 +264,16 @@ def main():
                 raise knowledge_pack.PackFormatError(
                     f"embedding service returned {len(vector)} dimensions, expected "
                     f"{args.embed_dimension}")
+        confidence = default_confidence if row['confidence'] is None \
+            else confidence_bp(row['confidence'], f"chunk {row['id']}")
+        if args.pack_class == 'brief' and confidence > knowledge_pack.BRIEF_MAX_CONFIDENCE_BP:
+            raise knowledge_pack.PackFormatError(
+                f"chunk {row['id']} carries confidence {confidence / 10000:g}; "
+                "a brief is never a fact - keep it below 0.95")
         records.append(knowledge_pack.build_chunk(
             row['id'], row['text'], title=row['title'], tags=row['tags'], source=row['source'],
-            date=row['date'], embedding=vector, embedding_model=args.embed_model if vector else None))
+            date=row['date'], confidence_bp=confidence, embedding=vector,
+            embedding_model=args.embed_model if vector else None))
     records.sort(key=lambda record: record['id'])
 
     provenance = {'source': args.source_label}
@@ -227,8 +281,8 @@ def main():
         if getattr(args, name):
             provenance[name] = getattr(args, name)
     manifest = knowledge_pack.build_manifest(
-        pack_id=args.pack_id, version=args.version, title=pack_title, licence=args.licence,
-        provenance=provenance, created_at=args.created_at, chunks=records,
+        pack_id=args.pack_id, version=args.version, pack_class=args.pack_class, title=pack_title,
+        licence=args.licence, provenance=provenance, created_at=args.created_at, chunks=records,
         embedding_model=args.embed_model, embedding_dimension=args.embed_dimension,
         parent=None if parent is None else {'version': parent.version,
                                             'manifest_sha256': knowledge_pack.manifest_digest(parent.manifest)})
@@ -243,6 +297,7 @@ def main():
     pack = knowledge_pack.load_pack(args.out, allow_unsigned=signature is None)
     summary = pack.summary()
     summary.update({'out': str(args.out), 'source': str(args.source),
+                    'default_confidence_bp': default_confidence,
                     'delta': None if delta is None else {'added': len(delta['added']),
                                                          'removed': len(delta['removed']),
                                                          'unchanged': delta['unchanged']}})

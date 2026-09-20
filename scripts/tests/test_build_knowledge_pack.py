@@ -90,10 +90,65 @@ def test_markdown_heading_supplies_a_missing_title(tmp_path, monkeypatch):
 
 
 def test_unknown_jsonl_field_is_refused(tmp_path, monkeypatch):
-    source = json.dumps({'id': 'my-001', 'text': 'Text.', 'confidence': 0.9}) + '\n'
+    source = json.dumps({'id': 'my-001', 'text': 'Text.', 'licence': 'CC0'}) + '\n'
     with pytest.raises(pack_format.PackFormatError) as error:
         build(monkeypatch, source, tmp_path / 'pack-unknown')
     assert 'unknown field' in str(error.value)
+
+
+def test_reference_pack_defaults_to_fact_confidence(tmp_path, monkeypatch):
+    pack = build(monkeypatch, JSONL, tmp_path / 'pack-reference')
+    assert pack.pack_class == 'reference'
+    assert {record['confidence_bp'] for record in pack.chunks.values()} == {9500}
+
+
+def test_brief_pack_defaults_to_observation_confidence(tmp_path, monkeypatch):
+    pack = build(monkeypatch, JSONL, tmp_path / 'pack-brief', '--class', 'brief')
+    assert pack.pack_class == 'brief'
+    assert {record['confidence_bp'] for record in pack.chunks.values()} == {8000}
+    assert pack.summary()['class'] == 'brief'
+
+
+def test_per_row_confidence_overrides_the_default(tmp_path, monkeypatch):
+    source = json.dumps({'id': 'my-001', 'text': 'A cautious claim.',
+                         'confidence': 0.65}) + '\n'
+    pack = build(monkeypatch, source, tmp_path / 'pack-lower', '--default-confidence', '0.9')
+    assert next(iter(pack.chunks.values()))['confidence_bp'] == 6500
+    no_row_confidence = json.dumps({'id': 'my-001', 'text': 'A cautious claim.'}) + '\n'
+    other = build(monkeypatch, no_row_confidence, tmp_path / 'pack-default',
+                  '--default-confidence', '0.9')
+    assert next(iter(other.chunks.values()))['confidence_bp'] == 9000
+
+
+def test_markdown_confidence_line_is_honoured(tmp_path, monkeypatch):
+    source = MARKDOWN.replace('Tags: distances, roads',
+                              'Tags: distances, roads\nConfidence: 0.7')
+    pack = build(monkeypatch, source, tmp_path / 'pack-md-confidence', name='facts.md')
+    entries = {entry['id']: entry for entry in pack.manifest['chunks']}
+    assert pack.chunks[entries['kuala-lumpur-to-ipoh-by-road']['sha256']]['confidence_bp'] == 7000
+    assert pack.chunks[entries['merdeka']['sha256']]['confidence_bp'] == 9500
+
+
+def test_brief_refuses_fact_confidence(tmp_path, monkeypatch):
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, JSONL, tmp_path / 'pack-loud', '--class', 'brief',
+              '--default-confidence', '0.95')
+    assert 'never a fact' in str(error.value)
+    source = json.dumps({'id': 'my-001', 'text': 'Text.', 'confidence': 0.96}) + '\n'
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, source, tmp_path / 'pack-row-loud', '--class', 'brief')
+    assert 'never a fact' in str(error.value)
+
+
+def test_confidence_must_be_a_number_in_range(tmp_path, monkeypatch):
+    source = json.dumps({'id': 'my-001', 'text': 'Text.', 'confidence': 1.5}) + '\n'
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, source, tmp_path / 'pack-over')
+    assert 'confidence must be in (0, 1]' in str(error.value)
+    with pytest.raises(pack_format.PackFormatError) as error:
+        build(monkeypatch, JSONL, tmp_path / 'pack-fine',
+              '--default-confidence', '0.81234')
+    assert 'finer than one basis point' in str(error.value)
 
 
 def test_parent_build_records_a_per_chunk_delta(tmp_path, monkeypatch):

@@ -21,19 +21,22 @@ delta between versions.
 
 | | State |
 |---|---|
-| Format, builder, installer | built, 80 tests, prototype under `OPEN-DST-001` |
+| Format, builder, installer | built, 98 tests, prototype under `OPEN-DST-001` |
 | Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
-| Pack #1 | reference facts, Malaysia v1: signed, archive `0cea5c80` |
-| Pack #2 | world brief, 20 Jun – 20 Sep 2026: 2,052 events, signed, archive `6b57a57c` |
+| Pack #1 | `reference` class, Malaysia v1: signed, archive `2f7dfce9` |
+| Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, signed, archive `7660413b` |
+| Window roll | `--roll-from <old>`: install the successor, then retire the chunks it dropped; rehearsed on two real overlapping windows (13 in, 275 out, 1,764 shared) |
 | Device install | **nothing installed** — see the two gates below |
 
-Next, in order: (1) give a pack a class and a per-chunk confidence so a brief is not
-a 0.95 fact, and make its answers say when and per whom; (2) add the window-roll
-apply step that retires the chunks a rolling window dropped; (3) size the installed
-window to the device's four-chunk recall budget rather than to the archive; (4) only
-then consider a device install, and prefer a public cache domain over the private
-home domain (`bbd52246`). The snapshot-pack lane stays blocked until `SAGE-EXPORT`
-and `OPEN-COM-003` land — see
+The class and confidence fields changed the prototype schema on 2026-09-20. Nothing
+had been published, so both packs were rebuilt and re-signed rather than teaching
+readers two manifest shapes; the superseded pre-class directories sit beside them
+under each pack's `superseded-pre-class/`.
+
+Next, in order: (1) size the installed window to the device's four-chunk recall
+budget rather than to the archive; (2) only then consider a device install, and
+prefer a public cache domain over the private home domain (`bbd52246`). The
+snapshot-pack lane stays blocked until `SAGE-EXPORT` and `OPEN-COM-003` land — see
 [DUAL_HOME_AND_PUBLICATION_CONTRACT.md](DUAL_HOME_AND_PUBLICATION_CONTRACT.md) §10.1.
 
 ## Why the flat JSONL had to go
@@ -59,12 +62,19 @@ was a no-op: it looked for an `id:` marker in `record.tags`, and the SDK's
 ```json
 {"date":"2026-09-20","id":"my-005","schema":"sage.knowledge-pack.chunk.v2",
  "sha256":"04970863...","source":"curated:owner-notes-2026-09-20",
- "tags":["malaysia"],"text":"Kuala Lumpur Tower (Menara Kuala Lumpur) is 421 metres tall...",
- "title":""}
+ "confidence_bp":9500,"tags":["malaysia"],
+ "text":"Kuala Lumpur Tower (Menara Kuala Lumpur) is 421 metres tall...","title":""}
 ```
 
 * `sha256` is the **content address**: the SHA-256 of the canonical bytes of
-  `{id, title, text, tags, source, date}`. The file name is that digest.
+  `{id, title, text, tags, source, date, confidence_bp}`. The file name is that
+  digest. Re-rating a chunk is therefore a new chunk - the delta reports the old
+  address removed and the new one added - which is what makes a confidence
+  change actually reach a node instead of being ignored by an idempotent re-run.
+* `confidence_bp` is the chunk's confidence in **basis points** (an integer out
+  of 10000). The canonical-bytes rule forbids floating point in signed
+  structures, so 0.8 is stored as `8000`; the builder's CLI still takes ordinary
+  decimals. A pack's class bounds what a chunk may claim - see below.
 * The **embedding is not part of the address**. Re-embedding a pack with a better
   model must not change chunk identity, so provenance for embeddings lives in the
   manifest instead, and the installer verifies the two against each other.
@@ -79,7 +89,7 @@ was a no-op: it looked for an `id:` marker in `record.tags`, and the SDK's
 
 ```json
 {"schema":"sage.knowledge-pack.manifest.v2",
- "pack":{"id":"malaysia","version":1,"title":"...","licence":"CC-BY-4.0",
+ "pack":{"id":"malaysia","version":1,"class":"reference","title":"...","licence":"CC-BY-4.0",
          "provenance":{"source":"curated:owner-notes-2026-09-20"},
          "created_at":"2026-09-20T00:00:00Z"},
  "embedding":{"model":"nomic-embed-text-v1.5","dimension":768,"normalized":true,
@@ -90,11 +100,36 @@ was a no-op: it looked for an `id:` marker in `record.tags`, and the SDK's
 ```
 
 * `chunks` is sorted by `id`; a chunk id and a content address each appear once.
+* `class` is `reference` or `brief`, and it is not decoration: it fixes the
+  memory type and the confidence band a node installs the pack with, and whether
+  the installed text carries a time-and-source frame.
 * `licence` and `provenance.source` are mandatory. A pack without provenance is not
   distributable, and which licences may travel on the public channel is
   `OPEN-PUB-001`'s call (interim default: public domain or an explicitly approved
   permissive licence).
 * `parent` names the earlier version by `{version, manifest_sha256}`.
+
+### Pack class and confidence
+
+Two classes exist because a curated fact and this morning's news are different
+claims, and one confidence cannot describe both.
+
+| Class | What it is | Installed as | Confidence |
+|---|---|---|---|
+| `reference` | curated material whose truth the Foundation asserts | `fact`, text verbatim | the chunk's `confidence_bp`, 0.95 by default |
+| `brief` | dated third-party material that can be wrong | `observation`, text framed `As of <date>, per <source>:` | the chunk's `confidence_bp`, 0.80 by default, and never at or above 0.95 |
+
+Three rules make that real, and all three are enforced:
+
+* A `brief` chunk must carry a `YYYY-MM-DD` date and a source; news with no day
+  or attribution cannot be answered "as of" or "per".
+* A `brief` chunk may not carry the fact confidence. Everything at 0.95 or above
+  is a claim of settled truth, and a rolling brief must never make one.
+* The frame lives in the installed content, not in the record. Recall hands the
+  answering model a plain string (a `MemoryRecord` carries no tags, source or
+  date), so `As of 2026-09-20, per https://...: <text>` is the only place the
+  day and the source reach an answer at all. The signed chunk text stays clean;
+  the frame is a deterministic install-time projection.
 
 ### Canonical bytes and the one digest
 
@@ -189,8 +224,33 @@ the node's own tag index. Every memory carries `pack:<id>-v<version>` and
 | install | Asks for the chunk tag first; only proposes what is missing. One local request per chunk; re-running converges |
 | `--verify` | Verifies the pack and stops: no node, no identity, no writes. This is the gate a delivered archive must pass first |
 | `--check` | Coverage report (`present`/`missing`) and nothing written; exit 1 when a chunk is missing |
+| `--roll-from <old>` | The rolling-window apply step. Installs the successor, then retires the chunk memories the delta dropped — in that order, so a failed install leaves the old window intact |
 | `--retire` | Forgets every memory carrying the pack tag, and reports what the node actually did |
 | `--migrate-to <domain>` | Copies the pack into another domain, verifies completeness there, and only then retires the source copies |
+
+`--roll-from` takes the previous pack directory or archive. That previous
+manifest is authenticated by the `parent.manifest_sha256` inside the signed
+successor (the old pack is not re-verified against the trust root for that
+reason), the added/removed/unchanged sets are **recomputed from the two
+manifests**, and the delta document shipped in the pack may only agree with that
+recomputation. A delta file is not covered by the signature, so it is never the
+authority for a forget; a contradiction refuses the whole run before anything is
+written. The summary reports `deprecated` versus `parked` per removed chunk,
+because a post-app-v21 forget can park as a challenge instead of removing.
+
+One property to hold on to: retirement is by content address, and the index
+de-duplicates by content address across versions. A chunk that two installed
+artifacts genuinely share is one memory, so rolling one of them out retires the
+shared memory too. Packs are curated as one lineage per id; do not install two
+independent lineages that reuse the same chunk content if you intend to roll one
+of them.
+
+The other side of the same property: a chunk that was already present is not
+re-proposed, so it keeps the `pack:<id>-v<version>` tag of the version that first
+installed it (there is no tag backfill in this SDK). A version tag therefore marks
+what that version introduced. Dropping a whole rolled lineage is one `--retire`
+per version tag; dropping exactly the chunks a window lost is what `--roll-from`
+does by content address.
 
 ## Delivery: GitHub release to offline unit
 
@@ -200,11 +260,11 @@ identity: same pack in, same bytes out.
 ```sh
 python3 scripts/lantern/build-knowledge-pack.py work/knowledge-pack-20260920/pack-malaysia-v1.jsonl \
     --out work/knowledge-pack-20260920/pack-malaysia-v1 --pack-id malaysia \
-    --version 1 --title "Malaysia - practical regional facts" --licence CC-BY-4.0 \
+    --version 1 --class reference --title "Malaysia - practical regional facts" --licence CC-BY-4.0 \
     --source-label curated:owner-notes-2026-09-20 --created-at 2026-09-20T00:00:00Z \
     --default-date 2026-09-20 --default-tag malaysia \
     --signing-key ~/sage-foundation/pack-signing-1.key --archive
-# -> work/.../malaysia-v1.tar.gz   (sha256 0cea5c80... for the signed pack #1)
+# -> work/.../malaysia-v1.tar.gz   (sha256 2f7dfce9... for the signed pack #1)
 ```
 
 Attach the archive to a GitHub release, with the manifest digest and the archive
@@ -252,16 +312,21 @@ CC BY-SA is accepted for the Foundation channel.
   with the page URL as each chunk's `source` and the day as its `date`.
 * **Shape:** one event per chunk, topic as `title` and tag. A 93-day window came to
   2,052 events, 417 KB of text, one 475 KB signed archive.
-* **Class, not just licence:** the wiki text is third-party and can be wrong, so a
-  brief is not a reference fact. News wants a distinct class and a lower confidence
-  than `fact` at 0.95, and its answers should carry the day and the source
-  ("as of 20 September, per ...") rather than asserting the present. That addition
-  is not built yet.
-* **Window policy:** a brief ages out. Rolling a window needs the chunks that
-  *left* it retired, not just the new one installed — otherwise the index
-  accumulates stale news and the top-4 recall budget starts crowding out durable
-  facts. The delta document already names `removed`; the apply step that exploits
-  it is the next piece of tooling.
+* **Class, not just licence:** the wiki text is third-party and can be wrong, so the
+  brief ships as class `brief`: every chunk at confidence 0.80, installed as an
+  `observation` whose content is framed `As of <day>, per <page URL>: <text>`. It
+  cannot ship at 0.95 and the builder refuses it if someone tries. The answers a
+  node gives from it therefore carry the day and the source rather than asserting
+  the present.
+* **Window policy:** a brief ages out, and rolling a window retires the chunks that
+  *left* it, not just the ones that arrived — otherwise the index accumulates
+  stale news and the top-4 recall budget starts crowding out durable facts.
+  `install-knowledge-pack.py --roll-from <old>` is that apply step. It installs
+  the successor first and retires second; the removed set is recomputed from the
+  pinned parent manifest, so the unsigned delta document can only confirm the
+  removal, never cause one. Rehearsed on two real overlapping windows: 13 events
+  in, 275 out, 1,764 untouched, and a second application converges to zero
+  writes.
 * **Install size is a recall decision, not a copying decision.** A three-month
   brief is ~2,000 memories in a node whose recall budget is four chunks; on a unit
   that also holds private facts that is a lot of competition. The archive is the
@@ -364,7 +429,7 @@ chunks stay valid (they are content-addressed) until someone retires them.
 * Format, builder and installer: `scripts/lantern/knowledge_pack.py`,
   `scripts/lantern/build-knowledge-pack.py`, `scripts/lantern/install-knowledge-pack.py`,
   `scripts/lantern/pack-signing-key.py`, `scripts/lantern/pack-trust-root.json`.
-* Conformance suite (70 tests): `scripts/tests/test_knowledge_pack.py`,
+* Conformance suite (98 tests): `scripts/tests/test_knowledge_pack.py`,
   `scripts/tests/test_build_knowledge_pack.py`,
   `scripts/tests/test_install_knowledge_pack.py`,
   `scripts/tests/test_pack_signing_key.py`. It covers tampered chunks, stray and
@@ -372,13 +437,24 @@ chunks stay valid (they are content-addressed) until someone retires them.
   signature, a wrong trusted key, a revoked key, an unknown signer, byte-identical
   rebuilds, byte-identical archives, archive traversal and link members, a key
   file inside the repository, a mismatched trust-root key id, delta arithmetic,
-  tag scoping between versions, parked challenges, an indeterminate commit, and a
-  copy-incomplete migration that must not retire the source.
+  class and confidence rules (a brief can never claim the fact confidence; a
+  confidence re-rating is a new content address), tag scoping between versions,
+  parked challenges, an indeterminate commit, a copy-incomplete migration that
+  must not retire the source, a roll that installs before it retires, a roll that
+  refuses a delta contradicting the manifests, and a failed roll that leaves the
+  old window alone.
 * Pack #1 rebuilt in this format: `work/knowledge-pack-20260920/pack-malaysia-v1/`
-  (40 chunks, manifest `6ab58f40...`) plus the signed delivery archive
-  `malaysia-v1.tar.gz` (sha256 `0cea5c80...`, member count 43 including
-  `manifest.sig.json`). `--verify` on the archive passes with no node contact and
-  reports `key_status: active, unsigned_accepted: false`.
+  (40 chunks at 0.95, class `reference`, manifest `18a53510...`) plus the signed
+  delivery archive `malaysia-v1.tar.gz` (sha256 `2f7dfce9...`, member count 43
+  including `manifest.sig.json`). `--verify` on the archive passes with no node
+  contact and reports `key_status: active, unsigned_accepted: false`.
+* The world brief in this format: `work/world-brief-20260920/world-brief-v20260920/`
+  (2,052 events at 0.80, class `brief`, manifest `cc0a5fa8...`), archive
+  `world-brief-v20260920.tar.gz` sha256 `7660413b...`, member count 2,055.
+* Two-window roll rehearsal on real portal data:
+  `work/lantern-brief-roll-20260920/` (`rehearsal_roll.py` plus its two packs and
+  the RESULTS record) - 2,039 memories installed, then 13 installed / 275 retired
+  / 1,764 untouched, index exactly the new window, second application a no-op.
 
 ## Not settled here
 

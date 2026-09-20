@@ -83,20 +83,33 @@ class FakeClient:
 
 
 def make_pack(tmp_path, *, version=1, texts=None, embedded=False, pack_id='malaysia',
-              name=None):
-    texts = TEXTS if texts is None else texts
+              name=None, pack_class='reference', rows=None, parent=None, write_delta_from=None,
+              confidence_bp=None):
+    rows = rows if rows is not None else [{'id': f'my-{index:03d}', 'text': text,
+                                           'title': f'Fact {index}'}
+                                          for index, text in enumerate(
+                                              TEXTS if texts is None else texts, start=1)]
+    if confidence_bp is None:
+        confidence_bp = pack_format.BRIEF_CONFIDENCE_BP if pack_class == 'brief' \
+            else pack_format.REFERENCE_CONFIDENCE_BP
     chunks = []
-    for index, text in enumerate(texts, start=1):
+    for row in rows:
         chunks.append(pack_format.build_chunk(
-            f'my-{index:03d}', text, title=f'Fact {index}', source='curated:test',
-            date='2026-09-20', embedding=[0.5, 0.25, 0.0] if embedded else None,
+            row['id'], row['text'], title=row.get('title', ''), tags=row.get('tags', ()),
+            source=row.get('source', 'curated:test'), date=row.get('date', '2026-09-20'),
+            confidence_bp=row.get('confidence_bp', confidence_bp),
+            embedding=[0.5, 0.25, 0.0] if embedded else None,
             embedding_model='nomic-embed-text-v1.5' if embedded else None))
     manifest = pack_format.build_manifest(
-        pack_id=pack_id, version=version, title='Test pack', licence='CC-BY-4.0',
+        pack_id=pack_id, version=version, pack_class=pack_class, title='Test pack',
+        licence='CC-BY-4.0',
         provenance={'source': 'curated:test'}, created_at='2026-09-20T00:00:00Z', chunks=chunks,
-        embedding_model='nomic-embed-text-v1.5', embedding_dimension=3)
+        embedding_model='nomic-embed-text-v1.5', embedding_dimension=3, parent=parent)
     directory = tmp_path / (name or f'{pack_id}-v{version}')
-    pack_format.write_pack(directory, manifest, {record['sha256']: record for record in chunks})
+    delta = pack_format.delta_document(write_delta_from.manifest, manifest) \
+        if write_delta_from is not None else None
+    pack_format.write_pack(directory, manifest, {record['sha256']: record for record in chunks},
+                           delta=delta)
     return pack_format.load_pack(directory, allow_unsigned=True)
 
 
@@ -109,6 +122,8 @@ def test_install_proposes_every_chunk_with_pack_tags_then_skips_on_rerun(tmp_pat
     assert len(client.proposals) == 2
     for proposal in client.proposals:
         assert proposal['domain'] == 'local-field-knowledge' and proposal['type'] == 'fact'
+        assert proposal['confidence'] == 0.95
+        assert proposal['content'] in TEXTS
         assert pack.tag in proposal['tags'] and 'sage-knowledge-pack' in proposal['tags']
         assert any(tag.startswith('chunk:') for tag in proposal['tags'])
         assert any(tag.startswith('chunk-id:') for tag in proposal['tags'])
@@ -203,6 +218,111 @@ def test_pack_versions_are_tag_scoped(tmp_path):
     assert installer.coverage(client, second, domain=None)['complete']
 
 
+def test_brief_chunks_install_as_dated_observations(tmp_path):
+    pack = make_pack(tmp_path, pack_class='brief', texts=[TEXTS[0]])
+    client = FakeClient()
+    summary = installer.install(client, pack, domain=None)
+    assert summary['class'] == 'brief'
+    proposal = client.proposals[0]
+    assert proposal['type'] == 'observation' and proposal['confidence'] == 0.8
+    assert proposal['content'] == f'As of 2026-09-20, per curated:test: {TEXTS[0]}'
+
+
+def roll_packs(tmp_path):
+    first = make_pack(tmp_path, version=1, pack_class='brief', rows=[
+        {'id': 'wb-1', 'text': 'Event one.'},
+        {'id': 'wb-2', 'text': 'Event two.'}])
+    second = make_pack(
+        tmp_path, version=2, pack_class='brief',
+        rows=[{'id': 'wb-2', 'text': 'Event two.'},
+              {'id': 'wb-3', 'text': 'Event three.'}],
+        parent={'version': 1, 'manifest_sha256': pack_format.manifest_digest(first.manifest)},
+        write_delta_from=first)
+    return first, second
+
+
+def test_roll_installs_the_successor_then_retires_the_chunks_it_dropped(tmp_path):
+    first, second = roll_packs(tmp_path)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    summary = installer.roll(client, second, first, domain=None)
+    assert summary['phase'] == 'rolled' and summary['delta'] == 'checked-against-manifests'
+    assert (summary['added'], summary['removed'], summary['unchanged']) == (1, 1, 1)
+    assert summary['install']['installed'] == 1 and summary['install']['skipped'] == 1
+    assert summary['retire']['memories'] == 1 and summary['retire']['deprecated'] == 1
+    assert len(client.proposals) == 3 and client.proposals[2]['content'].endswith('Event three.')
+    assert sorted(memory['content'] for memory in client.memories) == [
+        'As of 2026-09-20, per curated:test: Event three.',
+        'As of 2026-09-20, per curated:test: Event two.']
+    assert installer.coverage(client, second, domain=None)['complete']
+
+
+def test_rolling_the_same_window_twice_converges(tmp_path):
+    first, second = roll_packs(tmp_path)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    installer.roll(client, second, first, domain=None)
+    again = installer.roll(client, second, first, domain=None)
+    assert again['phase'] == 'rolled'
+    assert again['install']['installed'] == 0 and again['install']['skipped'] == 2
+    assert again['retire']['memories'] == 0
+    assert len(client.forgets) == 1
+
+
+def test_roll_failure_leaves_the_old_window_alone(tmp_path):
+    first, second = roll_packs(tmp_path)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    client.fail_content = 'As of 2026-09-20, per curated:test: Event three.'
+    summary = installer.roll(client, second, first, domain=None)
+    assert summary['phase'] == 'roll-incomplete' and summary['retire'] is None
+    assert client.forgets == []
+    assert len(client.memories) == 2
+    assert installer.coverage(client, first, domain=None)['complete']
+
+
+def test_roll_dry_run_writes_nothing(tmp_path):
+    first, second = roll_packs(tmp_path)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    proposals, memories = len(client.proposals), len(client.memories)
+    summary = installer.roll(client, second, first, domain=None, dry_run=True)
+    assert summary['phase'] == 'roll-dry-run'
+    assert summary['install']['installed'] == 0 and summary['install']['failures'] == 0
+    assert summary['retire']['memories'] == 1 and summary['retire']['dry_run'] is True
+    assert client.forgets == []
+    assert len(client.proposals) == proposals and len(client.memories) == memories
+
+
+def test_roll_refuses_a_previous_pack_that_is_not_the_pinned_parent(tmp_path):
+    first, second = roll_packs(tmp_path)
+    stranger = make_pack(tmp_path, version=1, pack_id='indonesia', name='indonesia-v1')
+    client = FakeClient()
+    with pytest.raises(installer.PackInstallError) as error:
+        installer.roll(client, second, stranger, domain=None)
+    assert 'is pack indonesia' in str(error.value)
+    other_same_version = make_pack(tmp_path, version=1, texts=[TEXTS[1]],
+                                   name='malaysia-v1-other')
+    with pytest.raises(installer.PackInstallError) as error:
+        installer.roll(client, second, other_same_version, domain=None)
+    assert 'names v1' in str(error.value)
+    assert client.forgets == [] and client.proposals == []
+
+
+def test_roll_refuses_a_delta_that_contradicts_the_manifests(tmp_path):
+    first, second = roll_packs(tmp_path)
+    delta_path = second.directory / 'delta-v1-to-v2.json'
+    document = json.loads(delta_path.read_text())
+    document['removed'] = []
+    delta_path.write_text(json.dumps(document, sort_keys=True, separators=(',', ':')) + '\n')
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    with pytest.raises(pack_format.PackFormatError) as error:
+        installer.roll(client, second, first, domain=None)
+    assert 'contradicts the manifests' in str(error.value)
+    assert len(client.memories) == 2
+
+
 def test_migrate_copies_then_retires_the_source_domain(tmp_path):
     pack = make_pack(tmp_path)
     client = FakeClient()
@@ -258,6 +378,11 @@ def test_conflicting_operations_are_refused_before_any_client(tmp_path, monkeypa
                                       '--dry-run'])
     with pytest.raises(installer.PackInstallError):
         installer.main()
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(tmp_path),
+                                      '--roll-from', str(tmp_path), '--retire'])
+    with pytest.raises(installer.PackInstallError) as error:
+        installer.main()
+    assert '--roll-from does not combine' in str(error.value)
 
 
 def test_presence_is_scoped_to_the_resolved_domain(tmp_path):
@@ -360,6 +485,24 @@ def test_install_from_a_delivery_archive_through_the_client(tmp_path, monkeypatc
     assert installer.main() == 0
     assert len(client.proposals) == 2
     assert set(json.loads(ledger.read_text())['chunks']) == set(pack.chunks)
+
+
+def test_roll_from_the_command_line_writes_a_ledger(tmp_path, monkeypatch, capsys):
+    first, second = roll_packs(tmp_path)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    ledger = tmp_path / 'ledger.json'
+    monkeypatch.setattr(installer, 'build_client', lambda args: client)
+    monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(second.directory),
+                                      '--roll-from', str(first.directory), '--allow-unsigned',
+                                      '--ledger', str(ledger)])
+    assert installer.main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['phase'] == 'rolled' and summary['class'] == 'brief'
+    assert summary['unsigned_accepted'] is True
+    recorded = json.loads(ledger.read_text())
+    assert set(recorded['chunks']) == set(second.chunks)
+    assert {row['confidence_bp'] for row in recorded['chunks'].values()} == {8000}
 
 
 def test_verify_rejects_ledger_and_registration_flags(tmp_path, monkeypatch):

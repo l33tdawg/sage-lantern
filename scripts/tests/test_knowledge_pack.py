@@ -20,12 +20,13 @@ def chunk(identifier, text, **overrides):
 
 
 def build(tmp_path, name='pack-v1', *, version=1, chunks=None, created=CREATED,
-          embedding_model='nomic-embed-text-v1.5', embedding_dimension=768, signature=None):
+          embedding_model='nomic-embed-text-v1.5', embedding_dimension=768, signature=None,
+          pack_class='reference'):
     chunks = [chunk('one', 'Kuala Lumpur and Ipoh are about 205 kilometres apart.'),
               chunk('two', 'Merdeka 118 is 678.9 metres tall.')] if chunks is None else chunks
     manifest = pack_format.build_manifest(
-        pack_id='malaysia', version=version, title='Test pack', licence='CC-BY-4.0',
-        provenance=PROVENANCE, created_at=created, chunks=chunks,
+        pack_id='malaysia', version=version, pack_class=pack_class, title='Test pack',
+        licence='CC-BY-4.0', provenance=PROVENANCE, created_at=created, chunks=chunks,
         embedding_model=embedding_model, embedding_dimension=embedding_dimension)
     directory = tmp_path / name
     pack_format.write_pack(directory, manifest, {record['sha256']: record for record in chunks},
@@ -69,13 +70,15 @@ def test_chunk_validation_refuses_bad_rows(identifier, text):
 
 def test_manifest_is_sorted_addressable_and_delta_computes_per_chunk():
     first = [chunk('b', 'Second chunk.'), chunk('a', 'First chunk.')]
-    v1 = pack_format.build_manifest(pack_id='malaysia', version=1, title='T', licence='CC-BY-4.0',
-                                    provenance=PROVENANCE, created_at=CREATED, chunks=first,
+    v1 = pack_format.build_manifest(pack_id='malaysia', version=1, pack_class='reference',
+                                    title='T', licence='CC-BY-4.0', provenance=PROVENANCE,
+                                    created_at=CREATED, chunks=first,
                                     embedding_model='m', embedding_dimension=768)
     assert [entry['id'] for entry in v1['chunks']] == ['a', 'b']
     second = [chunk('a', 'First chunk.'), chunk('c', 'Third chunk.')]
-    v2 = pack_format.build_manifest(pack_id='malaysia', version=2, title='T', licence='CC-BY-4.0',
-                                    provenance=PROVENANCE, created_at=CREATED, chunks=second,
+    v2 = pack_format.build_manifest(pack_id='malaysia', version=2, pack_class='reference',
+                                    title='T', licence='CC-BY-4.0', provenance=PROVENANCE,
+                                    created_at=CREATED, chunks=second,
                                     embedding_model='m', embedding_dimension=768,
                                     parent={'version': 1,
                                             'manifest_sha256': pack_format.manifest_digest(v1)})
@@ -91,24 +94,95 @@ def test_manifest_is_sorted_addressable_and_delta_computes_per_chunk():
 def test_manifest_refuses_unlicensed_or_unsourced_packs():
     records = [chunk('one', 'Text.')]
     with pytest.raises(pack_format.PackFormatError):
-        pack_format.build_manifest(pack_id='malaysia', version=1, title='T', licence='',
-                                   provenance=PROVENANCE, created_at=CREATED, chunks=records,
+        pack_format.build_manifest(pack_id='malaysia', version=1, pack_class='reference',
+                                   title='T', licence='', provenance=PROVENANCE,
+                                   created_at=CREATED, chunks=records,
                                    embedding_model='m', embedding_dimension=768)
     with pytest.raises(pack_format.PackFormatError):
-        pack_format.build_manifest(pack_id='malaysia', version=1, title='T', licence='CC-BY-4.0',
+        pack_format.build_manifest(pack_id='malaysia', version=1, pack_class='reference',
+                                   title='T', licence='CC-BY-4.0',
                                    provenance={'curator': 'nobody'}, created_at=CREATED,
                                    chunks=records, embedding_model='m', embedding_dimension=768)
+
+
+def manifest_with(records, *, pack_class='reference', version=1, parent=None):
+    return pack_format.build_manifest(
+        pack_id='world-brief', version=version, pack_class=pack_class, title='T',
+        licence='CC-BY-SA-4.0', provenance=PROVENANCE, created_at=CREATED, chunks=records,
+        embedding_model='m', embedding_dimension=768, parent=parent)
+
+
+def news_chunk(identifier='wb-20260920-01', *, confidence_bp=8000, date='2026-09-20',
+               source='https://en.wikipedia.org/wiki/Portal:Current_events/2026_September_20'):
+    return pack_format.build_chunk(identifier, 'An event happened.', source=source, date=date,
+                                   confidence_bp=confidence_bp)
+
+
+def test_confidence_is_part_of_the_content_address():
+    default = chunk('one', 'Text that stays put.')
+    lowered = pack_format.build_chunk('one', 'Text that stays put.', source='curated:test-fixture',
+                                      date='2026-09-20', confidence_bp=8000)
+    assert default['confidence_bp'] == pack_format.REFERENCE_CONFIDENCE_BP == 9500
+    assert default['sha256'] != lowered['sha256']
+    for bad in (0, 10001, 0.95, True):
+        with pytest.raises(pack_format.PackFormatError):
+            pack_format.build_chunk('one', 'Text.', source='curated:test-fixture',
+                                    date='2026-09-20', confidence_bp=bad)
+
+
+def test_manifest_refuses_an_unknown_class():
+    with pytest.raises(pack_format.PackFormatError) as error:
+        manifest_with([chunk('one', 'Text.')], pack_class='wiki')
+    assert 'pack class must be one of' in str(error.value)
+
+
+def test_brief_chunks_stay_below_the_fact_band_and_carry_day_and_source():
+    manifest = manifest_with([news_chunk()], pack_class='brief')
+    assert manifest['pack']['class'] == 'brief'
+    cases = (
+        (news_chunk(confidence_bp=9500), 'never a fact'),
+        (news_chunk(date=''), 'YYYY-MM-DD'),
+        (news_chunk(source=''), 'needs a source'),
+    )
+    for record, fragment in cases:
+        with pytest.raises(pack_format.PackFormatError) as error:
+            manifest_with([record], pack_class='brief')
+        assert fragment in str(error.value)
+    reference = manifest_with([news_chunk(confidence_bp=9500)], pack_class='reference')
+    assert reference['pack']['class'] == 'reference'
+
+
+def test_shipped_delta_is_found_and_must_agree_with_the_manifests(tmp_path):
+    first = [chunk('one', 'First.'), chunk('two', 'Second.')]
+    manifest1 = manifest_with(first, version=1)
+    second = [chunk('one', 'First.'), chunk('three', 'Third.')]
+    manifest2 = manifest_with(second, version=2,
+                              parent={'version': 1,
+                                      'manifest_sha256': pack_format.manifest_digest(manifest1)})
+    delta = pack_format.delta_document(manifest1, manifest2)
+    directory = tmp_path / 'pack-v2'
+    pack_format.write_pack(directory, manifest2, {record['sha256']: record for record in second},
+                           delta=delta)
+    shipped = pack_format.find_pack_delta(directory, to_version=2)
+    assert shipped == delta
+    pack_format.check_delta_matches(shipped, pack_format.delta_document(manifest1, manifest2))
+    tampered = dict(shipped, removed=['a' * 64], added=[])
+    with pytest.raises(pack_format.PackFormatError) as error:
+        pack_format.check_delta_matches(tampered, pack_format.delta_document(manifest1, manifest2))
+    assert 'contradicts the manifests' in str(error.value)
 
 
 def test_load_pack_round_trip_and_summary(tmp_path):
     directory = build(tmp_path)
     pack = pack_format.load_pack(directory, allow_unsigned=True)
     assert pack.pack_id == 'malaysia' and pack.version == 1
+    assert pack.pack_class == 'reference'
     assert pack.tag == 'pack:malaysia-v1'
     assert len(pack.chunks) == 2
     assert pack.vector(next(iter(pack.chunks))) is None
     summary = pack.summary()
     assert summary['chunks'] == 2 and summary['embedded_chunks'] == 0
+    assert summary['class'] == 'reference'
     assert summary['manifest_sha256'] == pack_format.sha256_hex(pack.raw)
     assert pack_format.manifest_digest(pack.manifest) == pack_format.sha256_hex(pack.raw)
 
@@ -190,8 +264,9 @@ def test_signature_refuses_a_manifest_swapped_under_it(tmp_path):
 def test_parent_must_be_an_earlier_version_of_the_same_pack(tmp_path):
     records = [chunk('one', 'Text.')]
     with pytest.raises(pack_format.PackFormatError):
-        pack_format.build_manifest(pack_id='malaysia', version=1, title='T', licence='L',
-                                   provenance=PROVENANCE, created_at=CREATED, chunks=records,
+        pack_format.build_manifest(pack_id='malaysia', version=1, pack_class='reference',
+                                   title='T', licence='L', provenance=PROVENANCE,
+                                   created_at=CREATED, chunks=records,
                                    embedding_model='m', embedding_dimension=768,
                                    parent={'version': 1,
                                            'manifest_sha256': 'a' * 64})
