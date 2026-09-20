@@ -11,6 +11,7 @@ from .state import RuntimeState, StateMachine
 from .inference_metrics import project as project_metrics
 from .active_conversation import validate_messages
 from .answer_suggestions import validate_suggestions
+from .answer_verification import AnswerVerifier
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class VoiceResult:
     timings_ms: dict[str, float]
     inference_metrics: dict[str, int | float | None] | None = None
     follow_up_questions: list[str] | None = None
+    verification: dict[str, object] | None = None
 
 
 class VoiceOrchestrator:
@@ -33,6 +35,7 @@ class VoiceOrchestrator:
         llm: LanguageModel,
         tts: TextToSpeech | None,
         output_dir: Path,
+        verifier: AnswerVerifier | None = None,
     ) -> None:
         self.state = state
         self.stt = stt
@@ -40,6 +43,7 @@ class VoiceOrchestrator:
         self.llm = llm
         self.tts = tts
         self.output_dir = output_dir
+        self.verifier = verifier
 
     def run_audio(
         self,
@@ -129,6 +133,15 @@ class VoiceOrchestrator:
                 response = self.llm.respond(transcript, context_items, **image_options)
             timings["llm"] = (time.monotonic() - started) * 1000
 
+            verification = None
+            if self.verifier is not None and image_path is None and response.strip():
+                verdict = self.verifier.verify(transcript, response)
+                timings["verify"] = verdict.seconds * 1000
+                verification = {"status": verdict.status, "seconds": round(verdict.seconds, 3)}
+                if verdict.status == "corrected":
+                    response = verdict.text
+                    verification["corrected"] = True
+
             response_path = None
             if self.tts is not None:
                 self.state.transition(RuntimeState.SPEAKING, current_session)
@@ -138,12 +151,14 @@ class VoiceOrchestrator:
                 started = time.monotonic()
                 self.tts.synthesize(response, response_path)
                 timings["tts"] = (time.monotonic() - started) * 1000
-            timings["total"] = sum(timings.get(stage, 0.0) for stage in ("stt", "sage_context", "llm", "tts"))
+            timings["total"] = sum(timings.get(stage, 0.0)
+                                   for stage in ("stt", "sage_context", "llm", "verify", "tts"))
 
             self.state.transition(RuntimeState.IDLE, current_session, "completed")
             return VoiceResult(current_session, transcript, response, response_path, timings,
                                project_metrics(getattr(self.llm, 'last_metrics', None)),
-                               validate_suggestions(getattr(self.llm, 'last_suggestions', [])))
+                               validate_suggestions(getattr(self.llm, 'last_suggestions', [])),
+                               verification)
         except Exception as exc:
             self.state.transition(RuntimeState.ERROR, current_session, type(exc).__name__)
             raise

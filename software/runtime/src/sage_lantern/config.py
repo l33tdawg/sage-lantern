@@ -26,6 +26,10 @@ class RuntimeConfig:
     protected_storage: bool = False
     sage_chain_id: str | None = None
     experimental_answer_suggestions: bool = False
+    verify_answers: bool = False
+    verifier_base_url: str = "http://127.0.0.1:8082"
+    verifier_model: str = "qwen3.5-4b-q4_k_m"
+    verifier_timeout_seconds: float = 60.0
 
     @classmethod
     def load(cls, path: Path) -> "RuntimeConfig":
@@ -45,6 +49,17 @@ class RuntimeConfig:
         experimental_answer_suggestions = llm.get("experimental_answer_suggestions", False)
         if type(experimental_answer_suggestions) is not bool:
             raise ValueError("llm.experimental_answer_suggestions must be a boolean")
+        verify_answers = llm.get("verify_answers", False)
+        if type(verify_answers) is not bool:
+            raise ValueError("llm.verify_answers must be a boolean")
+        verifier_base_url = llm.get("verifier_base_url", "http://127.0.0.1:8082")
+        verifier_model = llm.get("verifier_model", str(llm.get("model") or "qwen3.5-4b-q4_k_m"))
+        verifier_timeout = llm.get("verifier_timeout_seconds", 60.0)
+        for name, value in (("llm.verifier_base_url", verifier_base_url), ("llm.verifier_model", verifier_model)):
+            if type(value) is not str or not value or len(value) > 256:
+                raise ValueError(name + " must be a short non-empty string")
+        if type(verifier_timeout) not in (int, float) or not 1.0 <= float(verifier_timeout) <= 600.0:
+            raise ValueError("llm.verifier_timeout_seconds must be between 1 and 600")
         tts = raw.get("tts", {})
         sage = raw.get("sage", {})
         context = raw.get("context", {})
@@ -85,6 +100,10 @@ class RuntimeConfig:
             llama_base_url=str(llm["base_url"]),
             llama_model=str(llm["model"]),
             experimental_answer_suggestions=experimental_answer_suggestions,
+            verify_answers=verify_answers,
+            verifier_base_url=verifier_base_url,
+            verifier_model=verifier_model,
+            verifier_timeout_seconds=float(verifier_timeout),
             tts_enabled=tts_enabled,
             piper_python=resolve(tts.get("python")),
             piper_model=resolve(tts.get("model")),

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import LanternConversationContext, LlamaCppHTTP, NoSpeechDetected, PiperTTS, SageSDKContext, StaticContext, WhisperCppSTT
+from .answer_verification import AnswerVerifier
 from .config import RuntimeConfig
 from .envelope import LanternEnvelope
 from .orchestrator import VoiceOrchestrator, validated_question
@@ -59,6 +60,9 @@ def build_orchestrator(config: RuntimeConfig) -> VoiceOrchestrator:
             config.piper_config,
         ) if config.tts_enabled else None,
         config.output_dir,
+        AnswerVerifier(config.verifier_base_url, config.verifier_model,
+                       timeout_seconds=config.verifier_timeout_seconds)
+        if config.verify_answers else None,
     )
 
 
@@ -197,6 +201,8 @@ def main(argv: list[str] | None = None) -> int:
             }
             if result.follow_up_questions:
                 payload["follow_up_questions"] = result.follow_up_questions
+            if result.verification:
+                payload["verification"] = result.verification
             if args.events:
                 print(json.dumps({"type": "result", "result": payload}), flush=True)
             else:
