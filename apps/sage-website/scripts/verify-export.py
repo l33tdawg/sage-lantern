@@ -10,7 +10,7 @@ class Page(HTMLParser):
   if tag=='h1':self.h1+=1
   self.urls.extend(a[k] for k in ('href','src') if k in a)
 pages={}
-for name in ('index.html','hardware/index.html'):
+for name in ('index.html','hardware/index.html','commons/index.html'):
  p=Page();p.feed((root/name).read_text());pages[name]=p
  assert p.h1==1,(name,p.h1)
 for name,page in pages.items():
@@ -32,4 +32,4 @@ assert 'dhillon@sage.ngo' in home and 'dhillon@sage.ngo' in hardware
 assert '6.5' in hardware
 assert 'https://sage.ngo/hardware/' in hardware
 assert 'Untitled site' not in home+hardware
-print('PASS: both pages, section anchors, local assets, contact, italic copy, hardware direction and canonical domain.')
+print('PASS: all three pages, section anchors, local assets, contact, italic copy, hardware direction and canonical domain.')
