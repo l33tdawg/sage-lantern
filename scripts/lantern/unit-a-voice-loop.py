@@ -1620,12 +1620,17 @@ class VoiceLoop:
         self.input_source = None
         self.memory = history_memory
         protected_config = False
+        self.verifier = None
         if getattr(args, "config", None) and args.config.is_file():
             from sage_lantern.config import RuntimeConfig
             config = RuntimeConfig.load(args.config)
             protected_config = getattr(config, "protected_storage", False)
             if type(protected_config) is not bool:
                 raise ValueError("invalid protected storage configuration")
+            if getattr(config, "verify_answers_background", False):
+                from sage_lantern.answer_verification import AnswerVerifier
+                self.verifier = AnswerVerifier(config.verifier_base_url, config.verifier_model,
+                                               timeout_seconds=config.verifier_timeout_seconds)
             if self.memory is None and (protected_config or config.conversation_dir):
                 from sage_lantern.conversation_service import ConversationService
                 self.memory = ConversationService.from_config(config)
@@ -2076,6 +2081,48 @@ class VoiceLoop:
             timings_ms=result.get("timings_ms", {}), **warning,
             inference_metrics=project_metrics(result.get("inference_metrics")),
         )
+        self.schedule_verification(session_id, result["transcript"], result["response"],
+                                   validate_suggestions(result.get('follow_up_questions', [])))
+
+    def schedule_verification(self, session_id, question, answer, follow_ups):
+        """Fact-check the finished answer in the background; never delay the answer."""
+        if self.verifier is None or not answer.strip() or self.control.source_photo(session_id):
+            return
+        thread = threading.Thread(target=self.verify_answer,
+                                  args=(session_id, question, answer, follow_ups),
+                                  name="answer-verification", daemon=True)
+        thread.start()
+
+    def verify_answer(self, session_id, question, answer, follow_ups):
+        try:
+            verdict = self.verifier.verify(question, answer)
+        except Exception as error:                       # the checker must never take the loop down
+            print(json.dumps({"event": "answer_verification_failed",
+                              "error": type(error).__name__}), flush=True)
+            return
+        if verdict.status != "corrected" or not verdict.text or verdict.text == answer:
+            print(json.dumps({"event": "answer_verification", "session_id": session_id,
+                              "status": verdict.status, "seconds": round(verdict.seconds, 2)}), flush=True)
+            return
+        if not self.claim_correction(session_id):
+            return
+        try:
+            self.write_state("complete", session_id=session_id, transcript=question,
+                             response=verdict.text, follow_up_questions=follow_ups, detail="")
+        except DeviceLocked:
+            return
+        print(json.dumps({"event": "answer_verification", "session_id": session_id,
+                          "status": "corrected", "seconds": round(verdict.seconds, 2)}), flush=True)
+
+    def claim_correction(self, session_id):
+        """Only a still-current, idle turn of this device session may be rewritten."""
+        with self.control.lock:
+            owner = self.control.owner
+            source = self.control.completed_source
+            session = self.device_session
+            return (not self.stop_requested.is_set() and owner is None
+                    and source is not None and source.get("source_id") == session_id
+                    and session is not None and session[0] == session_id)
 
     @staticmethod
     def stop_pipeline(process):

@@ -27,6 +27,7 @@ class RuntimeConfig:
     sage_chain_id: str | None = None
     experimental_answer_suggestions: bool = False
     verify_answers: bool = False
+    verify_answers_background: bool = False
     verifier_base_url: str = "http://127.0.0.1:8082"
     verifier_model: str = "qwen3.5-4b-q4_k_m"
     verifier_timeout_seconds: float = 60.0
@@ -52,6 +53,9 @@ class RuntimeConfig:
         verify_answers = llm.get("verify_answers", False)
         if type(verify_answers) is not bool:
             raise ValueError("llm.verify_answers must be a boolean")
+        verify_answers_background = llm.get("verify_answers_background", False)
+        if type(verify_answers_background) is not bool:
+            raise ValueError("llm.verify_answers_background must be a boolean")
         verifier_base_url = llm.get("verifier_base_url", "http://127.0.0.1:8082")
         verifier_model = llm.get("verifier_model", str(llm.get("model") or "qwen3.5-4b-q4_k_m"))
         verifier_timeout = llm.get("verifier_timeout_seconds", 60.0)
@@ -101,6 +105,7 @@ class RuntimeConfig:
             llama_model=str(llm["model"]),
             experimental_answer_suggestions=experimental_answer_suggestions,
             verify_answers=verify_answers,
+            verify_answers_background=verify_answers_background,
             verifier_base_url=verifier_base_url,
             verifier_model=verifier_model,
             verifier_timeout_seconds=float(verifier_timeout),
