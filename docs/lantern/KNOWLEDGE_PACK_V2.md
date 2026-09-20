@@ -257,6 +257,49 @@ has to read the licence per item and the builder has to refuse an item with none
 That is why mixed-source packs want a per-chunk `licence` beside `source`, which
 this format does not carry yet either.
 
+## Curated packs are not the public chain's cache
+
+Owner direction (2026-09-20): news and outside material belong to the **public
+plane**, outside the private chain; a pack that carries public-chain content is a
+*cache for faster local lookup*, supplemented periodically.
+
+The programme already specifies that split, and the two artifacts must not be
+confused because their trust stories differ:
+
+| | Curated pack (this document) | Commons Snapshot Pack |
+|---|---|---|
+| Trust | Foundation signing key, in the shipped trust root | Consensus checkpoint plus an exporter attestation, bound to a frozen height |
+| Content | Whatever the curator chose, with per-pack provenance and licence | Only committed, non-deprecated `PUBLIC=0` records |
+| Authority | The Foundation is the authority of truth | The chain is; the signature proves *who exported and what bytes*, not truth |
+| Lifecycle | Versioned and superseded | Derived, replaceable, drops and rebuilds freely |
+
+Where each one lands on a device, per `docs/MASTER_TECHNICAL_PRD.md` §13: a
+snapshot pack "output imports only into **Lantern Cache**" — defined as a
+*replaceable derived public read cache*, explicitly not canonical personal or
+public chain state, and explicitly not a snapshot, backup, state sync or
+Federation Copy (§13.4, principles 8). A Lantern also runs exactly one consensus
+runtime, its personal node; the public side is "a bounded client, queue and
+cache — not a second CometBFT replica"
+(`docs/admin/DUAL_NETWORK_ARCHITECTURE_OPTIONS.md` §4).
+
+Three consequences worth holding on to:
+
+* **The brief today is a curated pack, not chain state.** News becomes canonical
+  only by crossing publication: proposer envelope, intake and quarantine,
+  moderation, a committed `PUBLIC` record. Until that lane exists, publishing the
+  brief as a signed Foundation artifact is the honest description.
+* **A cache must never be presented as consensus.** §13.4 is explicit that without
+  native per-record inclusion proofs, the export root and exporter signature are an
+  off-chain attestation, never consensus proof. A cached item therefore carries
+  its anchor (height and time), and an answer drawn from it should say when it was
+  true — the same "as of" rule as the brief.
+* **That lane is gated, and the gate is a decision, not code.** `DST-005` allows
+  only committed non-deprecated `PUBLIC` records; `SAGE-EXPORT` (a `required-sage-v12`
+  contract) does not exist in v11.18.4; and `OPEN-COM-003` still owns the normative
+  deterministic export schema, which is why the interim rule is "do not publish
+  Commons Snapshot Packs". The curated lane is not blocked by any of that, which is
+  why it went first.
+
 Two semantics matter here and both are enforced in code:
 
 * **`domain_tag=None` means "home" on a write and "no filter" on a read.** So every
