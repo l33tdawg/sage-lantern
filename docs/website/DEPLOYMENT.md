@@ -51,3 +51,33 @@ origin with `/`, `/commons/`, `/hardware/` and `/sage-mission-brief.txt` all 200
 and the corrected copy confirmed through `https://sage.ngo`. Rollback
 configuration `/var/www/sage-website/backup-20260920T072849Z`; prior release
 `20260920-ab8cc68b10b3` remains on disk.
+
+## Release 20260920-5993d0b08c1c — the hardware page carries the C-F build
+
+Owner instruction: regenerate the hardware page off the current bill of
+materials, keeping the device's look and feel. The spec table now names the
+build in flight — 6.25-inch 720 × 1560 portrait panel, Orange Pi 5 Plus
+(RK3588) with a neural accelerator, 10,000 mAh USB-C pack in a serviceable
+tray, hold-to-talk with an I2S microphone, 16 MP camera, 915 MHz LoRa radio
+with GNSS, 90 × 182 × 38 mm printed PETG shell, ten parts. The ROCK 5B+,
+6.5-inch and "replaceable rear battery pack" claims are gone from the hardware
+page, the homepage and every alt/OG string; page structure, voice, palette and
+the concept image are unchanged.
+
+Same pipeline: 41 verified files, tarball sha256 `7f6926a3…`, unpacked and
+activated on the origin, `--verify`-equivalent digest check passed before the
+symlink moved. Verified on the origin and publicly: nginx, natter and
+sage-call-relay active, `/`, `/commons/`, `/hardware/` and
+`/sage-mission-brief.txt` all 200, and the new spec strings confirmed through
+https://sage.ngo. Rollback configuration
+`/var/www/sage-website/backup-20260920T095059Z`; prior release
+`20260920-4598d379d3a0` remains under `releases/`.
+
+Origin access for follow-up deploys is recorded in SAGE (not in this repo,
+which opens publicly in 2027): the host is reachable with the local
+`sage-natter` key, and its address is the unproxied `fleet-api.sage.delivery` /
+`call.sage.delivery` A record — `sage.ngo` itself is Cloudflare-proxied.
+
+Still outstanding: the concept render regeneration. The owner has not yet
+chosen between one antenna and two, or between the detached pack and the tray;
+the generation spec is kept in the private `internal-docs` tree.
