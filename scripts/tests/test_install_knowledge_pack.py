@@ -228,6 +228,49 @@ def test_brief_chunks_install_as_dated_observations(tmp_path):
     assert proposal['content'] == f'As of 2026-09-20, per curated:test: {TEXTS[0]}'
 
 
+def test_brief_installs_only_the_newest_month_by_default(tmp_path):
+    pack = make_pack(tmp_path, pack_class='brief', rows=[
+        {'id': 'wb-1', 'text': 'Old news.', 'date': '2026-08-01'},
+        {'id': 'wb-2', 'text': 'Last month news.', 'date': '2026-08-21'},
+        {'id': 'wb-3', 'text': 'Newest news.', 'date': '2026-09-20'}])
+    client = FakeClient()
+    summary = installer.install(client, pack, domain=None)
+    assert summary['chunks'] == 2 and summary['pack_chunks'] == 3
+    assert summary['window'] == {'all': False, 'days': 31, 'since': '2026-08-21',
+                                 'until': '2026-09-20', 'chunks': 2, 'outside': 1}
+    assert [proposal['content'] for proposal in client.proposals] == [
+        'As of 2026-08-21, per curated:test: Last month news.',
+        'As of 2026-09-20, per curated:test: Newest news.']
+
+
+def test_brief_window_narrows_and_the_cap_refuses_more(tmp_path):
+    pack = make_pack(tmp_path, pack_class='brief', rows=[
+        {'id': 'wb-1', 'text': 'Older.', 'date': '2026-08-01'},
+        {'id': 'wb-2', 'text': 'Newer.', 'date': '2026-09-20'}])
+    client = FakeClient()
+    narrow = installer.resolve_window(pack, days=7)
+    assert narrow['since'] == '2026-09-14' and len(narrow['digests']) == 1
+    installer.install(client, pack, domain=None, window=narrow)
+    assert [proposal['content'] for proposal in client.proposals] == [
+        'As of 2026-09-20, per curated:test: Newer.']
+    with pytest.raises(installer.PackInstallError) as error:
+        installer.resolve_window(pack, days=installer.BRIEF_WINDOW_DAYS_MAX + 1)
+    assert 'one month maximum' in str(error.value)
+    whole = installer.resolve_window(pack, all_chunks=True)
+    assert whole['all'] is True and len(whole['digests']) == 2
+
+
+def test_window_flags_do_not_apply_to_a_reference_pack(tmp_path):
+    pack = make_pack(tmp_path)
+    assert installer.resolve_window(pack)['all'] is True
+    with pytest.raises(installer.PackInstallError) as error:
+        installer.resolve_window(pack, days=7)
+    assert 'class reference' in str(error.value)
+    with pytest.raises(installer.PackInstallError) as error:
+        installer.resolve_window(pack, all_chunks=True)
+    assert 'class reference' in str(error.value)
+
+
 def roll_packs(tmp_path):
     first = make_pack(tmp_path, version=1, pack_class='brief', rows=[
         {'id': 'wb-1', 'text': 'Event one.'},
@@ -301,7 +344,8 @@ def test_roll_refuses_a_previous_pack_that_is_not_the_pinned_parent(tmp_path):
     with pytest.raises(installer.PackInstallError) as error:
         installer.roll(client, second, stranger, domain=None)
     assert 'is pack indonesia' in str(error.value)
-    other_same_version = make_pack(tmp_path, version=1, texts=[TEXTS[1]],
+    other_same_version = make_pack(tmp_path, version=1, pack_class='brief',
+                                   rows=[{'id': 'wb-9', 'text': 'A different event.'}],
                                    name='malaysia-v1-other')
     with pytest.raises(installer.PackInstallError) as error:
         installer.roll(client, second, other_same_version, domain=None)
@@ -321,6 +365,34 @@ def test_roll_refuses_a_delta_that_contradicts_the_manifests(tmp_path):
         installer.roll(client, second, first, domain=None)
     assert 'contradicts the manifests' in str(error.value)
     assert len(client.memories) == 2
+
+
+def test_roll_retires_chunks_that_age_out_of_the_window_even_when_unchanged(tmp_path):
+    first = make_pack(tmp_path, version=1, pack_class='brief', rows=[
+        {'id': 'wb-old', 'text': 'Old event.', 'date': '2026-08-25'},
+        {'id': 'wb-edge', 'text': 'Edge event.', 'date': '2026-09-01'},
+        {'id': 'wb-keep', 'text': 'Kept event.', 'date': '2026-09-10'}])
+    second = make_pack(
+        tmp_path, version=2, pack_class='brief', rows=[
+            {'id': 'wb-old', 'text': 'Old event.', 'date': '2026-08-25'},
+            {'id': 'wb-edge', 'text': 'Edge event.', 'date': '2026-09-01'},
+            {'id': 'wb-keep', 'text': 'Kept event.', 'date': '2026-09-10'},
+            {'id': 'wb-new', 'text': 'New event.', 'date': '2026-10-10'}],
+        parent={'version': 1, 'manifest_sha256': pack_format.manifest_digest(first.manifest)},
+        write_delta_from=first)
+    client = FakeClient()
+    installer.install(client, first, domain=None)
+    assert len(client.memories) == 3
+    summary = installer.roll(client, second, first, domain=None)
+    assert summary['removed'] == 0 and summary['window']['since'] == '2026-09-10'
+    assert summary['install']['installed'] == 1 and summary['install']['skipped'] == 1
+    assert summary['retire']['addresses'] == 2
+    assert summary['retire']['dropped_from_pack'] == 0
+    assert summary['retire']['aged_out_of_window'] == 2
+    assert summary['retire']['memories'] == 2 and summary['retire']['deprecated'] == 2
+    assert sorted(memory['content'] for memory in client.memories) == [
+        'As of 2026-09-10, per curated:test: Kept event.',
+        'As of 2026-10-10, per curated:test: New event.']
 
 
 def test_migrate_copies_then_retires_the_source_domain(tmp_path):
@@ -383,6 +455,11 @@ def test_conflicting_operations_are_refused_before_any_client(tmp_path, monkeypa
     with pytest.raises(installer.PackInstallError) as error:
         installer.main()
     assert '--roll-from does not combine' in str(error.value)
+    for extra in (['--window-days', '7', '--window-all'], ['--window-days', '7', '--verify'],
+                  ['--window-all', '--retire']):
+        monkeypatch.setattr(sys, 'argv', ['install-knowledge-pack.py', str(tmp_path), *extra])
+        with pytest.raises(installer.PackInstallError):
+            installer.main()
 
 
 def test_presence_is_scoped_to_the_resolved_domain(tmp_path):

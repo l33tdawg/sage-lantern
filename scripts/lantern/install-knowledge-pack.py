@@ -40,6 +40,13 @@ digest inside the signed successor, the removed set is recomputed from the two
 manifests, and the shipped delta document may only agree with that - it is not
 signed and never directs a forget on its own.
 
+A brief also installs as a **window**, not as its whole archive: the newest 31
+days by default (owner direction 2026-09-20: one month maximum on device), with
+``--window-days`` to go narrower and ``--window-all`` as the explicit
+archive/lab escape hatch. When such a window rolls, retirement is
+``previous window - new window``, so a chunk the successor still carries but
+which has aged past the window leaves the device too.
+
 Batch memories cannot carry an idempotency_key (the SDK rejects it for non-task
 types), so the derived-key replay the node performs on identical content is a
 second line of defence, not the mechanism.
@@ -84,6 +91,15 @@ DEFAULT_LEDGER_DIR = Path('/var/lib/sage-lantern/knowledge-packs')
 DEFAULT_TRUST_ROOT = Path(__file__).with_name('pack-trust-root.json')
 APPLIANCE_SITE_PACKAGES = Path('/opt/sage-lantern/venv/lib/python3.11/site-packages')
 PAGE = 50
+
+# Owner direction 2026-09-20: a device may hold at most one month of a rolling
+# brief. 2,052 events (93 days) competing with a household's private facts in a
+# four-chunk recall budget is not a search index, it is a flood, so a brief
+# installs as a bounded window by default and refuses to go wider. The published
+# archive stays the full window; installing all of it is `--window-all`, an
+# explicit archive/lab choice, never the default.
+BRIEF_WINDOW_DAYS_DEFAULT = 31
+BRIEF_WINDOW_DAYS_MAX = 31
 
 
 class PackInstallError(RuntimeError):
@@ -132,6 +148,50 @@ def chunk_content(pack, digest: str) -> str:
     if pack.pack_class != 'brief':
         return record['text']
     return f"As of {record['date']}, per {record['source']}: {record['text']}"
+
+
+def resolve_window(pack, *, days: int | None = None, all_chunks: bool = False) -> dict:
+    """The slice of a pack a device installs.
+
+    A reference pack has no window - curated facts do not go stale - and every
+    chunk is selected. A brief is a window: the newest ``days`` days of its own
+    content, anchored on the pack's newest chunk rather than on the device clock,
+    which may be wrong. The default is the one-month maximum, wider is refused,
+    and the whole pack requires ``all_chunks`` explicitly - the CLI's
+    ``--window-all``, for archive and lab installs.
+    """
+    if all_chunks and days is not None:
+        raise PackInstallError('--window-days and --window-all are mutually exclusive')
+    if pack.pack_class != 'brief':
+        if days is not None or all_chunks:
+            raise PackInstallError(
+                f"pack {pack.tag} is class reference; window flags describe a brief")
+        return {'all': True, 'days': None, 'since': None, 'until': None,
+                'digests': [entry['sha256'] for entry in pack.manifest['chunks']],
+                'outside': 0}
+    if all_chunks:
+        return {'all': True, 'days': None, 'since': None, 'until': None,
+                'digests': [entry['sha256'] for entry in pack.manifest['chunks']],
+                'outside': 0}
+    if days is None:
+        days = BRIEF_WINDOW_DAYS_DEFAULT
+    if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= BRIEF_WINDOW_DAYS_MAX:
+        raise PackInstallError(
+            f"--window-days must be 1..{BRIEF_WINDOW_DAYS_MAX} for a brief "
+            "(owner direction 2026-09-20: one month maximum on device); "
+            "--window-all is the explicit archive/lab install")
+    until = max(record['date'] for record in pack.chunks.values())
+    since = (dt.date.fromisoformat(until) - dt.timedelta(days=days - 1)).isoformat()
+    digests = [entry['sha256'] for entry in pack.manifest['chunks']
+               if pack.chunks[entry['sha256']]['date'] >= since]
+    return {'all': False, 'days': days, 'since': since, 'until': until,
+            'digests': digests, 'outside': len(pack.manifest['chunks']) - len(digests)}
+
+
+def window_summary(window: dict) -> dict:
+    return {'all': window['all'], 'days': window['days'], 'since': window['since'],
+            'until': window['until'], 'chunks': len(window['digests']),
+            'outside': window['outside']}
 
 
 def list_tagged(client, tag: str, domain: str | None, limit: int | None = None) -> list:
@@ -196,13 +256,16 @@ def _check_outcome(record: dict, digest: str) -> None:
             'reconcile that memory before re-running (re-running would sign a new transaction)')
 
 
-def install(client, pack, *, domain: str | None, dry_run: bool = False) -> dict:
+def install(client, pack, *, domain: str | None, window: dict | None = None,
+            dry_run: bool = False) -> dict:
     domain = resolve_read_domain(client, domain, needed_by='install')
+    window = window or resolve_window(pack)
+    manifest_entries = {entry['sha256']: entry for entry in pack.manifest['chunks']}
     memory_type = chunk_memory_type(pack)
     entries = []
     installed = skipped = replays = failures = 0
-    for entry in pack.manifest['chunks']:
-        digest = entry['sha256']
+    for digest in window['digests']:
+        entry = manifest_entries[digest]
         confidence_bp = pack.chunks[digest]['confidence_bp']
         existing = list_tagged(client, pack.chunk_tag(digest), domain, limit=1)
         if existing:
@@ -236,21 +299,28 @@ def install(client, pack, *, domain: str | None, dry_run: bool = False) -> dict:
                         'confidence_bp': confidence_bp})
     return {'pack': pack.pack_id, 'version': pack.version, 'domain': domain,
             'class': pack.pack_class,
-            'chunks': len(pack.manifest['chunks']), 'installed': installed, 'skipped': skipped,
+            'chunks': len(window['digests']), 'pack_chunks': len(pack.manifest['chunks']),
+            'window': window_summary(window),
+            'installed': installed, 'skipped': skipped,
             'replays': replays, 'failures': failures, 'dry_run': dry_run, 'chunks_detail': entries}
 
 
-def coverage(client, pack, *, domain: str | None) -> dict:
+def coverage(client, pack, *, domain: str | None, window: dict | None = None) -> dict:
     domain = resolve_read_domain(client, domain, needed_by='--check')
+    window = window or resolve_window(pack)
+    manifest_entries = {entry['sha256']: entry for entry in pack.manifest['chunks']}
     present = []
-    for entry in pack.manifest['chunks']:
+    for digest in window['digests']:
+        entry = manifest_entries[digest]
         found = list_tagged(client, pack.chunk_tag(entry['sha256']), domain, limit=1)
         present.append({'id': entry['id'], 'sha256': entry['sha256'],
                         'present': bool(found),
                         'memory_id': found[0].memory_id if found else None})
     missing = [row for row in present if not row['present']]
     return {'pack': pack.pack_id, 'version': pack.version, 'domain': domain,
-            'chunks': len(present), 'present': len(present) - len(missing), 'missing': len(missing),
+            'chunks': len(present), 'pack_chunks': len(pack.manifest['chunks']),
+            'window': window_summary(window),
+            'present': len(present) - len(missing), 'missing': len(missing),
             'complete': not missing, 'chunks_detail': present}
 
 
@@ -283,7 +353,8 @@ def retire(client, tag: str, *, domain: str | None, reason: str) -> dict:
     return _forget_tagged(client, tag, domain=domain, reason=reason)
 
 
-def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -> dict:
+def roll(client, pack, previous, *, domain: str | None, window: dict | None = None,
+         dry_run: bool = False) -> dict:
     """Install a successor version, then retire the chunks the window dropped.
 
     Order matters: install first, retire second. A run that fails while adding
@@ -293,6 +364,13 @@ def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -
     the signed successor - so the removed set is recomputed from both manifests
     and the shipped delta document is only allowed to agree with that. A delta
     file is not signed, so it never directs a forget on its own.
+
+    Retirement covers more than the delta when a window is installed: a chunk
+    the successor still carries but which has aged past the window must leave the
+    device too, or a rolling archive would keep serving news the device is no
+    longer allowed to hold. The retirement set is therefore
+    ``previous window - new window``, which collapses to the delta's removed
+    addresses when the whole pack is installed.
     """
     domain = resolve_read_domain(client, domain, needed_by='--roll-from')
     parent = pack.manifest['parent']
@@ -301,6 +379,10 @@ def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -
             f"pack {pack.tag} names no parent version; a window roll installs a successor")
     if previous.pack_id != pack.pack_id:
         raise PackInstallError(f"--roll-from is pack {previous.pack_id}, not {pack.pack_id}")
+    if previous.pack_class != pack.pack_class:
+        raise PackInstallError(
+            f"--roll-from is class {previous.pack_class} and {pack.tag} is class "
+            f"{pack.pack_class}; keep one class per pack id")
     previous_digest = knowledge_pack.manifest_digest(previous.manifest)
     if previous.version != parent['version'] or previous_digest != parent['manifest_sha256']:
         raise PackInstallError(
@@ -311,14 +393,23 @@ def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -
     shipped = knowledge_pack.find_pack_delta(pack.directory, to_version=pack.version)
     if shipped is not None:
         knowledge_pack.check_delta_matches(shipped, delta)
+    window = window or resolve_window(pack)
+    previous_window = resolve_window(previous, days=window['days'], all_chunks=window['all'])
+    new_digests = set(window['digests'])
+    retirement = sorted(digest for digest in previous_window['digests']
+                        if digest not in new_digests)
+    delta_removed = set(delta['removed'])
+    removed_from_pack = [digest for digest in retirement if digest in delta_removed]
 
     summary = {'pack': pack.pack_id, 'version': pack.version, 'domain': domain,
                'from_version': previous.version, 'added': len(delta['added']),
                'removed': len(delta['removed']), 'unchanged': delta['unchanged'],
                'delta': 'checked-against-manifests' if shipped is not None
                else 'recomputed-from-manifests',
+               'window': window_summary(window),
+               'previous_window': window_summary(previous_window),
                'phase': 'rolling', 'dry_run': dry_run, 'install': None, 'retire': None}
-    installed = install(client, pack, domain=domain, dry_run=dry_run)
+    installed = install(client, pack, domain=domain, window=window, dry_run=dry_run)
     summary['install'] = {key: installed[key] for key in
                           ('chunks', 'installed', 'skipped', 'replays', 'failures')}
     # The per-chunk detail is what the ledger records; the roll summary stays
@@ -331,18 +422,23 @@ def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -
     if dry_run:
         detail = [{'sha256': digest, 'memories': len(list_tagged(client, pack.chunk_tag(digest),
                                                                  domain))}
-                  for digest in delta['removed']]
+                  for digest in retirement]
         summary['phase'] = 'roll-dry-run'
-        summary['retire'] = {'removed': len(delta['removed']),
+        summary['retire'] = {'addresses': len(retirement),
+                             'dropped_from_pack': len(removed_from_pack),
+                             'aged_out_of_window': len(retirement) - len(removed_from_pack),
                              'memories': sum(row['memories'] for row in detail),
                              'detail': detail, 'dry_run': True}
         return summary
 
     reason = (f"knowledge pack {pack.tag} rolled from v{previous.version}; "
-              "the window no longer holds this chunk")
-    summary['retire'] = {'removed': len(delta['removed']), 'memories': 0,
+              "this chunk is outside the installed window")
+    summary['retire'] = {'addresses': len(retirement),
+                         'dropped_from_pack': len(removed_from_pack),
+                         'aged_out_of_window': len(retirement) - len(removed_from_pack),
+                         'memories': 0,
                          'deprecated': 0, 'parked': 0, 'failed': 0, 'detail': []}
-    for digest in delta['removed']:
+    for digest in retirement:
         outcome = _forget_tagged(client, pack.chunk_tag(digest), domain=domain, reason=reason)
         summary['retire']['memories'] += outcome['memories']
         for name in ('deprecated', 'parked', 'failed'):
@@ -356,13 +452,15 @@ def roll(client, pack, previous, *, domain: str | None, dry_run: bool = False) -
 
 
 def migrate(client, pack, *, source_domain: str | None, dest_domain: str | None,
-            dry_run: bool = False) -> dict:
+            window: dict | None = None, dry_run: bool = False) -> dict:
     source = resolve_read_domain(client, source_domain, needed_by='--migrate-to (source)')
     destination = resolve_read_domain(client, dest_domain, needed_by='--migrate-to (destination)')
-    installed = install(client, pack, domain=destination, dry_run=dry_run)
-    verified = coverage(client, pack, domain=destination)
+    window = window or resolve_window(pack)
+    installed = install(client, pack, domain=destination, window=window, dry_run=dry_run)
+    verified = coverage(client, pack, domain=destination, window=window)
     summary = {'pack': pack.pack_id, 'version': pack.version,
                'from': source, 'to': destination,
+               'window': window_summary(window),
                'phase': 'copy', 'install': {key: installed[key] for key in
                                             ('installed', 'skipped', 'replays', 'failures', 'chunks')},
                'dest_complete': verified['complete'], 'dest_present': verified['present'],
@@ -388,6 +486,7 @@ def migrate(client, pack, *, source_domain: str | None, dest_domain: str | None,
 def write_ledger(path: Path, summary: dict) -> None:
     document = {'schema': 'sage.knowledge-pack.ledger.v1', 'pack': summary['pack'],
                 'version': summary['version'], 'domain': summary['domain'],
+                'window': summary.get('window'),
                 'updated_at': dt.datetime.now(dt.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'chunks': {row['sha256']: {'id': row['id'], 'memory_id': row.get('memory_id'),
                                    'written': row.get('written', False),
@@ -427,6 +526,12 @@ def main():
     parser.add_argument('--ledger', type=Path, default=None)
     parser.add_argument('--no-ledger', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--window-days', type=int, default=None,
+                        help=f'brief installs only: install the newest N days (default and '
+                             f'maximum {BRIEF_WINDOW_DAYS_MAX}; owner direction 2026-09-20)')
+    parser.add_argument('--window-all', action='store_true',
+                        help='install the whole pack instead of a brief window; an explicit '
+                             'archive/lab choice, never the default')
     parser.add_argument('--verify', action='store_true',
                         help='verify the pack and stop; no node, no identity, no writes')
     parser.add_argument('--check', action='store_true', help='report coverage and write nothing')
@@ -446,6 +551,12 @@ def main():
     if args.roll_from is not None and (selected or bool(args.migrate_to)):
         raise PackInstallError('--roll-from does not combine with --verify, --check, --retire '
                                'or --migrate-to')
+    if (args.window_days is not None or args.window_all) \
+            and (args.verify or args.retire or bool(args.migrate_to)):
+        raise PackInstallError('--window-days/--window-all apply to installing, checking and '
+                               'rolling a brief, not to --verify, --retire or --migrate-to')
+    if args.window_days is not None and args.window_all:
+        raise PackInstallError('--window-days and --window-all are mutually exclusive')
     if selected and args.dry_run:
         raise PackInstallError('--dry-run applies to install and --migrate-to only')
     if args.verify and (args.ledger or args.register_domain):
@@ -491,23 +602,26 @@ def dispatch(args, pack, trust_root, previous=None) -> int:
 
     reason = args.reason or f"knowledge pack {pack.tag} retired by operator"
     recorded = None
+    window = None
+    if not args.retire and not args.migrate_to:
+        window = resolve_window(pack, days=args.window_days, all_chunks=args.window_all)
     if args.retire:
         summary = retire(client, pack.tag, domain=domain, reason=reason)
         summary['pack'] = pack.pack_id
         summary['version'] = pack.version
     elif args.check:
-        summary = coverage(client, pack, domain=domain)
+        summary = coverage(client, pack, domain=domain, window=window)
         summary['pack_dir'] = str(args.pack)
     elif args.migrate_to:
         summary = migrate(client, pack, source_domain=domain, dest_domain=args.migrate_to or None,
                           dry_run=args.dry_run)
     elif previous is not None:
-        summary = roll(client, pack, previous, domain=domain, dry_run=args.dry_run)
+        summary = roll(client, pack, previous, domain=domain, window=window, dry_run=args.dry_run)
         recorded = summary.pop('install_detail', None)
         summary['pack_dir'] = str(args.pack)
         summary['previous_pack_dir'] = str(args.roll_from)
     else:
-        summary = install(client, pack, domain=domain, dry_run=args.dry_run)
+        summary = install(client, pack, domain=domain, window=window, dry_run=args.dry_run)
         recorded = summary
         summary['pack_dir'] = str(args.pack)
     if recorded is not None and not args.dry_run:

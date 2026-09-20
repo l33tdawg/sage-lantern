@@ -21,11 +21,12 @@ delta between versions.
 
 | | State |
 |---|---|
-| Format, builder, installer | built, 98 tests, prototype under `OPEN-DST-001` |
+| Format, builder, installer | built, 102 tests, prototype under `OPEN-DST-001` |
 | Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
 | Pack #1 | `reference` class, Malaysia v1: signed, archive `2f7dfce9` |
 | Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, signed, archive `7660413b` |
 | Window roll | `--roll-from <old>`: install the successor, then retire the chunks it dropped; rehearsed on two real overlapping windows (13 in, 275 out, 1,764 shared) |
+| Device window | owner direction 2026-09-20: **one month max**. A brief installs its newest 31 days by default (647 of the shipped brief's 2,052 events), `--window-days` goes narrower, `--window-all` is the explicit archive/lab install |
 | Device install | **nothing installed** — see the two gates below |
 
 The class and confidence fields changed the prototype schema on 2026-09-20. Nothing
@@ -33,9 +34,8 @@ had been published, so both packs were rebuilt and re-signed rather than teachin
 readers two manifest shapes; the superseded pre-class directories sit beside them
 under each pack's `superseded-pre-class/`.
 
-Next, in order: (1) size the installed window to the device's four-chunk recall
-budget rather than to the archive; (2) only then consider a device install, and
-prefer a public cache domain over the private home domain (`bbd52246`). The
+Next: the device install itself, once the node grows a public cache domain
+(`bbd52246`) so a brief does not land in the private home domain. The
 snapshot-pack lane stays blocked until `SAGE-EXPORT` and `OPEN-COM-003` land — see
 [DUAL_HOME_AND_PUBLICATION_CONTRACT.md](DUAL_HOME_AND_PUBLICATION_CONTRACT.md) §10.1.
 
@@ -131,6 +131,21 @@ Three rules make that real, and all three are enforced:
   day and the source reach an answer at all. The signed chunk text stays clean;
   the frame is a deterministic install-time projection.
 
+A brief also installs as a **window**, because the archive and what a device can
+afford are different sizes. Owner direction 2026-09-20: one month maximum. The
+installer's default and cap is the newest 31 days of the pack, anchored on the
+pack's own newest chunk date rather than on the device clock (which may be
+wrong); `--window-days N` goes narrower; `--window-all` is the explicit
+archive/lab escape hatch and is never the default. The shipped 93-day brief
+installs as 647 memories instead of 2,052. A reference pack has no window -
+curated facts do not go stale - and passing a window flag for one is an error.
+
+That changes what a roll must retire. `--roll-from` retires
+**previous window − new window**, so a chunk the successor still carries but
+which has aged past the window leaves the device too; a rolling archive would
+otherwise keep serving news the device is no longer allowed to hold. With
+`--window-all` the same rule collapses to the delta's removed addresses.
+
 ### Canonical bytes and the one digest
 
 Canonical bytes are a **JCS-shaped subset** of RFC 8785 rather than full JCS:
@@ -222,6 +237,8 @@ the node's own tag index. Every memory carries `pack:<id>-v<version>` and
 | Operation | Behaviour |
 |---|---|
 | install | Asks for the chunk tag first; only proposes what is missing. One local request per chunk; re-running converges |
+| `--window-days N` | Brief installs only: the newest N days of the pack (default and maximum 31). Applies to install, `--check` and `--roll-from` |
+| `--window-all` | Install the whole pack instead of a brief window; the explicit archive/lab choice |
 | `--verify` | Verifies the pack and stops: no node, no identity, no writes. This is the gate a delivered archive must pass first |
 | `--check` | Coverage report (`present`/`missing`) and nothing written; exit 1 when a chunk is missing |
 | `--roll-from <old>` | The rolling-window apply step. Installs the successor, then retires the chunk memories the delta dropped — in that order, so a failed install leaves the old window intact |
@@ -330,9 +347,11 @@ CC BY-SA is accepted for the Foundation channel.
 * **Install size is a recall decision, not a copying decision.** A three-month
   brief is ~2,000 memories in a node whose recall budget is four chunks; on a unit
   that also holds private facts that is a lot of competition. The archive is the
-  right thing to publish; the installed window should be tuned to what recall can
-  afford, and a brief belongs in its own domain rather than mixed into the private
-  home domain (which is what `bbd52246` unblocks).
+  right thing to publish; the device window is capped at one month (owner
+  direction 2026-09-20), which for the shipped brief is 647 memories instead of
+  2,052 and can be narrowed further with `--window-days`. A brief still belongs in
+  its own domain rather than mixed into the private home domain (which is what
+  `bbd52246` unblocks).
 
 Science and other open collections fit the same class with the same caveat: at
 arXiv, the *paper's own* licence decides (many are CC BY, plenty are arXiv's
@@ -429,7 +448,7 @@ chunks stay valid (they are content-addressed) until someone retires them.
 * Format, builder and installer: `scripts/lantern/knowledge_pack.py`,
   `scripts/lantern/build-knowledge-pack.py`, `scripts/lantern/install-knowledge-pack.py`,
   `scripts/lantern/pack-signing-key.py`, `scripts/lantern/pack-trust-root.json`.
-* Conformance suite (98 tests): `scripts/tests/test_knowledge_pack.py`,
+* Conformance suite (102 tests): `scripts/tests/test_knowledge_pack.py`,
   `scripts/tests/test_build_knowledge_pack.py`,
   `scripts/tests/test_install_knowledge_pack.py`,
   `scripts/tests/test_pack_signing_key.py`. It covers tampered chunks, stray and
@@ -442,7 +461,10 @@ chunks stay valid (they are content-addressed) until someone retires them.
   parked challenges, an indeterminate commit, a copy-incomplete migration that
   must not retire the source, a roll that installs before it retires, a roll that
   refuses a delta contradicting the manifests, and a failed roll that leaves the
-  old window alone.
+  old window alone. The window rules are pinned too: a brief installs its newest
+  month by default, refuses more than 31 days, leaves reference packs alone, and
+  a roll retires a chunk that aged out of the window even when the successor
+  still carries it.
 * Pack #1 rebuilt in this format: `work/knowledge-pack-20260920/pack-malaysia-v1/`
   (40 chunks at 0.95, class `reference`, manifest `18a53510...`) plus the signed
   delivery archive `malaysia-v1.tar.gz` (sha256 `2f7dfce9...`, member count 43
@@ -455,6 +477,10 @@ chunks stay valid (they are content-addressed) until someone retires them.
   `work/lantern-brief-roll-20260920/` (`rehearsal_roll.py` plus its two packs and
   the RESULTS record) - 2,039 memories installed, then 13 installed / 275 retired
   / 1,764 untouched, index exactly the new window, second application a no-op.
+* One-month window rehearsal on the shipped signed brief:
+  `work/lantern-brief-roll-20260920/rehearsal_window.py` - 647 of 2,052 events
+  installed at `--window-days 31`, and a real windowed roll that retired 44
+  aged-out chunks (0 from the delta) leaving exactly the new month.
 
 ## Not settled here
 
