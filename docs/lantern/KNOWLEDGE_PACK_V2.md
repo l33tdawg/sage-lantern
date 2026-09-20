@@ -25,7 +25,7 @@ delta between versions.
 | Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
 | Pack #1 | `reference` class, Malaysia v1: signed, per-chunk licence, archive `91c5ba0c` |
 | Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, per-chunk licence, signed, archive `11dad074` |
-| Published | release assets `pack/malaysia-v1` and `pack/world-brief-v20260920` in `l33tdawg/sage-lantern`; the repo stays **private** for now (owner direction 2026-09-20), so fetch is credentialed and distribution stays out of band |
+| Published | release assets `pack/malaysia-v1` and `pack/world-brief-v20260920` in `l33tdawg/sage-lantern`; the repo stays **private until the public launch on 2027-01-01** (owner direction 2026-09-20), so fetch is credentialed and distribution stays out of band until then |
 | Window roll | `--roll-from <old>`: install the successor, then retire the chunks it dropped; rehearsed on two real overlapping windows (13 in, 275 out, 1,764 shared) |
 | Device window | owner direction 2026-09-20: **one month max**. A brief installs its newest 31 days by default (647 of the shipped brief's 2,052 events), `--window-days` goes narrower, `--window-all` is the explicit archive/lab install |
 | Device install | **nothing installed** — see the two gates below |
@@ -322,10 +322,12 @@ Both packs are published: the releases `pack/malaysia-v1` and
 `pack/world-brief-v20260920`. Each was verified as published, not as built —
 downloaded back from the release and re-checked offline with `--verify` against
 the trust root, digests matching the built archive. The repository is
-**private** for now (owner direction 2026-09-20), so fetching an asset needs
-repository access; verification of an asset you already hold needs no account,
-no server and no network, and device distribution stays out of band (USB, LAN,
-later the swarm) until the owner opens the repository.
+**private until the public launch on 2027-01-01** (owner direction 2026-09-20),
+so fetching an asset needs repository access until then; verification of an asset
+you already hold needs no account, no server and no network, and device
+distribution stays out of band (USB, LAN, later the swarm) meanwhile. The
+release notes are written for the day the repository opens: the tag, the digests
+and the verify command do not change when the visibility does.
 
 On the receiving side — which may be a laptop, a
 USB stick, a LAN transfer or, later, a swarm chunk exchange — the sequence is
