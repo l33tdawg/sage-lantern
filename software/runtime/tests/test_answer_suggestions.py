@@ -37,9 +37,45 @@ def test_invalid_suggestions_are_optional_not_answer_failures(value):
     assert split_answer('Answer\n<followups>' + json.dumps(value) + '</followups>') == ('Answer', [])
 
 
-@pytest.mark.parametrize('trailer', ['not JSON</followups>', '["q?"]', '["q?"]</followups>trailing', '[]</followups>\n<followups>[]</followups>'])
+@pytest.mark.parametrize('trailer', ['not JSON</followups>', '["q?"]', '[]</followups>\n<followups>[]</followups>'])
 def test_malformed_trailer_keeps_answer_without_metadata(trailer):
     assert split_answer('Answer\n<followups>' + trailer) == ('Answer', [])
+
+
+def test_trailing_text_after_the_block_is_dropped_with_the_metadata():
+    assert split_answer('Answer\n<followups>["q?"]</followups>trailing') == ('Answer', ['q?'])
+
+
+def test_device_shape_with_inline_tag_and_stray_bullet_close():
+    # Captured from unit A 2026-09-20 08:01: the 2B wrote "The <followups>" on
+    # the same line as the answer and closed a second bullet on the close line.
+    raw = ('The driving distance from Tokyo to Osaka is approximately 1,000 kilometers '
+           '(about 620 miles), while the shortest flight distance is roughly 1,000 kilometers '
+           '(620 miles). A direct flight typically takes around 1 hour to 1 hour 30 minutes, '
+           'depending on the airline and connection.\n\nThe <followups>\n'
+           '- What is the current flight time from Tokyo to Osaka?\n- </followups>')
+    answer, questions = split_answer(raw)
+    assert answer.endswith('depending on the airline and connection.')
+    assert not answer.endswith('The')
+    assert '<followups>' not in answer
+    assert questions == ['What is the current flight time from Tokyo to Osaka?']
+
+
+def test_stream_hides_the_device_shape_at_every_chunk_boundary():
+    answer = 'Tokyo to Osaka is about 500 kilometres by rail.'
+    raw = (answer + '\n\nThe <followups>\n- How long does the train take?\n'
+           '- What is there to see in Osaka?\n- </followups>')
+    for chunk_size in range(1, 25):
+        pieces = []
+        stream = AnswerStream(pieces.append)
+        for offset in range(0, len(raw), chunk_size):
+            stream.feed(raw[offset:offset + chunk_size])
+        stream.finish()
+        streamed = ''.join(pieces)
+        assert streamed.startswith(answer)
+        assert '<followups>' not in streamed
+        assert '- </followups>' not in streamed
+    assert split_answer(raw) == (answer, ['How long does the train take?', 'What is there to see in Osaka?'])
 
 
 @pytest.mark.parametrize('body,expected', [

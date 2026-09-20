@@ -5,14 +5,26 @@ import re
 OPEN = '\n<followups>'
 CLOSE = '</followups>'
 LIST_ITEM = re.compile(r'^[ \t]*(?:[-*•]|\d{1,2}[.)])[ \t]+(.+?)[ \t]*$')
+EMPTY_ITEM = re.compile(r'^[ \t]*(?:[-*•]|\d{1,2}[.)])[ \t]*$')
+QUESTION_LINE = re.compile(r'^[ \t]*(\S.*?\?)[ \t]*$')
+# The trailer opens at the start of a line, or where the tag is followed by a
+# newline or a JSON bracket. An inline mention ("a separate <followups>
+# section") stays ordinary text.
+LINE_TAG = re.compile(r'(?m)^[ \t]*<followups>', re.IGNORECASE)
+INLINE_TAG = re.compile(r'<followups>(?=\s*(?:\n|\[))', re.IGNORECASE)
+TRAILING_TAG = re.compile(r'<followups>\s*$', re.IGNORECASE)
+TAG = '<followups>'
+LEAD_IN = {'the', 'follow-up', 'follow-ups', 'followups', 'questions',
+           'suggested questions', 'suggestions', 'next', 'and'}
 ECHO_MINIMUM = 40
 POLICY = (
-    ' After the complete answer, optionally append a separate <followups> section on a new line '
-    'containing a JSON array of at most two short, specific questions the user could ask next, '
-    'then </followups>. Write each as the user asking you, not as an offer from you. '
-    'These are optional next topics, never a substitute for answering the current question. '
-    'Omit the section for simple facts, explicitly brief or exact-format requests, '
-    'requests without follow-up questions, or when no useful next question exists.'
+    ' After the complete answer, add a <followups> section on a new line with a JSON array of two '
+    'short, specific questions the user could ask next, then </followups>. Write each question as the '
+    'user asking you. The two questions must differ from each other and from the question just answered, '
+    'and must stay on the subjects of the answer: for a question about the distance from Tokyo to Osaka, '
+    'ask about Tokyo or Osaka themselves, how to travel, how long it takes, what it costs, when to go, '
+    'or what to see. Omit the section only for a one-line arithmetic or definition answer, or when the '
+    'user asked for no follow-up.'
 )
 
 
@@ -44,11 +56,36 @@ def parse_list(value):
     for line in value.splitlines():
         if not line.strip():
             continue
+        if EMPTY_ITEM.match(line):
+            # The model sometimes opens a second bullet and then closes the
+            # block on the same line ("- </followups>").
+            continue
         match = LIST_ITEM.match(line)
+        if match is None:
+            # The 2B often drops the bullets and writes one question per line.
+            match = QUESTION_LINE.match(line)
         if match is None:
             return []
         items.append(match.group(1))
     return items
+
+
+def _tidy_answer(value):
+    """Drop a dangling lead-in line the model wrote before the tag ("The")."""
+    answer = value.strip()
+    lines = answer.split('\n')
+    if lines:
+        last = lines[-1].strip().strip('*_` :').lower()
+        if last in LEAD_IN:
+            lines.pop()
+    return '\n'.join(lines).strip()
+
+
+def _marker(text):
+    """Earliest trailer opening in one completion, or None."""
+    candidates = [match for match in (LINE_TAG.search(text), INLINE_TAG.search(text))
+                  if match is not None]
+    return min(candidates, key=lambda match: match.start()) if candidates else None
 
 
 _WINDOW_CACHE: dict[str, frozenset] = {}
@@ -111,20 +148,20 @@ class PolicyEcho:
 def split_answer(text):
     # A metadata-only completion has no answer, even if transport trimming
     # removed the leading newline. Never speak or display its JSON.
-    if text.lstrip().startswith(OPEN[1:]):
+    if text.lstrip().lower().startswith(TAG):
         return '', []
-    answer, marker, trailer = text.partition(OPEN)
-    if not marker:
+    marker = _marker(text)
+    if marker is None:
         return text.strip(), []
-    trailer = trailer.strip()
-    if not trailer.endswith(CLOSE):
-        return answer.strip(), []
-    body = trailer[:-len(CLOSE)].strip()
+    close = re.search(r'</followups>', text[marker.end():], re.IGNORECASE)
+    if close is None:
+        return _tidy_answer(text[:marker.start()]), []
+    body = text[marker.end():marker.end() + close.start()].strip()
     try:
         questions = validate_suggestions(json.loads(body))
     except (ValueError, UnicodeError, RecursionError):
         questions = validate_suggestions(parse_list(body))
-    return answer.strip(), questions
+    return _tidy_answer(text[:marker.start()]), questions
 
 
 class AnswerStream:
@@ -134,6 +171,7 @@ class AnswerStream:
         self.pending = ''
         self.metadata = False
         self.at_start = True
+        self.line_start = True
 
     def feed(self, text):
         if self.metadata:
@@ -141,24 +179,60 @@ class AnswerStream:
         self.pending += text
         if self.at_start:
             start = self.pending.lstrip()
-            if start.startswith(OPEN[1:]):
+            if start.lower().startswith(TAG):
                 self.pending = ''
                 self.metadata = True
                 return
-            if not start or OPEN[1:].startswith(start):
+            if not start or TAG.startswith(start.lower()):
                 return
             self.at_start = False
-        position = self.pending.find(OPEN)
-        if position >= 0:
-            self._emit(self.pending[:position])
+        marker = self._marker()
+        if marker is not None:
+            self._emit(self.pending[:marker.start()].rstrip())
             self.pending = ''
             self.metadata = True
             return
-        hold = next((size for size in range(min(len(OPEN) - 1, len(self.pending)), 0, -1)
-                     if self.pending.endswith(OPEN[:size])), 0)
+        hold = self._hold()
         ready = self.pending[:-hold] if hold else self.pending
         self.pending = self.pending[-hold:] if hold else ''
         self._emit(ready)
+
+    def _marker(self):
+        """Trailer opening in the held buffer, honouring what was already emitted."""
+        candidates = []
+        line = LINE_TAG.search(self.pending)
+        if line is not None:
+            newline = self.pending.rfind('\n', 0, line.start())
+            prefix = self.pending[newline + 1:line.start()]
+            if not prefix.strip() and (newline >= 0 or self.line_start):
+                candidates.append(line)
+        inline = INLINE_TAG.search(self.pending)
+        if inline is not None:
+            candidates.append(inline)
+        return min(candidates, key=lambda match: match.start()) if candidates else None
+
+    def _hold(self):
+        """Length of a suffix that may still become the delimiter."""
+        trailing = TRAILING_TAG.search(self.pending)
+        if trailing is not None:
+            start = trailing.start()
+            while start > 0 and self.pending[start - 1] in ' \t\r\n' and len(self.pending) - start < 16:
+                start -= 1
+            return len(self.pending) - start
+        stripped = self.pending.rstrip(' \t\r\n')
+        if len(self.pending) > len(stripped):
+            # A line break may be the one the tag opens on; hold it briefly so
+            # it never lands in the streamed answer ahead of a detected marker.
+            return min(len(self.pending) - len(stripped), 8)
+        lowered = self.pending.lower()
+        for size in range(min(len(TAG), len(lowered)), 0, -1):
+            if TAG.startswith(lowered[-size:]):
+                start = len(self.pending) - size
+                while start > 0 and self.pending[start - 1] in ' \t\r\n' and size < 16:
+                    start -= 1
+                    size += 1
+                return size
+        return 0
 
     def finish(self):
         if not self.metadata:
@@ -168,3 +242,4 @@ class AnswerStream:
     def _emit(self, value):
         if value:
             self.emit(value)
+            self.line_start = value.endswith('\n')
