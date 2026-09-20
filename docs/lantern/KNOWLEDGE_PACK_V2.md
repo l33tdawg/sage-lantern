@@ -221,6 +221,42 @@ licences per channel) is not decided. The candidates, cheapest first:
 * **Anything requiring a licence we do not hold** — out of scope until
   `OPEN-PUB-001` says otherwise.
 
+### Class 1: the dated world brief
+
+The owner's call (2026-09-20): a **rolling dated brief**, not a live feed, starting
+with world news because recency is the one gap a model can never close on its own.
+CC BY-SA is accepted for the Foundation channel.
+
+* **Source:** `scripts/lantern/fetch-world-brief.py` pulls Wikipedia's Current
+  Events portal (one page per day, human-curated, dated and cited, CC BY-SA 4.0)
+  over the public API. Titles and summaries only — no article bodies, no images —
+  with the page URL as each chunk's `source` and the day as its `date`.
+* **Shape:** one event per chunk, topic as `title` and tag. A 93-day window came to
+  2,052 events, 417 KB of text, one 475 KB signed archive.
+* **Class, not just licence:** the wiki text is third-party and can be wrong, so a
+  brief is not a reference fact. News wants a distinct class and a lower confidence
+  than `fact` at 0.95, and its answers should carry the day and the source
+  ("as of 20 September, per ...") rather than asserting the present. That addition
+  is not built yet.
+* **Window policy:** a brief ages out. Rolling a window needs the chunks that
+  *left* it retired, not just the new one installed — otherwise the index
+  accumulates stale news and the top-4 recall budget starts crowding out durable
+  facts. The delta document already names `removed`; the apply step that exploits
+  it is the next piece of tooling.
+* **Install size is a recall decision, not a copying decision.** A three-month
+  brief is ~2,000 memories in a node whose recall budget is four chunks; on a unit
+  that also holds private facts that is a lot of competition. The archive is the
+  right thing to publish; the installed window should be tuned to what recall can
+  afford, and a brief belongs in its own domain rather than mixed into the private
+  home domain (which is what `bbd52246` unblocks).
+
+Science and other open collections fit the same class with the same caveat: at
+arXiv, the *paper's own* licence decides (many are CC BY, plenty are arXiv's
+non-exclusive default, which is not redistribution rights), so a source adapter
+has to read the licence per item and the builder has to refuse an item with none.
+That is why mixed-source packs want a per-chunk `licence` beside `source`, which
+this format does not carry yet either.
+
 Two semantics matter here and both are enforced in code:
 
 * **`domain_tag=None` means "home" on a write and "no filter" on a read.** So every
