@@ -25,6 +25,7 @@ delta between versions.
 | Trust | Foundation pack key 1 (`pk-1b7a5f4ee2c66492`, active) in the shipped trust root; private half outside the repo, **backups still outstanding** |
 | Pack #1 | `reference` class, Malaysia v1: signed, per-chunk licence, archive `91c5ba0c` |
 | Pack #2 | `brief` class, world brief 20 Jun – 20 Sep 2026: 2,052 events at confidence 0.80, per-chunk licence, signed, archive `11dad074` |
+| Published | release assets `pack/malaysia-v1` and `pack/world-brief-v20260920` in `l33tdawg/sage-lantern`; the repo stays **private** for now (owner direction 2026-09-20), so fetch is credentialed and distribution stays out of band |
 | Window roll | `--roll-from <old>`: install the successor, then retire the chunks it dropped; rehearsed on two real overlapping windows (13 in, 275 out, 1,764 shared) |
 | Device window | owner direction 2026-09-20: **one month max**. A brief installs its newest 31 days by default (647 of the shipped brief's 2,052 events), `--window-days` goes narrower, `--window-all` is the explicit archive/lab install |
 | Device install | **nothing installed** — see the two gates below |
@@ -35,8 +36,10 @@ re-signed rather than teaching readers several manifest shapes; the superseded
 generations sit beside them under `superseded-pre-class/` and
 `superseded-pre-licence/`.
 
-Next: the device install itself, once the node grows a public cache domain
-(`bbd52246`) so a brief does not land in the private home domain. The
+Next: the next source adapter and reference pack (Wikidata/CC0 for the measured
+numeric gaps, then arXiv and agency material with the per-item licence gate now
+in the format), then the device install itself once the node grows a public cache
+domain (`bbd52246`) so a brief does not land in the private home domain. The
 snapshot-pack lane stays blocked until `SAGE-EXPORT` and `OPEN-COM-003` land — see
 [DUAL_HOME_AND_PUBLICATION_CONTRACT.md](DUAL_HOME_AND_PUBLICATION_CONTRACT.md) §10.1.
 
@@ -308,8 +311,23 @@ python3 scripts/lantern/build-knowledge-pack.py work/knowledge-pack-20260920/pac
 # -> work/.../malaysia-v1.tar.gz   (sha256 91c5ba0c... for the signed pack #1)
 ```
 
-Attach the archive to a GitHub release, with the manifest digest and the archive
-digest in the release notes. On the receiving side — which may be a laptop, a
+Attach the archive to a GitHub release in `l33tdawg/sage-lantern`, with the
+manifest digest and the archive digest in the release notes. The tag scheme is
+`pack/<id>-v<version>`, one release per pack version, and a published asset is
+never overwritten or deleted: a rolling brief must keep its old windows
+reachable, so a device that missed one can still fetch it, and supersession is a
+new release rather than an edit.
+
+Both packs are published: the releases `pack/malaysia-v1` and
+`pack/world-brief-v20260920`. Each was verified as published, not as built —
+downloaded back from the release and re-checked offline with `--verify` against
+the trust root, digests matching the built archive. The repository is
+**private** for now (owner direction 2026-09-20), so fetching an asset needs
+repository access; verification of an asset you already hold needs no account,
+no server and no network, and device distribution stays out of band (USB, LAN,
+later the swarm) until the owner opens the repository.
+
+On the receiving side — which may be a laptop, a
 USB stick, a LAN transfer or, later, a swarm chunk exchange — the sequence is
 
 ```sh
