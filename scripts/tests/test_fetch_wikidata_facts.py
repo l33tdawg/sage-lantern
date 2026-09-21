@@ -417,3 +417,92 @@ def test_cli_writes_jsonl_from_the_fixture(tmp_path, monkeypatch):
     assert len(written) == len(sample_rows())
     assert {item['id'] for item in written} == {item['id'] for item in sample_rows()}
     assert all(item['licence'] == 'CC0-1.0' for item in written)
+
+
+def snak(prop, datatype, value):
+    return {'mainsnak': {'snaktype': 'value', 'property': prop,
+                         'datavalue': {'value': value, 'type': datatype}},
+            'rank': 'normal'}
+
+
+def place(identifier, label, *, country='Q833', coordinate=None, population=None):
+    """One entity in the shape the parser reads, for the twin rules."""
+    claims = {}
+    if country:
+        claims['P17'] = [snak('P17', 'wikibase-entityid',
+                              {'id': country, 'entity-type': 'item'})]
+    if coordinate:
+        claims['P625'] = [snak('P625', 'globecoordinate',
+                               {'latitude': coordinate[0], 'longitude': coordinate[1],
+                                'globe': 'http://www.wikidata.org/entity/Q2'})]
+    if population is not None:
+        statement = snak('P1082', 'quantity', {'amount': f'+{population}', 'unit': '1'})
+        statement['qualifiers'] = {'P585': [
+            {'datavalue': {'value': {'time': '+2020-00-00T00:00:00Z', 'precision': 9},
+                           'type': 'time'}}]}
+        statement['qualifiers-order'] = ['P585']
+        claims['P1082'] = [statement]
+    return {'id': identifier, 'labels': {'en': {'language': 'en', 'value': label}},
+            'claims': claims}
+
+
+def entities(*places):
+    return {item['id']: item for item in places}
+
+
+def labels_of(response):
+    return {identifier: entity['labels']['en']['value']
+            for identifier, entity in response['entities'].items()}
+
+
+def test_twins_merge_identical_labels_in_the_same_country():
+    response = {'entities': entities(
+        place('Q1490', 'Tokyo', coordinate=(35.68, 139.76), population=14000000),
+        place('Q7473516', 'Tokyo', coordinate=(35.68, 139.70), population=9640742))}
+    twins = wd.twin_representatives(response['entities'], labels_of(response),
+                                    ['Q1490', 'Q7473516'])
+    # The more populous entity speaks for the place, and the duplicate is
+    # flagged as carrying the identical label so its own facts are dropped.
+    assert twins == {'Q7473516': ('Q1490', True)}
+
+
+def test_twins_keep_the_same_label_in_another_country_or_far_away():
+    response = {'entities': entities(
+        place('Q84', 'London', country='Q145', coordinate=(51.507, -0.128), population=8799728),
+        place('Q92561', 'London', country='Q16', coordinate=(42.98, -81.25), population=383822),
+        place('Q1', 'Springfield', country='Q30', coordinate=(37.21, -93.29), population=169176),
+        place('Q2', 'Springfield', country='Q30', coordinate=(42.10, -72.59), population=155929))}
+    assert wd.twin_representatives(response['entities'], labels_of(response),
+                                   ['Q84', 'Q92561', 'Q1', 'Q2']) == {}
+
+
+def test_twins_merge_a_metropolitan_qualifier_but_not_a_lookalike_city():
+    response = {'entities': entities(
+        place('Q13580', 'Metro Manila', coordinate=(14.609, 121.022), population=14001751),
+        place('Q1461', 'Manila', coordinate=(14.599, 120.984), population=1902590),
+        place('Q1867', 'Taipei', coordinate=(25.033, 121.565), population=2706030),
+        place('Q244898', 'New Taipei City', coordinate=(25.011, 121.462), population=4364124))}
+    twins = wd.twin_representatives(response['entities'], labels_of(response),
+                                    ['Q13580', 'Q1461', 'Q1867', 'Q244898'])
+    # "New Taipei City" is not "Taipei City": only the qualifier-around-the-same
+    # -name case collapses, and it keeps the more populous entity.
+    assert twins == {'Q1461': ('Q13580', False)}
+
+
+def test_fact_rows_emits_one_distance_and_drops_the_duplicate_facts():
+    response = {'entities': entities(
+        place('Q1490', 'Tokyo', coordinate=(35.68, 139.76), population=14000000),
+        place('Q7473516', 'Tokyo', coordinate=(35.68, 139.70), population=9640742),
+        place('Q35765', 'Osaka', coordinate=(34.69, 135.50), population=2751862))}
+    scope = {'heights': [], 'populations': ['Q1490', 'Q7473516', 'Q35765'],
+             'countries': [], 'pairs': [['Q1490', 'Q35765'], ['Q7473516', 'Q35765'],
+                                        ['Q1490', 'Q7473516']]}
+    rows, skipped = wd.fact_rows(response, labels_of(response),
+                                 ['populations', 'distances'], scope['pairs'], scope)
+    assert [row['id'] for row in rows if row['id'].startswith('wd-distance-')] == \
+        ['wd-distance-q1490-q35765']
+    population_ids = {row['id'] for row in rows if row['id'].endswith('-population')}
+    assert 'wd-q1490-population' in population_ids
+    assert 'wd-q7473516-population' not in population_ids
+    assert any('duplicate item of Q1490' in note for note in skipped)
+    assert any('same place as wd-distance-q1490-q35765' in note for note in skipped)

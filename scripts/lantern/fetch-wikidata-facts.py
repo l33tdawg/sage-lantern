@@ -90,6 +90,26 @@ Q_CENSUS = "Q39825"
 Q_EARTH = "Q2"
 MALAYSIA = "Q833"
 
+# Two in-scope entities can be the same place - Wikidata carries two "Tokyo"
+# items and both "Manila" and "Metro Manila" - and each copy emits its own
+# facts, so one question gets two answers: Tokyo-Osaka shipped as both 396 km
+# and 404 km, and the recalled pair returned whichever ranked first. Two
+# entities are one place here when the country matches, the coordinates are
+# within TWIN_KM, and either the English labels are identical or one is the
+# other with a metropolitan qualifier attached ("Greater Mexico City" over
+# "Mexico City"). The more populous entity represents the place.
+#
+# The rule is deliberately narrow at both ends. Two same-named places far apart
+# stay two places (Springfield, Missouri is not Springfield, Massachusetts),
+# the same name in another country stays two places (London, the United
+# Kingdom is not London, Canada), and a qualifier with no matching base does
+# not merge anything: "New Taipei City" is nobody's "Taipei City", and Navi
+# Mumbai, New Cairo and Foshan are separate cities near bigger neighbours
+# rather than duplicates of them.
+TWIN_KM = 25.0
+TWIN_PREFIXES = ("Greater ", "Metro ", "Metropolis of ")
+TWIN_SUFFIXES = (" metropolitan area", " urban area", " conurbation")
+
 # Units convertible to metres for the height fallback. The metric statement is
 # preferred when it exists; conversion is the honest path for an item that only
 # carries an imperial one.
@@ -546,6 +566,94 @@ def capital_fact(entity: dict, labels: dict) -> str:
     return f"{country} has several capitals: {joined}."
 
 
+def country_of(entity: dict) -> str:
+    """The first ranked P17 target, or '' - the country a place sits in."""
+    for statement in ranked(statements(entity, P_COUNTRY)):
+        target = entity_qid(snak_value(statement))
+        if target:
+            return target
+    return ""
+
+
+def population_value(entity: dict):
+    """The newest dated population as a Decimal, or None.
+
+    Read only as the tie-break for which entity of a duplicated place is the
+    representative, from the same statements ``population_fact`` reads.
+    """
+    candidates = []
+    for statement in ranked(statements(entity, P_POPULATION)):
+        amount, unit = quantity(statement)
+        when = point_in_time(statement)
+        if amount is None or unit != "1" or when is None:
+            continue
+        candidates.append((when[0], amount))
+    return max(candidates)[1] if candidates else None
+
+
+def qualifier_base(name: str) -> str:
+    """'Greater Mexico City' -> 'Mexico City'; '' when no qualifier is attached."""
+    for prefix in TWIN_PREFIXES:
+        if name.startswith(prefix) and len(name) > len(prefix):
+            return name[len(prefix):]
+    for suffix in TWIN_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            return name[:-len(suffix)]
+    return ""
+
+
+def twin_representatives(entities: dict, labels: dict, identifiers, *,
+                         kilometres: float = TWIN_KM) -> dict:
+    """{duplicate: (keeper, same_label)} for entities that are the same place.
+
+    ``same_label`` is True when both carry the identical English label, which is
+    the case where the duplicate's facts render as the keeper's own sentences:
+    "The population of Tokyo was 14,264,798" and "was 9,640,742" are one
+    question with two answers, so the duplicate is dropped. A metropolitan twin
+    keeps its own named facts - "the population of Metro Manila" is a different,
+    true sentence from "the population of Manila" - and only its distance rows
+    move to the representative, so one question about one place has one answer.
+    """
+    twins: dict = {}
+    ordered = [identifier for identifier in dict.fromkeys(identifiers)
+               if isinstance(entities.get(identifier), dict)]
+    for index, first in enumerate(ordered):
+        first_entity = entities[first]
+        first_label = labels.get(first, "")
+        first_country = country_of(first_entity)
+        first_coordinate = coordinate(first_entity)
+        if not first_label or not first_country or first_coordinate is None:
+            continue
+        first_base = qualifier_base(first_label)
+        for second in ordered[index + 1:]:
+            second_entity = entities[second]
+            second_label = labels.get(second, "")
+            if not second_label:
+                continue
+            if first_label == second_label:
+                same_label = True
+            elif first_base == second_label or qualifier_base(second_label) == first_label:
+                same_label = False
+            else:
+                continue
+            if country_of(second_entity) != first_country:
+                continue
+            second_coordinate = coordinate(second_entity)
+            if second_coordinate is None:
+                continue
+            if haversine_km(first_coordinate, second_coordinate) > kilometres:
+                continue
+            first_value = population_value(first_entity)
+            second_value = population_value(second_entity)
+            if first_value is not None and second_value is not None \
+                    and second_value > first_value:
+                keeper, dropped = second, first
+            else:
+                keeper, dropped = first, second
+            twins[dropped] = (keeper, same_label)
+    return twins
+
+
 def licence_gate(item: dict) -> dict:
     """Refuse any item that would travel without its own stated licence.
 
@@ -595,6 +703,19 @@ def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
     ambiguous = {name for name, count in
                  Counter(labels.get(identifier, "") for identifier in scope_ids).items()
                  if name and count > 1}
+    # The same place carried twice (two "Tokyo" items, "Manila" and "Metro
+    # Manila") answers one question twice unless one of them speaks for the
+    # place; see twin_representatives for the rule and its bounds.
+    twins = twin_representatives(entities, labels, scope_ids)
+
+    def duplicate_item(identifier: str) -> str:
+        """The keeper of this place, when the identifier is a duplicate item.
+
+        Only an identical-label duplicate is dropped whole. A metropolitan twin
+        keeps its own named facts and contributes no distance rows.
+        """
+        keeper, same_label = twins.get(identifier, ("", False))
+        return keeper if same_label else ""
 
     def known(identifier: str):
         entity = entities.get(identifier)
@@ -626,6 +747,11 @@ def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
         entity = known(identifier)
         if entity is None:
             return
+        keeper = duplicate_item(identifier)
+        if keeper:
+            skipped.append(f"{identifier}: duplicate item of {keeper} "
+                           f"(same label, same place)")
+            return
         text = located_in_fact({**entity, "id": identifier}, labels)
         if text:
             rows.append(licence_gate(row(
@@ -638,6 +764,11 @@ def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
             entity = known(identifier)
             if entity is None:
                 skipped.append(f"{identifier}: missing from the response")
+                continue
+            keeper = duplicate_item(identifier)
+            if keeper:
+                skipped.append(f"{identifier}: duplicate item of {keeper} "
+                               f"(same label, same place)")
                 continue
             fact = height_fact(entity)
             if fact is None:
@@ -661,6 +792,11 @@ def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
             entity = known(identifier)
             if entity is None:
                 skipped.append(f"{identifier}: missing from the response")
+                continue
+            keeper = duplicate_item(identifier)
+            if keeper:
+                skipped.append(f"{identifier}: duplicate item of {keeper} "
+                               f"(same label, same place)")
                 continue
             fact = population_fact(entity)
             if fact is None:
@@ -698,8 +834,20 @@ def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
                     source=ENTITY_URL + identifier)))
 
     if "distances" in facts:
+        emitted_pairs: dict = {}
         for first, second in pairs:
+            # A pair whose endpoint is a duplicate place belongs to the entity
+            # that speaks for that place: Tokyo-Osaka is one fact, not one per
+            # Tokyo item, and a place paired with its own duplicate is not a
+            # distance at all.
+            first = twins.get(first, (first, False))[0]
+            second = twins.get(second, (second, False))[0]
             if first == second:
+                continue
+            key = tuple(sorted((first, second)))
+            earlier = emitted_pairs.get(key)
+            if earlier is not None:
+                skipped.append(f"{first}-{second}: same place as {earlier}")
                 continue
             one, two = known(first), known(second)
             if one is None or two is None:
@@ -717,6 +865,7 @@ def fact_rows(response: dict, labels: dict, facts, pairs, scope=None) -> tuple:
             tags = ["world-facts", "distance"]
             if malaysian(one) or malaysian(two):
                 tags.append("malaysia")
+            emitted_pairs[key] = f"wd-distance-{first.lower()}-{second.lower()}"
             rows.append(licence_gate(row(
                 f"wd-distance-{first.lower()}-{second.lower()}",
                 text=(
