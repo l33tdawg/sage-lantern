@@ -53,6 +53,35 @@ def test_merge_pairs_keeps_one_entry_per_unordered_pair():
     assert enum.merge_pairs(pairwise, anchors) == [['Q1', 'Q2'], ['Q1', 'Q3'], ['Q4', 'Q1']]
 
 
+def test_seed_entities_are_forced_into_the_pair_selection():
+    cities = ['Q1', 'Q2', 'Q3', 'Q4']
+    # A seed outside the top cut is still paired: the facts a pack exists to fix
+    # are not a popularity contest (Tokyo-Osaka and London-Paris went missing
+    # from a 201-city list for exactly this reason).
+    assert enum.city_pairs(cities, 2, ('Q9',)) == [
+        ['Q1', 'Q2'], ['Q1', 'Q9'], ['Q2', 'Q9']]
+    assert enum.anchor_pairs(cities, 'Q8', 2, ('Q9',)) == [
+        ['Q8', 'Q1'], ['Q8', 'Q2'], ['Q8', 'Q9']]
+    # A seed already inside the top cut is not paired with itself twice.
+    assert enum.city_pairs(cities, 2, ('Q2',)) == [['Q1', 'Q2']]
+    assert enum.pair_candidates(cities, 0, ('Q9',)) == ['Q9']
+
+
+def test_seed_query_names_the_entities_and_asks_for_a_population():
+    query = enum.seed_query(('Q90', 'Q35765'))
+    assert 'wd:Q90' in query and 'wd:Q35765' in query
+    assert 'P1082' in query
+
+
+def test_class_list_covers_the_cities_the_first_scaled_run_missed():
+    # Verified against P31 of the live items: Paris (Q90) carries
+    # metropolis/national capital/largest city, Osaka (Q35765) the Japanese
+    # designated-city classes. None of them was matched by the original five,
+    # which is why the 27.8k-fact pack could not answer its own two examples.
+    assert {'Q174844', 'Q200250', 'Q108178728', 'Q51929311'} <= set(enum.CITY_CLASSES)
+    assert {'Q1749269', 'Q494721', 'Q65589340'} <= set(enum.CITY_CLASSES)
+
+
 def test_queries_name_the_class_and_threshold():
     query = enum.city_query(20000)
     assert 'P1082' in query and '20000' in query

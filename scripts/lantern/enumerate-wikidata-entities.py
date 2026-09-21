@@ -4,7 +4,8 @@
     python3 scripts/lantern/enumerate-wikidata-entities.py \
         --out work/reference-facts-20260920/world-facts-v2-scope.json \
         --cities-min-population 20000 --countries \
-        --pairs-top 120 --pairs-anchor Q1865 --pairs-anchor-top 400
+        --pairs-top 120 --pairs-anchor Q1865 --pairs-anchor-top 400 \
+        --seed-entities Q90,Q35765
 
 The committed pack (`world-facts` v1, 191 facts) came from hand-written lists;
 the practical pack class is tens of thousands of chunks, which no hand-written
@@ -17,9 +18,19 @@ reproducible and reviewable rather than a list of numbers someone pasted. Two
 WDQS realities shaped the queries, both learned by running them: the
 ``wdt:P31/wdt:P279*`` subclass walk is fine as a COUNT but returns 502 on a row
 return at these sizes, so cities are matched against a bounded list of classes
-(city, big city, town, million city, capital); and the ranking is done locally,
-because an ORDER BY over a multi-thousand-row result is the difference between
-a query that answers and one that times out.
+(city, big city, town, million city, capital, megacity, metropolis, national
+capital, largest city, and the two Japanese city classes); and the ranking is
+done locally, because an ORDER BY over a multi-thousand-row result is the
+difference between a query that answers and one that times out.
+
+The class list is not a detail to be inferred from the pack: the first scaled
+run (2026-09-20) shipped 27,822 facts and still could not answer ``How far is
+Tokyo from Osaka?`` or ``How far is London from Paris?`` - the two facts that
+had motivated the pack - because Paris and Osaka were matched by none of the
+five classes then listed, so they never entered the ranking and the pair
+generator never saw them. ``--seed-entities`` is the second half of that fix:
+named QIDs are ranked in and forced into every pair selection, so a fact a pack
+was built to fix cannot be cut by a top-N rule.
 
 Same terms as the rest of this adapter: Wikidata structured statements are CC0,
 the endpoint is the public WDQS instance, and requests are spaced politely.
@@ -45,12 +56,26 @@ USER_AGENT = ("SageLanternWikidata/1.0 (SAGE Lantern offline knowledge packs; "
 LICENCE = "CC0-1.0"
 ENTITY_URL = "http://www.wikidata.org/entity/"
 
-CITY_CLASS = "Q515"           # city
-CITY_CLASSES = ("Q515",        # city
-                "Q1549591",    # big city
-                "Q3957",       # town
-                "Q1637706",    # city with millions of inhabitants
-                "Q5119")       # capital city
+# The bounded class list, widened on 2026-09-21 after the first 27.8k-fact pack
+# turned out to be missing two of the four facts it was built to fix: Tokyo-Osaka
+# and London-Paris were absent because Paris carries "metropolis"/"national
+# capital" and Osaka "city designated by government ordinance", and neither class
+# was matched, so neither city ever entered the pair list. Each identifier below
+# was verified against the live items (P31 for Q90, Q35765, Q1490, Q84) before it
+# was added; the subclass walk stays out of the row query for the reason above.
+CITY_CLASS = "Q515"                  # city
+CITY_CLASSES = ("Q515",               # city
+                "Q1549591",           # big city
+                "Q3957",              # town
+                "Q1637706",           # city with millions of inhabitants
+                "Q5119",              # capital city
+                "Q174844",            # megacity
+                "Q200250",            # metropolis
+                "Q108178728",         # national capital
+                "Q51929311",          # largest city
+                "Q1749269",           # city designated by government ordinance (Japan)
+                "Q494721",            # city of Japan
+                "Q65589340")          # prefectural capital of Japan
 SOVEREIGN_STATE = "Q3624078"  # sovereign state
 
 
@@ -66,6 +91,18 @@ def city_query(minimum: int) -> str:
         f"VALUES ?class {{ {classes} }} "
         f"FILTER(?pop >= {minimum}) }}"
     )
+
+
+def seed_query(seeds: tuple) -> str:
+    """Populations for named seed entities, so the ranking can place them.
+
+    A seed with no population statement simply does not come back here; it is
+    appended to the city list by ``main`` anyway, because a distance pair needs
+    coordinates, not a population.
+    """
+    values = " ".join(f"wd:{identifier}" for identifier in seeds)
+    return (f"SELECT ?item ?pop WHERE {{ VALUES ?item {{ {values} }} "
+            "?item wdt:P1082 ?pop . }")
 
 
 COUNTRY_QUERY = (
@@ -92,17 +129,34 @@ def binding_number(binding: dict) -> float | None:
         return None
 
 
-def city_pairs(cities: list, top: int) -> list:
+def pair_candidates(cities: list, top: int, seeds: tuple = ()) -> list:
+    """The ``top`` most populous cities, plus any seed the ranking left out.
+
+    A ``top`` cut is a popularity contest and the facts a pack exists to fix are
+    not: Tokyo-Osaka and London-Paris both fell outside a 201-city pair list
+    because Paris and Osaka never entered the candidate set at all. Seeds are
+    therefore named in the scope and carried into every selection regardless of
+    rank, so the facts that calibrated the gap cannot be silently dropped again.
+    """
+    chosen = list(cities[:max(0, top)])
+    for seed in seeds:
+        if seed not in chosen:
+            chosen.append(seed)
+    return chosen
+
+
+def city_pairs(cities: list, top: int, seeds: tuple = ()) -> list:
     """All pairs among the ``top`` most populous cities (``cities`` is ordered)."""
-    chosen = cities[:max(0, top)]
+    chosen = pair_candidates(cities, top, seeds)
     return [[first, second]
             for index, first in enumerate(chosen)
             for second in chosen[index + 1:]]
 
 
-def anchor_pairs(cities: list, anchor: str, top: int) -> list:
+def anchor_pairs(cities: list, anchor: str, top: int, seeds: tuple = ()) -> list:
     """Pairs from one anchor to the ``top`` most populous cities."""
-    return [[anchor, city] for city in cities[:max(0, top)] if city != anchor]
+    return [[anchor, city] for city in pair_candidates(cities, top, seeds)
+            if city != anchor]
 
 
 def merge_pairs(*groups) -> list:
@@ -166,6 +220,10 @@ def main():
     parser.add_argument("--heights", default="",
                         help="comma-separated QIDs for the heights list "
                              "(default: none - the curated ones stay a separate scope)")
+    parser.add_argument("--seed-entities", default="",
+                        help="comma-separated QIDs ranked into the city list and "
+                             "forced into every pair selection, so a measured-gap "
+                             "fact cannot be cut by the ranking")
     parser.add_argument("--pairs-top", type=int, default=0,
                         help="pairwise distances among the N most populous cities")
     parser.add_argument("--pairs-anchor", default="",
@@ -182,14 +240,29 @@ def main():
     if not (args.cities_min_population or args.countries):
         raise EnumerateError("nothing to enumerate; pass --cities-min-population "
                              "and/or --countries")
+    seeds = tuple(part.strip() for part in args.seed_entities.split(",")
+                  if part.strip())
 
     cities, queries = [], []
     if args.cities_min_population:
         query = city_query(args.cities_min_population)
         rows = sparql(query, endpoint=args.endpoint, delay=args.request_delay,
                       timeout=args.timeout)
-        cities = ranked_cities(rows)
         queries.append({"what": "cities", "query": query, "rows": len(rows)})
+        seed_rows = []
+        if seeds:
+            seeds_query = seed_query(seeds)
+            seed_rows = sparql(seeds_query, endpoint=args.endpoint,
+                               delay=args.request_delay, timeout=args.timeout)
+            queries.append({"what": "seeds", "query": seeds_query,
+                            "rows": len(seed_rows)})
+        cities = ranked_cities(rows + seed_rows)
+        # A seed with no population statement is still a distance-pair anchor,
+        # because a pair needs coordinates rather than a population; ranking
+        # would drop it, so it is kept at the end of the list instead.
+        for seed in seeds:
+            if seed not in cities:
+                cities.append(seed)
         print(json.dumps({"cities": len(cities), "rows": len(rows)}), file=sys.stderr)
 
     countries = []
@@ -202,10 +275,10 @@ def main():
 
     pairs = []
     if args.pairs_top:
-        pairs = merge_pairs(pairs, city_pairs(cities, args.pairs_top))
+        pairs = merge_pairs(pairs, city_pairs(cities, args.pairs_top, seeds))
     if args.pairs_anchor:
         pairs = merge_pairs(pairs, anchor_pairs(cities, args.pairs_anchor,
-                                                args.pairs_anchor_top))
+                                                args.pairs_anchor_top, seeds))
 
     height_qids = [part.strip() for part in args.heights.split(",") if part.strip()]
     scope = {
@@ -217,6 +290,12 @@ def main():
             "queries": queries,
             "pairs": {"top": args.pairs_top, "anchor": args.pairs_anchor,
                       "anchor_top": args.pairs_anchor_top},
+            "seeds": {
+                "entities": list(seeds),
+                "why": ("named by the measured gaps rather than the ranking: a "
+                        "reference pack is built to fix specific facts, and a "
+                        "top-N cut must not drop them"),
+            },
             "counts": {"heights": len(height_qids), "populations": len(cities),
                        "countries": len(countries), "pairs": len(pairs)},
         },
