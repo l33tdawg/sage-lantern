@@ -15,11 +15,11 @@ engineering documentation behind them.
 
 ## What we're building
 
-**SAGE Lantern — a handheld AI companion.** A 6.5-inch portrait touchscreen, a
+**SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
 physical hold-to-talk control, an outward camera for visual questions and a
-replaceable rear battery pack, running local intelligence on a ROCK 5B+ class
-platform. Ask a question, explore an idea, or work through a problem with the
-model running on the device itself.
+10,000 mAh USB-C pack in a serviceable tray, running local intelligence on an
+Orange Pi 5 Plus (RK3588) platform. Ask a question, explore an idea, or work
+through a problem with the model running on the device itself.
 
 **Community connections.** Every Lantern is intended to join a local MeshCore
 radio network for short messages and shared knowledge, with community gateways
@@ -27,10 +27,52 @@ planned to carry authorised requests beyond the local mesh when backhaul is
 available. Local AI and short radio messages are the fallback that keeps
 working during outages.
 
-**SAGE Commons.** One person's discovery can become everyone's possibility.
-Personal knowledge stays personal, and sharing is deliberate: you choose what
-leaves your private space, and shared knowledge can be reviewed and improved by
-others.
+**The commons fabric.** SAGE Commons is the fabric the devices join: MeshCore
+transport plus the SAGE public chain, with the contracts that make them one
+interoperable, community-owned commons. One person's discovery can become
+everyone's possibility, deliberately and only that far: personal knowledge
+stays personal, and anything shared is reviewed before it travels.
+
+## How it works
+
+### The parts, and how they relate
+
+```mermaid
+flowchart TB
+  F["SAGE Foundation<br/>steward: signs releases and packs, publishes specifications"]
+  C["SAGE Commons — the fabric<br/>MeshCore transport plus the SAGE public chain,<br/>and the contracts that make them one commons"]
+  N["Community networks<br/>the local MeshCore networks that run on the fabric"]
+  L["SAGE Lantern — the first deployment<br/>its own private SAGE and local AI, on the device"]
+  F -->|"stewards and publishes into"| C
+  N -->|"operate and extend"| C
+  C -->|"first deployment on it"| L
+  L <-->|"short messages and compact knowledge"| C
+```
+
+The Foundation does not own the fabric and does not hold the networks. It signs
+what it publishes, stewards the specifications and holds the trust root; the
+networks belong to whoever runs the nodes, and each Lantern's private knowledge
+belongs to its owner.
+
+### How knowledge moves: private, then public, then offline again
+
+```mermaid
+flowchart LR
+  A["Private knowledge on a Lantern<br/>the owner's own SAGE"] -->|"deliberate share:<br/>sanitised derivative"| B["Signed proposal envelope<br/>bound to a nonce and timestamp"]
+  B --> C["Commons intake and quarantine<br/>schema, licence, policy and abuse checks"]
+  C -->|"approved"| R["The Lantern submits again<br/>under its ordinary proposer identity"]
+  R --> D["Independent validators<br/>public-chain consensus"]
+  D --> E["Committed public knowledge<br/>with checkable provenance"]
+  E --> F["Signed knowledge packs<br/>content-addressed, licence per item"]
+  F -->|"radio, peer swap or removable media"| G["Another Lantern<br/>verified offline, no account, no connection"]
+```
+
+Nothing leaves a device by default. A share is a bounded, signed derivative;
+public knowledge is carried as signed packs that any copy can verify without an
+account or a connection. The public chain, intake and the pack channel are
+specified in [`docs/MASTER_TECHNICAL_PRD.md`](docs/MASTER_TECHNICAL_PRD.md) and
+[`docs/lantern/KNOWLEDGE_PACK_V2.md`](docs/lantern/KNOWLEDGE_PACK_V2.md); how
+much of it runs today is in the next section, not in these diagrams.
 
 ## Where the project actually is
 
@@ -38,9 +80,11 @@ Honesty is a design requirement here. Implemented, staged, deployed and
 physically accepted are separate milestones, and this repository treats them
 that way.
 
-- **Two prototype units are built and running.** Local voice, on-device answers,
-  camera capture, the touchscreen interface and the radio foundation are under
-  active integration and validation.
+- **Two test units (A and B) are built and running.** Local voice, on-device
+  answers, camera capture, the touchscreen interface and the radio foundation
+  are under active integration and validation. The fleet build in flight is
+  C–F, and no part has been printed yet: first-article prints and a measured
+  tolerance report come before locked hardware choices or any fleet date.
 - **Radio messaging is not yet a verified end-to-end service.** Transport,
   storage, contacts and discovery exist; real message exchange, delivery and
   read receipts still have open acceptance gates.
@@ -126,7 +170,8 @@ Start with these, then follow the links inside them:
 
 - [`docs/lantern/PRD.md`](docs/lantern/PRD.md) — product intent, scope and acceptance criteria.
 - [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md) — current device gate, verified state and open work.
-- [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) and [`HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — authoritative parts list and the hardware/software ownership boundary.
+- [`docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — the hardware/software ownership boundary.
+- [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) — the A/B test-unit parts list and order history as of 11 September 2026. Superseded for the C–F fleet build, which the hardware workstream records in its own bill of materials and build status; kept here as the bring-up record.
 - [`docs/lantern/BRINGUP_AND_VALIDATION.md`](docs/lantern/BRINGUP_AND_VALIDATION.md) — staged assembly, test procedure and evidence checklist.
 - [`docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md`](docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md) — Unit A build, offline voice, timing and recovery evidence.
 - [`docs/lantern/SSH_MANAGEMENT.md`](docs/lantern/SSH_MANAGEMENT.md) — operator access, the `sage` maintenance account and key rotation.
@@ -141,12 +186,16 @@ The project's public plan, as published on the website:
 | Stage | Target | Status |
 | --- | --- | --- |
 | Now | Build and prove the prototypes end to end | In development |
-| December 2026 | Six complete demonstration Lanterns (eight to ten as a stretch) | Demonstration target |
-| January 2027 | Public campaign launch with demonstration evidence | Public launch target |
+| Next | First-article prints and a measured tolerance report for the C–F fleet | Gates every hardware decision and date |
+| 1 January 2027 | Public launch: the announcement, and the repositories open | Target |
+| 1 February 2027 | Campaign live, and the first backers can place orders | Target; receiving entity and checkout still to settle |
 | Next, with funding | A supported 20–30 unit community pilot | Proposed first stage |
 
 These are targets and proposals, not completed milestones. Progress is reported
-as evidence rather than announcements.
+as evidence rather than announcements. An earlier "six complete demonstration
+Lanterns in December 2026" target has been withdrawn: the fleet is C–F, nothing
+has been printed yet, and no fleet date is being worked to until the first
+article is measured.
 
 ## Contact
 

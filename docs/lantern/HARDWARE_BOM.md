@@ -1,5 +1,13 @@
 # SAGE Lantern Hardware Bill of Materials and Arrival Status
 
+> **Superseded for the fleet build (2026-09-21).** This file records ordering and
+> arrival state as of 11 September 2026 as seen from this repository. It mixes
+> the A/B test-unit build with the early C/D orders and is **not** the live source
+> of truth for the enclosure programme. The hardware workstream owns the C–F bill
+> of materials and build status in its own `BOM.md` and `BUILD_STATUS.md`, and
+> that record supersedes this one for the fleet. Kept here as the A/B bring-up
+> record and order history.
+
 **Status date:** 2026-09-11 (exact 6.25-inch display and SX1262 board orders; CARBO 20 identified)  
 **Build quantity:** Two beta units  
 **Rule:** `Received` means physically reported/confirmed, not merely ordered.
