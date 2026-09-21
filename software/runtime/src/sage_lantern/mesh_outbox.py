@@ -272,14 +272,19 @@ class MeshOutbox:
         _integer(body['attempts'], 0, MAX_ATTEMPTS)
         if body['retry_binding'] != '':
             _binding(body['retry_binding'])
+        if body['state'] == 'cancelled' and body['retry_binding'] == '':
+            # A cancellation is an owner decision, so the decision that ended
+            # the row travels with it. A row claiming the terminal state with
+            # no decision behind it is refused rather than read as cancelled.
+            raise MeshOutboxError()
         if body['dispatch_timestamp'] is not None:
             _integer(body['dispatch_timestamp'], 1, 0xffffffff)
-        if body['state'] not in ('queued', 'dispatching', 'awaiting_receipt', 'delivered', 'read'):
+        if body['state'] not in ('queued', 'dispatching', 'awaiting_receipt', 'delivered', 'read', 'cancelled'):
             raise MeshOutboxError()
         if body['state'] == 'awaiting_receipt':
             if body['next_fragment'] != len(fragments) or body['dispatch_timestamp'] is not None:
                 raise MeshOutboxError()
-        elif body['state'] not in ('delivered', 'read') and body['next_fragment'] >= len(fragments):
+        elif body['state'] not in ('delivered', 'read', 'cancelled') and body['next_fragment'] >= len(fragments):
             raise MeshOutboxError()
         if body['state'] == 'dispatching' and (body['dispatch_timestamp'] is None or body['attempts'] == 0):
             raise MeshOutboxError()
@@ -658,6 +663,59 @@ class MeshOutbox:
         self._unknown.pop(message_id, None)
         return progress
 
+    @_admitted
+    def cancel(self, message_id, *, expected_revision, decision_binding, access_check):
+        """Owner decision that ends a row which never became confirmed evidence.
+
+        A message the owner approved is a durable local artifact, and what the
+        owner can end is its life on this unit (owner decision 2026-09-21,
+        after unit A answered every community route with 503 for three rows
+        whose approval windows had lapsed and whose only audited way out was a
+        terminal owner state). `cancelled` is that state, and it is terminal:
+        `dispatch_one` (queued only), `retry_decision` (dispatching only) and
+        `reapprove` (queued/dispatching/awaiting_receipt only) all refuse a
+        cancelled row, so no fragment is ever sent again and neither the retry
+        driver nor an owner re-approval can revive it.
+
+        What it does NOT do, because it cannot: retract radio already written
+        and claim the peer never received the message. A row cancelled
+        mid-wire, or while waiting for a receipt it never got, may already have
+        been delivered - so a later genuine peer receipt still promotes it
+        (`delivered`/`read` outrank a local cancel; see `ingest_receipt`), and
+        the evidence printed by the operator records the fragment cursor it
+        held. A row that already carries peer evidence (`delivered`/`read`) is
+        finished evidence and is refused; it is not the owner's to discard.
+
+        The decision travels with the row as its signed progress revision and
+        its `retry_binding`, exactly as `retry_decision` records a retry. The
+        CAS names the revision the caller saw; the guard must fence the
+        original dispatch worker, because a CAS cannot stop a different
+        process already admitted to radio IO.
+        """
+        try:
+            _uuid(message_id)
+            _binding(decision_binding)
+            _integer(expected_revision, 1, MAX_REVISION - 1)
+            body = self._load(message_id, access_check)
+            if (body['state'] not in ('queued', 'dispatching', 'awaiting_receipt')
+                    or body['revision'] != expected_revision):
+                raise MeshOutboxError()
+            action = self._action(body, 'cancel', decision_binding)
+            check = lambda: access_check() is True and self._check(action)
+            if check() is not True:
+                raise MeshOutboxError()
+            progress = self._progress(self._put({**body, 'state': 'cancelled',
+                                                'retry_binding': decision_binding}, expected_revision, check))
+        except Exception:
+            raise MeshOutboxError() from None
+        # The CAS above proved this row's state at the revision the caller
+        # named, so its unknown outcome is resolved: a cancelled row is not a
+        # dispatch this or any other process may still retry, and keeping the
+        # row-scoped unknown would latch the unit when its window lapsed even
+        # though the owner has ended it.
+        self._unknown.pop(message_id, None)
+        return progress
+
     def _receipt(self, body, wire, now):
         approved = body['approved']
         peer = Peer(approved['recipient']['chain_id'], bytes.fromhex(approved['recipient']['public_key']))
@@ -719,7 +777,11 @@ class MeshOutbox:
                 now = item['verified_at']
                 break
         receipt = self._receipt(body, wire, now)
-        ranks = {'queued': 0, 'dispatching': 0, 'awaiting_receipt': 0, 'delivered': 1, 'read': 2}
+        # A local owner cancel is below both peer assertions: it says the owner
+        # stopped this unit's work, not that the peer never received the
+        # message. A genuine signed receipt therefore still promotes a
+        # cancelled row and the record says what actually happened.
+        ranks = {'queued': 0, 'dispatching': 0, 'awaiting_receipt': 0, 'cancelled': 0, 'delivered': 1, 'read': 2}
         target = 'delivered' if receipt.kind == 'delivery' else 'read'
         if ranks[body['state']] >= ranks[target]:
             self._reserve_receipt(body, receipt, check, create=False)

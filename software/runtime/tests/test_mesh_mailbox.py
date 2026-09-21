@@ -144,6 +144,27 @@ def test_real_verified_inbox_outbox_listing_and_open_are_read_only(setup):
     assert not setup.held
 
 
+def test_a_cancelled_outbox_row_is_listed_as_cancelled_not_hidden(setup):
+    """An owner cancel is visible evidence, not a silent deletion.
+
+    Unit A, 2026-09-21: the operator ended rows whose approval windows had
+    lapsed. The mailbox must show that decision and keep showing the message
+    rather than drop the row, and the voice-IPC contract must accept the pair -
+    one unknown state used to fail a whole messages page.
+    """
+    identifier = setup.add_outbox()
+    setup.outbox.cancel(identifier, expected_revision=1, decision_binding='owner-cancel-20260921',
+                        access_check=setup.access)
+    page = setup.mailbox.list_messages('outbox', access_check=setup.access)
+    assert len(page.items) == 1
+    item = page.items[0]
+    assert item.local_id == identifier and item.text == 'Synthetic sent'
+    assert (item.state, item.workflow_state) == ('cancelled', 'cancelled')
+    from dataclasses import asdict
+    from sage_lantern.mesh_voice_ipc import item as voice_item
+    assert voice_item(asdict(item)) == item
+
+
 def test_direct_open_beyond_page_does_not_scan(setup):
     setup.add_inbox(issued_at=100)
     setup.add_inbox(issued_at=120)

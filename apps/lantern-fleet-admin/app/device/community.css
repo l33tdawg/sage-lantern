@@ -19,6 +19,7 @@
 .device-community-badge.state-pending, .device-community-badge.state-challenged { color: #ffd382; border-color: #ffd382; }
 .device-community-badge.state-accepted { color: #86e8b9; border-color: #86e8b9; }
 .device-community-badge.state-rejected, .device-community-badge.state-failed { color: #ffb4a9; border-color: #ffb4a9; }
+.device-community-badge.state-cancelled { color: #bacbd5; border-color: #7896a5; }
 .device-community .device-public-warning { border-color: #bd924e; }
 .device-community .device-consent-button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; }
 .device-consent-button[aria-pressed="true"] { border-color: #86e8b9; }

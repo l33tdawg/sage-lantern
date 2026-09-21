@@ -28,6 +28,17 @@ Every operation takes `access_check=...`:
   explicit guarded decision for `dispatching`, preserving original wire, UUID,
   fragment index and radio timestamp. Guard must fence the original worker across
   processes; CAS cannot retract already-admitted RF. It is not automatic recovery.
+- `cancel(message_id, expected_revision=..., decision_binding=...)` is the owner's
+  explicit terminal decision for a row that never became confirmed evidence
+  (`queued`, `dispatching` or `awaiting_receipt`). It writes `cancelled` at the
+  revision the caller named and records the decision in the row's progress
+  revision and binding; the creation approval, wire and text are preserved. It
+  cannot retract RF already written and does not assert the peer never received
+  the message: a row cancelled mid-wire or awaiting a receipt may have been
+  delivered, a genuine peer receipt still outranks the cancel and promotes it,
+  and the operator evidence carries the fragment cursor the row held. A
+  `delivered`/`read` row is finished evidence and is refused. Terminal locally:
+  `dispatch_one`, `retry_decision` and `reapprove` all refuse a cancelled row.
 - `inspect(message_id)` verifies stored proofs and returns progress only.
 - `read_sent(message_id)` verifies creation approval, progress and retained receipt
   proofs before returning original content in a repr-hidden `SentMessage`.
@@ -105,6 +116,18 @@ with their verification times and sealed wire. Their cryptographic evidence is
 revalidated on reads. Additional same/lower-rank assertions allocate nothing.
 Existing rows from earlier builds are not deleted or silently migrated; the bound
 applies to allocations through this implementation, not retroactive quota repair.
+
+`cancelled` (2026-09-21) is the owner's end to a row that never became confirmed
+evidence, and it ranks below both peer assertions: a genuine receipt still
+promotes a cancelled row, so the record keeps saying what actually happened.
+It exists because a row whose approval window lapsed while nobody could act had
+no audited way out - `mesh_daemon` refuses to construct a provider while a
+`dispatching` row's window has lapsed and the runtime's own retry driver only
+works inside that window (unit A, 2026-09-21: every community route answered 503
+with three such rows on the unit). Construction now accepts a cancelled row and
+adopts it as nothing: it is a decision, not an unresolved outcome, so it neither
+refuses the runtime nor latches it. Consumers keep showing it - the mailbox maps
+it to UI state `cancelled` and the voice-IPC contract accepts that pair.
 
 New receipts must be current under their own signed lifetime; the original message
 may already have expired. Historical persisted evidence remains valid after its

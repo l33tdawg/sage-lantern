@@ -17,7 +17,9 @@ from sage_lantern.mesh_daemon import HardwareRuntime, MeshDaemon, SCHEMA, device
 from sage_lantern.mesh_usb_opener import USBOpenError
 from sage_lantern.mesh_voice_ipc import MeshIPCError, MeshVoiceFacade, receive, send
 from sage_lantern.mesh_community import MeshRequestAccess
-from sage_lantern.mesh_contacts import verify_contact_card
+from sage_lantern.mesh_contacts import sign_contact_card, verify_contact_card
+from sage_lantern.mesh_envelope import Peer
+from sage_lantern.mesh_outbox import MeshOutbox
 from sage_lantern.meshcore_transport import MeshCoreError
 from test_mesh_runtime import factory
 
@@ -197,6 +199,63 @@ def test_real_sdk_factory_provider_queue_and_read(runtime):
     supervisor.phase = "draining"
     assert resource.close(3) is True
     assert state.released is True
+
+
+def test_a_cancelled_row_lets_the_runtime_start_and_a_lapsed_one_does_not(runtime):
+    """Reconcile's two halves, on the rows that actually held unit A down.
+
+    A row left `dispatching` whose approval window has lapsed still refuses
+    construction - that fail-closed behaviour is what unit A ran into, and it
+    is not being relaxed. What changes is that the owner can end that row: a
+    cancelled row is a decision, not an unresolved outcome, so the next
+    runtime reconciles it and comes up.
+
+    The rows here are written through MeshOutbox itself under a synthetic clock,
+    so every proof is genuine and no signature is fabricated for the test.
+    """
+    state, supervisor, resource, config, opened = runtime
+    store = state.runtime.store
+    identifier = str(uuid.uuid4())
+    peer = Peer('remote', bytes.fromhex(state.remote.agent_id))
+    card = sign_contact_card(state.remote, chain_id='remote', radio_public_key=state.radio.hex(),
+                             display_name='Synthetic peer', revision=1, issued_at=100, expires_at=1000,
+                             now=150, findable=True, messaging_allowed=True)
+    outbox = MeshOutbox(store, state.identity, sender=Peer('local', bytes.fromhex(state.identity.agent_id)),
+                        guard=lambda action: True,
+                        verify_contact=lambda action: verify_contact_card(card, now=150), clock=lambda: 150)
+    outbox.queue(message_id=identifier, recipient=peer, radio_public_key=state.radio,
+                 content='Synthetic held message', approval_binding='a' * 64, consent_binding='b' * 64,
+                 issued_at=100, expires_at=200, access_check=lambda: True)
+    body = outbox._verified(store.get(identifier, kind='mesh_outbound', access_check=lambda: True))
+    dispatching = outbox._put({**body, 'state': 'dispatching', 'dispatch_timestamp': 150, 'attempts': 1},
+                              body['revision'], lambda: True)
+
+    def build():
+        class Opener:
+            def __init__(self, *, policy, startup_fence, journals_reconciled):
+                self.fence, self.reconciled = startup_fence, journals_reconciled
+            def open(self, **kwargs):
+                with self.fence() as check:
+                    assert check() is True and self.reconciled() is True
+                    opened.append(kwargs)
+                    return state.scheduler
+        return HardwareRuntime(supervisor, config, state.identity, state.runtime.store.storage,
+            identity_path=Path('/proc/self/fd/12345'), config_reader=lambda: copy.deepcopy(config),
+            opener_factory=Opener, epoch_reader=lambda: 'e' * 32, lock_marker_check=lambda: True)
+
+    # The lapsed window still refuses, and it still latches the unit closed.
+    refusing = build()
+    with pytest.raises(Exception):
+        refusing.invoke('ready', {}, lambda: True)
+    assert refusing._uncertain is True and refusing.active() is False and opened == []
+
+    # The owner ends the row; the next runtime reconciles it and serves.
+    cancelled = outbox.cancel(identifier, expected_revision=dispatching['revision'],
+                              decision_binding='owner-cancel-20260921', access_check=lambda: True)
+    assert cancelled.state == 'cancelled'
+    accepting = build()
+    assert accepting.invoke('ready', {}, lambda: True) is True
+    assert len(opened) == 1
 
 
 def test_radio_unknown_journal_blocks_new_runtime(runtime, monkeypatch):

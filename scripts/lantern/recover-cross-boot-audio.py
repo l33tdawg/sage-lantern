@@ -48,10 +48,13 @@ RECEIVE_AUDIT_FIELDS = {'schema', 'slot_id', 'operation_id', 'original_revision'
                         'original_sha256', 'recovered_at', 'reason', 'outcome',
                         'replayed', 'delivery_claim'}
 RECEIVE_AUDIT_REASON_MAX = 512
-# Outbound rows that never reached a terminal state. They are retained evidence,
-# not settled sends: the scan admits them as retained_unknown and never claims
-# delivery. Terminal rows still go through the full receipt verification.
-PENDING_OUTBOX_STATES = {'queued', 'dispatching', 'awaiting_receipt'}
+# Outbound rows that never reached a confirmed peer outcome. They are retained
+# evidence, not settled sends: the scan admits them as retained_unknown and never
+# claims delivery. `cancelled` (owner decision 2026-09-21) belongs here because
+# it is terminal for this unit's lifecycle and says nothing about the peer -
+# the row may already have been delivered and a later receipt still promotes it.
+# Rows with peer evidence (delivered/read) still go through full verification.
+PENDING_OUTBOX_STATES = {'queued', 'dispatching', 'awaiting_receipt', 'cancelled'}
 CLEANUP_SECONDS = 180
 ABSENT = tuple(Path(name) for name in ('/run/sage-lantern-voice',
     '/run/sage-lantern-voice-bootstrap.json', '/run/sage-lantern-mesh-control/broker.sock',

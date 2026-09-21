@@ -22,6 +22,11 @@ test('message lists are bounded, duplicate-free and states do not imply read', (
   assert.throws(() => parseMessages({ items: [], more: 'false' }));
 });
 test('contact identity is distinct from a name and untrusted URLs are not identities', () => {
+  const cancelled = { id: 'message-2', peer_name: 'Example person', text: 'Held here', state: 'cancelled', created_at };
+  assert.equal(parseMessages({ items: [cancelled], more: false }).items[0].state, 'cancelled');
+  // The owner ended the send; the label must not claim the message was not sent.
+  assert.equal(communityLabel('cancelled'), 'Cancelled · delivery unconfirmed');
+  assert.notEqual(communityLabel('cancelled'), communityLabel('failed'));
   assert.equal(parseContacts({ items: [{ id: 'chain:' + 'a'.repeat(64), name: 'Example' }], more: false }).items.length, 1);
   assert.throws(() => parseContacts({ items: [{ id: 'https://example.com', name: 'Example' }], more: false }));
 });

@@ -135,7 +135,8 @@ def item(value):
     require(datetime.fromisoformat(value["created_at"].replace("Z", "+00:00")).tzinfo is not None)
     require((value["state"], value["workflow_state"]) in {
         ("unknown", "received"), ("queued", "queued"), ("unknown", "dispatching"),
-        ("sent", "awaiting_receipt"), ("delivered", "delivered"), ("read", "read")})
+        ("sent", "awaiting_receipt"), ("delivered", "delivered"), ("read", "read"),
+        ("cancelled", "cancelled")})
     return MailboxItem(**value)
 
 

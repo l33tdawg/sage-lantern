@@ -1240,7 +1240,7 @@ class CommunityService:
             if not _id(value["id"]) or not _date(value["created_at"]):
                 _error()
             states = {"queued", "pending", "accepted", "challenged", "deprecated", "rejected", "superseded", "unknown"} if share else {
-                "queued", "sent", "delivered", "read", "unknown", "failed"}
+                "queued", "sent", "delivered", "read", "unknown", "failed", "cancelled"}
             if type(value["state"]) is not str or value["state"] not in states:
                 _error()
 

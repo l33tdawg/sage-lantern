@@ -34,7 +34,7 @@ from .workflow_store import MAX_RECORDS, WorkflowStore
 
 MAX_ITEMS = 20
 _STATES = {'queued': 'queued', 'dispatching': 'unknown', 'awaiting_receipt': 'sent',
-           'delivered': 'delivered', 'read': 'read'}
+           'delivered': 'delivered', 'read': 'read', 'cancelled': 'cancelled'}
 
 
 class MailboxError(RuntimeError):

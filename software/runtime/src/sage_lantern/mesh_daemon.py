@@ -321,6 +321,17 @@ class HardwareRuntime:
                         # lapsed window still refuses right here.
                         require(body["approved"]["issued_at"] <= int(time.time())
                                 < body["approved"]["expires_at"])
+                    elif body["state"] == "cancelled":
+                        # An owner cancel is the audited resolution of a row that
+                        # never became confirmed evidence (owner decision
+                        # 2026-09-21). It is terminal and nothing here adopts it
+                        # as an unknown, so construction proceeds and the unit's
+                        # community routes come up instead of refusing forever on
+                        # a window that lapsed while nobody could act on it. The
+                        # decision binding travels with the row; a row that claims
+                        # cancellation without one is not an owner decision and is
+                        # refused.
+                        require(body["retry_binding"] != "")
                 elif schema == RECEIPT_SCHEMA:
                     require(receipts._verified(row)[0]["state"] != "dispatching")
                 elif schema == "sage.lantern.mesh-read-consent.v1":

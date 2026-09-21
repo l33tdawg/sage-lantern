@@ -48,7 +48,11 @@ A message the owner sends is a **durable local artifact**, not a one-hour job:
   Prerequisites-gated, disabled by default, deliberately same-node-only today.
 * `mesh_outbox.py` — sealed approval (content, ciphertext wire, hashes), CAS
   progress, `dispatch_one` for one RF fragment, signed peer receipts, states
-  `queued → dispatching → awaiting_receipt → delivered/read`.
+  `queued → dispatching → awaiting_receipt → delivered/read`, plus the explicit
+  owner `cancelled` terminal (2026-09-21) for a row that never became confirmed
+  evidence: it stops this unit's work and keeps the row visible, and a genuine
+  peer receipt still promotes it because the peer's signed word outranks a local
+  cancel.
 * `mesh_daemon.py` — background dispatch job, fail-closed `_uncertain` latch,
   single-use radio opener.
 * `community_service.py` — `/community/messages/send` sets

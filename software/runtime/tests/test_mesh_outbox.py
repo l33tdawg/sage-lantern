@@ -943,6 +943,120 @@ def test_rf_unknown_window_lapse_latches_and_blocks_clean_close(setup):
     assert setup.stored()['body']['state'] == 'dispatching'
 
 
+def test_owner_cancel_ends_a_lapsed_row_and_clears_its_unknown(setup):
+    """The audited way out of a row whose window lapsed while nobody could act.
+
+    Unit A, 2026-09-21: rows whose approval windows had lapsed refused every
+    provider construction, and the runtime's own retry driver only works inside
+    the window, so nothing but a human could end them. The owner cancel is
+    terminal for the local lifecycle and drops the row-scoped unknown, so the
+    unit comes up instead of latching.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    progress = setup.outbox.inspect(MESSAGE, access_check=setup.access)
+    assert progress.state == 'dispatching'
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=progress.revision,
+                                    decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert cancelled.state == 'cancelled' and cancelled.revision == progress.revision + 1
+    assert setup.stored()['body']['retry_binding'] == 'owner-cancel-20260921'
+    assert setup.outbox.unresolved() == frozenset()
+    assert setup.outbox.latching_unknown() is False
+    # The original approval, wire and text survive untouched.
+    assert setup.outbox.read_sent(MESSAGE, access_check=setup.access).content == 'Synthetic private content'
+    assert setup.outbox.close(1) is True
+    # Terminal: no retry decision, no re-approval and no dispatch can revive it.
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.retry_decision(MESSAGE, expected_revision=cancelled.revision,
+                                    decision_binding='late-retry', access_check=setup.access)
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.reapprove(MESSAGE, expected_revision=cancelled.revision, window_seconds=100,
+                               approval_binding='renewed-approval', consent_binding='consent-1',
+                               access_check=setup.access)
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup)
+    assert setup.stored()['body']['state'] == 'cancelled'
+    assert len(setup.radios) == 1
+
+
+def test_a_cold_instance_cancels_what_another_process_left_dispatching(setup):
+    """The on-unit case: the writer of the unknown is gone, the row is not.
+
+    Unit A holds rows left `dispatching` by processes that no longer exist, so
+    the operator's tool sees a fresh outbox with no in-memory unknown and must
+    still be able to end the row from the durable record alone.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    setup.outbox = setup.make()
+    assert setup.outbox.unresolved() == frozenset()
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=2,
+                                    decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert cancelled.state == 'cancelled' and cancelled.revision == 3
+    assert setup.outbox.close(1) is True
+    assert setup.stored()['body']['retry_binding'] == 'owner-cancel-20260921'
+
+
+def test_owner_cancel_refuses_finished_peer_evidence(setup):
+    setup.queue()
+    delivered = ingest(setup, receipt_wire(setup))
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.cancel(MESSAGE, expected_revision=delivered.revision,
+                            decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'delivered'
+
+
+def test_a_peer_receipt_outranks_a_local_cancel(setup):
+    """Cancel stops this unit's work; it does not overrule the peer's signed word."""
+    setup.queue()
+    setup.now = 200
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=1,
+                                   decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert cancelled.state == 'cancelled'
+    assert ingest(setup, receipt_wire(setup)).state == 'delivered'
+    assert setup.stored()['body']['state'] == 'delivered'
+
+
+def test_owner_cancel_needs_the_guard_the_session_and_the_exact_revision(setup):
+    setup.queue()
+    setup.allowed = False
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.cancel(MESSAGE, expected_revision=1, decision_binding='owner-cancel-20260921',
+                            access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'queued'
+    setup.allowed = True
+    for revision in (0, 2):
+        with pytest.raises(MeshOutboxError):
+            setup.outbox.cancel(MESSAGE, expected_revision=revision,
+                                decision_binding='owner-cancel-20260921', access_check=setup.access)
+    recording = setup.outbox.guard
+    setup.outbox.guard = lambda action: False
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.cancel(MESSAGE, expected_revision=1, decision_binding='owner-cancel-20260921',
+                            access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'queued'
+    setup.outbox.guard = recording
+    assert setup.outbox.cancel(MESSAGE, expected_revision=1,
+                               decision_binding='owner-cancel-20260921',
+                               access_check=setup.access).state == 'cancelled'
+    assert any(action.operation == 'cancel' and action.decision_binding == 'owner-cancel-20260921'
+               for action in setup.guard_actions)
+
+
+def test_a_cancelled_row_must_carry_the_decision_that_ended_it(setup):
+    setup.queue()
+    body = setup.stored()['body']
+    setup.outbox._validate({**body, 'state': 'cancelled', 'retry_binding': 'owner-cancel-20260921'},
+                           MESSAGE, body['revision'])
+    with pytest.raises(MeshOutboxError):
+        setup.outbox._validate({**body, 'state': 'cancelled'}, MESSAGE, body['revision'])
+
+
 def test_interrupted_admission_releases_join_but_never_claims_clean(setup):
     setup.queue()
     def interrupted(action):

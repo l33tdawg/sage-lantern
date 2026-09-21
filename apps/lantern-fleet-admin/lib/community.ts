@@ -2,7 +2,7 @@ import { getDeviceToken } from './device-session.ts';
 
 export type Capability = { available: boolean; reason: string };
 export type CommunityStatus = { schema: 'sage.lantern.community.v1'; messaging: Capability; sharing: Capability; dictation: { available: boolean } };
-export type MessageState = 'queued' | 'sent' | 'delivered' | 'read' | 'unknown' | 'failed';
+export type MessageState = 'queued' | 'sent' | 'delivered' | 'read' | 'unknown' | 'failed' | 'cancelled';
 export type ShareState = 'queued' | 'pending' | 'accepted' | 'rejected' | 'superseded' | 'challenged' | 'deprecated' | 'unknown';
 export type CommunityMessage = { id: string; peer_name: string; text: string; state: MessageState; created_at: string };
 export type CommunityContact = { id: string; name: string };
@@ -26,7 +26,7 @@ export function parseHistoryShares(value: unknown, requested: string[]): Record<
 }
 
 const reasons = new Set(['ready', 'not_ready', 'encrypted_storage_unavailable', 'transport_unavailable', 'public_identity_unavailable', 'acceptance_proof_unavailable']);
-const messageStates = new Set(['queued', 'sent', 'delivered', 'read', 'unknown', 'failed']);
+const messageStates = new Set(['queued', 'sent', 'delivered', 'read', 'unknown', 'failed', 'cancelled']);
 const shareStates = new Set(['queued', 'pending', 'accepted', 'rejected', 'superseded', 'challenged', 'deprecated', 'unknown']);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -112,7 +112,7 @@ export function parseCommunityResult(value: unknown, kind: 'message' | 'share'):
   return { id: identifier(item.id), state: item.state as MessageState | ShareState, created_at: date(item.created_at) };
 }
 export function communityLabel(state: MessageState | ShareState): string {
-  return { queued: 'Waiting to send', sent: 'Sent · delivery unconfirmed', delivered: 'Delivered', read: 'Read', unknown: 'Status unconfirmed', failed: 'Not sent', pending: 'Under review', accepted: 'Accepted publicly', rejected: 'Not accepted', superseded: 'Replaced by newer information', challenged: 'Being challenged', deprecated: 'Withdrawn from use' }[state];
+  return { queued: 'Waiting to send', sent: 'Sent · delivery unconfirmed', delivered: 'Delivered', read: 'Read', unknown: 'Status unconfirmed', failed: 'Not sent', cancelled: 'Cancelled · delivery unconfirmed', pending: 'Under review', accepted: 'Accepted publicly', rejected: 'Not accepted', superseded: 'Replaced by newer information', challenged: 'Being challenged', deprecated: 'Withdrawn from use' }[state];
 }
 
 export type CommunityAction = 'status' | 'radio/status' | 'custody/status' | 'messages/list' | 'contacts/list' | 'contacts/radio' | 'messages/send' | 'messages/open' | 'messages/render-challenge' | 'messages/rendered' | 'shares/preview' | 'shares/submit' | 'shares/list' | 'shares/status' | 'shares/refresh' | 'shares/inspect';
