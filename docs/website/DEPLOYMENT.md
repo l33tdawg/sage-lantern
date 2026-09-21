@@ -178,3 +178,61 @@ publicly: `/`, `/commons/`, `/hardware/`, `/foundation/`,
 200, and the served HTML carries the new title and `og:site_name`. Rollback
 configuration `/var/www/sage-website/backup-20260921T085302Z`; prior release
 `20260920-08d0d307bed5` remains under `releases/`.
+
+## Config-only change, 2026-09-21 — one cache policy, and one stray URL
+
+Owner report: "the top links are not consistent on some of the pages", and a
+link seen resolving to `https://sage.ngo/hardware/index.txt/`. Reproduced in a
+real browser rather than inferred, and it is two separate defects in the nginx
+config, not inconsistent markup — the served HTML for all four pages carries
+the same six-link header.
+
+**1. Pages had no cache directive, so a browser could reuse an old one.**
+`location = /index.html { add_header Cache-Control "no-cache"; }` matched the
+homepage only. `/commons/`, `/hardware/` and `/foundation/` returned no
+`Cache-Control`, no `ETag` and a `Last-Modified: 1970-01-01` placeholder, so
+the browser was free to reuse whatever it held — including the RSC payload
+under each route (`/commons/index.txt`), which is what the client router
+renders from during soft navigation. A stale `/commons/` with only five header
+links (no "Foundation") was reproduced in Chrome, and cleared on reload: the
+deployed page has had six links all along. Any visitor who browsed before a
+release can therefore see an old page next to a new one, which is exactly the
+inconsistency reported.
+
+**2. The same `add_header` in a `location` was also suppressing the security
+headers.** nginx does not inherit `add_header` into a location that sets its
+own, so `/` and `/index.html` were served without `X-Content-Type-Options`,
+`Referrer-Policy`, `Permissions-Policy` and `X-Frame-Options`, while every
+other page had them.
+
+**3. `…/index.txt/` 404'd.** `/hardware/index.txt` is a real file (the route
+payload `vinext` fetches for soft navigation, publicly readable, `text/plain`)
+and must keep serving. `/hardware/index.txt/` — the form in the report — is not
+a file, was not a directory, and fell through to a bare nginx 404.
+
+Fix, in `apps/sage-website/deploy/30-sage-website.conf`: cache policy moves to
+one `map` plus a single server-level `add_header` — `no-cache` for pages and
+payloads, `public, max-age=31536000, immutable` for content-hashed
+`/_next/static/` assets, one week for `images/` and `brand/` — so the security
+headers can no longer be cancelled by a location. `absolute_redirect off` keeps
+the origin's internal `127.0.0.1:9444` out of any redirect. A
+`location ~ ^/(.+/)index\.txt/$ { return 301 /$1; }` sends the stray
+trailing-slash payload URL to the page instead of a 404, while the payload
+itself is untouched so the client router still works.
+
+Applied as a config-only change, no new release: config backed up to
+`/root/30-sage-website.conf.bak-20260921` (and `…b` after the redirect
+correction), `nginx -t` passed before each reload, and the previous file is
+restored automatically if the test fails. Verified publicly: `/`, `/commons/`,
+`/hardware/`, `/foundation/` all 200; every page now returns `Cache-Control:
+no-cache` **and** the four security headers; a hashed asset returns the
+immutable cache header; `/hardware/index.txt/` returns `301 →
+https://sage.ngo/hardware/`; `/hardware/index.txt` still returns 200
+`text/plain`; soft navigation between all four pages still works from a real
+browser.
+
+Still open from this investigation: the browser console reports React
+hydration errors (minified #418, server text did not match the client) on the
+served pages. The cache defect above explains why a client could hydrate a new
+page against an old payload, but the mismatch is reproducible on a fresh load
+and needs its own diagnosis.
