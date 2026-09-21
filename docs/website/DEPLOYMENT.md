@@ -271,3 +271,33 @@ Not done, and worth a decision later: the cleanest long-term answer is to turn
 Email Address Obfuscation off for the zone, since the address is published
 openly anyway; the comment markers then become harmless. Left as the owner's
 call rather than a unilateral account change.
+
+## Release 20260921-e61852cb6b4f — the published licence set withdrawn
+
+Owner instruction 2026-09-21 ("the license table take it out for now"), after
+the comms agent flagged that the live site named a per-part licence set the
+hardware side says is not signed off and must not be published yet.
+
+Withdrawn from public copy: CERN-OHL-S 2.0, GPL-3.0, Apache-2.0 and CC BY-SA
+4.0. Kept: every ownership statement, the trademark line, the per-item
+licence *mechanism* on the commons diagram, and the site's existing
+"published with each release as they are signed off" wording, which now carries
+the licence rows in the `/foundation/` ownership table and the two `/commons/`
+chips. The "open, in practice" paragraph states the intent (hardware, firmware,
+application and specifications published under open licences as they are signed
+off) without naming a licence that has not been signed. The copy is the
+marketing lane's to rewrite; this release is the withdrawal, not a new drafting
+position.
+
+`scripts/verify-export.py` pinned the old claims as a positive assertion, so it
+now pins the withdrawal instead: none of the four identifiers may appear on
+`/foundation/` or `/commons/`, and "signed off" must appear on `/foundation/`.
+A positive assertion goes back only when a signed-off licence returns.
+
+Release `20260921-e61852cb6b4f`, built from commit `e61852c`, 64 verified files,
+tarball sha256 `af59c558fa1d5659c04b2183df94e535d76074c6921a36a904965789ab77f6d4`.
+Activated on the origin with nginx validation and configuration rollback
+backup `/var/www/sage-website/backup-20260921T091225Z`; prior release
+`20260921-8df38b038cb2` stays under `releases/`. Verified live: `/`,
+`/commons/`, `/foundation/` and `/hardware/` all 200, no licence identifier
+present on any of the four, and the new wording served.

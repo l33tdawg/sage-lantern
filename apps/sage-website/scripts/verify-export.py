@@ -33,6 +33,12 @@ assert '6.5' in hardware
 assert 'https://sage.ngo/hardware/' in hardware
 assert 'Untitled site' not in home+hardware
 assert 'dhillon@sage.ngo' in foundation
-assert 'CERN-OHL-S 2.0' in foundation and 'Apache-2.0' in foundation
+# Owner instruction 2026-09-21: the per-part licence set is withdrawn until it
+# is signed off, so the check now pins the withdrawal rather than the claims.
+# Re-instate a positive assertion only when a signed-off licence returns.
+for identifier in ('CERN-OHL-S', 'GPL-3.0', 'Apache-2.0', 'CC BY-SA'):
+    assert identifier not in foundation, identifier
+    assert identifier not in (root / 'commons/index.html').read_text(), identifier
+assert 'signed off' in foundation
 assert '/foundation/' in home
 print('PASS: all four pages, section anchors, local assets, contact, italic copy, hardware direction, licence map and canonical domain.')
