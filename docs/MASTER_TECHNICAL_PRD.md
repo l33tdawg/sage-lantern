@@ -35,7 +35,7 @@ This PRD incorporates by reference:
 
 ### 2.1 Mission
 
-SAGE Commons makes useful, attributable, locally relevant knowledge and capable private AI available to people regardless of continuous cloud access, without requiring them to surrender private memory or control of their device.
+The SAGE Commons fabric — core mesh technology and a governed public network — makes useful, attributable, locally relevant knowledge and capable private AI available to people regardless of continuous cloud access, without requiring them to surrender private memory or control of their device.
 
 ### 2.2 Target outcomes
 
@@ -62,7 +62,7 @@ SAGE Commons makes useful, attributable, locally relevant knowledge and capable 
 
 | Name | Definition | Must never be conflated with |
 |---|---|---|
-| SAGE Commons | Mission, public knowledge network, ecosystem and community programme | One hardware SKU or one operator |
+| SAGE Commons | The commons fabric: core mesh technology and governed public network (MeshCore transport plus SAGE public chain, with the contracts that make them one interoperable commons) that community networks, services and devices join | The mission itself, one hardware SKU or one operator |
 | SAGE Lantern | Portable local-first AI device with personal SAGE, public proposer/query adapter and offline interfaces | Public validator |
 | Knowledge Point | Physical/institutional research, publishing, cache, synchronization and service station | Automatic validator or Foundation authority |
 | SAGE Lamplighter | Physically transported, cryptographically untrusted offline super-seed and field toolkit | Release signer, validator, private backup |

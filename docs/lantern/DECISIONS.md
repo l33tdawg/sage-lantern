@@ -47,6 +47,8 @@ This log records the decisions that define the beta. Add a dated entry when a ch
 **Decision:** Keep SAGE Commons as the overall mission, governed public knowledge network and ecosystem; name the portable device product SAGE Lantern; use Knowledge Point for a physical/institutional station, SAGE Lamplighter for the offline super-seed/field system, and SAGE Lightbearer for a stable public-service node/profile.  
 **Consequence:** Device-specific requirements and artifacts use SAGE Lantern. Public-chain, governance, funding, pilot and ecosystem materials retain SAGE Commons. A Knowledge Point may host isolated Lightbearer profiles, but the facility name grants no validator authority. Every validator is a separately governed Lightbearer Validator. See [`../TERMINOLOGY.md`](../TERMINOLOGY.md).
 
+**Superseded in part (2026-09-21):** the first clause — "SAGE Commons as the overall mission, governed public knowledge network and ecosystem" — is corrected by D-014. The remaining naming assignments (SAGE Lantern, Knowledge Point, SAGE Lamplighter, SAGE Lightbearer) stand.
+
 ## D-010 — One personal SAGE node per Lantern
 
 **Decision:** Plan for each SAGE Lantern to run its own full local personal SAGE node. A Knowledge Point is an optional persistence and synchronisation peer, not a runtime dependency for the local voice loop.
@@ -67,6 +69,13 @@ This log records the decisions that define the beta. Add a dated entry when a ch
 **Decision:** Every Lantern may query the public SAGE Commons and submit signed hyperlocal-knowledge proposals, but Lanterns are not validators on the public Commons chain. Public consensus runs on a governed set of stable, always-on server validators.
 **Reason:** Intermittent handheld connectivity must not reduce public-chain liveness or place consensus keys on portable devices. Proposing knowledge and validating consensus are separate roles.
 **Consequence:** A Lantern queues proposals while offline and submits them when connected with provenance, locality, observation time, confidence, and freshness/expiry metadata. It receives no public validator key or voting power.
+
+## D-014 — SAGE Commons is the fabric; the Lantern is its first deployment
+
+**Decision:** SAGE Commons is the fabric: the core mesh technology and governed public network — MeshCore for transport plus SAGE running the public chain, with the contracts that make them one interoperable, community-owned commons — that community networks, services and devices join. SAGE Lantern is the first deployment on that fabric: each Lantern holds its own sovereign private SAGE (its own private chain) and connects to the Commons as a proposer/query client, never as a public validator.
+**Reason:** Owner direction, 2026-09-21, resolving a live conflict in the written material: the repo described the Commons as the mission/programme surrounding the device, while the owner describes it as the fabric — core mesh technology aimed at a community-owned network layer of the "internet 2.0" kind — on which the Lantern is the first deployment. A statistic, a deck page or a public sentence built on the wrong one of those two shapes is wrong in public.
+**Consequence:** The Commons is a technical and network object (transport, public chain, protocols, contracts), not a marketing umbrella. The mission belongs to the initiative and the proposed Foundation; the Foundation stewards the fabric but does not own it. "Shared knowledge network" describes what the fabric carries, not what it is. Device-specific requirements and artifacts continue to use SAGE Lantern.
+**Affects:** [`../TERMINOLOGY.md`](../TERMINOLOGY.md) (SAGE Commons row and the new "Commons fabric" section), [`../MASTER_TECHNICAL_PRD.md`](../MASTER_TECHNICAL_PRD.md) §3 taxonomy row, `CONTRIBUTING.md`. Public website copy is owned by the marketing agent and is flagged to it, not edited here.
 
 ## Open decisions
 

@@ -5,8 +5,9 @@
 A curious mind shouldn't need a better postcode. SAGE is an initiative to
 democratise intelligence: local AI that works without reliable internet, and
 community-owned networks that keep people connected when the usual connections
-don't. SAGE Lantern is the first device project; SAGE Commons is the shared
-knowledge network being built around it.
+don't. SAGE Commons is the fabric underneath that: core mesh technology and a
+governed public network that community networks, services and devices join.
+SAGE Lantern is the first deployment on it.
 
 This repository is the private development home of that work — device runtime,
 touchscreen interface, firmware, provisioning tools, public website and the
