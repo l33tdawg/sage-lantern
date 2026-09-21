@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL('https://sage.ngo'),
   ...pageMetadata(
-    'SAGE Lantern — Intelligence. For all of us.',
+    'SAGE Foundation — Intelligence. For all of us.',
     'A curious mind shouldn’t need a better postcode. We’re building local AI and community networks so more people can learn, create and stay connected.',
     '/',
     'hero.jpg',

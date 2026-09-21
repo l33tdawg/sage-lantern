@@ -7,7 +7,7 @@ export function pageMetadata(title: string, description: string, path: string, i
     title,
     description,
     alternates: { canonical: url },
-    openGraph: { type: 'website', locale: 'en_GB', siteName: 'SAGE Lantern', url, title, description, images },
+    openGraph: { type: 'website', locale: 'en_GB', siteName: 'SAGE Foundation', url, title, description, images },
     twitter: { card: 'summary_large_image', title, description, images },
   };
 }
