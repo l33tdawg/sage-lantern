@@ -400,10 +400,22 @@ class Recovery:
         self.owner = ColdBrokerBootstrap(expected['inventory'])
         self.system = self.owner.system
         self.system._sleep_idle = lambda deadline: sleep_idle_batch(self.system, deadline)
-        require(type(expected['model_argv']) is list and expected['model_argv']
-                and all(type(arg) is str for arg in expected['model_argv'])
-                and expected['model_argv'][0] == '/opt/sage-lantern/llama.cpp/llama-server'
-                and expected['model_argv'][0] in expected['files'])
+        argv = expected['model_argv']
+        require(type(argv) is list and argv and all(type(arg) is str for arg in argv))
+        if argv[0] == '/opt/sage-lantern/llama.cpp/llama-server':
+            require(argv[0] in expected['files'])
+        else:
+            # The NPU serving shape those units actually run (productionised
+            # 2026-09-19): the interpreter is a symlink and is not a pinned
+            # file, so the server script and the engine beside the shared model
+            # are what the expectation pins. The collector holds the flags to
+            # the same pinned-path standard; this refused every transition on a
+            # unit with the NPU shape because it only knew the llama.cpp argv.
+            require(argv[0] == '/usr/bin/python3' and len(argv) > 1
+                    and argv[1] == '/opt/sage-lantern/npu/libexec/rkllm_server.py'
+                    and argv[1] in expected['files']
+                    and argv.count('--engine') == 1
+                    and argv[argv.index('--engine') + 1] in expected['files'])
         require(not os.path.lexists(self.state))
         self.current()
         require(self.audio.admission_verified(commissioning=True) is True)

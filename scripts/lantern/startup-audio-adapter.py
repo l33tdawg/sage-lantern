@@ -22,7 +22,11 @@ import uuid
 
 
 STATIC = ('inventory', 'runtime_sources', 'files', 'commission_sha256', 'actor', 'model_argv')
-HELPER_SHA = '9d28f9201d8b1d2a8b27e0b9072424c730e9d4c353f446e4ea3df0c37c217dd9'
+# Repinned 2026-09-21 (was 9d28f920...): the recovery helper now admits an
+# owner-cancelled outbox row as retained_unknown, and it verifies the NPU model
+# argv the units actually run instead of only the llama.cpp shape - that stale
+# check refused every cross-boot transition on this fleet.
+HELPER_SHA = '34c0cf9301d1ddaba4c4d2a90302d49549509f0c5207d3565b86ff1cea6528c2'
 # Repinned 2026-09-18: the collector gained the digest of the runtime wheel
 # rebuilt to match the deployed bytes (previously faked by cf963bd8...).
 # Repinned again the same day: it also gained the RELEASE_RUNTIME slot that
