@@ -146,3 +146,35 @@ passed before the symlink moved. Verified publicly: `/`, `/commons/`,
 `.flow-` markup and no `.org-` markup is left. Rollback configuration
 `/var/www/sage-website/backup-20260920T115921Z`; prior release
 `20260920-997818d270e9` remains under `releases/`.
+
+## Release 20260921-8df38b038cb2 — the Foundation's name in the title
+
+Owner ruling: every channel is the Foundation's and the Foundation is the brand
+tone — the Commons fabric and the Lantern are content within its story, not
+separate brands. The marketing agent checked the live site and found the drift
+where the branding rule actually bites: `<title>` and `og:title` read "SAGE
+Lantern — Intelligence. For all of us." and `og:site_name` was "SAGE Lantern"
+on every page's card, against every account the Foundation now holds.
+
+The title is now "SAGE Foundation — Intelligence. For all of us." with the
+tagline kept (it is the line the accounts use), and `og:site_name` is
+"SAGE Foundation". The meta description is deliberately untouched — the
+marketing agent uses that exact sentence as the bios on the Foundation's social
+accounts, so it now changes only through that lane.
+
+Copy on the pages themselves still teaches the old four-part model
+(Foundation · Commons-as-knowledge · community networks · Lantern); the
+restructure to Foundation → fabric → Lantern is drafted by the marketing agent
+and ships in its own release. This one is the brand fix alone.
+
+Same pipeline: 64 verified files, tarball sha256 `47ac1f2a…`, digest check
+passed before the symlink moved. This is also the first release to serve
+`public/brand/` — four mark colourways as SVG plus PNGs at 1024/512/256 with
+their README and WEIGHTS notes. The folder has been in `public/` since it was
+added; no release had been built from a tree containing it, which is why the
+marketing agent found `sage.ngo/brand/…` returning 404 earlier today. Verified
+publicly: `/`, `/commons/`, `/hardware/`, `/foundation/`,
+`/brand/lantern-mark-transparent-amber.svg` and `/sage-mission-brief.txt` all
+200, and the served HTML carries the new title and `og:site_name`. Rollback
+configuration `/var/www/sage-website/backup-20260921T085302Z`; prior release
+`20260920-08d0d307bed5` remains under `releases/`.
