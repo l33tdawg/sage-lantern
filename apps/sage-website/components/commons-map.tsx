@@ -39,12 +39,12 @@ const nodes: Node[] = [
   title: 'SAGE — the project',
   role: 'The papers, the protocol and the research the commons is built on.',
   owner: 'The founder, who wrote the papers',
-  licences: ['Papers · published openly', 'Protocol and specs · Apache-2.0'],
+  licences: ['Papers · published openly'],
   detail: 'The main project. SAGE is the research and engineering work behind the commons: its papers and the protocol they describe. Founded by the Foundation’s founder, who wrote the papers, and stewarded under the Foundation.',
   facts: [
    ['What it is', 'The research project: its papers and the protocol they describe'],
    ['Written by', 'The Foundation’s founder, sole author of the papers'],
-   ['Owner', 'The founder holds the papers; normative specifications and interoperability fixtures are Apache-2.0.'],
+   ['Owner', 'The founder holds the papers; licence terms for the specifications and fixtures are published as they are signed off.'],
   ],
  },
  {
@@ -54,7 +54,7 @@ const nodes: Node[] = [
   title: 'SAGE Commons',
   role: 'Shared knowledge: reviewed, content-addressed and signed, so any copy can be checked offline.',
   owner: 'The people who contribute it',
-  licences: ['Licence set per item · CC0 · CC BY · CC BY-SA'],
+  licences: ['Licence recorded per item, beside its source'],
   detail: 'The shared knowledge. What people choose to publish, reviewed before it travels, content-addressed and signed so any copy can be checked without an account or a connection. Under development.',
   facts: [
    ['Grows from', 'What people choose to contribute, reviewed before it travels'],
@@ -84,12 +84,12 @@ const nodes: Node[] = [
   title: 'SAGE Lantern',
   role: 'Local AI that answers on the device — private by default. A working prototype.',
   owner: 'Yours once you have it',
-  licences: ['Design · CERN-OHL-S 2.0', 'Firmware · GPL-3.0', 'App · Apache-2.0'],
+  licences: ['Open licences published as they are signed off'],
   detail: 'The device at the edge. Local AI that answers on the device, private by default, holding the part of the commons that is useful to you. A working prototype.',
   facts: [
    ['Keeps', 'Your knowledge, private by default'],
    ['Keeps working', 'When the network is down, and can keep relaying what it holds'],
-   ['Owner and licence', 'The unit is yours. The design is CERN-OHL-S 2.0, the firmware GPL-3.0 and the application layer Apache-2.0, so anyone may build, modify and share one.'],
+   ['Owner and licence', 'The unit is yours. The open licences for the design, firmware and application are published with each release as they are signed off.'],
   ],
   privateNote: 'Questions, photos and notes stay on this device. Nothing leaves it without a deliberate decision.',
  },
