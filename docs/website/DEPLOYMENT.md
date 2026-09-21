@@ -301,3 +301,27 @@ backup `/var/www/sage-website/backup-20260921T091225Z`; prior release
 `20260921-8df38b038cb2` stays under `releases/`. Verified live: `/`,
 `/commons/`, `/foundation/` and `/hardware/` all 200, no licence identifier
 present on any of the four, and the new wording served.
+
+## Zone setting, 2026-09-21 — Email Address Obfuscation switched off
+
+Follow-up to the hydration fix, on the owner's instruction ("turn it off").
+Cloudflare's **Email Address Obfuscation** is now **off** for `sage.ngo`, so
+the rewriting described in release `20260921-bbed3af474b5` no longer happens at
+all: addresses are served as written, `mailto:` hrefs stay `mailto:` hrefs, and
+the injected decode script is gone.
+
+Changed in the dashboard rather than the API, because the account has no stored
+API token on this machine and the classic `/scrape-shield` route no longer
+exists in this zone's dashboard. The setting now lives in
+**Security → Settings → search "obfuscation" → Email Address Obfuscation**, in
+the "Client side abuse" group. The switch was verified off in the page's own
+accessibility tree (`switch ... Value: 0`) after the change.
+
+Verified at the edge after a twelve-second settle: `/`, `/commons/`,
+`/hardware/` and `/foundation/` all serve **zero** `__cf_email__` spans and
+**zero** `/cdn-cgi/l/email-protection` links, with plain `mailto:` hrefs on all
+four, and fresh browser tabs report no console errors.
+
+`components/email-off.tsx` is deliberately kept. It is now belt-and-braces —
+inert while obfuscation is off — and it stops the same hydration failure
+returning silently if the setting is ever switched back on.
