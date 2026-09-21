@@ -231,8 +231,43 @@ https://sage.ngo/hardware/`; `/hardware/index.txt` still returns 200
 `text/plain`; soft navigation between all four pages still works from a real
 browser.
 
-Still open from this investigation: the browser console reports React
-hydration errors (minified #418, server text did not match the client) on the
-served pages. The cache defect above explains why a client could hydrate a new
-page against an old payload, but the mismatch is reproducible on a fresh load
-and needs its own diagnosis.
+The React hydration errors seen during this investigation (minified #418) are
+diagnosed and fixed in the next entry.
+
+## Release 20260921-bbed3af474b5 — Cloudflare was rewriting the email addresses
+
+The hydration error from the entry above: the live homepage logged React #418
+("server rendered text did not match the client") on a fresh load, while the
+dev server and the local static export were both clean. That difference is what
+identified the cause — the served HTML is not the HTML we built.
+
+Cloudflare's **Email Address Obfuscation** rewrites every address in the HTML
+after the export is final: the text becomes
+`<span class="__cf_email__" data-cfemail="…">[email protected]</span>` and a
+`mailto:` href becomes `/cdn-cgi/l/email-protection#…`. React then hydrates the
+text it rendered against text Cloudflare substituted, and fails. Confirmed by
+comparing pages: the live HTML carried `__cf_email__` spans and protected hrefs,
+the built files carried neither.
+
+Fix: `components/email-off.tsx` renders the address inside the documented
+Cloudflare `email_off` comment markers, which Cloudflare leaves alone. React
+cannot emit a comment node, so the address is written as raw markup — the same
+string on the server and in the client, which is what hydration compares. Used
+in the three places where an address appears as text (homepage contact link and
+role dialog, Foundation people section). Obfuscated `mailto:` hrefs are left
+alone: an attribute is not a hydration failure, and Cloudflare's decode script
+restores it in the browser.
+
+Same pipeline: 64 verified files, tarball sha256 `76ab865c…`, digest check
+passed before the symlink moved. Verified with fresh browser tabs and
+cache-busted URLs: **zero console errors** on `/`, `/commons/`, `/hardware/` and
+`/foundation/` (the homepage previously logged one on every load); the address
+renders as plain text and the `mailto:` href is intact in the DOM; Cloudflare no
+longer injects `__cf_email__` markup. Rollback configuration
+`/var/www/sage-website/backup-20260921T090801Z`; prior release
+`20260921-8df38b038cb2` remains under `releases/`.
+
+Not done, and worth a decision later: the cleanest long-term answer is to turn
+Email Address Obfuscation off for the zone, since the address is published
+openly anyway; the comment markers then become harmless. Left as the owner's
+call rather than a unilateral account change.
