@@ -56,6 +56,19 @@ STATE = Path("/var/lib/sage-lantern-mesh-supervisor")
 REQUEST = Path("/run/sage-lantern-mesh-control/voice-drain-request.json")
 START = Path("/run/sage-lantern-mesh-control/voice-start-authorized.json")
 SCHEMA = "sage.lantern.mesh-runtime.v1"
+
+
+class ProviderRefused(MeshIPCError):
+    """The provider was refused, and nothing was written.
+
+    Distinct from every other start failure on purpose: a refusal means a
+    precondition moved (session, epoch, unlock guard) and the request may be
+    tried again, while anything else can have left an unknown outcome behind
+    and must hold the unit closed. The supervisor used to fold both into
+    ``MeshIPCError`` and set ``_uncertain`` for either, which is how one
+    transient refusal turned unit A's every community route into a 503 until
+    the process restarted (2026-09-21).
+    """
 # Locked units still announce so a peer keeps a real measurement. Bounded,
 # zero-hop and location-free; the firmware location policy still suppresses it
 # and the client's own advertisement throttle prevents duplicates.
@@ -209,6 +222,9 @@ class HardwareRuntime:
         self._read_receipts = None
         self._public_contact_check = public_contact_check
         self._initializing = False
+        # Set once the radio open loop is entered. A refusal raised before this
+        # point wrote nothing, so it must not latch the unit (see provider()).
+        self._wire_started = False
         self._reconciled = None
         self._closing = False
         self._background_stop = threading.Event()
@@ -281,7 +297,8 @@ class HardwareRuntime:
         return result
 
     def reconcile(self, guard):
-        require(self._initializing and self._coordinator is None and self.active() and guard())
+        if not (self._initializing and self._coordinator is None and self.active() and guard()):
+            self._refuse_provider("reconcile-entry", guard)
         store = WorkflowStore(self.probe.client, storage=self.probe)
         epoch = self.probe.snapshot().epoch
         outbox = MeshOutbox(store, self.identity, sender=Peer(self.actor.chain_id, bytes.fromhex(self.actor.agent_id)),
@@ -360,15 +377,53 @@ class HardwareRuntime:
             finally:
                 os.close(descriptor)
 
+    def _provider_facts(self, guard):
+        """The individual conjuncts behind a provider/liveness refusal.
+
+        ``active()`` folds four conditions into one bool and
+        ``resource_lifecycle_check`` swallows its own exceptions, so a refusal
+        on its own is undiagnosable from the journal. Each fact is read
+        defensively: a diagnostic must never raise the thing it is describing.
+        """
+        def safely(call):
+            try:
+                return bool(call())
+            except Exception:
+                return None
+        return {"guard": safely(guard), "active": safely(self.active),
+                "initializing": bool(self._initializing),
+                "coordinator": self._coordinator is not None,
+                "attempted": bool(self._attempted),
+                "wire_started": bool(self._wire_started),
+                "uncertain": bool(self._uncertain),
+                "closed": bool(self._closed),
+                "configured": safely(self.configured),
+                "supervisor_phase": getattr(self.supervisor, "phase", None),
+                "resource_lifecycle": safely(self.supervisor.resource_lifecycle_check)}
+
+    def _refuse_provider(self, stage, guard):
+        """Refuse a provider start, loudly and with the facts that refused it."""
+        import syslog
+        syslog.syslog(syslog.LOG_ERR, json.dumps(dict(
+            event="mesh_provider_refused", stage=stage, **self._provider_facts(guard))))
+        raise ProviderRefused()
+
     def provider(self, guard):
-        require(guard() and self.active())
+        # Fail-closed, but say which conjunct closed. Unit A answered 503 on
+        # every community route for a day with `mesh_ipc_unavailable` and no
+        # journal line naming the reason: the guard, the supervisor's
+        # resource-lifecycle check and the configured() marker all return a
+        # bare False, so a refusal has to carry its facts out with it.
+        if not (guard() and self.active()):
+            self._refuse_provider("provider-entry", guard)
         if self._provider is not None:
             # A retired worker is restarted by the supervisor thread, never
             # here: a request must not wait on a join, and a failed pause used to
             # leave the runtime pausing (every route 503) until a process
             # restart. This request proceeds against the runtime as it stands.
             return self._provider
-        require(not self._attempted)
+        if self._attempted:
+            self._refuse_provider("provider-retry-after-refusal", guard)
         store = WorkflowStore(self.probe.client, storage=self.probe)
         try:
             receiver = store.get(self.config['receiver_slot'], kind='mesh_inbound', access_check=guard)
@@ -401,6 +456,7 @@ class HardwareRuntime:
             radio["public_key"] = bytes.fromhex(radio["public_key"])
             binding = RadioBinding(unit_id=self.config["unit_id"], **radio)
             coordinator = None
+            self._wire_started = True
             for attempt in range(1, RADIO_OPEN_ATTEMPTS + 1):
                 opener = self._opener_factory(policy=policy, startup_fence=startup_fence, journals_reconciled=reconciled)
                 try:
@@ -452,6 +508,14 @@ class HardwareRuntime:
                 self._gateway = GatewayRoot(self, self._gateway_identity)
             self.resume_background(guard)
             return self._provider
+        except ProviderRefused:
+            # A refusal wrote nothing, so the next request may try again
+            # instead of every route answering 503 until a restart. This is the
+            # only start failure that is retryable: an unknown capture state
+            # (_uncertain) or anything raised after the radio loop is entered
+            # stays closed until an operator intervenes.
+            self._attempted = False
+            raise
         except Exception:
             self._uncertain = True
             raise

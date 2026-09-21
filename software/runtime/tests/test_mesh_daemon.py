@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -748,3 +749,74 @@ def test_owned_background_runtime_joins_during_stop_before_probe_close(runtime, 
         lease.close()
     finally:
         owner.close()
+
+
+# --- provider refusals: audible, and not a permanent latch -------------------
+#
+# Unit A answered 503 `mesh_ipc_unavailable` on every community route for a day
+# after one provider start failed, and the journal could not say why: active()
+# folds four conditions into one bool and resource_lifecycle_check() swallows
+# its own exceptions. The next three tests pin the two properties that fix it -
+# a refusal carries its conjuncts into the journal, and a refusal raised before
+# the radio loop wrote nothing does not latch the unit.
+
+def refusal_log(monkeypatch):
+    written = []
+
+    def syslog(_priority, message):
+        written.append(json.loads(message))
+
+    monkeypatch.setitem(sys.modules, 'syslog', SimpleNamespace(
+        LOG_ERR=3, LOG_WARNING=4, LOG_INFO=6, syslog=syslog))
+    return written
+
+
+def test_a_pre_wire_refusal_names_its_conjuncts_and_does_not_latch(runtime, monkeypatch):
+    state, supervisor, resource, config, opened = runtime
+    written = refusal_log(monkeypatch)
+    def guard():
+        # True at the provider entry and through the receiver read, false the
+        # moment the provider marks itself initializing: the shape of a session
+        # or epoch moving between two checks in the same request. (A call
+        # counter cannot express this - the store calls the guard itself.)
+        return not resource._initializing
+
+    with pytest.raises(MeshIPCError):
+        resource.provider(guard)
+    refusals = [row for row in written if row['event'] == 'mesh_provider_refused']
+    assert refusals and refusals[-1]['stage'] == 'reconcile-entry'
+    assert refusals[-1]['guard'] is False
+    assert refusals[-1]['attempted'] is True and refusals[-1]['wire_started'] is False
+    # Nothing reached the radio, so the attempt is cleared and the next request
+    # may try again instead of every route answering 503 until a restart.
+    assert resource._attempted is False and resource._initializing is False
+    provider = resource.provider(lambda: True)
+    assert provider is not None and resource._provider is provider
+    assert opened, 'the retry never opened the radio'
+
+
+def test_a_refusal_reports_the_supervisor_facts(runtime, monkeypatch):
+    state, supervisor, resource, config, opened = runtime
+    written = refusal_log(monkeypatch)
+    supervisor.alive = False
+    with pytest.raises(MeshIPCError):
+        resource.provider(lambda: True)
+    row = [entry for entry in written if entry['event'] == 'mesh_provider_refused'][-1]
+    assert row['stage'] == 'provider-entry'
+    assert row['active'] is False and row['resource_lifecycle'] is False
+    assert row['supervisor_phase'] == 'active' and row['uncertain'] is False
+    assert resource._attempted is False
+
+
+def test_an_unknown_capture_state_stays_closed_and_is_never_cleared(runtime, monkeypatch):
+    state, supervisor, resource, config, opened = runtime
+    written = refusal_log(monkeypatch)
+    resource._uncertain = True
+    for _ in range(2):
+        with pytest.raises(MeshIPCError):
+            resource.provider(lambda: True)
+    assert resource._uncertain is True
+    assert resource.active() is False
+    assert resource._provider is None
+    row = [entry for entry in written if entry['event'] == 'mesh_provider_refused'][-1]
+    assert row['uncertain'] is True and row['active'] is False
