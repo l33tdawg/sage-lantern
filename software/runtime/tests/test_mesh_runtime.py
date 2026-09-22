@@ -128,6 +128,27 @@ def test_real_factory_queue_dispatch_mailbox_and_close(factory):
     assert state.runtime.client._client.is_closed
 
 
+def test_one_an_outbox_read_seeds_the_dispatch_set(factory):
+    """An outbox read marks its queued rows for the wake, without a journal scan.
+
+    Unit A, 2026-09-21: the dispatch wake finds rows from an in-memory set, and
+    a row queued by an earlier process was otherwise only discoverable by a
+    journal scan that costs more than the whole 10 s wake - so the message never
+    left the queue. The owner looking at the outbox is the read that fixes it.
+    """
+    state=factory
+    state.adopt()
+    now=int(time.time())
+    identifier=str(uuid.uuid4())
+    state.runtime.queue_message(state.context,message_id=identifier,recipient=Peer("remote",bytes.fromhex(state.remote.agent_id)),
+        radio_public_key=state.radio,content="Synthetic private message",consent_binding="contact-policy",issued_at=now,expires_at=now+900)
+    state.runtime._queued_rows().discard(identifier)
+    page=state.runtime.list_messages(state.context,"outbox")
+    assert [item.message_id for item in page.items]==[identifier]
+    assert identifier in state.runtime._queued_rows()
+    assert state.runtime.close(timeout=5) is True
+
+
 def test_one_fragment_costs_one_contact_read(factory, monkeypatch):
     """The fenced dispatch hands the row the inventory this operation refreshed.
 

@@ -91,6 +91,36 @@ class SchedulerTests(unittest.TestCase):
         finish.set()
         self.assertTrue(self.scheduler.close(1))
 
+    def test_a_read_fence_that_cannot_drain_refuses_without_containing(self):
+        """A busy serial owner refuses this read; it must not end the unit.
+
+        The mailbox read is the caller: a producer holding the serial past the
+        fence timeout means "this listing cannot be proven consistent right
+        now", not "the runtime is contained until a restart". Unit A,
+        2026-09-21: a dispatch job that overran held the fence past a mailbox
+        read's timeout, containment latched, and every community route answered
+        503. Containment stays the drain's behaviour, pinned by the test above.
+        """
+        running, finish = threading.Event(), threading.Event()
+        self.addCleanup(finish.set)
+
+        def operation(client):
+            running.set()
+            finish.wait(2)
+
+        active = self.scheduler.submit(operation)
+        self.assertTrue(running.wait(1))
+        with self.assertRaisesRegex(module.SerialOwnerError, 'producer_busy'):
+            with self.scheduler.producer_fence(.01, contain_on_timeout=False):
+                self.fail('a busy producer must not yield a lease')
+        finish.set()
+        active.result(1)
+        # Nothing was contained: admission and a later fence both work again.
+        self.assertEqual(self.scheduler.submit(lambda client: 'ok').result(1), 'ok')
+        with self.scheduler.producer_fence() as lease:
+            self.assertTrue(lease())
+        self.assertTrue(self.scheduler.close(1))
+
     def test_close_revokes_lease_and_waits_for_reader(self):
         with self.scheduler.producer_fence() as lease:
             self.assertTrue(lease())

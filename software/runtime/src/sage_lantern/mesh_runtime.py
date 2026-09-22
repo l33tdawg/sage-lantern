@@ -712,7 +712,11 @@ class MeshRuntime:
         deadline = time.monotonic() + self.config.operation_timeout
         remaining = deadline - time.monotonic()
         _require(remaining > 0)
-        with self.coordinator.producer_fence(timeout=remaining) as lease:
+        # A read fence refuses when the serial owner is busy; it must not contain
+        # the runtime for it. Containment is the drain's rule (MeshRuntime.close
+        # takes the default), and one slow background job must not turn every
+        # route into a 503 until a restart.
+        with self.coordinator.producer_fence(timeout=remaining, contain_on_timeout=False) as lease:
             yield lease
 
     def put_contact(self, context, card, *, known_actor):
@@ -1471,7 +1475,18 @@ class MeshRuntime:
                 self._condition.notify_all()
 
     def list_messages(self, context, box, *, limit=20):
-        return self._read(context, "list_messages", lambda: self.mailbox.list_messages(box, limit=limit, access_check=self._access))
+        page = self._read(context, "list_messages", lambda: self.mailbox.list_messages(box, limit=limit, access_check=self._access))
+        if box == "outbox":
+            # The dispatch wake finds rows from memory, and a row queued by an
+            # earlier process is otherwise only discoverable by a journal scan
+            # that costs more than the whole wake (unit A, 2026-09-21: the scan
+            # died on the 10 s job budget and the message never left the queue).
+            # An outbox read is the owner looking at exactly those rows, so it
+            # seeds the set the wake dispatches from.
+            for item in page.items:
+                if item.workflow_state == "queued":
+                    self._queued_rows().add(item.local_id)
+        return page
 
     def open_message(self, context, identifier):
         return self._read(context, "open_message", lambda: self.mailbox.open_message(identifier, access_check=self._access))
