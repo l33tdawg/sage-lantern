@@ -251,6 +251,32 @@ class HardwareRuntime:
         return (self.active() and owner == self.actor and type(radio_key) is bytes
                 and dict(chain_id=contact.chain_id, agent_id=contact.agent_id, radio_public_key=radio_key.hex()) in self.config["peers"])
 
+    def rearm_storage(self, guard):
+        """Adopt the storage epoch an authenticated request is running under.
+
+        A fresh owner unlock rotates the vault epoch under a running daemon.
+        Every guarded call then compares the live pair against the epoch this
+        process captured when its broker started, so `active()` - which folds
+        `resource_lifecycle_check` - reads False, provider construction is
+        refused and every community route answers 503 until the daemon restarts.
+        This is the request-path half of that fix: the caller has already
+        authenticated its session (epoch plus voice peer, or the owner token),
+        and the broker refuses to move the baseline unless nothing can be in
+        flight. It never raises and never decides admission - a refusal here
+        leaves the caller's own guards exactly as they were.
+        """
+        try:
+            if self._closed or self._uncertain or not self.configured() or guard() is not True:
+                return False
+            if self.supervisor.rearm() is not True:
+                return False
+        except Exception:
+            return False
+        import syslog
+        syslog.syslog(syslog.LOG_WARNING, json.dumps(dict(event="storage_rearm",
+            epoch=self.supervisor._baseline, phase=self.supervisor.phase)))
+        return True
+
     def import_contact(self, request, *, broker_id, epoch_reader):
         from .mesh_contacts import MAX_CARD_BYTES, verify_contact_card
         require(type(request) is dict and set(request) == {"op", "broker_id", "epoch", "config_sha256", "card_sha256", "card"}
@@ -901,11 +927,13 @@ class MeshDaemon:
                 broker_id=self.supervisor.broker_id, epoch_reader=self._epoch)})
             return
         if request.get("op") == "owner-contact-route":
+            self.resource.rearm_storage(lambda: self._epoch() is not None)
             self._owner_contacts.handle(connection, request, resource=self.resource,
                 supervisor=self.supervisor, uid=uid)
             return
         if request.get("op") == "import-contact":
             require(uid == 0)
+            self.resource.rearm_storage(lambda: self._epoch() is not None)
             send(connection, {"result": self.resource.import_contact(request,
                 broker_id=self.supervisor.broker_id, epoch_reader=self._epoch)})
             return
@@ -977,6 +1005,11 @@ class MeshDaemon:
                     failed.set()
                     return False
         require(guard())
+        # The request is authenticated (session epoch plus the voice peer's own
+        # challenge). If an owner unlock rotated the storage epoch since this
+        # broker started, adopt it now instead of refusing every guarded call
+        # until the process restarts.
+        self.resource.rearm_storage(guard)
         if request["method"] in ("render_challenge", "rendered"):
             binding = hashlib.sha256(json.dumps([request["broker_id"], pid, uid, epoch], separators=(",", ":")).encode()).hexdigest()
             def background_check():

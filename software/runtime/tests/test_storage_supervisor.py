@@ -280,6 +280,64 @@ def test_lease_binding_and_expiry_fail_closed(setup, change):
     assert "stop_vault" not in backend.events
 
 
+def test_rearm_adopts_a_rotated_epoch_with_nothing_in_flight(setup):
+    """An owner unlock rotates the epoch under a running broker (2026-09-22).
+
+    Every guarded call compares the live pair against the process-start
+    baseline, so without a re-arm `resource_lifecycle_check` - and therefore
+    `active()`, provider construction and every community route - stays False
+    until the daemon restarts. The re-arm is only allowed while nothing can be
+    in flight, and a live lease still pins the pair it was admitted under.
+    """
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    state["snapshot"] = MessageStorageSnapshot("c" * 64, "2")
+    assert supervisor.check(token, pid=901, uid=1001) is False
+    assert supervisor.resource_lifecycle_check() is False
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.finish_capture(token, pid=901, uid=1001)
+    assert supervisor.rearm() is True
+    assert supervisor.resource_lifecycle_check() is True
+    assert supervisor.verified_epoch() == state["snapshot"].epoch
+    rearmed = capture(supervisor, state)
+    assert supervisor.check(rearmed, pid=901, uid=1001)
+    supervisor.finish_capture(rearmed, pid=901, uid=1001)
+    assert supervisor.rearm() is False
+
+
+def test_rearm_refuses_anything_it_cannot_prove_quiescent(setup):
+    supervisor, backend, state = setup
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.start()
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    state["snapshot"] = MessageStorageSnapshot("c" * 64, "2")
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.finish_capture(token, pid=901, uid=1001)
+    supervisor.phase = "recovery_required"
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+
+
+def test_rearm_refuses_a_pair_that_moves_while_it_derives(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    baseline = supervisor._baseline
+    reads = iter([MessageStorageSnapshot("c" * 64, "2"), MessageStorageSnapshot("c" * 64, "3")])
+    supervisor._snapshot = lambda: next(reads)
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    assert supervisor._baseline == baseline
+
+
 def test_lock_survival_is_not_new_capture_authority(setup):
     supervisor, backend, state = setup
     supervisor.start()

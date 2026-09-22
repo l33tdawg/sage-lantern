@@ -386,6 +386,43 @@ class RootStorageSupervisor:
         except Exception:
             pass
 
+    def rearm(self):
+        """Adopt the live epoch/vault pair as the baseline for later operations.
+
+        The baseline is captured when the process starts, and every guarded call
+        compares the live pair against it. An owner unlock rotates the storage
+        epoch under a running daemon, so from that moment `active()` (which folds
+        `resource_lifecycle_check`) reads False, provider construction is refused
+        and every community route answers 503 - `ready`, the queue write and the
+        outbox CAS alike - until the process restarts (unit A, 2026-09-22).
+
+        The daemon calls this from an authenticated request path, and it is
+        allowed only when nothing can be in flight: an active phase, no live
+        capture lease, a real resource that has not joined the drain, and no
+        shutdown. The pair is derived live on both sides of the swap, so a
+        rotation that happens *during* the re-arm is refused rather than
+        adopted; a rotation that happens during a guarded call or inside a
+        lease stays fail-closed, because those compare the pair across their own
+        body and `check` compares the lease's own admission epoch.
+
+        Returns True when the baseline moved, False when it was already current.
+        """
+        with self._mutex:
+            self._held()
+            if (self._closed or self.phase != "active" or self._leases or self._resource is None
+                    or self._resource_joined or self._shutdown_requested):
+                raise StorageSupervisorError()
+            before = self._live_key()
+        epoch, vault = self._epoch(), self._backend.vault_identity()
+        with self._mutex:
+            self._held()
+            if self._live_key() != before or (epoch, vault) != (self._epoch(), self._backend.vault_identity()):
+                raise StorageSupervisorError()
+            changed = (epoch, vault) != (self._baseline, self._vault)
+            self._baseline, self._vault = epoch, vault
+            self._live_cache = None
+            return changed
+
     def start(self):
         with self._control, self._mutex:
             try:
