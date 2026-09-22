@@ -13,12 +13,23 @@ rows and answers every community route with 503/community_unavailable. This tool
 performs the one transition the owner is allowed to make - ``state:
 "cancelled"`` through ``MeshOutbox.cancel`` - and prints the evidence.
 
-WHAT IT REFUSES. A row still inside its window (the runtime may still dispatch
-it), a row that already carries peer evidence (``delivered``/``read`` is finished
-evidence and not the owner's to discard), and a row that is already cancelled.
-Nothing is deleted: the original approval, ciphertext wire and text stay in the
-row, and a genuine peer receipt arriving later still promotes it, because the
-peer's signed word outranks a local cancel.
+WHAT IT REFUSES. A ``queued`` or ``awaiting_receipt`` row still inside its window
+(the runtime may still dispatch it, and its turn is the runtime's to take), a row
+that already carries peer evidence (``delivered``/``read`` is finished evidence
+and not the owner's to discard), and a row that is already cancelled. Nothing is
+deleted: the original approval, ciphertext wire and text stay in the row, and a
+genuine peer receipt arriving later still promotes it, because the peer's signed
+word outranks a local cancel.
+
+THE POST-WIRE UNKNOWN (owner decision 2026-09-22). A ``dispatching`` row is
+endable *inside its window* as well as after it. ``dispatch_one`` writes that
+state in the swap that precedes the radio write, so the fragment at
+``next_fragment`` may already be on the wire and nothing in the row can prove
+whether it is; the runtime's only way to continue is to re-send a fragment that
+may already have been received. Unit A held six of these with live windows and
+every community route answered 503, because the lapsed-window rule left them
+with no reviewed way out at all. The row records which rule the owner acted
+under (``eligible_by``), and the evidence of how far it got is printed and kept.
 
 WHAT IT CANNOT DO. Un-send a fragment that already reached the wire. A cancelled
 row may therefore have been delivered, and the printed ``next_fragment`` and
@@ -53,10 +64,14 @@ DEFAULT_BINDING = 'owner-cancel-on-unit'
 
 
 def eligible(body, now):
-    """Whether the owner may end this row, and why not when they may not.
+    """Whether the owner may end this row, and on what basis.
 
     Pure decision function: the caller supplies the verified row body and the
-    wall clock, so the rules can be read (and tested) without a unit.
+    wall clock, so the rules can be read (and tested) without a unit. The second
+    element is the refusal code when the row may not be ended, and the basis on
+    which it may be when it can: ``window_lapsed`` for a row the runtime has
+    already stopped working on, ``post_wire_unknown`` for an admitted attempt
+    whose fragment may already be on the wire.
     """
     state = body['state']
     if state in ('delivered', 'read'):
@@ -65,10 +80,18 @@ def eligible(body, now):
         return False, 'row_already_cancelled'
     if state not in ELIGIBLE:
         return False, 'row_state_not_cancellable'
+    if state == 'dispatching':
+        # The CAS that wrote 'dispatching' precedes the radio write, so the
+        # fragment at the cursor may already have been sent and the only way the
+        # runtime can continue the row is to send it again (retry_decision ->
+        # queued -> dispatch_one). The window rule below protects a live queued
+        # send; it must not trap an attempt that already failed (owner decision
+        # 2026-09-22, unit A: six such rows, live windows, every route 503).
+        return True, 'post_wire_unknown'
     approved = body['approved']
     if approved['issued_at'] <= now < approved['expires_at']:
         return False, 'window_still_open'
-    return True, None
+    return True, 'window_lapsed'
 
 
 def call(path, body=None, timeout=20):
@@ -117,15 +140,18 @@ def cancel_rows(store, outbox, guard, *, now, binding, only, apply):
             continue
         if body.get('schema') != 'sage.lantern.mesh-outbound.v1':
             continue
-        allowed, refused = eligible(body, now)
+        allowed, verdict = eligible(body, now)
         entry = {'message_id': identifier, 'revision_before': record['revision'],
                  'state_before': body['state'], 'attempts': body['attempts'],
                  'next_fragment': body['next_fragment'],
+                 'window': ('open' if body['approved']['issued_at'] <= now < body['approved']['expires_at']
+                            else 'lapsed'),
                  'seconds_since_window_closed': max(0, now - body['approved']['expires_at'])}
         if not allowed:
-            entry['refused'] = refused
+            entry['refused'] = verdict
             rows.append(entry)
             continue
+        entry['eligible_by'] = verdict
         if not apply:
             entry['outcome'] = 'would_cancel'
             rows.append(entry)

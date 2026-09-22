@@ -943,6 +943,61 @@ def test_rf_unknown_window_lapse_latches_and_blocks_clean_close(setup):
     assert setup.stored()['body']['state'] == 'dispatching'
 
 
+def test_an_owner_ends_a_post_wire_unknown_inside_its_window(setup):
+    """The in-window half of the cancel: an admitted attempt the owner stops.
+
+    Unit A, 2026-09-22: six `dispatching` rows with live windows and every
+    community route answering 503, because the operator's lapsed-window rule left
+    nothing able to end any of them. The swap that wrote `dispatching` precedes
+    the radio write, so the fragment may already be on the wire and the runtime's
+    only way to continue is to send it again. Ending the row rewrites nothing:
+    the cursor, attempts and dispatch timestamp stay as the evidence of how far
+    it got, and a late peer receipt still outranks the local decision.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    before = setup.stored()['body']
+    assert setup.now < before['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is False
+    assert setup.outbox.fencing_unknowns() == ()
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=before['revision'],
+                                    decision_binding='owner-cancel-20260922', access_check=setup.access)
+    assert cancelled.state == 'cancelled' and cancelled.revision == before['revision'] + 1
+    after = setup.stored()['body']
+    assert after['retry_binding'] == 'owner-cancel-20260922'
+    assert (after['next_fragment'], after['attempts'], after['dispatch_timestamp']) == \
+           (before['next_fragment'], before['attempts'], before['dispatch_timestamp'])
+    assert after['approved'] == before['approved']
+    assert setup.outbox.unresolved() == frozenset()
+    assert setup.outbox.latching_unknown() is False
+    # The peer's signed word still promotes the row it may already have received.
+    assert ingest(setup, receipt_wire(setup)).state == 'delivered'
+    assert setup.outbox.close(1) is True
+
+
+def test_only_a_lapsed_window_fences_admission_and_it_names_the_row(setup):
+    """The list a refused read points at: nothing in-window, the row once lapsed.
+
+    An unknown inside its window is retryable (owner decision 2026-09-13) and
+    fences nothing, so it must not appear; once the window lapses the row is the
+    fence, and it is the row - by message id - that the journal has to name.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    assert setup.outbox.latching_unknown() is False
+    assert setup.outbox.fencing_unknowns() == ()
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+    assert setup.outbox.fencing_unknowns() == (MESSAGE,)
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=setup.stored()['body']['revision'],
+                                    decision_binding='owner-cancel-20260922', access_check=setup.access)
+    assert cancelled.state == 'cancelled'
+    assert setup.outbox.fencing_unknowns() == () and setup.outbox.latching_unknown() is False
+
+
 def test_owner_cancel_ends_a_lapsed_row_and_clears_its_unknown(setup):
     """The audited way out of a row whose window lapsed while nobody could act.
 

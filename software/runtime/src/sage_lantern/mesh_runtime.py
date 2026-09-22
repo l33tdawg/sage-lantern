@@ -208,7 +208,7 @@ def _failure_code(error):
 
 
 def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_frames=0,
-                           access_denied=None, event="mesh_operation_failed"):
+                           access_denied=None, fenced_rows=(), event="mesh_operation_failed"):
     """Bounded diagnostics only: no payloads, text, keys or peer identities."""
     try:
         import syslog
@@ -226,6 +226,12 @@ def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_fr
                        frames=_failure_frames(error, 12))
         if access_denied is not None:
             payload['access_denied'] = access_denied
+        if fenced_rows:
+            # The row whose unknown outcome fences admission, by message id: the
+            # one fact a refused read needs and could never state (unit A,
+            # 2026-09-22 - every community route answered 503 while the journal
+            # named neither the fence nor the row that set it).
+            payload['fenced_rows'] = [str(identifier) for identifier in fenced_rows][:8]
         if causes:
             payload['causes'] = causes
         syslog.syslog(syslog.LOG_ERR, json.dumps(payload))
@@ -233,9 +239,9 @@ def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_fr
         return
 
 
-def _log_background_failure(error, operation, provably_pre_wire, wire_frames, access_denied=None):
+def _log_background_failure(error, operation, provably_pre_wire, wire_frames, access_denied=None, fenced_rows=()):
     _log_operation_failure(error, operation, provably_pre_wire=provably_pre_wire,
-                           wire_frames=wire_frames, access_denied=access_denied,
+                           wire_frames=wire_frames, access_denied=access_denied, fenced_rows=fenced_rows,
                            event="mesh_background_failure")
 
 
@@ -266,13 +272,19 @@ class _BackgroundJob:
     fragment: unit A 2026-09-13 17:50 lost a dispatch five masks deep in a plain
     MeshOutboxError whose innermost cause was RegistryError, which cannot be told
     apart from a contact or store failure without the condition itself.
+
+    fenced_rows carries the message ids of the outbox rows whose unknown outcome
+    is what refused it, when the refusal was `admission_unsafe`: an admission
+    fence is the one refusal whose cause is a durable row rather than a condition
+    of this process (unit A, 2026-09-22).
     """
 
-    __slots__ = ("radio_action", "access_denied")
+    __slots__ = ("radio_action", "access_denied", "fenced_rows")
 
     def __init__(self):
         self.radio_action = threading.Event()
         self.access_denied = None
+        self.fenced_rows = ()
 
 
 @dataclass(frozen=True)
@@ -338,6 +350,8 @@ class MeshRuntime:
             service._stop = threading.Event()
             service._condition = threading.Condition()
             service._readers = 0
+            service._denial = threading.local()
+            service._fence_snapshot = None
             service._poller = None
             service._receive_stop = threading.Event()
             service._background_receive = False
@@ -396,6 +410,7 @@ class MeshRuntime:
             raise MeshRuntimeError() from None
 
     def admission_safe(self):
+        fence = {"layers": [], "rows": []}
         for name in ("receipts", "outbox", "receiver", "inbox"):
             target = getattr(self, name, None)
             if target is None:
@@ -408,7 +423,28 @@ class MeshRuntime:
             unknown = latching() is True if callable(latching) else bool(getattr(target, "_uncertain", False))
             if unknown:
                 self._uncertain = True
+                fence["layers"].append(name)
+                rows = getattr(target, "fencing_unknowns", None)
+                if callable(rows):
+                    fence["rows"].extend(rows())
+        self._fence_snapshot = fence if fence["layers"] else None
         return not self._uncertain and not self._closed and not self._stop.is_set()
+
+    def admission_fence(self):
+        """Which layer, and which outbox rows, fence admission: bounded, no payloads.
+
+        `_access` refuses with a bare False and `_read` used to raise
+        `MeshRuntimeError() from None`, so a refused community route left the
+        journal naming neither the conjunct nor the row behind it (unit A,
+        2026-09-22: six `dispatching` rows and every mailbox read answering 503).
+        The snapshot is refreshed by every admission check, and it *names the
+        row* whenever the fence is a durable outbox row rather than a condition
+        of this process.
+        """
+        fence = getattr(self, "_fence_snapshot", None)
+        if not fence:
+            return None
+        return {"layers": sorted(set(fence["layers"])), "rows": sorted({str(item) for item in fence["rows"]})}
 
     def _radio_written(self):
         """Command frames this runtime's radio has begun writing, or None."""
@@ -477,10 +513,20 @@ class MeshRuntime:
         The marker belongs to the job, not to the thread: _context clears the
         thread-local state as it unwinds, so by the time the worker logs the
         failure the only surviving record is the one held by the job itself.
+        The refusal also goes to a thread-local that _context does not clear, so
+        a mailbox read - which runs in the caller's thread, not a job - can name
+        its own conjunct when it logs the failure.
         """
         job = getattr(self._local, "job", None)
         if type(job) is _BackgroundJob:
             job.access_denied = reason
+            if reason == "admission_unsafe":
+                self.admission_safe()
+                fence = self.admission_fence() or {}
+                job.fenced_rows = tuple(fence.get("rows") or ())
+        denial = getattr(self, "_denial", None)
+        if denial is not None:
+            denial.reason = reason
         return False
 
     def _capture_storage(self):
@@ -1306,7 +1352,7 @@ class MeshRuntime:
                         if not refusal or refusals <= 2 or refusals % 32 == 0:
                             _log_background_failure(error, operation, pre_wire,
                                 None if type(written) is not int or type(current) is not int else current - written,
-                                job.access_denied)
+                                job.access_denied, job.fenced_rows)
                         if (refusal and pre_wire and not self._closed
                                 and not self._stop.is_set() and self.admission_safe()):
                             # A refusal admitted nothing at all - the coordinator
@@ -1464,10 +1510,22 @@ class MeshRuntime:
         with self._condition:
             _require(not self._stop.is_set() and not self._closed)
             self._readers += 1
+        denial = getattr(self, "_denial", None)
+        if denial is not None:
+            denial.reason = None
         try:
             with self._context(context, operation):
                 return callback()
-        except Exception:
+        except Exception as error:
+            # A refused read leaves a trace of its own: without this the journal
+            # carried neither the operation, the conjunct that refused it, nor
+            # the row whose unknown outcome fences admission (unit A,
+            # 2026-09-22 - every mailbox read answered 503 while the cause was
+            # hidden behind `raise MeshRuntimeError() from None`).
+            self.admission_safe()
+            fence = self.admission_fence() or {}
+            _log_operation_failure(error, operation, access_denied=getattr(denial, "reason", None),
+                                   fenced_rows=tuple(fence.get("rows") or ()))
             raise MeshRuntimeError() from None
         finally:
             with self._condition:

@@ -183,8 +183,21 @@ class MeshOutbox:
         """
         if self._untracked:
             return True
+        return bool(self.fencing_unknowns())
+
+    def fencing_unknowns(self):
+        """Message ids whose lapsed window is what fences admission right now.
+
+        An unknown still inside its window is retryable (owner decision
+        2026-09-13) and fences nothing, so only the lapsed rows are named here.
+        They are the rows a refused read has to point at: every community route
+        answers 503 while one exists, and until this list existed the journal
+        named neither the reason nor the row (unit A, 2026-09-22 - a mailbox read
+        answered 503 with `raise MeshRuntimeError() from None` and the cause had
+        to be reconstructed from a separate store scan).
+        """
         now = self.clock()
-        return any(expires <= now for expires in self._unknown.values())
+        return tuple(sorted(identifier for identifier, expires in self._unknown.items() if expires <= now))
 
     def close(self, timeout=0):
         """Latch closed, cancel future admission, bounded join; unknown stays false."""
@@ -676,6 +689,18 @@ class MeshOutbox:
         `reapprove` (queued/dispatching/awaiting_receipt only) all refuse a
         cancelled row, so no fragment is ever sent again and neither the retry
         driver nor an owner re-approval can revive it.
+
+        The same decision covers a post-wire unknown inside its window (owner
+        decision 2026-09-22, after six `dispatching` rows on unit A with live
+        windows and no reviewed way to end any of them). A row in `dispatching`
+        is an admitted attempt whose fragment may already be on the wire, so
+        the runtime cannot continue it without re-sending that fragment; when
+        the owner decides it stops here, the row becomes `cancelled` exactly as
+        a lapsed one does - the wire, the fragment cursor, the attempts and the
+        dispatch timestamp all stay in the row as the record of how far it got.
+        The window rule is the caller's: `retry_decision` still owns the
+        in-window retry, and the operator tool decides which of the two an
+        owner's decision may reach.
 
         What it does NOT do, because it cannot: retract radio already written
         and claim the peer never received the message. A row cancelled

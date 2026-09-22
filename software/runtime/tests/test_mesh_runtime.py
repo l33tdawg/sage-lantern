@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import syslog
 import threading
 import time
 from types import SimpleNamespace
@@ -126,6 +127,69 @@ def test_real_factory_queue_dispatch_mailbox_and_close(factory):
     assert state.runtime.open_message(state.context,page.items[0].id).message_id==identifier
     assert state.runtime.close(timeout=5) is True and state.released
     assert state.runtime.client._client.is_closed
+
+
+def test_a_refused_read_names_the_row_that_fenced_admission(factory, monkeypatch):
+    """A read that cannot pass the fence says why, and which row did it.
+
+    Unit A, 2026-09-22: outbox and inbox answered 503 `community_unavailable`
+    while `/community/status` answered 200, and the journal held no line naming
+    the conjunct or the row - `_read` raised `MeshRuntimeError() from None`, and
+    the fence had to be reconstructed from a separate store scan. A lapsed
+    unknown is the fence, so the row's message id is the fact the record owes.
+    """
+    lines = []
+    monkeypatch.setattr(syslog, "syslog", lambda priority, message: lines.append(json.loads(message)))
+    state = factory
+    state.adopt()
+    identifier = str(uuid.uuid4())
+    # The durable shape the unit held: an unknown whose signed window has
+    # lapsed. The outbox's own latching rules are pinned in the outbox suite.
+    state.runtime.outbox.track_unknown(identifier, int(time.time()) - 1)
+    with pytest.raises(MeshRuntimeError):
+        state.runtime.list_messages(state.context, "outbox")
+    assert state.runtime.admission_fence() == {"layers": ["outbox"], "rows": [identifier]}
+    refusals = [line for line in lines if line.get("operation") == "list_messages"]
+    assert [(line["access_denied"], line["fenced_rows"]) for line in refusals] == \
+           [("admission_unsafe", [identifier])]
+
+
+def test_a_read_refused_by_the_context_guard_names_that_conjunct(factory, monkeypatch):
+    """The other half: a refusal that is not a row still names what refused it.
+
+    The lease-side `authorize_context` denial is what unit A's journals showed
+    next to the fence (2026-09-22), and it is invisible in a plain
+    MeshRuntimeError - so the same record has to carry it, with no row ids.
+    """
+    lines = []
+    monkeypatch.setattr(syslog, "syslog", lambda priority, message: lines.append(json.loads(message)))
+    state = factory
+    state.adopt()
+    state.authorized = False
+    with pytest.raises(MeshRuntimeError):
+        state.runtime.list_messages(state.context, "outbox")
+    refusals = [line for line in lines if line.get("operation") == "list_messages"]
+    assert [(line["access_denied"], line.get("fenced_rows")) for line in refusals] == [("authorize_context", None)]
+    assert state.runtime.admission_fence() is None
+
+
+def test_the_wake_job_marker_carries_the_row_that_fenced_it(factory):
+    """The background wage log names the row, not just the conjunct.
+
+    A dispatch wake refused by an admission fence reports through its own job
+    marker; without the rows the log says `admission_unsafe` and stops there.
+    """
+    state = factory
+    state.adopt()
+    identifier = str(uuid.uuid4())
+    state.runtime.outbox.track_unknown(identifier, int(time.time()) - 1)
+    job = module._BackgroundJob()
+    state.runtime._local.job = job
+    try:
+        assert state.runtime._denied("admission_unsafe") is False
+    finally:
+        del state.runtime._local.job
+    assert (job.access_denied, job.fenced_rows) == ("admission_unsafe", (identifier,))
 
 
 def test_one_an_outbox_read_seeds_the_dispatch_set(factory):
