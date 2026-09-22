@@ -25,6 +25,7 @@ from .mesh_receipt_sender import ReceiptAction, ReceiptPermit
 from .mesh_runtime import MeshUserContext, MeshReceiveContext, MeshLeaseUncertain
 from .storage_supervisor_socket import CaptureLease
 from .message_contacts import RecipientID
+from .community_messaging import MessagingUnavailable
 
 
 @dataclass(frozen=True, repr=False)
@@ -75,6 +76,16 @@ class MeshActionAuthority:
             raise ValueError("mesh_background_unavailable")
         try:
             lease = lease_factory(consent)
+        except MessagingUnavailable:
+            # A read-only refusal, not an unknown lease outcome: the factory
+            # had not acquired a lease or reached the destructive dequeue, so
+            # nothing here can be in flight. Flattening it into
+            # MeshLeaseUncertain latched the whole runtime until a cold start
+            # when the local node's shared replay window answered 503 to the
+            # daemon's own storage probe (unit A, 2026-09-22 14:13). The
+            # factory's other failures keep the old meaning - the acquire
+            # acknowledgment may be the lost one.
+            raise
         except Exception:
             raise MeshLeaseUncertain() from None
         if type(lease) is not CaptureLease:

@@ -61,6 +61,7 @@ from .public_mesh_provider import (PublicMeshProvider, PublicMeshRejected, FRAME
                                    PUBLIC_BURST, PUBLIC_POLL_INTERVAL)
 from .message_contacts import RecipientID
 from .message_storage import MessageStorageProbe
+from .community_messaging import MessagingUnavailable
 from .workflow_store import WorkflowStore
 
 
@@ -1336,8 +1337,17 @@ class MeshRuntime:
                         future.result(timeout=job_timeout)
                     except Exception as error:
                         current = self._radio_written()
-                        refusal = (isinstance(error, SerialOwnerError)
-                                   and (error.args[0] if error.args else None) in ADMISSION_REFUSAL_CODES)
+                        # A refused storage read is a refusal like any other: the
+                        # node answered "not now" before this job touched a lease,
+                        # a dequeue or the radio, so the right answer is the same
+                        # bounded retry. Unit A 2026-09-22 14:13 is what the
+                        # alternative costs - the local node's replay window
+                        # saturated, its own 503 reached the probe, and the
+                        # flattened MeshLeaseUncertain latched the unit until a
+                        # cold start while the node was healthy throughout.
+                        refusal = (isinstance(error, MessagingUnavailable)
+                                   or (isinstance(error, SerialOwnerError)
+                                       and (error.args[0] if error.args else None) in ADMISSION_REFUSAL_CODES))
                         # A refusal admits nothing. A timeout is only pre-wire when
                         # the job's own destructive-action marker is unset and the
                         # transport is intact; an unacknowledged capture lease stays

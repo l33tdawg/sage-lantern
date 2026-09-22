@@ -15,6 +15,7 @@ from nacl.signing import SigningKey, VerifyKey
 from sage_sdk import SageClient
 
 from sage_lantern.community_service import CommunityError, CommunityMeshProvider, CommunityService
+from sage_lantern.community_messaging import MessagingUnavailable
 from sage_lantern.mesh_community import MeshReceiveConsent
 from sage_lantern.mesh_envelope import Peer, seal_message
 from sage_lantern.mesh_fragments import split_envelope
@@ -593,6 +594,34 @@ def test_unknown_supervisor_lease_outcome_blocks_clean_close(background, operati
     wait_until(lambda: state.runtime._receive_stop.is_set())
     assert state.provider.pause_receiving(timeout=5) is False
     assert state.service.close(timeout=5) is False
+
+
+def test_background_storage_refusal_before_capture_keeps_messaging_usable(background):
+    """A refused storage read must not park the unit until a cold start.
+
+    Unit A 2026-09-22 14:13: the local node's shared replay window saturated
+    (10,000 live signature entries inside its 5-minute skew) and answered 503
+    "Replay window saturated" to the daemon's own /v1/messages/storage probe.
+    The receipt lease factory refused before it acquired anything, yet the
+    flattened MeshLeaseUncertain latched _uncertain and every community route
+    answered 503 for the rest of the process lifetime - while the node kept
+    serving the same document (vault_active true, generation 2) and the mesh
+    journal recorded wire_frames 0 on the failing job.
+    """
+    state = background
+    calls = []
+
+    def refused(consent):
+        calls.append(consent)
+        raise MessagingUnavailable()
+
+    state.provider.start_receiving(consent_reader=lambda: state.consent,
+        lease_factory=refused, unlocked_check=lambda: state.authorized, interval=0.2)
+    wait_until(lambda: len(calls) >= 2)
+    assert state.runtime._uncertain is False
+    assert state.runtime.admission_safe() is True
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert state.call("messages/list", {"box": "inbox"})["items"] == []
 
 
 def shorten_job_budget(state, seconds):
