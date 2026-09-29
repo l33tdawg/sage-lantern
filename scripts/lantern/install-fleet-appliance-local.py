@@ -16,6 +16,13 @@ kiosk login, camera/display/suspend and hardware tests.
 Status reports configured path presence, never capture or RF verification.
 Radio/audio plans are operator input consistency,
 not evidence of successful physical IO. Nothing writes PROVISIONED.
+An explicitly absent radio (no public inventory written) and an operator-named
+platform capture codec are accepted; both remain recorded operator declarations.
+A unit commissioned under an earlier reviewed release may take this app from a
+successor release only with --commissioned-manifest-sha256 plus the on-unit
+--predecessor-release-root: the predecessor manifest must hash to the pin and
+its pinned native binary must be the one actually installed. The commissioning
+receipt and every recorded output are still re-verified byte for byte.
 """
 
 import hashlib
@@ -43,6 +50,7 @@ AUTH = 'scripts/lantern/unit-a-device-auth.py'
 AUTH_UNIT = 'software/systemd/sage-lantern-device-auth.service'
 AUTH_DRAIN = '/var/lib/sage-lantern/device-lock/drain'
 APPLIANCE_FILES = {
+    'scripts/lantern/wait-auth-native.py': '/usr/local/libexec/sage-lantern-wait-auth-native',
     'scripts/lantern/request-broker-contact.py': '/usr/local/libexec/sage-lantern-request-broker-contact',
     'software/systemd/sage-lantern-mesh-runtime.service.d/25-radio-commission-journal.conf': '/etc/systemd/system/sage-lantern-mesh-runtime.service.d/25-radio-commission-journal.conf',
     'scripts/lantern/unit-a-status-server.py': '/usr/local/libexec/sage-lantern-status-server',
@@ -53,6 +61,9 @@ APPLIANCE_FILES = {
     'software/systemd/sage-lantern-gateway-evidence.service': '/etc/systemd/system/sage-lantern-gateway-evidence.service',
     'software/systemd/sage-lantern-voice-loop.service.d/40-mesh-broker.conf': '/etc/systemd/system/sage-lantern-voice-loop.service.d/40-mesh-broker.conf',
     'scripts/lantern/sage-lantern-kiosk': '/usr/local/bin/sage-lantern-kiosk',
+    'scripts/lantern/cf-mode-supervisor.py': '/usr/local/libexec/sage-lantern-mode-supervisor',
+    'scripts/lantern/cf-output-mode.py': '/usr/local/libexec/sage-lantern-output-mode',
+    'scripts/lantern/cf-desktop-mode.sh': '/usr/local/bin/sage-lantern-desktop-mode',
     'scripts/lantern/sage-lantern-session': '/usr/local/bin/sage-lantern-session',
     'apps/lantern-fleet-admin/deploy/sage-lantern.desktop': '/usr/share/xsessions/sage-lantern.desktop',
 }
@@ -66,6 +77,16 @@ HELPERS = ('scripts/lantern/lantern-unit-config.py', 'scripts/appliance-release-
            'scripts/stage-appliance-release.py',
            'scripts/verify-runtime-release.py', 'scripts/build-runtime-release.py',
            'scripts/build-sdk-release.py', 'scripts/build-sage-release.py')
+INSTALLED_RECEIPT = '/etc/sage-lantern/appliance-installed.json'
+DEVICE_LOCK_MARKER = '/etc/sage-lantern-device-lock.enabled'
+VAULT_SETUP_MARKER = '/etc/sage-lantern-vault-setup.enabled'
+SUCCESSOR_STATE_DIRS = ('/var/lib/sage-lantern/device-lock', '/var/lib/sage-lantern/device-lock/drain',
+                        '/var/lib/sage-lantern/history', '/var/lib/sage-lantern/history/conversations-v1')
+# The session launcher is rewritten by this installer (per-unit profile
+# injection), so an installed copy cannot be checked against the payload digest.
+# The auth unit is likewise transformed; its staged row carries the
+# installer_transform operation and is excluded by operation below.
+TRANSFORMED_TARGETS = frozenset({APPLIANCE_FILES['scripts/lantern/sage-lantern-session']})
 
 
 def helper(name, path):
@@ -158,6 +179,10 @@ def canonical_profile(release, manifest, stage):
         require(all(entry[key] == entries[name][key] for key in ('sha256', 'bytes')), 'stack artifact mismatch')
         if name == stage.BINARY:
             row = stage.mapping(name, 'sage_binary', '/opt/sage-lantern/bin/sage-gui', 'copy')
+        elif name in stage.NPU_ARTIFACTS:
+            require(entry["sha256"] == stage.NPU_ARTIFACT_PINS[name], "unreviewed NPU artifact")
+            destination = stage.NPU_ARTIFACTS[name]
+            row = stage.mapping(name, "dependency", destination, "copy" if destination else "evidence_only")
         elif name in models:
             row = stage.mapping(name, 'dependency', '/opt/sage-lantern/models/' + Path(name).name, 'copy')
         elif name in archives:
@@ -171,7 +196,7 @@ def canonical_profile(release, manifest, stage):
             role = 'sdk_wheel' if name == sdk_wheel else 'runtime_wheel' if name == runtime_wheel else 'dependency'
             row = stage.mapping(name, role, '/opt/sage-lantern/venv', 'wheel_install')
         rows.append(row)
-    require({stage.BINARY, sdk_wheel, runtime_wheel} | models | archives <= locked, 'missing base artifacts')
+    require({stage.BINARY, sdk_wheel, runtime_wheel} | models | archives | stage.NPU_ARTIFACTS.keys() <= locked, 'missing base artifacts')
     for prefix in stage.BASE_WHEEL_PREFIXES:
         require(sum(name.startswith(stage.WHEELS + prefix) for name in locked) == 1, 'missing/ambiguous base wheel')
     rows += [stage.mapping(stage.LOCK, 'support', operation='evidence_only'),
@@ -208,7 +233,7 @@ def canonical_profile(release, manifest, stage):
 
 def prepare(args):
     config = helper('unit_config', HELPERS[0])
-    require(args.unit_id in {'unit-a', 'unit-b'} and args.format == 'plan'
+    require(args.unit_id in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'} and args.format == 'plan'
             and not args.identity_inventory and not args.activation_staging_root, 'unsupported plan options')
     plan = config.build_plan(args)
     require(type(args.alsa_device) is str and re.fullmatch(r'hw:CARD=[A-Za-z0-9_]{1,32},DEV=[0-9]{1,2}', args.alsa_device), 'explicit ALSA capture binding required')
@@ -259,9 +284,11 @@ def payloads(plan, rules, release, manifest):
     auth_service = auth_service.replace('ExecStart=' + commands[0], 'ExecStart=' + commands[0] + ' --drain-report-dir ' + AUTH_DRAIN, 1)
     auth_service = auth_service.replace('[Unit]\n', '[Unit]\nConditionPathExists=/etc/sage-lantern/appliance-installed.json\n', 1)
     radio = plan['radio']
-    public_radio = dict(schema='sage.lantern.meshcore-radio-public.v1', unit_id=plan['unit_id'],
-                        usb=dict(serial=radio['usb_serial'], vendor_id=radio['vendor_id'], product_id=radio['product_id'], stable_path=radio['stable_path']),
-                        radio_identity=dict(public_key=radio['public_key'], public_key_sha256=radio['public_fingerprint']))
+    public_radio = None
+    if radio.get('present', True):
+        public_radio = dict(schema='sage.lantern.meshcore-radio-public.v1', unit_id=plan['unit_id'],
+                            usb=dict(serial=radio['usb_serial'], vendor_id=radio['vendor_id'], product_id=radio['product_id'], stable_path=radio['stable_path']),
+                            radio_identity=dict(public_key=radio['public_key'], public_key_sha256=radio['public_fingerprint']))
     account = plan['operator_account']
     require(re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', account) and account not in {'root', 'sage-lantern', 'nobody'}, 'invalid kiosk account')
     alsa = plan['audio']['alsa_device']
@@ -284,12 +311,14 @@ def payloads(plan, rules, release, manifest):
         '/usr/local/libexec/sage-lantern-device-auth': auth,
         '/etc/udev/rules.d/71-sage-lantern-audio.rules': (rules + '\n').encode(),
         '/etc/sage-lantern/appliance-bindings.json': (json.dumps(plan, sort_keys=True, indent=2) + '\n').encode(),
-        '/usr/local/share/sage-lantern/meshcore-radio-public.json': (json.dumps(public_radio, sort_keys=True) + '\n').encode(),
         '/etc/systemd/system/sage-lantern-voice-loop.service.d/30-unit-audio.conf': (
             '[Service]\nExecStart=\nExecStart=/usr/local/libexec/sage-lantern-voice-loop '
             '--config /etc/sage-lantern/lantern.toml --alsa-device ' + alsa +
             ' --drain-request /run/sage-lantern-mesh-control/voice-drain-request.json\n').encode(),
     })
+    if public_radio is not None:
+        files['/usr/local/share/sage-lantern/meshcore-radio-public.json'] = (
+            json.dumps(public_radio, sort_keys=True) + '\n').encode()
     return files
 
 
@@ -334,6 +363,177 @@ def write_new(path, data, mode=0o644):
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def payload_targets(files, ui):
+    """Installed path -> sha256 for every file this install is about to write."""
+    targets = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
+    targets.update({DESTINATION + '/' + name.removeprefix(APP): entry['sha256'] for name, entry in ui.items()})
+    return targets
+
+
+def predecessor_targets(release, manifest):
+    """Installed path -> sha256 recorded by the pinned predecessor release."""
+    entries = {entry['path']: entry for entry in manifest['files']}
+    plan = json.loads((Path(release) / 'payload/release/destinations.json').read_bytes())
+    targets = {}
+    for row in plan['files']:
+        destination = row.get('destination')
+        if not destination or row.get('operation') not in ('copy', 'reviewed_copy'):
+            continue
+        if destination in TRANSFORMED_TARGETS:
+            continue
+        entry = entries.get(row['path'])
+        require(type(entry) is dict and type(entry.get('sha256')) is str
+                and re.fullmatch(r'[0-9a-f]{64}', entry['sha256']) is not None,
+                'predecessor release row lacks a digest: ' + row['path'])
+        targets[destination] = entry['sha256']
+    return targets
+
+
+def installed_digest(root, name):
+    """sha256 of an installed file, or None when it is absent."""
+    path = root / name.lstrip('/')
+    no_links(path)
+    if not os.path.lexists(path):
+        return None
+    info = path.stat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'unsafe installed target: ' + name)
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def installed_release(root, *, root_prefix=Path('/')):
+    """The release the receipt says is installed, read from its on-unit tree.
+
+    The commissioning pin in the receipt binds the unit's provenance; this tree is
+    then bound to the installed bytes by successor_state, and (for receipts written
+    from this version on) by the release's own manifest digest.
+    """
+    receipt_path = root_prefix / INSTALLED_RECEIPT.lstrip('/')
+    no_links(receipt_path)
+    try:
+        receipt = json.loads(receipt_path.read_bytes())
+    except ValueError:
+        raise ValueError('invalid installed appliance receipt')
+    require(type(receipt) is dict and receipt.get('installed') is True,
+            'installed appliance receipt does not record an installation')
+    release_id = receipt.get('release_id')
+    require(type(release_id) is str and release_id, 'installed appliance receipt lacks a release id')
+    manifest_path = Path(root) / 'manifest.json'
+    no_links(manifest_path)
+    raw = manifest_path.read_bytes()
+    manifest = json.loads(raw)
+    require(type(manifest) is dict and manifest.get('release_id') == release_id,
+            'installed release root does not name the installed release')
+    digest = hashlib.sha256(raw).hexdigest()
+    recorded = receipt.get('manifest_sha256')
+    require(recorded is None or recorded == digest, 'installed release tree differs from the recorded manifest')
+    return dict(root=str(root), release_id=release_id, manifest=manifest, manifest_sha256=digest, receipt=receipt)
+
+
+def successor_state(root, unit_id, installed, files, ui, *, service_uid, service_gid, accept_replaced=False):
+    """Verify an installed appliance is exactly the release it claims before replacing it.
+
+    Nothing is written here. Every file this install would overwrite must either
+    match the predecessor release's recorded digest, already match this release's
+    bytes, or (for targets the predecessor release cannot account for, such as
+    operator stopgaps at paths this release now owns) be explicitly accepted with
+    --accept-replaced. Unit state outside the release write set is verified and
+    left untouched.
+    """
+    receipt = installed['receipt']
+    require(receipt.get('unit_id') == unit_id, 'installed receipt is for another unit')
+    require(receipt.get('release_id') == installed['release_id'],
+            'installed release is not the pinned predecessor')
+    expected = predecessor_targets(installed['root'], installed['manifest'])
+    replaced = {}
+    for name, digest in sorted(payload_targets(files, ui).items()):
+        current = installed_digest(root, name)
+        if name in expected:
+            require(current is not None, 'predecessor payload file missing: ' + name)
+            require(current in (expected[name], digest),
+                    'installed file differs from the predecessor release: ' + name)
+        elif current is not None and current != digest:
+            require(accept_replaced, 'unverifiable installed target would be replaced: ' + name)
+            replaced[name] = current
+    for name in SUCCESSOR_STATE_DIRS:
+        path = root / name.lstrip('/')
+        no_links(path)
+        require(path.is_dir(), 'successor install requires existing state directory: ' + name)
+        info = path.stat()
+        require(info.st_uid == service_uid and info.st_gid == service_gid and not info.st_mode & 0o077,
+                'successor state directory owner/mode changed: ' + name)
+    require(installed_digest(root, DEVICE_LOCK_MARKER) == hashlib.sha256(b'1\n').hexdigest(),
+            'successor install requires the existing device-lock marker')
+    return replaced
+
+
+def publish(path, data, mode, *, replace):
+    """Write a new file, or atomically replace an already verified one."""
+    if not replace or not os.path.lexists(path):
+        write_new(path, data, mode)
+        return
+    info = path.stat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'unsafe replacement target: ' + str(path))
+    temporary = path.parent / ('.' + path.name + '.sage-new')
+    no_links(temporary)
+    require(not os.path.lexists(temporary), 'stale replacement file present: ' + str(temporary))
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(descriptor, 'wb') as stream:
+        os.fchmod(stream.fileno(), mode)
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def install_release_runtime(release, manifest, *, root=Path('/'), run=None):
+    """Install the release's pinned runtime wheels into the appliance venv.
+
+    Successor installs only. Offline and pinned exactly like the base installer's
+    line (numpy / sage-agent-sdk / sage-lantern-runtime / piper-tts from the
+    release wheel directory); --no-deps and --force-reinstall because the versions
+    do not change between releases while the bytes do. Every wheel in the
+    directory must be listed in the release manifest with a matching digest.
+    """
+    run = run or subprocess.run
+    entries = {entry['path']: entry for entry in manifest['files']}
+    directory = release / 'software/bundle/python-wheels'
+    for path in sorted(directory.glob('*.whl')):
+        entry = entries.get('software/bundle/python-wheels/' + path.name)
+        require(entry is not None, 'unlisted release wheel: ' + path.name)
+        read_payload(path, entry)
+    python = root / 'opt/sage-lantern/venv/bin/python'
+    require(python.is_file() and not python.is_symlink(), 'missing appliance interpreter')
+    environment = dict(PATH='/usr/bin:/bin', HOME='/nonexistent', PIP_NO_INDEX='1',
+                       PIP_DISABLE_PIP_VERSION_CHECK='1', PYTHONDONTWRITEBYTECODE='1')
+    run([str(python), '-m', 'pip', 'install', '--no-index', '--no-deps', '--force-reinstall',
+         '--find-links', str(directory),
+         'numpy==1.26.4', 'sage-agent-sdk==11.19.10+lantern.20260906',
+         'sage-lantern-runtime==0.2.0', 'piper-tts==1.4.2'],
+        check=True, timeout=900, env=environment)
+    run([str(python), str(release / 'scripts/verify-runtime-release.py'), '--installed'],
+        check=True, timeout=120, env=environment)
+
+
+def predecessor_release(root, pin):
+    """The pinned predecessor release, already hash-checked by commissioning_binding."""
+    manifest_path = Path(root) / 'manifest.json'
+    no_links(manifest_path)
+    raw = manifest_path.read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == pin, 'predecessor manifest differs from commissioned pin')
+    manifest = json.loads(raw)
+    require(type(manifest) is dict and type(manifest.get('release_id')) is str, 'invalid predecessor manifest')
+    return dict(root=str(root), pin=pin, release_id=manifest['release_id'], manifest=manifest)
 
 
 def provision_auth_drain(root, uid, gid):
@@ -411,29 +611,58 @@ def provision_conversation_owner(root, uid, gid):
         os.close(parent_fd)
 
 
-def install_files(plan, rules, release, manifest, ui, *, allow_owner_setup, root=Path('/')):
-    """Root prefix exists for synthetic filesystem tests, not a CLI bypass."""
+def install_files(plan, rules, release, manifest, ui, *, allow_owner_setup, commissioning_manifest_sha256=None,
+                  predecessor=None, accept_replaced=False, release_manifest_sha256=None, root=Path('/'), run=None):
+    """Root prefix exists for synthetic filesystem tests, not a CLI bypass.
+
+    Without a predecessor this is the fresh install: every target must be absent.
+    With one, the unit already runs the pinned predecessor release and every file
+    this install overwrites is verified against it first (see successor_state);
+    unit state is checked and left in place, nothing is deleted, and no service is
+    started or enabled.
+    """
     files = payloads(plan, rules, release, manifest)
-    fresh(root, files)
     service_uid = pwd.getpwnam('sage-lantern').pw_uid
     service_gid = grp.getgrnam('sage-lantern').gr_gid
     require(service_uid > 0 and service_gid > 0, 'non-root auth account/group required')
-    write_new(root / 'etc/sage-lantern-device-lock.enabled', b'1\n')
-    provision_auth_drain(root, service_uid, service_gid)
-    provision_conversation_owner(root, service_uid, service_gid)
-    if allow_owner_setup:
-        write_new(root / 'etc/sage-lantern-vault-setup.enabled', b'allow-vault-initialize\n')
+    replace = predecessor is not None
+    if replace:
+        require(not os.path.lexists(root / 'etc/sage-lantern/commissioning.pending.json'),
+                'commissioning pending; installation forbidden')
+        replaced = successor_state(root, plan['unit_id'], predecessor, files, ui,
+                                   service_uid=service_uid, service_gid=service_gid,
+                                   accept_replaced=accept_replaced)
+    else:
+        fresh(root, files)
+        replaced = {}
+    if not replace:
+        write_new(root / DEVICE_LOCK_MARKER.lstrip('/'), b'1\n')
+        provision_auth_drain(root, service_uid, service_gid)
+        provision_conversation_owner(root, service_uid, service_gid)
+    if allow_owner_setup and not os.path.lexists(root / VAULT_SETUP_MARKER.lstrip('/')):
+        write_new(root / VAULT_SETUP_MARKER.lstrip('/'), b'allow-vault-initialize\n')
     for name, entry in sorted(ui.items()):
         data = read_payload(release / name, entry)
-        write_new(root / DESTINATION.lstrip('/') / name.removeprefix(APP), data, entry['mode'])
+        publish(root / DESTINATION.lstrip('/') / name.removeprefix(APP), data, entry['mode'], replace=replace)
     for name, data in files.items():
-        write_new(root / name.lstrip('/'), data, 0o755 if name.startswith(('/usr/local/libexec/', '/usr/local/bin/')) else 0o644)
+        publish(root / name.lstrip('/'), data,
+                0o755 if name.startswith(('/usr/local/libexec/', '/usr/local/bin/')) else 0o644, replace=replace)
+    if replace:
+        # The release's runtime wheel carries the sources the app services import;
+        # it is installed before the receipt commits the new release.
+        install_release_runtime(release, manifest, root=root, run=run)
     result = dict(schema='sage.lantern.fresh-app-install.v1', unit_id=plan['unit_id'], release_id=manifest['release_id'],
                   installed=True, services_started=False, services_enabled=False, lock_required=True,
                   owner_setup_permitted=allow_owner_setup, owner_setup_complete=False,
                   hardware_verified=False, backend_verified=False, provisioned=False, ready=False,
-                  activation_required=True)
-    write_new(root / 'etc/sage-lantern/appliance-installed.json', (json.dumps(result, sort_keys=True) + '\n').encode())
+                  activation_required=True, commissioning_manifest_sha256=commissioning_manifest_sha256)
+    if replace:
+        result.update(predecessor_release_id=predecessor['release_id'],
+                      predecessor_manifest_sha256=predecessor.get('manifest_sha256'),
+                      replaced_unverifiable_targets=sorted(replaced),
+                      restart_required=True, manifest_sha256=release_manifest_sha256)
+    publish(root / INSTALLED_RECEIPT.lstrip('/'), (json.dumps(result, sort_keys=True) + '\n').encode(), 0o644,
+            replace=replace)
     return result
 
 
@@ -648,6 +877,49 @@ def native_preflight(args):
     return installed
 
 
+def commissioning_binding(args, manifest_digest, *, root=Path('/')):
+    """Select the manifest the commissioning receipt must match; never silently widens it."""
+    pin = getattr(args, 'commissioned_manifest_sha256', None)
+    predecessor_root = getattr(args, 'predecessor_release_root', None)
+    if pin is None:
+        require(predecessor_root is None, 'predecessor release root without commissioned manifest pin')
+        return manifest_digest
+    require(type(pin) is str and re.fullmatch(r'[0-9a-f]{64}', pin), 'invalid commissioned manifest pin')
+    require(type(predecessor_root) is str and Path(predecessor_root).is_absolute()
+            and predecessor_root == str(Path(predecessor_root)), 'absolute predecessor release root required')
+    stage = helper('commissioning_stage', 'scripts/stage-appliance-release.py')
+    manifest_path = Path(predecessor_root) / 'manifest.json'
+    no_links(manifest_path)
+    descriptor = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= 64 * 1024 * 1024,
+                'unsafe predecessor manifest')
+        raw = stream.read(64 * 1024 * 1024 + 1)
+    require(hashlib.sha256(raw).hexdigest() == pin, 'predecessor manifest differs from commissioned pin')
+    try:
+        predecessor = json.loads(raw)
+    except ValueError:
+        raise ValueError('invalid predecessor manifest')
+    rows = predecessor.get('files') if type(predecessor) is dict else None
+    require(type(rows) is list, 'invalid predecessor manifest')
+    entry = next((row for row in rows if type(row) is dict and row.get('path') == stage.BINARY), None)
+    require(type(entry) is dict and type(entry.get('sha256')) is str
+            and re.fullmatch(r'[0-9a-f]{64}', entry['sha256']), 'predecessor release lacks native binary binding')
+    installed = root / 'opt/sage-lantern/bin/sage-gui'
+    no_links(installed)
+    descriptor = os.open(installed, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        installed_info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(installed_info.st_mode) and installed_info.st_nlink == 1,
+                'unsafe installed native binary')
+        digest = hashlib.sha256()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    require(digest.hexdigest() == entry['sha256'], 'installed native binary differs from commissioning release')
+    return pin
+
+
 def main(argv=None):
     sys.dont_write_bytecode = True
     parser = helper('unit_config_parser', HELPERS[0]).parser()
@@ -659,39 +931,66 @@ def main(argv=None):
     parser.add_argument('--enable-kiosk-autologin', action='store_true', help='Explicit fresh GDM3/X11 OS login and app next-boot enablement; never unlocks SAGE')
     parser.add_argument('--gdm-base-sha256', help='Reviewed exact existing GDM daemon.conf SHA256; required with kiosk opt-in')
     parser.add_argument('--alsa-device', required=True, help='Operator-verified hw:CARD=<stable ALSA ID>,DEV=<capture device>; never inferred from A')
+    parser.add_argument('--commissioned-manifest-sha256', help='Exact manifest that commissioned this unit when it differs from this release')
+    parser.add_argument('--predecessor-release-root', help='On-unit root of the commissioned release (manifest.json bind); required with the pin')
+    parser.add_argument('--installed-release-root',
+                        help='On-unit root of the release currently installed; required to succeed an existing installation')
     parser.add_argument('--install', action='store_true', help='Install fresh native files; kiosk opt-in may enable next boot, never starts services')
+    parser.add_argument('--accept-replaced', action='store_true',
+                        help='Successor install only: allow replacing existing targets the pinned predecessor release cannot account for '
+                             '(for example operator stopgaps at paths this release now owns); refused by default')
     args = parser.parse_args(argv)
     try:
         require(bool(args.gdm_base_sha256) == args.enable_kiosk_autologin, 'GDM hash and kiosk opt-in must be supplied together')
         prepared = prepare(args)
+        manifest_digest = hashlib.sha256(Path(args.manifest).read_bytes()).hexdigest()
+        commissioning_digest = commissioning_binding(args, manifest_digest)
         if args.install:
             commissioning = helper('app_commissioning', 'scripts/lantern/provision-fresh-appliance.py')
-            manifest_digest = hashlib.sha256(Path(args.manifest).read_bytes()).hexdigest()
-            commissioning.commission_completion_check(args.unit_id, manifest_digest)
+            commissioning.commission_completion_check(args.unit_id, commissioning_digest)
             installed = native_preflight(args)
             components = prepared[3]['selection']['components']
             require(installed['versions'] == {'sage-lantern-runtime': components['runtime'], 'sage-agent-sdk': components['sdk'],
                     'PyNaCl': '1.6.2', 'cryptography': '46.0.3'}, 'installed component version mismatch')
-            installed_source_closure(prepared[2], prepared[3], installed['purelib'])
+            predecessor = None
+            if os.path.lexists(Path('/') / INSTALLED_RECEIPT.lstrip('/')):
+                require(args.installed_release_root is not None,
+                        'installed appliance requires --installed-release-root to succeed')
+                predecessor = installed_release(args.installed_release_root)
+                # The installed interpreter must be exactly the release being
+                # succeeded before this install replaces it; the new closure is
+                # checked after the wheels are installed.
+                installed_source_closure(Path(predecessor['root']) / 'payload', predecessor['manifest'],
+                                         installed['purelib'])
+            else:
+                require(not args.accept_replaced, 'accept-replaced requires an installed predecessor release')
+                installed_source_closure(prepared[2], prepared[3], installed['purelib'])
             onboarding_service_check(prepared[2], prepared[3])
             kiosk = None
             if args.enable_kiosk_autologin:
                 kiosk = kiosk_plan(args.account, args.gdm_base_sha256)
                 kiosk_native_gate()
-            commissioning.commission_completion_check(args.unit_id, manifest_digest)
-            result = install_files(*prepared, allow_owner_setup=args.allow_owner_vault_setup)
+            commissioning.commission_completion_check(args.unit_id, commissioning_digest)
+            result = install_files(*prepared, allow_owner_setup=args.allow_owner_vault_setup,
+                                   commissioning_manifest_sha256=commissioning_digest,
+                                   predecessor=predecessor, accept_replaced=args.accept_replaced,
+                                   release_manifest_sha256=manifest_digest)
+            if predecessor is not None:
+                installed_source_closure(prepared[2], prepared[3], installed['purelib'])
             if kiosk is not None:
                 result['kiosk_boot'] = configure_kiosk_boot(kiosk)
                 result['services_enabled'] = True
         else:
             result = dict(schema='sage.lantern.fresh-app-install.v1', unit_id=prepared[0]['unit_id'],
                           mode='check-only', release_id=prepared[3]['release_id'], installed=False,
+                          commissioning_manifest_sha256=commissioning_digest,
                           kiosk_autologin_requested=args.enable_kiosk_autologin, target_display_verified=False,
                           ready=False, provisioned=False, hardware_verified=False, activation_required=True)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (ValueError, OSError, KeyError, TypeError, configparser.Error, subprocess.SubprocessError):
-        print('Fresh app installation rejected or incomplete; retain lock containment. No services started; boot enablement may be partial.', file=sys.stderr)
+    except (ValueError, OSError, KeyError, TypeError, configparser.Error, subprocess.SubprocessError) as refusal:
+        reason = ' '.join(str(refusal).split()) or type(refusal).__name__
+        print(f'Fresh app installation rejected or incomplete ({reason}); retain lock containment. No services started; boot enablement may be partial.', file=sys.stderr)
         return 2
 
 

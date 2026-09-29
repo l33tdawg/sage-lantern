@@ -1,6 +1,8 @@
 import argparse
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from types import SimpleNamespace
@@ -78,7 +80,9 @@ class FreshAppTests(unittest.TestCase):
 
     def install(self, approval=False):
         with patch.object(MODULE.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=os.getuid() or 1001)), patch.object(MODULE.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=os.getgid() or 1001)):
-            return MODULE.install_files(self.plan, self.rules, self.release, self.manifest, self.ui, allow_owner_setup=approval, root=self.root)
+            return MODULE.install_files(self.plan, self.rules, self.release, self.manifest, self.ui,
+                                        allow_owner_setup=approval,
+                                        commissioning_manifest_sha256='c' * 64, root=self.root)
 
     def test_radio_mutation_even_with_matching_manifest_refuses_before_writes(self):
         name = next(iter(MODULE.RADIO_PINS))
@@ -87,6 +91,146 @@ class FreshAppTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unreviewed radio commissioning artifact'):
             self.install()
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def predecessor_tree(self, *, drop=None):
+        """A synthetic pinned predecessor release: destinations + manifest only."""
+        release_id = self.manifest['release_id']
+        root = self.directory / ('predecessor-' + release_id)
+        rows = []
+        rows.append(dict(path=MODULE.AUTH, role='root_helper',
+                         destination='/usr/local/libexec/sage-lantern-device-auth', operation='reviewed_copy'))
+        rows.append(dict(path=MODULE.AUTH_UNIT, role='systemd',
+                         destination='/etc/systemd/system/sage-lantern-device-auth.service',
+                         operation='installer_transform'))
+        for name, destination in MODULE.APPLIANCE_FILES.items():
+            if destination == drop:
+                continue
+            rows.append(dict(path=name, role='support', destination=destination, operation='reviewed_copy'))
+        for entry in self.ui.values():
+            destination = MODULE.DESTINATION + '/' + entry['path'].removeprefix(MODULE.APP)
+            if destination == drop:
+                continue
+            rows.append(dict(path=entry['path'], role='ui', destination=destination, operation='copy'))
+        directory = root / 'payload/release'
+        directory.mkdir(parents=True)
+        (directory / 'destinations.json').write_bytes(json.dumps(dict(files=rows)).encode())
+        manifest = dict(self.manifest, release_id=release_id)
+        (root / 'manifest.json').write_bytes(json.dumps(manifest).encode())
+        return root
+
+    def successor_install(self, release_root, **kwargs):
+        installed = MODULE.installed_release(str(release_root), root_prefix=self.root)
+        with patch.object(MODULE.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=os.getuid() or 1001)), \
+             patch.object(MODULE.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=os.getgid() or 1001)):
+            return MODULE.install_files(self.plan, self.rules, self.release, self.manifest, self.ui,
+                                        allow_owner_setup=False, commissioning_manifest_sha256='c' * 64,
+                                        predecessor=installed, release_manifest_sha256='d' * 64,
+                                        root=self.root, **kwargs)
+
+    def fake_venv(self):
+        python = self.root / 'opt/sage-lantern/venv/bin/python'
+        python.parent.mkdir(parents=True)
+        python.write_bytes(b'#!/bin/sh\nexit 0\n')
+        python.chmod(0o755)
+        return python
+
+    def test_successor_replaces_a_verified_predecessor(self):
+        self.install()
+        self.fake_venv()
+        release_root = self.predecessor_tree()
+        command = Mock()
+        with patch.object(MODULE.subprocess, 'run', command):
+            result = self.successor_install(release_root)
+        self.assertEqual(command.call_count, 2)
+        pip = command.call_args_list[0].args[0]
+        self.assertEqual(pip[1:6], ['-m', 'pip', 'install', '--no-index', '--no-deps'])
+        self.assertIn('--force-reinstall', pip)
+        self.assertEqual(pip[-4:], ['numpy==1.26.4', 'sage-agent-sdk==11.19.10+lantern.20260906',
+                                    'sage-lantern-runtime==0.2.0', 'piper-tts==1.4.2'])
+        self.assertEqual(command.call_args_list[0].kwargs['env'],
+                         dict(PATH='/usr/bin:/bin', HOME='/nonexistent', PIP_NO_INDEX='1',
+                              PIP_DISABLE_PIP_VERSION_CHECK='1', PYTHONDONTWRITEBYTECODE='1'))
+        self.assertTrue(command.call_args_list[1].args[0][1].endswith('scripts/verify-runtime-release.py'))
+        self.assertIn('--installed', command.call_args_list[1].args[0])
+        self.assertTrue(result['restart_required'])
+        self.assertTrue(result['installed'])
+        self.assertEqual(result['predecessor_release_id'], self.manifest['release_id'])
+        self.assertEqual(result['predecessor_manifest_sha256'],
+                         hashlib.sha256((release_root / 'manifest.json').read_bytes()).hexdigest())
+        self.assertEqual(result['manifest_sha256'], 'd' * 64)
+        self.assertEqual(result['replaced_unverifiable_targets'], [])
+        self.assertEqual(result['release_id'], self.manifest['release_id'])
+        receipt = json.loads((self.root / 'etc/sage-lantern/appliance-installed.json').read_text())
+        self.assertEqual(receipt['predecessor_release_id'], self.manifest['release_id'])
+        self.assertEqual(receipt['commissioning_manifest_sha256'], 'c' * 64)
+        self.assertFalse((self.root / 'var/lib/sage-lantern-radio-commission').exists())
+
+    def test_successor_refuses_an_edited_installed_file(self):
+        self.install()
+        release_root = self.predecessor_tree()
+        victim = self.root / 'usr/local/libexec/sage-lantern-device-auth'
+        victim.write_bytes(b'operator edit outside the release\n')
+        with self.assertRaisesRegex(ValueError, 'differs from the predecessor release'):
+            self.successor_install(release_root)
+        self.assertEqual(victim.read_bytes(), b'operator edit outside the release\n')
+
+    def test_successor_refuses_a_missing_predecessor_file(self):
+        self.install()
+        release_root = self.predecessor_tree()
+        (self.root / 'usr/local/bin/sage-lantern-kiosk').unlink()
+        with self.assertRaisesRegex(ValueError, 'predecessor payload file missing'):
+            self.successor_install(release_root)
+
+    def test_successor_requires_acceptance_for_unverifiable_targets(self):
+        self.install()
+        self.fake_venv()
+        installed = self.root / 'usr/local/bin/sage-lantern-kiosk'
+        installed.write_bytes(b'bench stopgap launcher\n')
+        release_root = self.predecessor_tree(drop='/usr/local/bin/sage-lantern-kiosk')
+        with patch.object(MODULE.subprocess, 'run', Mock()):
+            with self.assertRaisesRegex(ValueError, 'unverifiable installed target would be replaced'):
+                self.successor_install(release_root)
+        self.assertEqual(installed.read_bytes(), b'bench stopgap launcher\n')
+        with patch.object(MODULE.subprocess, 'run', Mock()):
+            result = self.successor_install(release_root, accept_replaced=True)
+        self.assertEqual(result['replaced_unverifiable_targets'], ['/usr/local/bin/sage-lantern-kiosk'])
+        self.assertEqual(installed.read_bytes(), (self.release / 'scripts/lantern/sage-lantern-kiosk').read_bytes())
+
+    def test_successor_refuses_a_foreign_installed_receipt(self):
+        self.install()
+        receipt_path = self.root / 'etc/sage-lantern/appliance-installed.json'
+        receipt = json.loads(receipt_path.read_text())
+        receipt_path.write_bytes((json.dumps(dict(receipt, release_id='another-release'), sort_keys=True) + '\n').encode())
+        release_root = self.predecessor_tree()
+        with self.assertRaisesRegex(ValueError, 'does not name the installed release'):
+            self.successor_install(release_root)
+
+    def test_fresh_install_still_refuses_an_installed_target(self):
+        self.install()
+        with self.assertRaisesRegex(ValueError, 'fresh target required'):
+            self.install()
+
+    def refusal_argv(self):
+        manifest = self.directory / 'manifest.json'
+        manifest.write_bytes(json.dumps(self.manifest).encode())
+        return ['--unit-id', 'unit-b', '--prepared-metadata', str(self.directory / 'unit.env'),
+                '--release-root', str(self.release), '--manifest', str(manifest),
+                '--alsa-device', 'hw:CARD=FixtureB,DEV=0']
+
+    def test_refusal_line_names_the_failing_gate(self):
+        stderr = io.StringIO()
+        with patch.object(MODULE, 'prepare', side_effect=ValueError('commission completion binding mismatch')), \
+             contextlib.redirect_stderr(stderr):
+            self.assertEqual(MODULE.main(self.refusal_argv()), 2)
+        self.assertIn('Fresh app installation rejected or incomplete (commission completion binding mismatch); retain lock containment.',
+                      stderr.getvalue())
+        self.assertIn('No services started', stderr.getvalue())
+
+    def test_refusal_line_falls_back_to_the_exception_type(self):
+        stderr = io.StringIO()
+        with patch.object(MODULE, 'prepare', side_effect=OSError()), contextlib.redirect_stderr(stderr):
+            self.assertEqual(MODULE.main(self.refusal_argv()), 2)
+        self.assertIn('rejected or incomplete (OSError)', stderr.getvalue())
 
     def test_radio_artifact_pins_match_stager(self):
         stage = MODULE.helper('radio_stage_pin_test', 'scripts/stage-appliance-release.py')
@@ -169,6 +313,73 @@ class FreshAppTests(unittest.TestCase):
             self.install(True)
         self.assertEqual((self.root / 'etc/sage-lantern/appliance-installed.json').read_bytes(), original)
         self.assertFalse((self.root / 'etc/sage-lantern-vault-setup.enabled').exists())
+
+    def test_absent_radio_and_platform_audio_install_without_invented_inventory(self):
+        self.plan['radio'] = {'present': False, 'reason': 'operator-declared-absent'}
+        self.plan['audio'] = {'present': True, 'source': 'platform',
+                              'stable_path': '/dev/snd/by-path/platform-es8388-sound',
+                              'id_path': 'platform-es8388-sound', 'platform_device': 'es8388-sound',
+                              'alsa_device': 'hw:CARD=rockchipes8388,DEV=0'}
+        self.rules = CONFIG.audio_udev_rules(self.plan)
+        result = self.install()
+        self.assertTrue(result['installed'])
+        self.assertFalse(result['services_enabled'])
+        self.assertFalse(result['ready'])
+        self.assertEqual(result['commissioning_manifest_sha256'], 'c' * 64)
+        receipt = json.loads((self.root / 'etc/sage-lantern/appliance-installed.json').read_text())
+        self.assertEqual(receipt['commissioning_manifest_sha256'], 'c' * 64)
+        self.assertFalse((self.root / 'usr/local/share/sage-lantern/meshcore-radio-public.json').exists())
+        bindings = json.loads((self.root / 'etc/sage-lantern/appliance-bindings.json').read_text())
+        self.assertIs(bindings['radio']['present'], False)
+        self.assertEqual(bindings['audio']['source'], 'platform')
+        self.assertNotIn('usb_serial', bindings['audio'])
+        self.assertEqual((self.root / 'etc/udev/rules.d/71-sage-lantern-audio.rules').read_text(),
+                         'SUBSYSTEM=="sound", KERNELS=="es8388-sound", GROUP="sage-lantern", MODE="0660"\n')
+        voice = (self.root / 'etc/systemd/system/sage-lantern-voice-loop.service.d/30-unit-audio.conf').read_text()
+        self.assertIn('--alsa-device hw:CARD=rockchipes8388,DEV=0', voice)
+
+    def test_successor_commissioning_binding_requires_predecessor_evidence(self):
+        binary_rel = MODULE.helper('commissioning_stage_test', 'scripts/stage-appliance-release.py').BINARY
+        binary = b'synthetic native binary\n'
+        installed = self.root / 'opt/sage-lantern/bin/sage-gui'
+        installed.parent.mkdir(parents=True)
+        installed.write_bytes(binary)
+        predecessor = self.directory / 'predecessor'
+        predecessor.mkdir()
+        (predecessor / 'manifest.json').write_text(json.dumps({
+            'release_id': 'synthetic-predecessor', 'files': [
+                {'path': binary_rel, 'sha256': hashlib.sha256(binary).hexdigest(),
+                 'bytes': len(binary), 'mode': 0o755, 'role': 'sage_binary'}]}))
+        pin = hashlib.sha256((predecessor / 'manifest.json').read_bytes()).hexdigest()
+        current = 'f' * 64
+        args = SimpleNamespace(commissioned_manifest_sha256=pin, predecessor_release_root=str(predecessor))
+        self.assertEqual(MODULE.commissioning_binding(args, current, root=self.root), pin)
+        self.assertEqual(MODULE.commissioning_binding(
+            SimpleNamespace(commissioned_manifest_sha256=None, predecessor_release_root=None),
+            current, root=self.root), current)
+        installed.write_bytes(b'changed native binary\n')
+        with self.assertRaisesRegex(ValueError, 'installed native binary differs'):
+            MODULE.commissioning_binding(args, current, root=self.root)
+        installed.write_bytes(binary)
+        with self.assertRaisesRegex(ValueError, 'differs from commissioned pin'):
+            MODULE.commissioning_binding(
+                SimpleNamespace(commissioned_manifest_sha256='0' * 64, predecessor_release_root=str(predecessor)),
+                current, root=self.root)
+        with self.assertRaisesRegex(ValueError, 'absolute predecessor release root'):
+            MODULE.commissioning_binding(
+                SimpleNamespace(commissioned_manifest_sha256=pin, predecessor_release_root='relative'),
+                current, root=self.root)
+        with self.assertRaisesRegex(ValueError, 'absolute predecessor release root'):
+            MODULE.commissioning_binding(
+                SimpleNamespace(commissioned_manifest_sha256=pin, predecessor_release_root=None),
+                current, root=self.root)
+        with self.assertRaisesRegex(ValueError, 'without commissioned manifest pin'):
+            MODULE.commissioning_binding(
+                SimpleNamespace(commissioned_manifest_sha256=None, predecessor_release_root=str(predecessor)),
+                current, root=self.root)
+        (predecessor / 'manifest.json').write_text(json.dumps({'release_id': 'x', 'files': []}))
+        with self.assertRaisesRegex(ValueError, 'differs from commissioned pin'):
+            MODULE.commissioning_binding(args, current, root=self.root)
 
     def test_prior_state_rejected_before_policy(self):
         for name in ('var/lib/sage-lantern/PROVISIONED', 'var/lib/sage-lantern/device-lock', 'etc/systemd/system/sage-lantern-fleet-admin.service.d'):
