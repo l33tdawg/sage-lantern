@@ -127,11 +127,10 @@ class FreshAppTests(unittest.TestCase):
                                         predecessor=installed, release_manifest_sha256='d' * 64,
                                         root=self.root, **kwargs)
 
-    def fake_venv(self):
+    def fake_venv(self, target='/usr/bin/python3'):
         python = self.root / 'opt/sage-lantern/venv/bin/python'
-        python.parent.mkdir(parents=True)
-        python.write_bytes(b'#!/bin/sh\nexit 0\n')
-        python.chmod(0o755)
+        python.parent.mkdir(parents=True, exist_ok=True)
+        python.symlink_to(target)
         return python
 
     def test_successor_replaces_a_verified_predecessor(self):
@@ -196,6 +195,40 @@ class FreshAppTests(unittest.TestCase):
         self.assertEqual(result['replaced_unverifiable_targets'], ['/usr/local/bin/sage-lantern-kiosk'])
         self.assertEqual(installed.read_bytes(), (self.release / 'scripts/lantern/sage-lantern-kiosk').read_bytes())
 
+    def test_successor_records_accepted_evolved_commissioning_outputs(self):
+        self.install()
+        self.fake_venv()
+        release_root = self.predecessor_tree()
+        evolved = {'sage.yaml': 'e' * 64}
+        with patch.object(MODULE.subprocess, 'run', Mock()):
+            result = self.successor_install(release_root, accepted_evolved=evolved)
+        self.assertEqual(result['accepted_evolved_commissioning_outputs'], evolved)
+        receipt = json.loads((self.root / 'etc/sage-lantern/appliance-installed.json').read_text())
+        self.assertEqual(receipt['accepted_evolved_commissioning_outputs'], evolved)
+
+    def test_fresh_install_refuses_accepted_evolution(self):
+        with patch.object(MODULE.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=os.getuid() or 1001)), \
+             patch.object(MODULE.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=os.getgid() or 1001)):
+            with self.assertRaisesRegex(ValueError, 'accepted evolved commissioning outputs require a successor install'):
+                MODULE.install_files(self.plan, self.rules, self.release, self.manifest, self.ui,
+                                     allow_owner_setup=False, commissioning_manifest_sha256='c' * 64,
+                                     accepted_evolved={'sage.yaml': 'e' * 64}, root=self.root)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_successor_refuses_a_writable_interpreter(self):
+        self.install()
+        self.fake_venv()
+        release_root = self.predecessor_tree()
+        writable = self.directory / 'python3'
+        writable.write_bytes(b'#!/bin/sh\nexit 0\n')
+        writable.chmod(0o777)
+        python = self.root / 'opt/sage-lantern/venv/bin/python'
+        python.unlink()
+        python.symlink_to(writable)
+        with patch.object(MODULE.subprocess, 'run', Mock()), \
+             self.assertRaisesRegex(ValueError, 'unreviewed appliance interpreter'):
+            self.successor_install(release_root)
+
     def test_successor_refuses_a_foreign_installed_receipt(self):
         self.install()
         receipt_path = self.root / 'etc/sage-lantern/appliance-installed.json'
@@ -231,6 +264,13 @@ class FreshAppTests(unittest.TestCase):
         with patch.object(MODULE, 'prepare', side_effect=OSError()), contextlib.redirect_stderr(stderr):
             self.assertEqual(MODULE.main(self.refusal_argv()), 2)
         self.assertIn('rejected or incomplete (OSError)', stderr.getvalue())
+
+    def test_accept_evolved_flag_requires_a_successor_install(self):
+        stderr = io.StringIO()
+        with patch.object(MODULE, 'prepare') as prepare, contextlib.redirect_stderr(stderr):
+            self.assertEqual(MODULE.main(self.refusal_argv() + ['--accept-evolved-commissioning-output']), 2)
+        prepare.assert_not_called()
+        self.assertIn('accept-evolved-commissioning-output requires an installed predecessor release', stderr.getvalue())
 
     def test_radio_artifact_pins_match_stager(self):
         stage = MODULE.helper('radio_stage_pin_test', 'scripts/stage-appliance-release.py')

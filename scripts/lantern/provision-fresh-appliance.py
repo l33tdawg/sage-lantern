@@ -39,8 +39,9 @@ POST_OPTIONS = ('startup_dependencies', 'startup_dependencies_sha256', 'startup_
 VALUE_OPTIONS = {'--account', '--radio-inventory', '--peer-radio-inventory', '--radio-usb-serial',
                  '--radio-vendor-id', '--radio-product-id', '--radio-stable-path', '--radio-public-fingerprint',
                  '--audio-usb-serial', '--audio-stable-path', '--audio-vendor-id', '--audio-product-id',
-                 '--alsa-device', '--gdm-base-sha256'}
-FLAG_OPTIONS = {'--allow-owner-vault-setup', '--enable-kiosk-autologin'}
+                 '--alsa-device', '--gdm-base-sha256', '--audio-platform-id-path',
+                 '--commissioned-manifest-sha256', '--predecessor-release-root'}
+FLAG_OPTIONS = {'--allow-owner-vault-setup', '--enable-kiosk-autologin', '--radio-absent'}
 
 
 def require(value, reason):
@@ -98,7 +99,11 @@ def app_options(values):
 
 
 def commands(args, payload):
-    require(args.unit_id in {'unit-a', 'unit-b'}, 'explicit unit required')
+    require(args.unit_id in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'}, 'explicit unit required')
+    profile = getattr(args, 'platform_profile', 'debian12')
+    require(profile in {'debian12', 'orangepi5plus-ubuntu26.04'}, 'unsupported platform profile')
+    require(profile == 'debian12' or (args.phase == 'base' and args.unit_id in
+            {'unit-c', 'unit-d', 'unit-e', 'unit-f'}), 'C–F platform profile is base-only on C–F')
     boot_options = ('apply_boot_theme', 'boot_theme_manifest', 'boot_theme_plan')
     if args.phase == 'boot-theme':
         require(not args.app_options and not args.allow_native_build and not args.install_os_packages
@@ -161,7 +166,8 @@ def commands(args, payload):
         require(args.allow_native_build, 'base phase includes native compilation; explicit approval required')
         bootstrap = '--install' if args.install_os_packages else '--check'
         return [
-            ['/bin/bash', str(payload / 'scripts/bootstrap-lantern-os.sh'), bootstrap],
+            ['/bin/bash', str(payload / 'scripts/bootstrap-lantern-os.sh'),
+             *(['--profile', profile] if profile != 'debian12' else []), bootstrap],
             ['/bin/bash', str(payload / 'scripts/install-lantern-unit.sh')],
             ['/bin/bash', str(payload / 'scripts/provision-lantern-unit.sh'), 'prepare', '--unit-id', args.unit_id],
         ]
@@ -246,6 +252,8 @@ def execute(args, *, run=subprocess.run):
             node_preflight()
         environment = dict(PATH='/usr/sbin:/usr/bin:/sbin:/bin', HOME='/root', LANG='C.UTF-8',
                            PYTHONDONTWRITEBYTECODE='1', PIP_NO_INDEX='1', PIP_DISABLE_PIP_VERSION_CHECK='1')
+        if getattr(args, 'platform_profile', 'debian12') == 'orangepi5plus-ubuntu26.04':
+            environment['PATH'] = '/opt/lantern-python/3.11.16/bin:' + environment['PATH']
         for step in steps:
             require(verify_release(args) == payload, 'release changed between stages')
             if args.phase in POST_PHASES:
@@ -343,6 +351,11 @@ COMMISSION_FILES = {'sage.yaml': 'var/lib/sage-lantern/sage-personal/config.yaml
                     'lantern.toml': 'etc/sage-lantern/lantern.toml',
                     'bindings.json': 'etc/sage-lantern/commissioned-bindings.json',
                     'initialized-public.json': 'etc/sage-lantern/initialized-public.json'}
+# The personal SAGE config is written by the running appliance after commissioning
+# (vault unlock and federation bookkeeping). A successor install may accept that
+# one output as evolved when the operator asks explicitly; every other output must
+# still match its recorded digest before anything is replaced.
+EVOLVABLE_COMMISSION_FILES = frozenset({'sage.yaml'})
 PENDING = 'etc/sage-lantern/commissioning.pending.json'
 COMPLETE = 'etc/sage-lantern/commissioning-complete.json'
 
@@ -356,7 +369,7 @@ def sync_directory(path):
 
 
 def commission_binding(args):
-    require(args.unit_id in {'unit-a', 'unit-b'}, 'invalid commission unit')
+    require(args.unit_id in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'}, 'invalid commission unit')
     values = dict(unit_id=args.unit_id, manifest_sha256=args.manifest_sha256,
                   plan_sha256=args.commission_plan_sha256, initial_config_sha256=args.identity_config_sha256)
     require(all(type(values[name]) is str and re.fullmatch(r'[0-9a-f]{64}', values[name])
@@ -407,7 +420,8 @@ def commission_begin(args, prepared, *, root=Path('/')):
     return pending
 
 
-def commission_completion_check(unit_id, manifest_sha256, *, root=Path('/'), owner_uid=0):
+def commission_receipt_binding(unit_id, manifest_sha256, *, root=Path('/'), owner_uid=0):
+    """The completion receipt with its static binding verified, not its outputs."""
     require(not os.path.lexists(root / PENDING), 'commissioning pending; app installation forbidden')
     receipt = commission_json(root / COMPLETE, owner_uid=owner_uid)
     fields = {'schema', 'transaction_id', 'unit_id', 'manifest_sha256', 'plan_sha256', 'initial_config_sha256', 'output_sha256'}
@@ -418,9 +432,26 @@ def commission_completion_check(unit_id, manifest_sha256, *, root=Path('/'), own
                 for name in ('manifest_sha256', 'plan_sha256', 'initial_config_sha256')), 'invalid completion hash')
     outputs = receipt['output_sha256']
     require(type(outputs) is dict and set(outputs) == set(COMMISSION_FILES), 'incomplete output binding')
+    return receipt
+
+
+def commission_output_drift(receipt, *, root=Path('/')):
+    """Recorded commissioning outputs whose bytes have changed since commissioning."""
+    drift = {}
     for name, path in COMMISSION_FILES.items():
-        require(type(outputs[name]) is str and re.fullmatch(r'[0-9a-f]{64}', outputs[name])
-                and hashlib.sha256(identity_config_bytes(root / path)).hexdigest() == outputs[name], 'commission output changed')
+        recorded = receipt['output_sha256'][name]
+        require(type(recorded) is str and re.fullmatch(r'[0-9a-f]{64}', recorded), 'invalid completion hash: ' + name)
+        observed = hashlib.sha256(identity_config_bytes(root / path)).hexdigest()
+        if observed != recorded:
+            drift[name] = observed
+    return drift
+
+
+def commission_completion_check(unit_id, manifest_sha256, *, root=Path('/'), owner_uid=0, accept_evolved=frozenset()):
+    require(set(accept_evolved) <= EVOLVABLE_COMMISSION_FILES, 'unreviewed evolvable commissioning output')
+    receipt = commission_receipt_binding(unit_id, manifest_sha256, root=root, owner_uid=owner_uid)
+    for name in sorted(commission_output_drift(receipt, root=root)):
+        require(name in accept_evolved, 'commission output changed: ' + name)
     require(not os.path.lexists(root / PENDING), 'commissioning became pending')
     return receipt
 
@@ -517,7 +548,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, help='Canonical OUTPUT containing payload and manifest.json')
     parser.add_argument('--manifest-sha256', required=True, help='Independently reviewed exact manifest hash')
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'), required=True)
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'), required=True)
     parser.add_argument('--phase', choices=('base', 'identity', 'identity-config', 'app', 'startup-helpers', 'boot-theme', *POST_PHASES), required=True)
     parser.add_argument('--apply-boot-theme', action='store_true')
     parser.add_argument('--boot-theme-manifest')
@@ -535,6 +566,8 @@ def main(argv=None):
     parser.add_argument('--execute', action='store_true', help='Explicitly execute target steps; default validates/plans only')
     parser.add_argument('--allow-native-build', action='store_true')
     parser.add_argument('--install-os-packages', action='store_true', help='Authorize bootstrap apt package/index changes; base phase only')
+    parser.add_argument('--platform-profile', choices=('debian12', 'orangepi5plus-ubuntu26.04'), default='debian12',
+                        help='Explicit base platform; C–F Ubuntu uses separately verified Python 3.11.16')
     parser.add_argument('app_options', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:

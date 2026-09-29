@@ -275,6 +275,52 @@ def test_card_capture_node_and_usb_are_the_same_bound_device(tmp_path, monkeypat
             module.hardware(audio)
 
 
+@pytest.mark.parametrize("fault", [None, "card", "id_path", "pcm_type", "other_platform"])
+def test_platform_codec_capture_is_bound_to_the_reviewed_platform_device(tmp_path, monkeypatch, fault):
+    def mapped(path):
+        return tmp_path / str(path).lstrip("/")
+    control = mapped("/dev/snd/controlC3")
+    pcm = mapped("/dev/snd/pcmC3D0c")
+    control.parent.mkdir(parents=True)
+    control.touch()
+    pcm.touch()
+    stable = mapped("/dev/snd/by-path/platform-es8388-sound")
+    stable.parent.mkdir(parents=True)
+    stable.symlink_to(control)
+    card = mapped("/proc/asound/card3/id")
+    card.parent.mkdir(parents=True)
+    card.write_text("Other" if fault == "card" else "rockchipes8388")
+    platform = mapped("/sys/devices/platform/es8388-sound")
+    (platform / "sound").mkdir(parents=True)
+    for number in (9, 10):
+        path = mapped(f"/sys/dev/char/116:{number}/device")
+        path.parent.mkdir(parents=True)
+        if fault == "other_platform" and number == 10:
+            other = mapped("/sys/devices/platform/hdmi0-sound")
+            (other / "sound").mkdir(parents=True)
+            path.symlink_to(other / "sound")
+        else:
+            path.symlink_to(platform / "sound")
+    original = Path.lstat
+    def lstat(path):
+        if path in (control, pcm):
+            return SimpleNamespace(st_mode=stat.S_IFREG if fault == "pcm_type" and path == pcm else stat.S_IFCHR,
+                st_dev=1, st_ino=2 if path == control else 3, st_rdev=os.makedev(116, 10 if path == control else 9))
+        return original(path)
+    monkeypatch.setattr(Path, "lstat", lstat)
+    monkeypatch.setattr(module, "Path", mapped)
+    audio = dict(source="platform", platform_device="es8388-sound",
+        id_path="platform-other" if fault == "id_path" else "platform-es8388-sound",
+        stable_path="/dev/snd/by-path/platform-es8388-sound", alsa_device="hw:CARD=rockchipes8388,DEV=0")
+    if fault is None:
+        result = module.hardware(audio)
+        assert result["card_id"] == "rockchipes8388" and result["platform_path"].endswith("es8388-sound")
+        assert len(result["nodes"]) == 2
+    else:
+        with pytest.raises(RuntimeError):
+            module.hardware(audio)
+
+
 @pytest.mark.parametrize("fault", [None, "uid", "binding", "epoch", "phase", "producer",
                                  "listener", "second_listener", "numeric_true", "wrong_type", "empty"])
 def test_operational_probe_is_live_storage_bound_not_recent_capture(setup, monkeypatch, fault):

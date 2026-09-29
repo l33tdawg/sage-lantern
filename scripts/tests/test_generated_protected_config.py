@@ -38,6 +38,48 @@ class GeneratedConfigTests(unittest.TestCase):
     def build(self):
         return ASSEMBLER.generated_config(json.dumps(self.identity).encode(), 'unit-b', self.sage, self.runtime, self.quotas)
 
+    def test_fresh_fleet_identity_flows_from_initializer_through_commission(self):
+        from types import SimpleNamespace
+        from sage_lantern.suspend_kiosk import KioskBinding
+        handoff = module('fleet_handoff_contract', 'handoff-fresh-audio-lifetime.py')
+        for unit in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'):
+            with self.subTest(unit=unit):
+                args = SimpleNamespace(unit_id=unit, phase='identity-config', commission_plan='/synthetic/plan.json', app_options=[],
+                    allow_native_build=False, install_os_packages=False,
+                    owner_approved_companion_bootstrap=True, identity_config_sha256='a' * 64,
+                    manifest_sha256='b' * 64, commission_plan_sha256='c' * 64)
+                self.assertEqual(RUNNER.commands(args, Path('/synthetic/payload'))[0][-1], unit)
+                self.assertEqual(RUNNER.commission_binding(args)['unit_id'], unit)
+                identity = {**self.identity, 'unit_id': unit}
+                result = ASSEMBLER.generated_config(json.dumps(identity).encode(), unit,
+                    self.sage, self.runtime, self.quotas)
+                self.assertEqual(json.loads(result['bindings.json'])['unit_id'], unit)
+                handoff.validate_unit(
+                    f'UNIT_ID={unit}\nPROVISIONING_SCHEMA=sage-lantern-unit-v1\n'.encode(),
+                    {'unit_id': unit}, unit)
+                self.assertIn('/' + unit + '/', KioskBinding('operator', 1001, unit).profile)
+                # A valid neighboring unit is still the wrong principal.
+                foreign = {**identity, 'unit_id': 'unit-b' if unit != 'unit-b' else 'unit-a'}
+                with self.assertRaises(ValueError):
+                    ASSEMBLER.generated_config(json.dumps(foreign).encode(), unit,
+                        self.sage, self.runtime, self.quotas)
+                with self.assertRaises(ValueError):
+                    handoff.validate_unit(
+                        f'UNIT_ID={unit}\nPROVISIONING_SCHEMA=sage-lantern-unit-v1\n'.encode(),
+                        foreign, unit)
+        for unit in ('unit-g', 'unit-z', 'unit-C', 'unit-cc', 'unit-c\n', '../unit-c'):
+            with self.subTest(rejected=unit):
+                args.unit_id = unit
+                with self.assertRaises(ValueError):
+                    RUNNER.commands(args, Path('/synthetic/payload'))
+                with self.assertRaises(ValueError):
+                    RUNNER.commission_binding(args)
+                with self.assertRaises(ValueError):
+                    ASSEMBLER.generated_config(json.dumps({**self.identity, 'unit_id': unit}).encode(),
+                        unit, self.sage, self.runtime, self.quotas)
+                with self.assertRaises(ValueError):
+                    KioskBinding('operator', 1001, unit)
+
     def test_actual_output_chain_and_split_identity_paths(self):
         result = self.build()
         runtime = tomllib.loads(result['lantern.toml'].decode())
@@ -54,6 +96,20 @@ class GeneratedConfigTests(unittest.TestCase):
         self.assertEqual(binding['public_identity_path'], '/var/lib/sage-lantern/identity/lantern-public.key')
         self.assertFalse(binding['public_enrolled'])
         self.assertFalse(binding['provisioned'])
+
+    def test_fresh_semantic_template_preserves_embedding_and_generates_unit_binding(self):
+        self.sage = (ROOT / 'software/config/sage-personal.example.yaml').read_bytes()
+        self.runtime = (ROOT / 'software/config/lantern.example.toml').read_bytes()
+        initial = yaml.safe_load(self.sage)
+        self.assertNotIn('chain_id', initial)
+        result = self.build()
+        sage = yaml.safe_load(result['sage.yaml'])
+        self.assertEqual(sage['embedding'], dict(provider='ollama', dimension=768,
+            model='nomic-embed-text-v1.5', base_url='http://127.0.0.1:8084'))
+        self.assertTrue(sage['private_media']['enabled'])
+        runtime = tomllib.loads(result['lantern.toml'].decode())
+        self.assertEqual(runtime['sage']['chain_id'], self.identity['chain_id'])
+        self.assertEqual(runtime['llm']['model'], 'lantern-native5-2b')
 
     def test_conflicting_conversation_directory_rejected(self):
         for value in ('relative', '/other/legacy', ''):
@@ -138,6 +194,29 @@ class GeneratedConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid())
             path.write_bytes(original)
+
+    def test_completion_accepts_only_the_reviewed_evolution(self):
+        root, args, prepared = self.commissioning()
+        RUNNER.commission_begin(args, prepared, root=root)
+        RUNNER.commission_install(args, json.dumps(self.identity).encode(), prepared, root=root)
+        config = root / RUNNER.COMMISSION_FILES['sage.yaml']
+        config.write_bytes(self.sage + b'\n# evolved by the running appliance\n')
+        with self.assertRaisesRegex(ValueError, 'commission output changed: sage.yaml'):
+            RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid())
+        receipt = RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
+                                                     accept_evolved=frozenset({'sage.yaml'}))
+        self.assertEqual(RUNNER.commission_output_drift(receipt, root=root),
+                         {'sage.yaml': hashlib.sha256(config.read_bytes()).hexdigest()})
+        with self.assertRaisesRegex(ValueError, 'unreviewed evolvable commissioning output'):
+            RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
+                                               accept_evolved=frozenset({'lantern.toml'}))
+        runtime = root / RUNNER.COMMISSION_FILES['lantern.toml']
+        original = runtime.read_bytes()
+        runtime.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'commission output changed: lantern.toml'):
+            RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
+                                               accept_evolved=frozenset({'sage.yaml'}))
+        runtime.write_bytes(original)
 
     def test_preinit_mismatch_and_backup_collision_do_not_claim(self):
         for target in ('runtime-mismatch', 'sage.yaml', 'lantern.toml'):

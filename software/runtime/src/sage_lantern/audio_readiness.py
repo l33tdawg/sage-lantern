@@ -83,10 +83,8 @@ def trusted_bytes(path):
         os.close(descriptor)
 
 
-def hardware(audio):
-    require(type(audio) is dict and all(type(audio.get(key)) is str for key in
-        ("stable_path", "usb_serial", "vendor_id", "product_id", "alsa_device")))
-    require(re.fullmatch(r"/dev/snd/by-id/[A-Za-z0-9_.:+-]+", audio["stable_path"]) is not None)
+def card_nodes(audio):
+    """Resolve a reviewed capture binding to its control and capture nodes."""
     match = re.fullmatch(r"hw:CARD=([A-Za-z0-9_]{1,32}),DEV=([0-9]{1,2})", audio["alsa_device"])
     require(match is not None)
     stable = Path(audio["stable_path"])
@@ -97,13 +95,33 @@ def hardware(audio):
     number = card[1]
     require(Path("/proc/asound/card" + number + "/id").read_text().strip() == match[1])
     capture = Path("/dev/snd/pcmC" + number + "D" + match[2] + "c")
+    return match, target, capture
+
+
+def node_identity(node):
+    info = node.lstat()
+    require(stat.S_ISCHR(info.st_mode))
+    device = Path(f"/sys/dev/char/{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}/device").resolve(strict=True)
+    require(Path("/sys/devices") in device.parents)
+    return info, device
+
+
+def hardware(audio):
+    require(type(audio) is dict)
+    if audio.get("source") == "platform":
+        return platform_hardware(audio)
+    return usb_hardware(audio)
+
+
+def usb_hardware(audio):
+    require(all(type(audio.get(key)) is str for key in
+        ("stable_path", "usb_serial", "vendor_id", "product_id", "alsa_device")))
+    require(re.fullmatch(r"/dev/snd/by-id/[A-Za-z0-9_.:+-]+", audio["stable_path"]) is not None)
+    match, target, capture = card_nodes(audio)
     nodes = {}
     usb_parent = None
     for node in (target, capture):
-        info = node.lstat()
-        require(stat.S_ISCHR(info.st_mode))
-        device = Path(f"/sys/dev/char/{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}/device").resolve(strict=True)
-        require(Path("/sys/devices") in device.parents)
+        info, device = node_identity(node)
         usb = next((parent for parent in (device, *device.parents) if (parent / "idVendor").is_file()), None)
         require(usb is not None)
         require(tuple((usb / name).read_text().strip() for name in ("idVendor", "idProduct", "serial"))
@@ -112,6 +130,23 @@ def hardware(audio):
         usb_parent = str(usb)
         nodes[str(node)] = dict(device=info.st_dev, inode=info.st_ino, rdev=info.st_rdev)
     return dict(card_id=match[1], usb_path=usb_parent, nodes=nodes)
+
+
+def platform_hardware(audio):
+    """Platform-codec capture (C–F): the card must sit on the reviewed platform device."""
+    require(all(type(audio.get(key)) is str for key in
+        ("stable_path", "id_path", "platform_device", "alsa_device")))
+    require(audio["id_path"] == "platform-" + audio["platform_device"])
+    require(audio["stable_path"] == "/dev/snd/by-path/" + audio["id_path"])
+    match, target, capture = card_nodes(audio)
+    platform = (Path("/sys/devices/platform") / audio["platform_device"]).resolve(strict=True)
+    require(platform.parent == Path("/sys/devices/platform"))
+    nodes = {}
+    for node in (target, capture):
+        info, device = node_identity(node)
+        require(platform == device or platform in device.parents)
+        nodes[str(node)] = dict(device=info.st_dev, inode=info.st_ino, rdev=info.st_rdev)
+    return dict(card_id=match[1], platform_path=str(platform), nodes=nodes)
 
 
 def property_value(system, name):
@@ -127,7 +162,7 @@ def property_value(system, name):
 
 def snapshot():
     binding = json.loads(trusted_bytes(BINDINGS), object_pairs_hook=unique_object)
-    require(binding.get("schema") == "sage.lantern.unit-plan.v1" and binding.get("unit_id") in {"unit-a", "unit-b"})
+    require(binding.get("schema") == "sage.lantern.unit-plan.v1" and binding.get("unit_id") in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"})
     audio = binding["audio"]
     observed = hardware(audio)
     system = SuspendSystem()

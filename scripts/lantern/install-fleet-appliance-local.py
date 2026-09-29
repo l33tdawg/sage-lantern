@@ -496,6 +496,28 @@ def publish(path, data, mode, *, replace):
         os.close(directory)
 
 
+def appliance_interpreter(python):
+    """The venv interpreter, resolved through its symlink to a reviewed toolchain.
+
+    A venv's bin/python is a symlink by construction; what matters is that the
+    chain lands on a root-owned, non-writable interpreter under /usr/bin or the
+    reviewed /opt/lantern-python toolchain.
+    """
+    require(python.is_file() and os.access(python, os.X_OK), 'missing appliance interpreter')
+    target = python.resolve()
+    details = target.stat()
+    require(stat.S_ISREG(details.st_mode) and details.st_uid == 0 and not details.st_mode & 0o022,
+            'unreviewed appliance interpreter')
+    require(target.parent == Path('/usr/bin') or str(target).startswith('/opt/lantern-python/'),
+            'unreviewed appliance interpreter')
+    for parent in target.parents:
+        if str(parent) in ('/usr', '/opt'):
+            break
+        info = parent.stat()
+        require(info.st_uid == 0 and not info.st_mode & 0o022, 'unreviewed appliance interpreter directory')
+    return python
+
+
 def install_release_runtime(release, manifest, *, root=Path('/'), run=None):
     """Install the release's pinned runtime wheels into the appliance venv.
 
@@ -512,8 +534,7 @@ def install_release_runtime(release, manifest, *, root=Path('/'), run=None):
         entry = entries.get('software/bundle/python-wheels/' + path.name)
         require(entry is not None, 'unlisted release wheel: ' + path.name)
         read_payload(path, entry)
-    python = root / 'opt/sage-lantern/venv/bin/python'
-    require(python.is_file() and not python.is_symlink(), 'missing appliance interpreter')
+    python = appliance_interpreter(root / 'opt/sage-lantern/venv/bin/python')
     environment = dict(PATH='/usr/bin:/bin', HOME='/nonexistent', PIP_NO_INDEX='1',
                        PIP_DISABLE_PIP_VERSION_CHECK='1', PYTHONDONTWRITEBYTECODE='1')
     run([str(python), '-m', 'pip', 'install', '--no-index', '--no-deps', '--force-reinstall',
@@ -612,7 +633,8 @@ def provision_conversation_owner(root, uid, gid):
 
 
 def install_files(plan, rules, release, manifest, ui, *, allow_owner_setup, commissioning_manifest_sha256=None,
-                  predecessor=None, accept_replaced=False, release_manifest_sha256=None, root=Path('/'), run=None):
+                  predecessor=None, accept_replaced=False, accepted_evolved=None,
+                  release_manifest_sha256=None, root=Path('/'), run=None):
     """Root prefix exists for synthetic filesystem tests, not a CLI bypass.
 
     Without a predecessor this is the fresh install: every target must be absent.
@@ -626,6 +648,7 @@ def install_files(plan, rules, release, manifest, ui, *, allow_owner_setup, comm
     service_gid = grp.getgrnam('sage-lantern').gr_gid
     require(service_uid > 0 and service_gid > 0, 'non-root auth account/group required')
     replace = predecessor is not None
+    require(not accepted_evolved or replace, 'accepted evolved commissioning outputs require a successor install')
     if replace:
         require(not os.path.lexists(root / 'etc/sage-lantern/commissioning.pending.json'),
                 'commissioning pending; installation forbidden')
@@ -660,6 +683,7 @@ def install_files(plan, rules, release, manifest, ui, *, allow_owner_setup, comm
         result.update(predecessor_release_id=predecessor['release_id'],
                       predecessor_manifest_sha256=predecessor.get('manifest_sha256'),
                       replaced_unverifiable_targets=sorted(replaced),
+                      accepted_evolved_commissioning_outputs=dict(sorted((accepted_evolved or {}).items())),
                       restart_required=True, manifest_sha256=release_manifest_sha256)
     publish(root / INSTALLED_RECEIPT.lstrip('/'), (json.dumps(result, sort_keys=True) + '\n').encode(), 0o644,
             replace=replace)
@@ -939,15 +963,21 @@ def main(argv=None):
     parser.add_argument('--accept-replaced', action='store_true',
                         help='Successor install only: allow replacing existing targets the pinned predecessor release cannot account for '
                              '(for example operator stopgaps at paths this release now owns); refused by default')
+    parser.add_argument('--accept-evolved-commissioning-output', action='store_true',
+                        help='Successor install only: accept a commissioning output the running appliance has evolved since commissioning '
+                             '(currently only the personal SAGE config, sage.yaml); the observed digest is recorded in the install receipt')
     args = parser.parse_args(argv)
     try:
         require(bool(args.gdm_base_sha256) == args.enable_kiosk_autologin, 'GDM hash and kiosk opt-in must be supplied together')
+        require(not args.accept_evolved_commissioning_output or args.installed_release_root is not None,
+                'accept-evolved-commissioning-output requires an installed predecessor release')
         prepared = prepare(args)
         manifest_digest = hashlib.sha256(Path(args.manifest).read_bytes()).hexdigest()
         commissioning_digest = commissioning_binding(args, manifest_digest)
         if args.install:
             commissioning = helper('app_commissioning', 'scripts/lantern/provision-fresh-appliance.py')
-            commissioning.commission_completion_check(args.unit_id, commissioning_digest)
+            accept_evolved = commissioning.EVOLVABLE_COMMISSION_FILES if args.accept_evolved_commissioning_output else frozenset()
+            commissioning.commission_completion_check(args.unit_id, commissioning_digest, accept_evolved=accept_evolved)
             installed = native_preflight(args)
             components = prepared[3]['selection']['components']
             require(installed['versions'] == {'sage-lantern-runtime': components['runtime'], 'sage-agent-sdk': components['sdk'],
@@ -970,10 +1000,12 @@ def main(argv=None):
             if args.enable_kiosk_autologin:
                 kiosk = kiosk_plan(args.account, args.gdm_base_sha256)
                 kiosk_native_gate()
-            commissioning.commission_completion_check(args.unit_id, commissioning_digest)
+            completion = commissioning.commission_completion_check(args.unit_id, commissioning_digest, accept_evolved=accept_evolved)
+            accepted_evolved = commissioning.commission_output_drift(completion) if accept_evolved else {}
             result = install_files(*prepared, allow_owner_setup=args.allow_owner_vault_setup,
                                    commissioning_manifest_sha256=commissioning_digest,
                                    predecessor=predecessor, accept_replaced=args.accept_replaced,
+                                   accepted_evolved=accepted_evolved,
                                    release_manifest_sha256=manifest_digest)
             if predecessor is not None:
                 installed_source_closure(prepared[2], prepared[3], installed['purelib'])
