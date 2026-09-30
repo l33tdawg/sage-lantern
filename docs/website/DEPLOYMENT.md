@@ -346,3 +346,45 @@ the origin with nginx validation and configuration rollback backup
 `20260921-e61852cb6b4f` stays under `releases/`. Verified live: `/`, `/commons/`,
 `/hardware/` and `/foundation/` all 200, both new lines present in the served
 HTML, and nginx, natter and sage-call-relay active.
+
+## Release 20260930-9b7aa43cbaea — the pack is gone, two antennas, and the copy follows
+
+Owner instruction: *"we need new renders for the device cause we've removed the
+battery pack and stuff"*, then the antenna layout — two external antennas
+(taller LoRa, shorter GNSS) plus a third antenna for the second LoRa radio
+inside the shell, which must never appear in a render.
+
+**The render.** Produced with **Gemini 2.5 Flash Image** ("Nano Banana") on
+Vertex AI through the existing `gcloud` login (no new API key), using the live
+`hardware.jpg` as the design reference so the device's look and feel stayed the
+invariant. The pack and the open battery bay were removed in two reference-based
+edit passes; the model proved unreliable at placing an antenna pair on *both*
+device views (it repeatedly moved the pair from one view to the other), so the
+final antenna work is a locally composited, pixel-aligned merge of two variants,
+with the front's GNSS whip shortened to read shorter than the LoRa whip. Master,
+prompts and provenance: `work/hardware-render-20260930/` (private work tree).
+
+**The copy.** The page no longer promises a bundled pack: power is a USB-C
+supply the user brings (D-015, hardware-only units), the committed compute is
+the Radxa ROCK 5B+ (12 GB), the camera is an internal CSI-ribbon module, and the
+radio line now reads 915 MHz LoRa + GNSS with a second LoRa radio for relay.
+Changed on `/hardware/` (meta description, OG/alt text, hero stat, Power and
+Compute spec rows, the "Bring your own power" feature) and on the homepage
+(image alt, the "Made for your next question" paragraph).
+
+**Two releases.** `20260930-88a2f1c76264` shipped the copy and the new image,
+but Cloudflare kept serving the old bytes at the unchanged
+`/images/hardware.jpg` URL (the origin had the new file; the CDN did not
+revalidate), so the render was re-cut as a dated asset —
+`/images/hardware-20260930.jpg` — with the two page references and the export
+verifier pin following it, and shipped as `20260930-9b7aa43cbaea`. The old URL
+remains a CDN-cached orphan until its TTL lapses; nothing references it.
+
+Built from commit `9b7aa43`, 64 verified files, tarball sha256
+`1a6d734a7801f513401de85e010c051837bd9f1b8acb8409728a685e984cdac1`. Rollback
+configuration `/var/www/sage-website/backup-20260930T125312Z` (prior release
+`20260930-88a2f1c76264`, and before it the first rollback root
+`/var/www/sage-website/backup-20260930T125104Z`). Verified live: `/`,
+`/commons/`, `/hardware/` and `/foundation/` all 200; the new image serves
+164,628 bytes at its new URL; "Bring your own power" and "Radxa ROCK 5B+" are in
+the served HTML; no "10,000 mAh" or "replaceable battery" claim remains.
