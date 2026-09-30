@@ -325,3 +325,24 @@ four, and fresh browser tabs report no console errors.
 `components/email-off.tsx` is deliberately kept. It is now belt-and-braces —
 inert while obfuscation is off — and it stops the same hydration failure
 returning silently if the setting is ever switched back on.
+
+## Release 20260930-cf2648497c28 — MeshCore in one line, and what a mesh reaches
+
+Owner instruction, after the comms lane asked for software sign-off on
+capability facts for a public explainer lane. Most of the signed-off lines were
+already carried by the site — the 915 MHz wording, the answer-path framing in
+the FAQ, no LoRaWAN "AS923" vocabulary, and no public use of the offered
+"MeshCore Commons" name — but the network section never explained what MeshCore
+is and never said the mesh's reach plainly. Two sentences were added to the
+homepage network section: MeshCore as an open-source LoRa mesh protocol and
+firmware whose nodes relay for each other, and "A mesh reaches as far as the
+people, radios and power in it — relay by relay, no tower, and no promise of
+coverage."
+
+Built from commit `cf26484`, 64 verified files, tarball sha256
+`0d1185641633459c45aec646bcb1b876cd48611d647ae3b25161626145aae57e`. Activated on
+the origin with nginx validation and configuration rollback backup
+`/var/www/sage-website/backup-20260930T114623Z`; prior release
+`20260921-e61852cb6b4f` stays under `releases/`. Verified live: `/`, `/commons/`,
+`/hardware/` and `/foundation/` all 200, both new lines present in the served
+HTML, and nginx, natter and sage-call-relay active.
