@@ -539,3 +539,47 @@ configuration `/var/www/sage-website/backup-20260930T134248Z`; prior release
 `20260930-ae75f655c5cd` stays under `releases/`. Verified live: `/` and
 `/hardware/` 200, the corrected image serving 131,304 bytes, and the page
 referencing it.
+
+## 2026-09-30 — the foundation/commons domains, and crawler basics
+
+Owner direction: serve **sage-commons.org** and **sage-foundation.net** (apex and
+www) from the same origin as sage.ngo, answering on their own hostnames rather
+than forwarding; allow crawlers for indexing and SEO; keep the mail forwarding.
+
+**Origin change** (backups `/etc/nginx/conf.d/30-sage-website.conf.bak-20260930T142410Z`
+and the same for `10-sage-sni.conf`):
+
+* the website vhost now lists all five hostnames on :80 and on the loopback TLS
+  listener, and its port-80 redirect uses `$host` so each name keeps itself;
+* the SNI map routes the four new names to the same website backend
+  (`127.0.0.1:9444`) instead of the dead default;
+* the Let's Encrypt certificate was **expanded** to
+  `sage.ngo + sage-commons.org + www.sage-commons.org + sage-foundation.net +
+  www.sage-foundation.net` (certbot webroot `/var/lib/letsencrypt`, deploy hook
+  `systemctl reload nginx`, expiry 2026-12-29). Cloudflare was already answering
+  **525** for the new names — Full (strict) with an origin cert that did not
+  cover them — which is exactly what the expansion fixes.
+
+Verified: all five hostnames return **200 direct to the origin** (bypassing
+Cloudflare) and **200 through Cloudflare**; the four new names serve the site.
+
+**Crawler basics** — release `20260930-5b87beb1aba8` (commit `5b87beb`, 67
+verified files, tarball sha256
+`f1da9735d139dfa52b455ef286f78b3f38004d158f8de811682961c7b9169365`): the export
+had **neither** `robots.txt` nor `sitemap.xml`. Both are now shipped — robots
+allows every crawler and points at the sitemap; the sitemap lists the four
+canonical pages. Rollback `/var/www/sage-website/backup-20260930T142547Z`.
+Verified live: `robots.txt` and `sitemap.xml` 200 on sage.ngo and on both new
+domains.
+
+**SEO shape to be aware of:** every page still declares
+`https://sage.ngo/…` as its canonical (and its OG URL), so the new domains serve
+the same content while consolidating ranking signals onto sage.ngo. That is the
+safe default for duplicate content; if the new domains are meant to rank in
+their own right, they need distinct content and their own canonicals, which is a
+marketing-side decision rather than an origin change.
+
+**Still outside this repo:** Cloudflare AI-crawler policy (Search / Agent /
+Training) for the two new zones, the www→apex redirect rules, and the Porkbun
+mail-forwarding configuration — all dashboard actions on the comms side; the
+owner's calls are recorded in the reply to that lane.
