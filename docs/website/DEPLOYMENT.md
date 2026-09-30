@@ -450,8 +450,8 @@ A new **ON THE DESK** section on the hardware page carries a second render —
 same design reference as the packless hero, so the device's identity holds: the
 Lantern lying on its side with a keyboard and mouse in front, the screen showing
 the Linux desktop with the amber companion app, a browser and a video player.
-The copy names the browser, the video player (your recordings, or something to
-watch), files, a terminal and maps, states Wi-Fi and Bluetooth on board, and
+The copy names the browser, the video player (something to watch), files, a
+terminal and maps, states Wi-Fi and Bluetooth on board, and
 says plainly that sound needs headphones because there is no built-in speaker.
 Provenance and prompts: `work/hardware-render-20260930/`.
 
@@ -466,3 +466,9 @@ configuration `/var/www/sage-website/backup-20260930T133459Z`; prior release
 200, the desktop image serving 118,269 bytes, and "It becomes a computer", "ON
 THE DESK", "video player for your recordings" and "Sound needs headphones" all
 present in the served HTML.
+
+Follow-up release `20260930-ab00c19d5f36` (commit `ab00c19`) tightened one line:
+"a video player for your recordings" became "a video player for something to
+watch", because recording video on the device is not built yet and the page must
+not imply it. Rollback `/var/www/sage-website/backup-20260930T133623Z`; verified
+live.
