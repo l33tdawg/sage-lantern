@@ -472,3 +472,20 @@ Follow-up release `20260930-ab00c19d5f36` (commit `ab00c19`) tightened one line:
 watch", because recording video on the device is not built yet and the page must
 not imply it. Rollback `/var/www/sage-website/backup-20260930T133623Z`; verified
 live.
+
+## Release 20260930-346c6dd4a871 — the network line
+
+Owner instruction: *"and if it detects internet then you can surf the net etc."*
+The ON THE DESK copy now ends: "Join a network and the browser reaches the wider
+web like any other computer; with nothing in range, everything the Lantern does
+locally keeps working." The AI app's *proposed* online-research lane is still
+not claimed anywhere — the online path is the desktop browser, and the device
+has no cellular modem of its own, so a network has to be present (the ROCK
+5B+'s onboard Wi-Fi; the C–F prototypes have no onboard adapter and their
+add-in module is still open procurement).
+
+Built from commit `346c6dd`, 65 verified files, tarball sha256
+`690d59ebf57170764edfc15ed46e25edcebb8971370175572b4def7ab64db645`. Rollback
+configuration `/var/www/sage-website/backup-20260930T133733Z`; prior release
+`20260930-ab00c19d5f36` stays under `releases/`. Verified live: the line is in
+the served HTML on `/hardware/`.
