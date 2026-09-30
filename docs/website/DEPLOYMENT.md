@@ -489,3 +489,25 @@ Built from commit `346c6dd`, 65 verified files, tarball sha256
 configuration `/var/www/sage-website/backup-20260930T133733Z`; prior release
 `20260930-ab00c19d5f36` stays under `releases/`. Verified live: the line is in
 the served HTML on `/hardware/`.
+
+## Release 20260930-ae75f655c5cd — portrait is the default, landscape is the desk mode
+
+Owner decision (recorded as **D-020** in `docs/lantern/DECISIONS.md`): a Lantern
+is portrait by default; it becomes a landscape Linux desktop only when a USB
+keyboard and mouse are attached, with `sage-lantern-desktop-mode on|off|auto`
+as the explicit override. Landscape is not the boot default; no orientation
+sensor is required. `CF_DISPLAY_LAYOUT.md` carries the same statement at the top
+of its desktop section (that file is now tracked in the repository rather than
+living only in the work tree).
+
+The hardware page says it in both places: the desktop section opens "The Lantern
+stays portrait by default — the shape you hold, ask and read in … a desktop
+control lets you force either mode yourself", and the Desktop mode spec row
+reads "Portrait by default; a USB keyboard and mouse switch it to a landscape
+Linux desktop".
+
+Built from commit `ae75f65`, 65 verified files, tarball sha256
+`b8aac1e822e4549375ada29fc301087d4dda49479655ed85b089708c0f327751`. Rollback
+configuration `/var/www/sage-website/backup-20260930T133856Z`; prior release
+`20260930-346c6dd4a871` stays under `releases/`. Verified live: all four pages
+200 and both new strings present in the served HTML.
