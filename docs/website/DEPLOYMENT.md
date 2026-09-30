@@ -437,3 +437,32 @@ Built from commit `aaf1905`, 64 verified files, tarball sha256
 configuration `/var/www/sage-website/backup-20260930T133031Z`; prior release
 `20260930-bb6eacc66935` stays under `releases/`. Verified live: all four pages
 200 and the new strings present on `/` and `/hardware/`.
+
+## Release 20260930-22be0020107b — the desktop render
+
+Owner instruction: *"needs a render showing our custom linux desktop … the ai
+app part still works as well — it's just that you now have web browser; full
+camera video player thing for watching shows or your recordings etc — basically
+a semi powerful mini computer of sorts — can connect to wifi, etc since we're
+using rock 5b+."*
+
+A new **ON THE DESK** section on the hardware page carries a second render —
+same design reference as the packless hero, so the device's identity holds: the
+Lantern lying on its side with a keyboard and mouse in front, the screen showing
+the Linux desktop with the amber companion app, a browser and a video player.
+The copy names the browser, the video player (your recordings, or something to
+watch), files, a terminal and maps, states Wi-Fi and Bluetooth on board, and
+says plainly that sound needs headphones because there is no built-in speaker.
+Provenance and prompts: `work/hardware-render-20260930/`.
+
+Render note: the first pass was kept over a second "cleaner" pass — the
+refinement flattened the desktop into a single settings-like list and lost the
+browser and video windows.
+
+Built from commit `22be002`, 65 verified files, tarball sha256
+`9693beffffd5cd77f30ac73560eaf2997e66868cca3316c1931ca1998c00b411`. Rollback
+configuration `/var/www/sage-website/backup-20260930T133459Z`; prior release
+`20260930-aaf19057e995` stays under `releases/`. Verified live: all four pages
+200, the desktop image serving 118,269 bytes, and "It becomes a computer", "ON
+THE DESK", "video player for your recordings" and "Sound needs headphones" all
+present in the served HTML.
