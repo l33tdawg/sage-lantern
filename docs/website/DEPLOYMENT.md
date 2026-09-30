@@ -388,3 +388,29 @@ configuration `/var/www/sage-website/backup-20260930T125312Z` (prior release
 `/commons/`, `/hardware/` and `/foundation/` all 200; the new image serves
 164,628 bytes at its new URL; "Bring your own power" and "Radxa ROCK 5B+" are in
 the served HTML; no "10,000 mAh" or "replaceable battery" claim remains.
+
+## Release 20260930-bb6eacc66935 — the full spec on the hardware page
+
+Owner instruction: *"we should have more specs like the dual lora wifi bt
+stuff"*. The spec table went from seven rows to eleven, all taken from
+`FINAL_COMPUTE_REQUIREMENT.md`, `DEVICE_ROLES.md` and D-015 rather than from
+marketing: Processor (RK3588-class, 8 cores, 6 TOPS NPU), Memory (12 GB — 16 GB
+where available), Storage (512 GB NVMe, no SD), Power (bring your own USB-C
+supply — PD or a fixed 5 V/4 A source), **Radio (dual 915 MHz LoRa — one link,
+one relay — with GNSS; two external antennas, the relay antenna inside)**,
+**Wireless (Wi-Fi and Bluetooth on board)**, Interaction (hold-to-talk), Audio
+(onboard microphone, no built-in speaker; headphone output a future option, not
+a promise), Camera (internal CSI ribbon), Display and Enclosure as before. The
+old Connectivity and I2S rows folded into Radio and Audio.
+
+The network section now says why two radios matter — relaying a neighbour's
+message does not block your own next question — and the note under the table no
+longer promises a battery runtime.
+
+Built from commit `bb6eacc`, 64 verified files, tarball sha256
+`da454edd95d1ead7f28d2c15f5ce116387b9bbacad5906088059d0dca08641c4`. Rollback
+configuration `/var/www/sage-website/backup-20260930T125752Z`; prior release
+`20260930-9b7aa43cbaea` stays under `releases/`. Verified live: all four pages
+200, and the new rows — dual LoRa, Wi-Fi and Bluetooth on board, 6 TOPS NPU,
+512 GB NVMe, onboard microphone, the two-radio sentence and the supply-dependent
+runtime note — all present in the served HTML.
