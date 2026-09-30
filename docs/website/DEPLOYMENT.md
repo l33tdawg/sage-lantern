@@ -414,3 +414,26 @@ configuration `/var/www/sage-website/backup-20260930T125752Z`; prior release
 200, and the new rows — dual LoRa, Wi-Fi and Bluetooth on board, 6 TOPS NPU,
 512 GB NVMe, onboard microphone, the two-radio sentence and the supply-dependent
 runtime note — all present in the served HTML.
+
+## Release 20260930-aaf19057e995 — the docked desktop is on the page
+
+Owner instruction: *"we should also mention that it becomes a linux desktop when
+you connect a usb keyboard and mouse — basically turned onto its side."* The
+hardware page gains a **Desktop mode** spec row ("Connect a USB keyboard and
+mouse: a Linux desktop, screen turned to landscape — working on the prototypes")
+and a fifth design card, *Set it down. It becomes a desktop.*; the homepage
+feature list gains *Grows into a desktop*.
+
+The copy follows the implemented bench behaviour on C
+(`cf-mode-supervisor`): with a USB keyboard and mouse attached the fullscreen
+console is replaced by a windowed companion app on the GNOME desktop and the
+output rotates to landscape, display and touch together, with a browser,
+terminal, files and maps alongside. It stays labelled as prototype work — the
+production panel's rotation direction, touch mapping and the session hand-off
+across a mode switch are still open, so none of it is a shipped-device claim.
+
+Built from commit `aaf1905`, 64 verified files, tarball sha256
+`219b36222ae918da2435e42a86d0b6e311d55bc0d0cb5a60ede0dd473004b601`. Rollback
+configuration `/var/www/sage-website/backup-20260930T133031Z`; prior release
+`20260930-bb6eacc66935` stays under `releases/`. Verified live: all four pages
+200 and the new strings present on `/` and `/hardware/`.
