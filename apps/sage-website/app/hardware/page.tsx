@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import { ArrowUpRight, ArrowDown, MoveUpRight, Battery, AudioLines, ScanEye, Cpu, Wrench, RadioTower, Satellite } from 'lucide-react';
+import { ArrowUpRight, ArrowDown, MoveUpRight, Battery, AudioLines, ScanEye, Cpu, Wrench, RadioTower, Satellite, Keyboard } from 'lucide-react';
 import { SiteHeader, SiteFooter } from '@/components/site-chrome';
 import { LanternMark } from '@/components/lantern-mark';
 import { pageMetadata } from '@/lib/metadata';
@@ -21,6 +21,7 @@ const specs=[
  ['Radio','Dual 915 MHz LoRa — one radio for the link, one for relay — with GNSS','Two external antennas; the relay antenna sits inside'],
  ['Wireless','Wi-Fi and Bluetooth on board','No add-in module needed'],
  ['Interaction','Physical hold-to-talk control','Voice input, on-screen answers'],
+ ['Desktop mode','Connect a USB keyboard and mouse: a Linux desktop, screen turned to landscape','Working on the prototypes'],
  ['Audio','Onboard microphone, no built-in speaker','Headphone output is a future option, not a promise'],
  ['Camera','Internal camera on a CSI ribbon','Visual-question direction in development'],
  ['Enclosure','90 × 182 × 38 mm printed PETG shell, ten parts','v1.3; first-article print next'],
@@ -34,6 +35,7 @@ export default function Hardware(){return <>
    [ScanEye,'Bring the world into the conversation.','A rear camera supports the visual-question direction: show what you’re looking at, then ask about it.'],
    [Battery,'Bring your own power.','The Lantern runs on a standard USB-C supply — PD, or a fixed 5 V/4 A source — instead of a custom cell or a bundled pack, so power is something you already own.'],
    [Wrench,'Made to be understood.','A ventilated, serviceable enclosure puts assembly, maintenance and repair into the design from the beginning.'],
+   [Keyboard,'Set it down. It becomes a desktop.','Plug in a USB keyboard and mouse and the screen turns to landscape: the companion app in a window beside a browser, terminal, files and maps.'],
   ].map(([Icon,title,body])=>{const FeatureIcon=Icon as typeof AudioLines;return <article key={title as string}><FeatureIcon/><h3>{title as string}</h3><p>{body as string}</p></article>})}</div></section>
   <section className="hardware-compute"><div className="wrap"><Cpu/><div><div className="eyebrow section-label">INTELLIGENCE CLOSE TO YOU</div><h2>The thinking happens<br/><span className="serif">right here.</span></h2><p className="body-copy">Lantern’s local AI runs on the device. The aim is to make everyday learning and problem-solving useful even when the internet isn’t available.</p><Link prefetch={false} className="text-link" href="/#mission">The mission behind the machine <ArrowUpRight size={18}/></Link></div></div></section>
   <section className="section wrap hardware-network"><div className="eyebrow section-label">A LANTERN IS ALSO A NETWORK PARTICIPANT</div><div className="hardware-design-head"><h2>Your device.<br/><span className="serif">Your community.</span></h2><p className="body-copy">Each Lantern is intended to join a local MeshCore radio network. Alongside the wider MeshCore community, we want to help more places build communications they can maintain themselves.</p></div><div className="hardware-features"><article><RadioTower/><h3>More people. Infrastructure that reaches further.</h3><p>Lanterns add participants. Dedicated repeaters and well-placed antennas extend coverage. Local operators and reliable power make a network useful in everyday life and during outages. Two radios per Lantern — one for your own messages, one for relay duty — mean passing a neighbour’s message on doesn’t block your next question.</p></article><article><Satellite/><h3>Local first. Backhaul when available.</h3><p>We plan to roll out community gateways using Starlink backhaul. They would support authorised online requests and wider SAGE connections through a separate gateway service. Local radio messages should remain possible between reachable, powered peers when backhaul is down.</p></article></div><Link prefetch={false} className="text-link" href="/#network">Explore the network vision <ArrowUpRight size={18}/></Link><p className="network-status">Network rollout and gateway integration are goals under development. This does not promise unlimited radio bandwidth, automatic coverage from every handset, or uninterrupted satellite service.</p></section>

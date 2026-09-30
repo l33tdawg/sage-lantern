@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { ArrowUpRight, ArrowDown, AudioLines, BookOpen, LockKeyhole, Radio, Code2, HeartHandshake, Globe2, Download, RadioTower, Router, Satellite } from 'lucide-react';
+import { ArrowUpRight, ArrowDown, AudioLines, BookOpen, LockKeyhole, Radio, Code2, HeartHandshake, Globe2, Download, RadioTower, Router, Satellite, Keyboard } from 'lucide-react';
 import Image from 'next/image';
 import { SiteHeader, SiteFooter } from '@/components/site-chrome';
 import { EmailOff } from '@/components/email-off';
@@ -40,6 +40,7 @@ export default function Home() {
           [AudioLines,'Speak your curiosity','Hold to talk. Read the answer. Keep exploring.'],
           [LockKeyhole,'Keep your world yours','Local intelligence, with private-by-default knowledge and deliberate sharing.'],
           [Radio,'Connect the dots','Every Lantern is intended to join a local MeshCore network for short messages and shared knowledge.'],
+          [Keyboard,'Grows into a desktop','Connect a USB keyboard and mouse: the screen turns to landscape and the Lantern becomes a small Linux desktop.'],
         ].map(([Icon,title,body])=>{const FeatureIcon=Icon as typeof AudioLines;return <div className="feature" key={title as string}><FeatureIcon size={22}/><div><h3>{title as string}</h3><p>{body as string}</p></div></div>})}</div><div className="prototype-note"><span className="live-dot"/><p><strong>From vision to working prototypes.</strong> Two units are built. Integration and real-world validation continue.</p></div></div></div></div></section>
 
       <section className="section wrap commons-section"><div className="eyebrow section-label">03 — SAGE COMMONS</div><div className="commons-heading"><h2>One person’s discovery.<br/><span className="serif">Everyone’s possibility.</span></h2><p className="body-copy">Local knowledge matters. SAGE Commons is being developed so useful discoveries can be shared deliberately, reviewed and made available to others.</p></div><div className="commons-flow">{[
