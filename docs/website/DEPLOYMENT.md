@@ -511,3 +511,31 @@ Built from commit `ae75f65`, 65 verified files, tarball sha256
 configuration `/var/www/sage-website/backup-20260930T133856Z`; prior release
 `20260930-346c6dd4a871` stays under `releases/`. Verified live: all four pages
 200 and both new strings present in the served HTML.
+
+## Release 20260930-4fb2b0864d68 — the desk render now matches the hero device
+
+Owner instruction: *"make sure our device hardware look and feel doesn't change
+between portrait and landscape images … the small details matter and people will
+notice."*
+
+They were right. The desk render had drifted from the hero on the device's
+signature details: straight cylindrical rod antennas with thin brass rings where
+the hero has tapered whips on chunky flared collars, plus a stray dark block
+below them. Both were corrected with the hero passed in as the design reference
+(and the model's tendency to "fix" edge details by inventing a second device was
+caught and rejected in review). The remaining delta — the orange hold-to-talk
+control reads as a ~4-pixel sliver on the desk shot's glancing edge instead of
+the hero's full button — was measured and left, because it is invisible at page
+size and a "correction" pass made it worse by turning it into a protruding tab.
+
+The corrected asset ships as **`desktop-20260930b.jpg`** (a new name, so the CDN
+cannot serve the previous bytes), the unreferenced first cut is removed from the
+export, and the page points at the new file. `work/hardware-render-20260930/`
+keeps the native masters and the rejected passes.
+
+Built from commit `4fb2b08`, 65 verified files, tarball sha256
+`d05149da321d09f1086187c6e4179449b49f27b0545332781d13f99e55173660`. Rollback
+configuration `/var/www/sage-website/backup-20260930T134248Z`; prior release
+`20260930-ae75f655c5cd` stays under `releases/`. Verified live: `/` and
+`/hardware/` 200, the corrected image serving 131,304 bytes, and the page
+referencing it.
