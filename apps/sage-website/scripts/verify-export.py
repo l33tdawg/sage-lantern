@@ -27,7 +27,7 @@ for name,page in pages.items():
 home=(root/'index.html').read_text();hardware=(root/'hardware/index.html').read_text();foundation=(root/'foundation/index.html').read_text()
 assert '<em>better postcode</em>' in home
 assert 'sharing a notebook' not in home
-assert '/images/hardware.jpg' in home and '/images/hardware.jpg' in hardware
+assert '/images/hardware-20260930.jpg' in home and '/images/hardware-20260930.jpg' in hardware
 assert 'dhillon@sage.ngo' in home and 'dhillon@sage.ngo' in hardware
 assert '6.5' in hardware
 assert 'https://sage.ngo/hardware/' in hardware
