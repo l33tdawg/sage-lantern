@@ -7,28 +7,28 @@ import { LanternMark } from '@/components/lantern-mark';
 import { pageMetadata } from '@/lib/metadata';
 export const metadata: Metadata = pageMetadata(
  'SAGE Lantern — Intelligence in your hands',
- 'Meet the next SAGE Lantern design: a 6.25-inch handheld AI terminal with a replaceable battery, physical voice control and local intelligence. Explore the hardware concept.',
+ 'Meet the next SAGE Lantern design: a 6.25-inch handheld AI terminal that runs on the USB-C supply you bring, with physical voice control and local intelligence. Explore the hardware concept.',
  '/hardware/',
  'hardware.jpg',
- 'SAGE Lantern front, rear and removable battery pack — AI-generated hardware concept.',
+ 'SAGE Lantern front and rear — AI-generated hardware concept.',
 );
 const specs=[
  ['Display','6.25-inch portrait touchscreen, 720 × 1560','Panel selected and in hand'],
- ['Compute','Orange Pi 5 Plus (RK3588) with a neural accelerator','Prototype platform, bench bring-up'],
- ['Power','10,000 mAh USB-C pack in a serviceable tray','Standard pack, not a custom cell'],
+ ['Compute','Radxa ROCK 5B+ (12 GB) with a neural accelerator','Committed for the fleet; bring-up next'],
+ ['Power','Bring your own USB-C supply (PD, or a fixed 5 V/4 A source)','No pack or charger is bundled'],
  ['Interaction','Physical hold-to-talk control and I2S microphone','Voice input, on-screen answers'],
- ['Camera','16 MP camera module','Visual-question direction in development'],
- ['Connectivity','915 MHz LoRa radio with GNSS','Antenna fit and range testing to come'],
+ ['Camera','Internal camera on a CSI ribbon','Visual-question direction in development'],
+ ['Connectivity','915 MHz LoRa and GNSS, plus a second LoRa radio for relay','Two external antennas; range testing to come'],
  ['Enclosure','90 × 182 × 38 mm printed PETG shell, ten parts','v1.3; first-article print next'],
 ];
 export default function Hardware(){return <>
  <Link prefetch={false} className="skip-link" href="#hardware-main">Skip to content</Link><SiteHeader/>
  <main id="hardware-main">
-  <section className="hardware-hero wrap"><Link prefetch={false} className="hardware-back" href="/">SAGE / <span>LANTERN</span></Link><div className="hardware-title"><div><div className="eyebrow section-label">LOCAL INTELLIGENCE. REAL-WORLD CURIOSITY.</div><h1>A bigger world.<br/><span className="serif">In your hands.</span></h1></div><div className="hardware-hero-note"><LanternMark/><p>Meet the next chapter<br/>of SAGE Lantern.</p></div></div><div className="hardware-intro"><p>A handheld AI terminal for asking, exploring and making sense of the world around you. Designed to take useful intelligence beyond the places with reliable internet.</p><Link prefetch={false} className="text-link" href="#design">Inside the design <ArrowDown size={18}/></Link></div><figure className="hardware-product"><Image unoptimized priority src="/images/hardware.jpg" alt="Concept render of a rugged SAGE Lantern showing the 6.25-inch portrait screen, rear camera and removable battery pack" width={1536} height={1024}/><figcaption>Next-generation design direction · AI-generated concept, not a production photograph</figcaption></figure><div className="hardware-stats"><div><strong>6.25<span>″</span></strong><p>A taller screen to read and explore</p></div><div><Battery/><strong>10,000 mAh</strong><p>A standard USB-C pack, replaceable</p></div><div><AudioLines/><strong>Hold. Ask. Explore.</strong><p>A physical button for your next question</p></div></div></section>
-  <section className="section wrap" id="design"><div className="eyebrow section-label">DESIGNED AROUND EVERYDAY CURIOSITY</div><div className="hardware-design-head"><h2>Pick it up.<br/><span className="muted">Follow a question.</span></h2><p className="body-copy">We’re bringing the essentials into one handheld form: a readable screen, a tactile voice button, a camera and a battery you can replace.</p></div><div className="hardware-features">{[
+  <section className="hardware-hero wrap"><Link prefetch={false} className="hardware-back" href="/">SAGE / <span>LANTERN</span></Link><div className="hardware-title"><div><div className="eyebrow section-label">LOCAL INTELLIGENCE. REAL-WORLD CURIOSITY.</div><h1>A bigger world.<br/><span className="serif">In your hands.</span></h1></div><div className="hardware-hero-note"><LanternMark/><p>Meet the next chapter<br/>of SAGE Lantern.</p></div></div><div className="hardware-intro"><p>A handheld AI terminal for asking, exploring and making sense of the world around you. Designed to take useful intelligence beyond the places with reliable internet.</p><Link prefetch={false} className="text-link" href="#design">Inside the design <ArrowDown size={18}/></Link></div><figure className="hardware-product"><Image unoptimized priority src="/images/hardware.jpg" alt="Concept render of a rugged SAGE Lantern showing the 6.25-inch portrait screen, rear camera and two antennas" width={1536} height={1024}/><figcaption>Next-generation design direction · AI-generated concept, not a production photograph</figcaption></figure><div className="hardware-stats"><div><strong>6.25<span>″</span></strong><p>A taller screen to read and explore</p></div><div><Battery/><strong>USB-C</strong><p>Bring your own supply — no pack bundled</p></div><div><AudioLines/><strong>Hold. Ask. Explore.</strong><p>A physical button for your next question</p></div></div></section>
+  <section className="section wrap" id="design"><div className="eyebrow section-label">DESIGNED AROUND EVERYDAY CURIOSITY</div><div className="hardware-design-head"><h2>Pick it up.<br/><span className="muted">Follow a question.</span></h2><p className="body-copy">We’re bringing the essentials into one handheld form: a readable screen, a tactile voice button, a camera and power you bring yourself.</p></div><div className="hardware-features">{[
    [AudioLines,'A button that invites a question.','Hold to speak, then read the answer on the screen. A simple physical action keeps the interface approachable.'],
    [ScanEye,'Bring the world into the conversation.','A rear camera supports the visual-question direction: show what you’re looking at, then ask about it.'],
-   [Battery,'Replace the pack. Keep the device.','A standard 10,000 mAh USB-C pack sits in its own tray rather than a custom cell, so the power source can be replaced without rebuilding the device.'],
+   [Battery,'Bring your own power.','The Lantern runs on a standard USB-C supply — PD, or a fixed 5 V/4 A source — instead of a custom cell or a bundled pack, so power is something you already own.'],
    [Wrench,'Made to be understood.','A ventilated, serviceable enclosure puts assembly, maintenance and repair into the design from the beginning.'],
   ].map(([Icon,title,body])=>{const FeatureIcon=Icon as typeof AudioLines;return <article key={title as string}><FeatureIcon/><h3>{title as string}</h3><p>{body as string}</p></article>})}</div></section>
   <section className="hardware-compute"><div className="wrap"><Cpu/><div><div className="eyebrow section-label">INTELLIGENCE CLOSE TO YOU</div><h2>The thinking happens<br/><span className="serif">right here.</span></h2><p className="body-copy">Lantern’s local AI runs on the device. The aim is to make everyday learning and problem-solving useful even when the internet isn’t available.</p><Link prefetch={false} className="text-link" href="/#mission">The mission behind the machine <ArrowUpRight size={18}/></Link></div></div></section>
