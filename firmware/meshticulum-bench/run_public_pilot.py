@@ -50,6 +50,8 @@ def main():
     p.add_argument('--current-device-handoff-confirmed',action='store_true',required=True)
     p.add_argument('--install-runtime',action='store_true')
     p.add_argument('--ask-sudo',action='store_true')
+    p.add_argument('--reuse-management-connections',action='store_true',
+        help='Explicitly own finite SSH control connections; native admission remains separate.')
     args=p.parse_args();os.umask(0o077)
     config=json.loads(_read(args.config,16384))
     archive=args.runtime_archive.read_bytes()
@@ -89,6 +91,7 @@ def main():
         measured_airtime_us=None,measured_energy_joules=None,measured_eirp_dbm=None)
     controller=None
     try:
+        if args.reuse_management_connections:operator.open_connections()
         if args.install_runtime:
             result['installations']={unit:operator.install_runtime(unit,archive) for unit in config['units']}
         before={unit:operator.facts(unit) for unit in config['units']}
@@ -118,7 +121,16 @@ def main():
         if controller is not None:
             result['cleanup']=controller.retire();result['links']=controller.links
             if any('retirement_error' in item or 'stop_error' in item for item in result['cleanup']):result['complete']=False
-        for job in operator.jobs.values():operator.reap(job)
+        for job in operator.jobs.values():
+            try:operator.reap(job)
+            except BaseException as error:
+                result.setdefault('management_client_cleanup_errors',[]).append(type(error).__name__)
+                result['complete']=False
+        try:
+            if args.reuse_management_connections:operator.close_connections()
+        except BaseException as error:
+            result['management_connection_cleanup_error']=type(error).__name__
+            result['complete']=False
         operator.passwords.clear()
         result['management_events']=operator.events
         result['handoff_overrun']=any(item.get('outside_handoff') is True for item in operator.events)

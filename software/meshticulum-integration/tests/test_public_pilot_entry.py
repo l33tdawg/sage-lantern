@@ -20,8 +20,11 @@ def load():
     return module
 
 
-@pytest.mark.parametrize('fault',[None,'lifecycle','retirement','transfer','late_cleanup'])
-def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(pack,tmp_path,monkeypatch,fault):
+@pytest.mark.parametrize('fault,reuse',[(fault,reuse)
+    for reuse in (False,True)
+    for fault in (None,'lifecycle','retirement','transfer','late_cleanup','management_cleanup')
+    if reuse or fault!='management_cleanup'])
+def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(pack,tmp_path,monkeypatch,fault,reuse):
     module=load();cfg,_=config();cfg['handoff_end_epoch_us']=module.time.time_ns()//1000+600000000
     manifest=b'{}';cfg['manifest_sha256']=hashlib.sha256(manifest).hexdigest()
     archive=tmp_path/'runtime.tar.gz'
@@ -39,6 +42,10 @@ def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(p
                 monotonic_us=self.round,services={'source_only':self.round if fault=='lifecycle' else 'stable'})
         def seed(self,packet):seeds.append(packet)
         def reap(self,job):calls.append('reap')
+        def open_connections(self):calls.append('management-open')
+        def close_connections(self):
+            calls.append('management-close')
+            if fault=='management_cleanup':raise RuntimeError('source cleanup refusal')
     class Controller:
         def __init__(self,*args,**kwargs):self.links=[];self.expiry=kwargs['expires_epoch_us']
         def mixed_piece(self,request,response):
@@ -50,14 +57,16 @@ def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(p
     monkeypatch.setattr(module,'SSHOperator',Operator);monkeypatch.setattr(module,'Controller',Controller)
     monkeypatch.setattr(sys,'argv',['pilot','--config',str(path),'--runtime-archive',str(archive),
         '--pack',str(pack[0]),'--trust',str(trust),'--output',str(output),'--country','MY',
-        '--antennas-confirmed','--current-device-handoff-confirmed'])
+        '--antennas-confirmed','--current-device-handoff-confirmed',
+        *(['--reuse-management-connections'] if reuse else [])])
     if fault:
         with pytest.raises(SystemExit) as caught:module.main()
         assert caught.value.code==1
     else:module.main()
     record=json.loads((output/'RESULT.json').read_bytes())
     assert record['complete'] is (fault is None)
-    assert calls==['retire']
+    assert calls==(['management-open','retire','management-close'] if reuse else ['retire'])
+    if fault=='management_cleanup':assert record['management_connection_cleanup_error']=='RuntimeError'
     assert seeds[0]['unit']=='unit-b' and len(seeds[0]['files'])==10
     assert seeds[1]['unit']=='unit-c' and set(seeds[1]['files'])=={'manifest.json','manifest.sig.json'}
     assert record['measured_airtime_us'] is None and not record['matched_benchmark'] and not record['private_admission']

@@ -149,7 +149,7 @@ class SSHOperator:
         require(20<remaining<=900,'current_finite_ssh_window_required')
         self.deadline=self.clock()+remaining;self.passwords=dict(passwords or {})
         self.next_port=config['port_base'];require(type(self.next_port) is int and 1024<=self.next_port<=65400,'invalid_pilot_port_range')
-        self.jobs={};self.events=[]
+        self.jobs={};self.events=[];self.connections=None
         for unit,row in self.config['units'].items():
             require(type(row) is dict and set(row)=={'ssh','python','sudo','host_boot_id','ip_address'},'invalid_pilot_host_config')
             require(type(row['sudo']) is bool and type(row['python']) is str and row['python'].startswith('/'),'invalid_pilot_host_python')
@@ -157,7 +157,7 @@ class SSHOperator:
             require(str(ipaddress.ip_address(row['ip_address']))==row['ip_address'],'invalid_pilot_host_address')
             self._ssh(unit,pty=False)
 
-    def _ssh(self,unit,*,pty):
+    def _ssh(self,unit,*,pty,use_connections=True):
         argv=self.config['units'][unit]['ssh']
         require(type(argv) is list and len(argv)>=6 and Path(argv[0]).name=='ssh'
                 and all(type(x) is str and '\n' not in x for x in argv),'invalid_pinned_ssh_argv')
@@ -176,20 +176,66 @@ class SSHOperator:
                 and re.fullmatch('[A-Za-z0-9._:@\\[\\]-]+',argv[-1])
                 and options.get('StrictHostKeyChecking')=='yes' and options.get('BatchMode')=='yes',
                 'pinned_noninteractive_ssh_required')
-        result.extend(('-o','ControlMaster=no','-o','ClearAllForwardings=yes','-o','ForwardAgent=no',
+        control = ['-o','ControlMaster=no','-o','ControlPath=none']
+        if use_connections and self.connections is not None:
+            # A missing control socket must fail rather than silently opening
+            # an unrelated replacement SSH connection.
+            control = ['-o','ControlMaster=no','-o','ControlPath='+str(self.connections.path(unit)),
+                       '-o','ProxyCommand=/usr/bin/false']
+        result.extend((*control,'-o','ClearAllForwardings=yes','-o','ForwardAgent=no',
                        '-o','ForwardX11=no','-o','PermitLocalCommand=no',argv[-1]))
         return result
 
-    def _argv(self,unit,command,*,root):
+    def open_connections(self):
+        """Explicit finite management reuse, before the resource clock starts."""
+        from lantern_meshticulum.bench.pilot_connections import Connections
+        require(self.connections is None and self.clock()+20<self.deadline,
+                'ssh_control_duplicate_or_expired')
+        connections=Connections(clock=self.clock,deadline=self.deadline,job_factory=Job)
+        self.connections=connections
+        try:
+            for unit in self.config['units']:
+                connections.open(unit,self._ssh(unit,pty=False,use_connections=False))
+            self.events.append(dict(schema='meshticulum.owned-ssh-connections.v1',opened=True,
+                units=list(connections.jobs),outside_handoff=self.clock()>=self.deadline))
+        except BaseException:
+            try:connections.close()
+            finally:
+                if connections.closed:self.connections=None
+            raise
+
+    def close_connections(self):
+        if self.connections is None:return
+        require(all(job.process.poll() is not None for job in self.jobs.values()),
+                'ssh_control_clients_still_live')
+        connections=self.connections
+        try:connections.close()
+        finally:
+            if connections.closed:self.connections=None
+            self.events.append(dict(schema='meshticulum.owned-ssh-connections.v1',opened=False,
+                all_master_processes_terminal=all(job.process.poll() is not None for job in connections.jobs.values()),
+                outside_handoff=self.clock()>=self.deadline))
+
+    def _argv(self,unit,command,*,root,use_connections=True):
         row=self.config['units'][unit];sudo=root and row['sudo']
         if sudo:command=['sudo','-p',PROMPT.decode(),*(['-n'] if self.passwords.get(unit) is None else []),'--',*command]
-        return self._ssh(unit,pty=sudo)+[shlex.join(command)]
+        return self._ssh(unit,pty=sudo,use_connections=use_connections)+[shlex.join(command)]
 
     def _command(self,unit,command,schema,*,root=True,cleanup=False):
         deadline=min(self.clock()+5,self.deadline)
         require(self.clock()<deadline or cleanup,'ssh_pilot_window_expired')
         if cleanup:deadline=self.clock()+5
-        job=Job(self._argv(unit,command,root=root),password=self.passwords.get(unit),deadline=deadline,clock=self.clock)
+        try:argv=self._argv(unit,command,root=root)
+        except (OSError,ValueError,RuntimeError):
+            if not cleanup:raise
+            # An explicitly requested native stop/retirement may need a new
+            # pinned management connection after its control master is lost.
+            # Dispatch never takes this recovery path. Native pidfd, boot and
+            # run bindings are still checked by the cleanup action.
+            argv=self._argv(unit,command,root=root,use_connections=False)
+            self.events.append(dict(unit=unit,schema='meshticulum.ssh-cleanup-recovery.v1',
+                cleanup=True,outside_handoff=self.clock()>=self.deadline))
+        job=Job(argv,password=self.passwords.get(unit),deadline=deadline,clock=self.clock)
         try:
             require(job.wait()==0,'native_management_command_failed')
             value=one_record(bytes(job.output),schema)
