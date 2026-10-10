@@ -11,7 +11,7 @@ description = "Lantern device policy, finite pilots and SAGE application adapter
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{name = "SAGE Foundation"}, {name = "Dhillon Andrew Kannabhiran"}]
-dependencies = ["meshticulum @ git+https://github.com/l33tdawg/meshticulum.git@6605ba714ce414445673b40bfcfe93fe467b86aa"]
+dependencies = ["meshticulum @ git+https://github.com/l33tdawg/meshticulum.git@a89c1ca6fdf1865d61367cf3a8d59ac1ab50cb39"]
 
 [project.optional-dependencies]
 sage = ["sage-agent-sdk==11.19.10+lantern.20260906", "httpx>=0.28,<1"]
