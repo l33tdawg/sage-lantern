@@ -12,7 +12,7 @@ This repository is the private development home of that work — device runtime,
 touchscreen interface, firmware, provisioning tools, public website and the
 engineering documentation behind them.
 
-[Meshticulum](https://github.com/l33tdawg/meshticulum/tree/996edadfd5a88788a6480c6dfc5a9c48405f311c)
+[Meshticulum](https://github.com/l33tdawg/meshticulum/tree/0e240641d04b373402267c68cdf261a516a5156e)
 owns the reusable transport, crypto, flow, drivers and resource protocols.
 Lantern consumes that pinned dependency and owns its
 [private/native integration](software/meshticulum-integration/README.md) and

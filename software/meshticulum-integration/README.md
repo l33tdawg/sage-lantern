@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Lantern integration for Meshticulum
 
-This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/996edadfd5a88788a6480c6dfc5a9c48405f311c). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
+This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/0e240641d04b373402267c68cdf261a516a5156e). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
 
 The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. It is candidate integration code, not an installed or qualified device service. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
 
