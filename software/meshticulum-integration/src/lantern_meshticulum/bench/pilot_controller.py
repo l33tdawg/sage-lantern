@@ -6,7 +6,7 @@ verification and revocation. This module installs no runtime, discovers no host
 and grants no RF window. A source/model operator provides source evidence only.
 """
 import base64
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 import json
 import secrets
@@ -17,10 +17,14 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import profile_for
+from lantern_meshticulum.bench.profiles import RADIO_ADMISSION, profile_for
 from meshticulum.bench.wire import require
 
 UNITS = ('unit-a', 'unit-b', 'unit-c')
+# Receiver setup has a ten-second bound. Leave another five seconds for native
+# preparation and the driver's ARM receipt; never buy this time by renewing the
+# original resource. The native driver independently checks the remaining time.
+RADIO_SETUP_RESERVE_MS = 15000
 
 
 def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
@@ -43,6 +47,17 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
     for unit in (sender,receiver):
         require(str(uuid.UUID(boots[unit])) == boots[unit], 'invalid_pilot_pair_boot')
         PeerID(**peers[unit])
+    radio_profile = None
+    if transport == 'lora':
+        require(type(radio_permission) is dict and radio_permission == {'country':'MY','antenna_confirmed':True},
+                'pilot_explicit_radio_confirmation_required')
+        selected = profile_for(profile)
+        remaining_ms = (application_expires_epoch_us - now_epoch_us) // 1000
+        lease_ms = min(selected.lease_ms, remaining_ms - RADIO_SETUP_RESERVE_MS)
+        require(lease_ms >= RADIO_ADMISSION.min_lease_ms,
+                'pilot_original_time_too_short_for_radio_admission')
+        radio_profile = replace(selected, lease_ms=lease_ms)
+        RADIO_ADMISSION.check(radio_permission['country'], radio_permission['antenna_confirmed'], radio_profile)
     run_id, generation, key = secrets.token_hex(16), secrets.token_hex(16), secrets.token_bytes(32)
     shared = dict(issued_epoch_us=max(1,now_epoch_us-1000000), expires_epoch_us=application_expires_epoch_us)
     values = {}
@@ -59,11 +74,9 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                 application_deadline_monotonic_us=None,initiator_address=list(endpoints[sender]),
                 responder_address=list(endpoints[receiver]),limits=asdict(IpLimits()))
         else:
-            require(type(radio_permission) is dict and radio_permission == {'country':'MY','antenna_confirmed':True},
-                    'pilot_explicit_radio_confirmation_required')
             grant = dict(shared,schema='meshticulum.service-run.v1',unit=unit,host_boot_id=boots[unit],
                 local_peer=peers[unit],initiator=peers[sender],responder=peers[receiver],
-                session_id=run_id,generation=generation,profile=asdict(profile_for(profile)),
+                session_id=run_id,generation=generation,profile=asdict(radio_profile),
                 object=dict(descriptor,object_id=descriptor['sha256'],chunk_index=0),
                 sender_unit=sender,country='MY',antenna_confirmed=True,max_frames=512,
                 service=dict(kind='knowledge',format=format,application_expires_epoch_us=application_expires_epoch_us))

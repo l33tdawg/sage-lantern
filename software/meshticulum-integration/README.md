@@ -3,7 +3,7 @@
 
 This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
 
-The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite has [recorded native C/B evidence](../../docs/lantern/evidence/meshticulum-native-tcp-20261010.json). That scope does not qualify the whole product, mixed radio path or production private backend. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
+The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite and [four-hop public LoRa/IP transfer](../../docs/lantern/evidence/meshticulum-native-mixed-20261010.json) have recorded native evidence. Full LoRa resume, measured faster-IP return and production private qualification remain open. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
 
 ## What lives here
 
@@ -57,7 +57,7 @@ The [2026-10-10 compatibility evidence](../../docs/lantern/evidence/meshticulum-
 
 Eight fixture checks passed: signed live storage status, atomic stale conversation-guard refusal, actor isolation, capture restart with signed admission, durable replay to the same record, explicit acknowledgement, reconciliation after losing a committed HTTP PUT return, and fixture-policy revocation refusal. The SQLite main/WAL files contained no fixture plaintext canary. The [Python adapter exercise](tests/interop/backend_interop.py) and [Go backend fixture](tests/interop/backend_interop_test.go.txt) define the checks; their hashes and execution pins are in the evidence.
 
-The unknown-write injection loses the client return **after a real HTTP PUT commits**; it is not a network-disconnect experiment. Policy/lease callbacks and the capture boot ID remain modeled fixture inputs, with temporary Go fixture governance. This establishes isolated backend compatibility, not the production native owner/consent provider, private transport or production-store qualification. Private production remains disabled, and the mixed-path, private lifecycle, matched-benchmark and release gates remain open.
+The unknown-write injection loses the client return **after a real HTTP PUT commits**; it is not a network-disconnect experiment. Policy/lease callbacks and the capture boot ID remain modeled fixture inputs, with temporary Go fixture governance. This establishes isolated backend compatibility, not the production native owner/consent provider, private transport or production-store qualification. Private production remains disabled, and the remaining LoRa-resume/route-return, private lifecycle, matched-benchmark and release gates remain open.
 
 With the compatible SDK installed, the [fixture runner](tests/interop/run_backend_fixture.py) uses an explicit SAGE/core checkout and a read-only Go overlay. It creates temporary fixture stores and saves a local log in a new output directory:
 
@@ -72,7 +72,17 @@ The runner keeps dependency resolution offline. It opens loopback fixture server
 
 ## Native execution and application boundaries
 
-The [native TCP prerequisite](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#recorded-native-tcp-prerequisite) verified one 977-byte public piece from C's request through B's verified store to C's independent publisher/chunk check. A second response failed at 512 received stream bytes without caching the partial piece; the first verified piece survived. Four sessions/eight retired children retained one original 160-second expiry and their stream-byte debt. Actual receiver readiness and service lifetimes were checked; C SPI/RF was not opened. The 19.443863-second transaction includes SSH/controller gaps and is not link capacity or a matched benchmark. Claims remain bound to the evidence's exact commits/runtime.
+The earlier [native TCP prerequisite](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#recorded-native-tcp-prerequisite) verified one 977-byte public piece from C's request through B's verified store to C's independent publisher/chunk check. A second response failed at 512 received stream bytes without caching the partial piece; the first verified piece survived. Four sessions/eight retired children retained one original 160-second expiry and their stream-byte debt. Actual receiver readiness and service lifetimes were checked; C SPI/RF was not opened in that TCP-only campaign. The 19.443863-second transaction includes SSH/controller gaps and is not link capacity or a matched benchmark. Claims remain bound to that evidence's exact commits/runtime.
+
+### Recorded native mixed path and resume refusal
+
+The [2026-10-10 mixed-path evidence](../../docs/lantern/evidence/meshticulum-native-mixed-20261010.json) records four actual public hops: C→A LoRa request, A→B IP request, B→A IP response and A→C LoRa response. C independently verified the original request binding, publisher/manifest and complete **977-byte public piece**. All eight native children were terminal and retired. This bounded exchange used Meshticulum `6605ba7`, Lantern code `a41851a` and runtime archive `d3194a9`; the evidence records the full pins.
+
+A separate fresh resume campaign verified an initial TCP piece, then interrupted the next reply after **512 received stream bytes**. The first verified piece remained unchanged. B's fresh LoRa receiver then refused **before ARM/TX**: its fixed 90-second hardware lease exceeded the roughly 85 seconds remaining in the original 160-second resource window. That refusal is retained. The full LoRa-resume and measured faster-IP-return sequence remains unqualified; a lease-sizing repair is source-only and has not been deployed or physically retested.
+
+Final native audits covered 18 retired children: 17 terminal native jobs and one unused C child. Original debt was preserved, no visible radio holders remained, and production service lifetimes were unchanged. These observations apply to those completed campaigns and grant no authority for another run. They used the existing `mtb1-9816f92488` firmware; no firmware flash or full deployed-image hash equivalence is claimed.
+
+This result does not establish sustained RF goodput or a matched MeshCore/Reticulum speed advantage. Measured RF airtime, energy and EIRP remain unavailable. Private production owner/consent, private transport, remaining route qualification and public release gates stay open.
 
 The finite public radio entry point is `sage-lantern-meshticulum-service`. Its `--help` opens no device. Actual execution belongs to a fresh coordinated device window, current native admission and the trusted exclusive worker. The public radio/TCP deployment bundle disables private services; installation and inspection do not arm a radio or authorize a transfer.
 

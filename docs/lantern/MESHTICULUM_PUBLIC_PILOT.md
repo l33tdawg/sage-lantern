@@ -4,11 +4,29 @@ This runbook belongs to **Lantern**, which depends on the separate [Meshticulum 
 
 The [generic TCP worker](https://github.com/l33tdawg/meshticulum/blob/6605ba714ce414445673b40bfcfe93fe467b86aa/src/meshticulum/ip/worker.py), [radio worker](https://github.com/l33tdawg/meshticulum/blob/6605ba714ce414445673b40bfcfe93fe467b86aa/src/meshticulum/bench/serial_worker.py) and [MR1 codec](https://github.com/l33tdawg/meshticulum/blob/6605ba714ce414445673b40bfcfe93fe467b86aa/src/meshticulum/resources/resource.py) supply carrier and verification boundaries. This document grants no device window, private-radio permission, SAGE admission or production activation.
 
-The finite public TCP prerequisite now has recorded native C↔B execution: a selected public piece passed recipient publisher verification, and a deliberately interrupted second reply failed without entering the cache. The radio/TCP mixed path and full resume/route-return sequence remain under qualification. Source preparation, read-only preflight and historical results establish no fresh RF handoff.
+The finite native mixed path has now carried one public MR1 request C→A over LoRa and A→B over IP, with the reply returning B→A over IP and A→C over LoRa. C independently verified the publisher and complete 977-byte piece. A separate resume campaign preserved a verified TCP piece through injected loss, then failed before new radio dispatch because its lease did not fit the original remaining deadline. Full radio resume and measured faster-IP return remain unqualified. Historical execution, source preparation and read-only preflight establish no fresh RF handoff.
 
 Before radio activation, obtain a fresh finite device handoff and inspect current hardware, firmware, boots, exclusive ownership, power/region/antenna records and service lifetimes. Confirm the native authentication needed on every participating host. Historical releases and benchmark pins are location hints. A report of no visible radio holders is one observation; the actual worker must still acquire its exclusive owner.
 
 Use synthetic signed public resources and independent adjacent-link keys. Private SAGE providers remain disabled. Root privileges, an artifact hash, successful preparation and a current dispatch lease establish different facts.
+
+## Recorded native mixed path and resume attempt
+
+The [2026-10-10 native mixed evidence](evidence/meshticulum-native-mixed-20261010.json), schema `lantern.meshticulum.native-mixed-public-qualification.v1`, records the executed milestone and the subsequent failed resume campaign. The qualified code/artifact identities remain Meshticulum [`6605ba714ce4`](https://github.com/l33tdawg/meshticulum/commit/6605ba714ce414445673b40bfcfe93fe467b86aa), Lantern [`a41851a43010`](https://github.com/l33tdawg/sage-lantern/commit/a41851a4301008bd840a8508187a59a150eeaa0e), and runtime SHA-256 `d3194a92917056818dc58b6c7fce4f1320b37c4d6a16acaa9bc7512f593480a9`.
+
+The mixed request/reply used **four independent sessions and eight terminal, retired native children**. A forwarded the bytes actually received from C to B; B served the received request from its verified public store; A returned the response actually received over IP to C over LoRa. C's independent original-request, publisher/manifest and whole-chunk checks accepted **977 public bytes**. This is a finite public-piece mixed-path result, not a complete pack, sustained RF capacity or matched upstream benchmark.
+
+The transaction took **89.067811 seconds**, including SSH/controller gaps and final-radio-receipt intervals. Its **21 charged radio attempts** reserved **1,174,235 microseconds of calculated airtime** across DATA/ACK attempts; all radio children reported disarm and all attempt journals were unfenced. The reservation is an accounting estimate, not measured RF airtime. The one small transaction's elapsed time is not a link-capacity or matched-performance measurement.
+
+The **separate fresh resume campaign** first verified a direct TCP piece, then interrupted the next reply after **512 received stream bytes**. The first verified piece survived; the incomplete reply did not enter the verified cache. Fresh LoRa admission was attempted under that campaign's original **160-second expiry**, but B refused the new radio receiver **before ARM/TX** with `HardwareError:radio_authority_expired`: the fixed **90-second lease** could not fit about **85 seconds remaining**. The failed receiver made zero radio attempts. C's paired child was prepared but never started. Preserve this deadline-protecting refusal as a failed resume outcome; the missing piece was not resumed over LoRa and faster-IP return was not qualified.
+
+Final read-only native audits covered **18 retired children**, **17 started processes confirmed terminal**, and the one unused C child across these two campaigns. No visible radio-device holders remained; persistent debt and production service lifetimes were unchanged. These observations accompany the terminal/disarm/retirement evidence, rather than replacing worker ownership checks. C's handback was sent before **10:24 UTC on 2026-10-10**; that completed window grants no future dispatch authority.
+
+The first B audit comparison included management-envelope metadata absent from the native result file. A second read-only comparison normalized those two metadata fields; both audit attempts remain retained. The audits changed no grants or databases and extended no deadlines.
+
+Fresh radio lease sizing now has a correction in **Lantern source only**, with **22 focused source controls passed** and a separately recorded full integration run. It clips new leases to remaining original resource time minus a **15-second native setup reserve**, preserves waveform/power/attempt limits and original expiry, and refuses a duration below the admitted minimum before preparation. That change has not been deployed or RF-qualified and cannot inherit the successful mixed result. Any rerun needs a newly coordinated finite window, fresh child sessions and leases that preserve the original resource deadline and prior debt.
+
+Private native owner/consent and protected application admission, matched MeshCore/Reticulum measurements, actual RF airtime/energy/EIRP, license/source/relinking review, clean public history and release gates remain open. Keep failed and unavailable measurements alongside the successful piece.
 
 ## Recorded native TCP prerequisite
 
@@ -29,7 +47,7 @@ The final campaign comprised **four TCP sessions and eight native children**. Ac
 
 The single request-to-publisher-verification interval was **19.443863 seconds**, measured on C and including SSH/controller gaps. Its arithmetic rate, about **50.247 B/s**, describes this tiny-piece service transaction. It is not TCP link capacity, RF goodput, one-way latency or a matched benchmark. Kernel retransmission bytes, measured RF airtime, energy and EIRP remain unavailable.
 
-C's SPI/radio was never opened or armed. B's runtime inspection queried only disarmed HELLO/STATUS; the record contains zero RF ARM and TX commands. The result does not qualify C→A LoRa→B IP, fresh-LoRa resume, faster-IP return, private native storage or the public alpha. The remaining radio, private-backend, matched-upstream and release gates stay open.
+In that earlier TCP-only campaign, C's SPI/radio was never opened or armed. B's runtime inspection queried only disarmed HELLO/STATUS; its record contains zero RF ARM and TX commands. That prerequisite alone does not qualify a mixed route; the later mixed evidence above supplies the finite public-piece result. Fresh-LoRa resume, faster-IP return, private native storage and public alpha requirements remain open.
 
 Two earlier attempts remain in the evidence rather than being counted as this campaign's success: C's legacy state directory had mode `0755` and was refused; a later reply setup timed out because short-circuit polling starved the sender's sudo prompt. The controller now polls every owned handle, including a sender waiting for authentication. Those failed attempts retain their own outcomes and context; they are not erased or folded into the final common expiry.
 
@@ -37,7 +55,7 @@ Two earlier attempts remain in the evidence rather than being counted as this ca
 
 Separate [encrypted-backend evidence](evidence/meshticulum-encrypted-backend-20261010.json) records eight canonical-adapter checks using SDK `11.19.10+lantern.20260906` against real temporary REST/SQLite/vault fixtures, locally and on B Linux/arm64. B's isolated dependency target left its existing environment and service lifetimes unchanged. The [integration guide](../../software/meshticulum-integration/README.md#recorded-encrypted-backend-compatibility) links the exercises and their exact scope.
 
-Those checks include reconciliation after losing a client return following a real committed HTTP PUT; no real network disconnect was injected. Policy/lease and capture boot identity were modeled fixture inputs under temporary Go governance. No production stores, C or RF operation were involved. The result establishes backend compatibility only: it does not enable a private provider, qualify private transport or close this pilot's mixed-radio, resume/route-return, production lifecycle or release gates.
+Those checks include reconciliation after losing a client return following a real committed HTTP PUT; no real network disconnect was injected. Policy/lease and capture boot identity were modeled fixture inputs under temporary Go governance. No production stores, C or RF operation were involved in those fixture checks. The result establishes backend compatibility only: it does not enable a private provider, qualify private transport or close the remaining resume/route-return, production lifecycle or release gates.
 
 ## Prepared source stages
 
@@ -59,13 +77,13 @@ The provisioner creates protected, create-only child files, including `grant.jso
 
 The controller must preserve the actual process handles and evidence for these stages and enforce the finite device window. A set of successfully prepared children is not an executed or qualified route.
 
-The source `Controller` now implements the four-hop request/reply sequence. Its
-management operator must supply real child handles, native status, preparation,
-collection, recipient verification and retirement. The concrete SSH adapter and
-one-piece mixed runner are source-prepared. The finite resume sequence now also
-has a source-prepared entry; its hardware execution remains open. Modeled
-records in controller tests do not establish an
-executed device route.
+The `Controller` implements the four-hop request/reply sequence. Its management
+operator supplies real child handles, native status, preparation, collection,
+recipient verification and retirement. The concrete SSH adapter and one-piece
+mixed runner now have recorded native execution at the pins above. The resume
+entry also ran, but stopped at the fresh-radio lease refusal; its complete
+radio-resume and route-return requirements remain open. Modeled controller
+tests are separate source controls, rather than proof of another device route.
 
 Public jobs create `job.json` after admission and payload validation. Radio jobs
 publish `radio-ready.json` only after ARM and flow startup; TCP receivers retain
@@ -214,10 +232,11 @@ are retired and the incomplete object is never quarantined or publisher-accepted
 This hook is root/operator-selected, receiver-only and limited to public MR1
 responses; a peer cannot request it and private formats are refused.
 
-The native TCP prerequisite proved the first-piece verification, bounded loss
-and unchanged cache through that loss. Its radio resume and faster-IP return
-were not executed. The full source sequence then rechecks C's signed cache and
-uses fresh direct LoRa request/response admission for that piece. The already
+The native TCP prerequisite proved first-piece verification, bounded loss and
+an unchanged cache. The separate executed resume campaign then attempted the
+fresh radio stage, but B refused its overlong lease before ARM/TX. The remaining
+source sequence must recheck C's signed cache and use fresh direct LoRa
+request/response admission for that piece within the original deadline. The already
 verified piece remains present and is not retransferred. It samples a fresh IP
 generation on the third piece and sends the fourth over IP only if the new
 verified rate exceeds the observed LoRa rate. A slower IP sample remains a

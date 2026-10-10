@@ -1,0 +1,182 @@
+{
+  "coordination": {
+    "handoff_sent_successfully": true,
+    "last_clock_observation_before_handoff_utc": "2026-10-10T10:23:45Z",
+    "radio_window_reusable": false,
+    "window_end_utc": "2026-10-10T10:24:00Z",
+    "window_start_utc": "2026-10-10T10:09:00Z"
+  },
+  "date_utc": "2026-10-10",
+  "execution_pins": {
+    "bundle_manifest_sha256": "5805dec36183d469c484f45e24cf5491032758d297e4f801ef517d09015d85df",
+    "core_commit": "6605ba714ce414445673b40bfcfe93fe467b86aa",
+    "lantern_documentation_head_at_execution": "029a364c6df3d4a68b0de1e279cb1c6f4342951a",
+    "lantern_runtime_code_commit": "a41851a4301008bd840a8508187a59a150eeaa0e",
+    "runtime_sha256": "d3194a92917056818dc58b6c7fce4f1320b37c4d6a16acaa9bc7512f593480a9"
+  },
+  "hardware_scope": {
+    "bandwidth_hz": 500000,
+    "chip_power_setting_dbm": 0,
+    "coding_rate": 5,
+    "firmware_flashes": 0,
+    "frequency_hz": 921375000,
+    "full_deployed_image_sha256_equivalence_proved": false,
+    "spreading_factor": 7,
+    "usb_firmware_label": "mtb1-9816f92488"
+  },
+  "mixed_pilot": {
+    "airtime_basis": "calculated reservation including DATA/ACK attempts; not measured RF airtime",
+    "all_attempt_journals_unfenced": true,
+    "all_radio_children_disarmed": true,
+    "campaign_id": "c4f74b94630d8aeb4240f8b820c8abf3",
+    "charged_radio_attempts": 21,
+    "complete": true,
+    "hops": [
+      {
+        "format": "MR1.request",
+        "phase": "complete",
+        "receiver": "unit-a",
+        "run_id": "e51a4f7d3088f6d1e6305d827cbb14de",
+        "sender": "unit-c",
+        "transport": "lora"
+      },
+      {
+        "format": "MR1.request",
+        "phase": "complete",
+        "receiver": "unit-b",
+        "run_id": "cd85e3a593a2e650470869debaaec958",
+        "sender": "unit-a",
+        "transport": "tcp"
+      },
+      {
+        "format": "MR1.response",
+        "phase": "complete",
+        "receiver": "unit-a",
+        "run_id": "3a077e6b10106939a3c4f8038ac6703c",
+        "sender": "unit-b",
+        "transport": "tcp"
+      },
+      {
+        "format": "MR1.response",
+        "phase": "complete",
+        "receiver": "unit-c",
+        "run_id": "205d851c9c0a5f403575e68f3b82780e",
+        "sender": "unit-a",
+        "transport": "lora"
+      }
+    ],
+    "original_application_expires_epoch_us": 1791627368348334,
+    "private_admission": false,
+    "production_service_lifetimes_unchanged": true,
+    "public_manifest_sha256": "1902307c5270d5a91d4215761d3feb18e103a32af04ac9b12d3f0ce8a0e59b48",
+    "request_to_publisher_verification_us": 89067811,
+    "reserved_estimated_airtime_us": 1174235,
+    "retired_children": 8,
+    "sage_imported": false,
+    "sessions": 4,
+    "terminal_native_children": 8,
+    "timing_scope": "One small public request/reply transaction including SSH/controller and final-radio-receipt intervals; not sustained link capacity or a matched benchmark.",
+    "useful_independently_publisher_verified_bytes": 977
+  },
+  "raw_evidence": {
+    "files_sha256": {
+      "native-mixed-attempt-01/RESULT.json": "9504e9a8fe5f822878a79630f77498f2af9af66bf8f4c46789fac0a687ffe762",
+      "native-resume-attempt-01/RESULT.json": "7b1db7f2c396b0178aebe9b21502581d97074e544b08f8bd130261a2f8993a54",
+      "native-resume-attempt-01/management-0032.out": "c72e94b6095a824d177f8b0a30b1326a855ac2000993e5b66f0843fad63cac74",
+      "native-resume-attempt-01/management-0033.out": "ba3f9a2df668d70ee2eb2704bb06b8d129e47b06fc84267a9ff8ce807b915516",
+      "native-resume-attempt-01/management-0056.out": "ba3f9a2df668d70ee2eb2704bb06b8d129e47b06fc84267a9ff8ce807b915516",
+      "native-window-handback-01/unit-a.json": "6c26c8ac2a6b4156e039f03a06e55ac618e6631352d0a4925bc5097b74f99269",
+      "native-window-handback-01/unit-b-failure.out": "23421d75410d1a9031e353e478240a76353a034d25a567a547466615e57c43b3",
+      "native-window-handback-01/unit-c.json": "105d7d80d9fc5ec1779e67c48fbd4dddd7bf1a75b648f60c78d6e3af4fc9f092",
+      "native-window-handback-02/unit-b.json": "6128298e552a62ad1b83fd226afb9e2dd285e3e67997aabc8217b9a44bad6366",
+      "native_mixed_pilot-01.py": "43a828a318dbbb4159e91bcc121df5b43d4989d2240a64f35d462f42824cf841",
+      "native_resume_pilot-01.py": "b1adcb1f2fe940a29738417438cb3d891f472c9483ee4facbc5c26c46bcac71c",
+      "native_window_handback-01.py": "79ef1aefa9ab7975f5bf047376f7d9ca5c835f800deae1a9338b5c9cb3aace35",
+      "native_window_handback-02.py": "69ccb7898dc96eb4501238771e8cf95cfc6da1fa7bc09bcc041f39be8342dab2",
+      "public-pilot-04/FIXTURE.json": "b64776c4a72b8d122ea3ea58208deccd02aa9e6333f7af1c0b0a519b37afe39d",
+      "public-pilot-05/FIXTURE.json": "5b9d5379685a65ad38a2919672d7afef24a924190ef0f0a730fea2014f8209d7"
+    },
+    "not_embedded_in_meshticulum_core": true,
+    "retained_in_private_work_directory": true
+  },
+  "remaining_gates": {
+    "clean_initial_history_published": false,
+    "distributed_firmware_notice_source_license_closure": false,
+    "fair_matched_meshcore_reticulum_benchmark": false,
+    "measured_faster_ip_return": false,
+    "private_production_enabled": false,
+    "private_transport_qualified": false,
+    "public_alpha_ready": false,
+    "qualified_private_native_owner_consent_provider": false,
+    "successful_fresh_lora_resume": false
+  },
+  "resume_attempt": {
+    "campaign_id": "15acd379c4138a465fb13ed0e00585e9",
+    "complete": false,
+    "expired_campaign_renewed": false,
+    "failed_receive_journal_fenced": true,
+    "failed_receiver_radio_attempts": 0,
+    "failed_reply_not_durable_or_cached": true,
+    "failure_before_arm_or_tx": true,
+    "faster_ip_return_qualified": false,
+    "fixed_hardware_lease_ms": 90000,
+    "fresh_lora_receiver_failure": "HardwareError:radio_authority_expired",
+    "full_lora_resume_qualified": false,
+    "initial_tcp_piece_publisher_verified": true,
+    "initial_verified_piece_preserved": true,
+    "injected_loss_received_stream_bytes": 512,
+    "native_initial_piece": {
+      "campaign_id": "15acd379c4138a465fb13ed0e00585e9",
+      "chunk_sha256": "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa",
+      "original_application_expires_epoch_us": 1791627543286213,
+      "publisher_verified": true,
+      "useful_verified_bytes": 977,
+      "verified_monotonic_us": 83708603948
+    },
+    "original_application_expires_epoch_us": 1791627543286213,
+    "public_manifest_sha256": "ee37ea4c23cde232d912a06b6cf4b1ccfc0d6cad51e2776c617741d0ac708465",
+    "remaining_resource_ms_at_receiver_start": 84593.404,
+    "unstarted_sender_children": 1,
+    "verified_chunks_after_loss": [
+      "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+    ],
+    "verified_chunks_before_loss": [
+      "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+    ]
+  },
+  "schema": "lantern.meshticulum.native-mixed-public-qualification.v1",
+  "source_repair": {
+    "change": "Shorten fresh admitted hardware leases to fit remaining original resource time, reserving native setup time; refuse insufficient windows before preparation.",
+    "focused_source_controls_passed": 22,
+    "full_integration_controls_passed": 517,
+    "full_integration_controls_skipped": 1,
+    "native_deployed": false,
+    "native_rf_qualified": false,
+    "owner_repository": "l33tdawg/sage-lantern",
+    "sandbox_restricted_test_report_sha256": "f42ecb64a6a993690eed924765223b29b46b1f4b3b1d6163475e221a437e838e",
+    "source_test_report": "lease-source-controls-escalated.xml",
+    "source_test_report_sha256": "d0ea82aa25e37314c2e159cf82026e6eb4042d33de81c73e1adacce75330d3ef"
+  },
+  "terminal_handoff_audit": {
+    "audit_repair": "The first B comparison included management-envelope metadata absent from the native result file. The second read-only audit normalized those two metadata fields; both audit attempts are retained.",
+    "database_writes": false,
+    "deadline_extension": false,
+    "grant_changes": false,
+    "per_unit_retired_children": {
+      "unit-a": 4,
+      "unit-b": 7,
+      "unit-c": 7
+    },
+    "persistent_debt_matches_terminal_snapshots": true,
+    "prepared_children_retired": 18,
+    "started_native_processes_terminal": 17,
+    "unstarted_child_confirmed": 1,
+    "visible_radio_device_holders": 0
+  },
+  "unavailable_measurements": {
+    "kernel_retransmission_bytes": null,
+    "measured_eirp_dbm": null,
+    "measured_energy_joules": null,
+    "measured_rf_airtime_us": null
+  }
+}
