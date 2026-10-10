@@ -277,7 +277,9 @@ class SSHOperator:
         require(package['grant']['host_boot_id']==row['host_boot_id']
                 and package['application_expires_epoch_us']<=self.config['handoff_end_epoch_us']-10000000,
                 'pilot_package_outside_boot_or_cleanup_window')
-        return self._package(package,'meshticulum.provisioned-public-pilot.v1')
+        require(package.get('schema') == 'meshticulum.public-pilot-package.v2',
+                'pilot_parent_package_required')
+        return self._package(package,'meshticulum.provisioned-public-pilot.v2')
 
     def seed(self,package):
         require(package['host_boot_id']==self.config['units'][package['unit']]['host_boot_id'],'public_seed_wrong_native_boot')

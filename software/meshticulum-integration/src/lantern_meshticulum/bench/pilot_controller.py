@@ -18,6 +18,7 @@ from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
 from lantern_meshticulum.bench.profiles import RADIO_ADMISSION, profile_for
+from lantern_meshticulum.bench.pilot_parent_caps import ParentCaps, canonical
 from meshticulum.bench.wire import require
 
 UNITS = ('unit-a', 'unit-b', 'unit-c')
@@ -92,22 +93,32 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 
 class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
-                 handoff_deadline_monotonic, peers, boots, radio_permission=None,
+                 handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
                  clock=time.monotonic, epoch=None, sleep=time.sleep):
         self.operator,self.clock,self.sleep=operator,clock,sleep
+        require(type(parent) is ParentCaps and parent.current() is True,
+                'pilot_existing_parent_required')
+        self.parent = self._parent_ref = parent
         self.epoch=epoch or (lambda:time.time_ns()//1000)
         self.campaign_id=identifier(campaign_id);self.resource_sha256=resource_sha256
         self.expires_epoch_us=expires_epoch_us;self.peers,self.boots=peers,boots
         self.radio_permission=radio_permission
+        require(expires_epoch_us <= parent.policy.expires_epoch_us
+                and set(peers) == set(boots) == {u.unit for u in parent.policy.units}
+                and all(PeerID(**peers[u.unit]) == u.peer and boots[u.unit] == u.host_boot_id
+                        for u in parent.policy.units), 'pilot_parent_scope_changed')
         now=self.clock();remaining=(expires_epoch_us-self.epoch())/1e6
         require(0 < remaining <= 180 and handoff_deadline_monotonic > now+10,
                 'pilot_current_finite_window_required')
         # Reserve ten seconds for revocation and owned-job cleanup.
-        self.deadline=min(now+remaining,handoff_deadline_monotonic-10)
+        self.deadline=min(now+remaining,handoff_deadline_monotonic-10,
+                          parent.policy.deadline_monotonic_us/1000000)
         self.last_clock=(self.epoch(),now)
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
+        require(self.parent is self._parent_ref and self.parent.current() is True,
+                'pilot_parent_not_current')
         mono,epoch=self.clock(),self.epoch()
         require(epoch>=self.last_clock[0] and mono>=self.last_clock[1], 'pilot_controller_clock_regressed')
         self.last_clock=(epoch,mono)
@@ -132,9 +143,43 @@ class Controller:
         self.links.append(row);handles={};prepared=[];row['prepared']=prepared
         row['attempted']=[];row['retired']=[]
         try:
+            self.current()
+            permit = self.parent.prepay_pair(tuple(pair['packages'].values()))
+            children = self.parent.consume(permit)
+            row['parent_allocation_id'] = permit.key
+            proofs = {child.unit: child.to_dict() for child in children}
+            frozen_packages = {}
+            for unit, package in pair['packages'].items():
+                wrapped = dict(package, schema='meshticulum.public-pilot-package.v2',
+                    parent=dict(schema='meshticulum.public-parent-allocation.v1',
+                        parent_id=self.parent.policy.parent_id, policy_digest=self.parent.policy.digest,
+                        allocation_id=permit.key, child=proofs[unit]))
+                frozen_packages[unit] = canonical(wrapped)
+            row['prepared_parent_claims'] = {}
             for unit in (receiver,sender):
                 self.current();row['attempted'].append(unit)
-                self.operator.prepare(pair['packages'][unit]);prepared.append(unit)
+                package = json.loads(frozen_packages[unit])
+                receipt = self.operator.prepare(package)
+                require(canonical(package) == frozen_packages[unit], 'pilot_prepare_package_mutated')
+                claim = receipt.get('parent') if type(receipt) is dict else None
+                require(type(receipt) is dict and receipt.get('schema') == 'meshticulum.provisioned-public-pilot.v2'
+                        and receipt.get('unit') == unit and receipt.get('run_id') == pair['run_id']
+                        and type(claim) is dict and claim.get('schema') == 'meshticulum.native-parent-claim.v1'
+                        and claim.get('prepared') is True and claim.get('parent_id') == self.parent.policy.parent_id
+                        and claim.get('policy_digest') == self.parent.policy.digest
+                        and claim.get('controller_allocation_id') == permit.key
+                        and claim.get('unit') == unit and claim.get('host_boot_id') == self.boots[unit]
+                        and claim.get('run_id') == pair['run_id']
+                        and claim.get('resource_sha256') == self.resource_sha256
+                        and claim.get('application_expires_epoch_us') == self.expires_epoch_us
+                        and claim.get('child_caps') == proofs[unit]
+                        and claim.get('original_plan_sha256') == hashlib.sha256(canonical(package['grant'])).hexdigest()
+                        and type(claim.get('application_deadline_monotonic_us')) is int
+                        and claim['application_deadline_monotonic_us'] > 0,
+                        'pilot_native_parent_receipt_missing_or_rebound')
+                self.current()
+                row['prepared_parent_claims'][unit] = json.loads(canonical(claim))
+                prepared.append(unit)
             row['phase']='starting_receiver'
             handles[receiver]=self.operator.start(receiver,pair)
             setup_deadline=min(self.deadline,self.clock()+10)
@@ -173,6 +218,13 @@ class Controller:
                         and status['run_id']==pair['run_id'] and status['live'] is False,
                         'pilot_native_process_not_terminal')
                 result=row['outcomes'][unit]
+                start = result.get('parent')
+                expected = dict(row['prepared_parent_claims'][unit],
+                                schema='meshticulum.native-parent-start.v1', started=True)
+                require(start == expected and result['grant_context_sha256'] == start['grant_context_sha256']
+                        and type(result['original_application_deadline_us']) is int
+                        and 0 < result['original_application_deadline_us'] <= start['application_deadline_monotonic_us'],
+                        'pilot_native_parent_start_missing_or_rebound')
                 require(result['unit']==unit and result['host_boot_id']==self.boots[unit]
                         and result['session_id']==pair['run_id'] and result['service_format']==format
                         and result['sends'] is (unit==sender)

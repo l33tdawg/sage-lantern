@@ -19,7 +19,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_controller import pair_packages
 from lantern_meshticulum.bench.pilot_parent_caps import (
-    Cost, UnitCaps, ParentPolicy, ParentCaps, ParentCapsError, PairPermit, child_caps,
+    Cost, UnitCaps, ParentPolicy, ParentCaps, ParentCapsError, PairPermit, child_caps, canonical,
 )
 
 BOOT = '00000000-0000-4000-8000-000000000001'
@@ -325,3 +325,37 @@ def test_prior_cost_and_digest_are_mandatory_explicit_inputs():
     with pytest.raises(ParentCapsError):replace(p,prior_snapshot_sha256=None)
     with pytest.raises(ParentCapsError):Cost(ip_frames=True)
     with pytest.raises(ParentCapsError):Cost(ip_frames=2**63-1).plus(Cost(ip_frames=1))
+
+
+def test_policy_json_decode_preserves_exact_binding_and_refuses_missing_prior():
+    p=policy();value=json.loads(canonical(p.to_dict()))
+    assert ParentPolicy.from_dict(value)==p
+    assert ParentPolicy.from_dict(value).digest==p.digest
+    del value['units'][0]['prior_snapshot_sha256']
+    with pytest.raises(ParentCapsError):ParentPolicy.from_dict(value)
+
+
+def test_relabelled_request_resource_is_refused_before_any_pair_payment(state):
+    ledger,clock,p,path=state;pair=packages(p)
+    for package in pair:package['resource_sha256']='f'*64
+    with pytest.raises(ParentCapsError):ledger.prepay_pair(pair)
+    assert ledger.snapshot()['allocations']==0 and not ledger.pending.exists()
+
+
+def test_current_observation_writes_no_allocation_and_fences_regression_before_prepay(state):
+    ledger,clock,p,path=state;changes=ledger.db.total_changes
+    clock.epoch+=1000000;clock.mono+=1000000
+    assert ledger.current() is True and ledger.db.total_changes==changes
+    clock.epoch-=1
+    with pytest.raises(ParentCapsError):ledger.prepay_pair(packages(p))
+    assert ledger.snapshot()['allocations']==0
+
+
+def test_current_callback_caught_reentry_cannot_publish_current_parent(state):
+    ledger,clock,p,path=state;target=clock.calls+1
+    def nested(count):
+        if count==target:
+            with pytest.raises(ParentCapsError):ledger.current()
+    clock.hook=nested
+    with pytest.raises(ParentCapsError):ledger.current()
+    assert ledger.snapshot()['allocations']==0

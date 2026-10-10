@@ -68,6 +68,8 @@ def main():
         'private_sage_imports': False, 'private_services_enabled': False,
         'public_service_formats': ['MR1.request', 'MR1.response'],
         'public_ip_service_formats': ['MR1.request', 'MR1.response'],
+        'public_parent_claims_required': True,
+        'public_pilot_package_schemas': ['meshticulum.public-pilot-package.v2'],
         'radio_mtu_bytes': 255, 'flow_payload_bytes': 193}
     files['manifest.json'] = json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'
     raw = io.BytesIO()

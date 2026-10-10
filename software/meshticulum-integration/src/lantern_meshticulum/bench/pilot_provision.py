@@ -21,6 +21,7 @@ from lantern_meshticulum.ip.node import _read, _write
 from lantern_meshticulum.bench.pilot_context import original_context
 from meshticulum.bench.services import _shape
 from meshticulum.bench.wire import require
+from meshticulum.resources import resource
 
 
 def identifier(value):
@@ -36,28 +37,42 @@ def _directory(path):
 
 
 def provision(package, *, state, facts, clock):
-    with ExitStack() as leases:
-        return _provision(package, state=state, facts=facts, clock=clock, leases=leases)
+    from lantern_meshticulum.bench.pilot_native_caps import open_for_provision
+    caps = open_for_provision(state, facts, clock, package)
+    try:
+        with ExitStack() as leases:
+            result = _provision(package, state=state, facts=facts, clock=clock, leases=leases, caps=caps)
+            require(caps.current() is True, 'pilot_parent_not_current')
+            return result
+    finally:
+        caps.close()
 
 
-def _provision(package, *, state, facts, clock, leases):
+def _provision(package, *, state, facts, clock, leases, caps):
     fields = {'schema', 'unit', 'campaign_id', 'resource_sha256', 'application_expires_epoch_us',
-              'transport', 'grant', 'secret_base64', 'payload_base64', 'source_run_id'}
+              'transport', 'grant', 'secret_base64', 'payload_base64', 'source_run_id', 'parent'}
     require(type(package) is dict and set(package) == fields
-            and package['schema'] == 'meshticulum.public-pilot-package.v1', 'invalid_pilot_package')
+            and package['schema'] == 'meshticulum.public-pilot-package.v2', 'invalid_pilot_package')
     require(package['unit'] == facts['unit'] and package['transport'] in ('lora', 'tcp'), 'wrong_pilot_unit_or_transport')
     identifier(package['campaign_id'])
     state = Path(state).absolute()
     private(state.lstat(), True)
+    # This independently enrolled local owner charges the complete original
+    # child before any campaign context or run can be created. Package input
+    # cannot enroll a parent or replace its approval/prior-debt observations.
+    preparation = caps.prepare_claim(package)
+    require(caps.current() is True, 'pilot_parent_not_current')
     contexts = _directory(state / 'campaigns')
     directory = _directory(contexts / package['campaign_id'])
     original = original_context(directory, unit=facts['unit'], host_boot_id=facts['host_boot_id'],
         resource_sha256=package['resource_sha256'], expires_epoch_us=package['application_expires_epoch_us'], clock=clock)
+    require(caps.current() is True, 'pilot_parent_not_current')
     plan = package['grant']
     require(type(plan) is dict and plan['host_boot_id'] == facts['host_boot_id'], 'pilot_wrong_boot')
     plan = dict(plan)
     require(plan.get('application_deadline_monotonic_us') is None, 'operator_cannot_replace_native_deadline')
-    plan['application_deadline_monotonic_us'] = original['application_deadline_monotonic_us']
+    plan['application_deadline_monotonic_us'] = min(original['application_deadline_monotonic_us'],
+        preparation.application_deadline_monotonic_us)
     secret = base64.b64decode(package['secret_base64'], validate=True)
     require(len(secret) == 32, 'invalid_pilot_secret')
     if package['transport'] == 'tcp':
@@ -116,6 +131,9 @@ def _provision(package, *, state, facts, clock, leases):
             payload, receipt = leases.enter_context(captured(state, source_run, facts=facts, format=format, clock=clock))
             require(receipt.get('service_object_sha256') == descriptor['sha256'],
                     'relay_requires_local_authenticated_public_capture')
+            require(type(receipt.get('parent')) is dict
+                    and receipt['parent'].get('resource_sha256') == package['resource_sha256'],
+                    'relay_requires_original_parent_resource')
             source_basis = 'prior_local_authenticated_public_quarantine'
         require(receipt.get('original_application_expires_epoch_us') == expires,
                 'relay_requires_local_authenticated_public_capture')
@@ -130,6 +148,13 @@ def _provision(package, *, state, facts, clock, leases):
         require(len(payload) == descriptor['bytes'] and hashlib.sha256(payload).hexdigest() == descriptor['sha256'],
                 'pilot_sender_object_mismatch')
         _shape(payload, format)
+        if format == 'MR1.request':
+            path, _, _ = resource.decode_request(payload)
+            require(path.startswith('/packs/' + package['resource_sha256'] + '/'),
+                    'pilot_request_resource_mismatch')
+    require(caps.current() is True, 'pilot_parent_not_current')
+    parent = caps.finalize_provision(preparation, plan)
+    require(caps.current() is True, 'pilot_parent_not_current')
     runs = _directory(state / 'runs')
     target = runs / run_id
     require(not target.exists() and not target.is_symlink(), 'pilot_run_already_provisioned')
@@ -138,15 +163,17 @@ def _provision(package, *, state, facts, clock, leases):
              'secret.bin': secret, 'active': b'active\n'}
     if payload is not None:
         files['sender.bin'] = payload
-    receipt = dict(schema='meshticulum.provisioned-public-pilot.v1', unit=facts['unit'],
+    receipt = dict(schema='meshticulum.provisioned-public-pilot.v2', unit=facts['unit'],
         run_id=run_id, campaign_id=package['campaign_id'], transport=package['transport'],
         object=descriptor, source_basis=source_basis, source_run_id=source_run,
         original_application_deadline_us=plan['application_deadline_monotonic_us'],
         original_application_expires_epoch_us=expires, radio_opened=False, socket_opened=False,
-        receiver_payload_installed=False)
+        receiver_payload_installed=False, parent=parent)
     files['provision.json'] = json.dumps(receipt, sort_keys=True).encode() + b'\n'
     for name, raw in files.items():
+        require(caps.current() is True, 'pilot_parent_not_current')
         _write(staging / name, raw)
+    require(caps.current() is True, 'pilot_parent_not_current')
     os.rename(staging, target)
     fd = os.open(runs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:

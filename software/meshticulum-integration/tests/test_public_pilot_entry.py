@@ -11,6 +11,8 @@ import pytest
 from lantern_meshticulum.ip.node import _write
 from tests.test_meshticulum_resources import pack
 from tests.test_pilot_ssh import config
+from meshticulum.contracts.identity import PeerID
+from lantern_meshticulum.bench.pilot_parent_caps import ParentCaps, ParentPolicy, UnitCaps, Cost
 
 
 def load():
@@ -20,13 +22,32 @@ def load():
     return module
 
 
+def enroll_entry_parent(module, tmp_path, cfg, monkeypatch):
+    """Explicit synthetic controller enrollment; no native approval implied."""
+    boot='00000000-0000-4000-8000-000000000001'
+    monkeypatch.setattr(module,'controller_boot',lambda:boot)
+    epoch,mono=module.parent_clock();limits=Cost(4096,960000000,65536,67108864,67108864)
+    units=tuple(UnitCaps(unit,row['host_boot_id'],PeerID('meshticulum-public-pilot-v1',hashlib.sha256(
+        ('meshticulum-public-pilot-v1/'+unit+'/'+row['host_boot_id']).encode()).hexdigest()),
+        limits,Cost(1,1000,1,128,128),str(index)*64) for index,(unit,row) in enumerate(cfg['units'].items(),1))
+    total=Cost()
+    for unit in units:total=total.plus(unit.limits)
+    policy=ParentPolicy('1'*32,boot,epoch-1000000,cfg['handoff_end_epoch_us'],mono-1000000,
+        mono+cfg['handoff_end_epoch_us']-epoch,units,total,'d'*64)
+    directory=tmp_path/'parent';directory.mkdir(mode=0o700)
+    ledger=directory/'caps.sqlite';parent=ParentCaps.enroll(ledger,policy,
+        clock=module.parent_clock,boot_reader=module.controller_boot);assert parent.close()
+    path=directory/'policy.json';_write(path,json.dumps(policy.to_dict()).encode())
+    return ['--parent-policy',str(path),'--parent-ledger',str(ledger)]
+
+
 @pytest.mark.parametrize('fault,reuse',[(fault,reuse)
     for reuse in (False,True)
     for fault in (None,'lifecycle','retirement','transfer','late_cleanup','management_cleanup')
     if reuse or fault!='management_cleanup'])
 def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(pack,tmp_path,monkeypatch,fault,reuse):
     module=load();cfg,_=config();cfg['handoff_end_epoch_us']=module.time.time_ns()//1000+600000000
-    manifest=b'{}';cfg['manifest_sha256']=hashlib.sha256(manifest).hexdigest()
+    manifest=b'{"public_parent_claims_required":true}';cfg['manifest_sha256']=hashlib.sha256(manifest).hexdigest()
     archive=tmp_path/'runtime.tar.gz'
     with tarfile.open(archive,'w:gz') as tar:
         item=tarfile.TarInfo('manifest.json');item.size=len(manifest);tar.addfile(item,io.BytesIO(manifest))
@@ -34,6 +55,7 @@ def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(p
     path=tmp_path/'config.json';_write(path,json.dumps(cfg).encode())
     trust=tmp_path/'trust.json';_write(trust,json.dumps(pack[1]).encode())
     output=tmp_path/'results';seeds=[];calls=[]
+    parent_args=enroll_entry_parent(module,tmp_path,cfg,monkeypatch)
     class Operator:
         def __init__(self,*args,**kwargs):self.deadline=module.time.monotonic()+600;self.passwords={};self.jobs={};self.events=[dict(outside_handoff=True)] if fault=='late_cleanup' else [];self.round=0
         def facts(self,unit):
@@ -58,6 +80,7 @@ def test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(p
     monkeypatch.setattr(sys,'argv',['pilot','--config',str(path),'--runtime-archive',str(archive),
         '--pack',str(pack[0]),'--trust',str(trust),'--output',str(output),'--country','MY',
         '--antennas-confirmed','--current-device-handoff-confirmed',
+        *parent_args,
         *(['--reuse-management-connections'] if reuse else [])])
     if fault:
         with pytest.raises(SystemExit) as caught:module.main()
@@ -82,12 +105,13 @@ def test_help_opens_no_management_or_hardware():
 @pytest.mark.parametrize('faster',[True,False])
 def test_resume_mode_reports_success_only_after_measured_faster_ip_return(pack,tmp_path,monkeypatch,faster):
     module=load();cfg,_=config();cfg['handoff_end_epoch_us']=module.time.time_ns()//1000+600000000
-    raw=b'{}';cfg['manifest_sha256']=hashlib.sha256(raw).hexdigest();archive=tmp_path/'runtime.tar.gz'
+    raw=b'{"public_parent_claims_required":true}';cfg['manifest_sha256']=hashlib.sha256(raw).hexdigest();archive=tmp_path/'runtime.tar.gz'
     with tarfile.open(archive,'w:gz') as tar:
         item=tarfile.TarInfo('manifest.json');item.size=len(raw);tar.addfile(item,io.BytesIO(raw))
     cfg['runtime_sha256']=hashlib.sha256(archive.read_bytes()).hexdigest()
     path=tmp_path/'config.json';_write(path,json.dumps(cfg).encode())
     trust=tmp_path/'trust.json';_write(trust,json.dumps(pack[1]).encode())
+    parent_args=enroll_entry_parent(module,tmp_path,cfg,monkeypatch)
     class Operator:
         def __init__(self,*a,**k):self.deadline=module.time.monotonic()+600;self.passwords={};self.jobs={};self.events=[]
         def facts(self,unit):return dict(unit=unit,source_only=True)
@@ -102,6 +126,7 @@ def test_resume_mode_reports_success_only_after_measured_faster_ip_return(pack,t
     output=tmp_path/'out'
     monkeypatch.setattr(sys,'argv',['pilot','--config',str(path),'--runtime-archive',str(archive),'--pack',str(pack[0]),
         '--trust',str(trust),'--output',str(output),'--country','MY','--antennas-confirmed','--current-device-handoff-confirmed',
+        *parent_args,
         '--mode','resume','--loss-rx-bytes','32'])
     if faster:module.main()
     else:

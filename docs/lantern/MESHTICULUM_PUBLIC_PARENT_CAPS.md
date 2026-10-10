@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Public pilot parent accounting
 
-Status: draft source contract. Version: 0.1. Owners: SAGE Foundation / Meshticulum and Lantern maintainers. Updated: 2026-10-11. Scope: Lantern public pilot accounting; native dispatch and release qualification remain open. This supplements the [public pilot guide](MESHTICULUM_PUBLIC_PILOT.md), without replacing historical evidence or granting a device window.
+Status: draft source contract. Version: 0.2. Owners: SAGE Foundation / Meshticulum and Lantern maintainers. Updated: 2026-10-11. Scope: Lantern public pilot accounting; native dispatch and release qualification remain open. This supplements the [public pilot guide](MESHTICULUM_PUBLIC_PILOT.md), without replacing historical evidence or granting a device window.
 
 The current pilot creates independently bounded radio/IP children. It needs a durable parent across those children: a fresh campaign, grant or port must not replenish an approved handoff budget. This supports [SYS-003, SYS-006 and SYS-011](../REQUIREMENTS_TRACEABILITY.md): separate authority, connectivity without permission, and evidence for requirements. Meshticulum keeps generic flow, crypto, drivers and resources; Lantern owns this native policy and accounting integration.
 
@@ -16,13 +16,27 @@ flowchart TD
     E --> D[Retain paid maxima and unknown debt]
 ```
 
-The controller reservation and native claim are separate boundaries. A controller record cannot authorize a device. Each endpoint must independently validate its approved parent, current native facts, original host/resource clocks and exact allocation before a worker opens. The existing runner must consume a start claim once and preserve it on construction failure. Those native entry-point, package and receipt changes remain required; an isolated ledger or a callback returning true does not prove native enforcement.
+The controller reservation and native claim are separate boundaries. A controller record cannot authorize a device. Each endpoint must independently validate its approved parent, current native facts, original host/resource clocks and exact allocation before a worker opens. The existing runner must consume a start claim once and preserve it on construction failure. The controller, provisioner and radio/IP entry points now have parent-aware source wiring. Independent native enrollment/debt provenance and physical qualification remain required; a callback returning true does not prove them.
 
 ## Standalone accounting component
 
 [`pilot_parent_caps.py`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_parent_caps.py) supplies typed costs, per-unit caps and a stable parent policy; pure extraction of the existing public packages; separate explicit enrollment/opening; atomic full-pair prepayment; and instance-owned one-use consumption. Private SQLite uses WAL/FULL synchronization, lifetime file ownership and a durable pending fence for uncertain commits. Opening preserves paid rows and cannot reconstruct permits. A final clock guard refuses an expired child even when the parent remains live. Supplied policy/prior dictionaries establish no native provenance.
 
-The [35 focused controls](../../software/meshticulum-integration/tests/test_pilot_parent_caps.py) exercise real temporary SQLite and file locks with synthetic policies/clocks/packages. Independent bounded review accepted the ownership, final-observation, existing-response-source and permit repairs. This module is not yet called by the controller, CLI, native provisioner or radio/IP nodes. Native resource attachments, per-unit claims, one-use starts, debt import and public bundle/schema integration remain required before any new campaign is launched.
+The earlier [35 focused controls](../../software/meshticulum-integration/tests/test_pilot_parent_caps.py) exercise real temporary SQLite and file locks with synthetic policies/clocks/packages. Independent bounded review accepted the ownership, final-observation, existing-response-source and permit repairs. That historical standalone result preceded the native integration below. Qualified debt import, current hardware facts, enrollment and a fresh handoff remain required before a new campaign can launch.
+
+## Parent-aware public preparation and start
+
+[`NativeCaps`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_native_caps.py) explicitly enrolls a protected local parent only after independent approval and prior-debt callbacks. Normal adapters open existing enrollment and its revocable approval flag; a management package cannot create one. This source adapter retains the enrolled approval and observed unit/boot/peer binding. It does not produce fresh qualified hardware or debt observations. Native aggregate safety conservatively requires the sum of all unit limits to fit the approved aggregate; local claims cannot treat a controller receipt alone as global authority.
+
+A resource attachment keys the parent, unit and resource hash independently of campaign/run IDs. Its first original expiry and native monotonic deadline remain fixed. `prepare_claim()` prepays the full local child caps before campaign/run preparation; `finalize_provision()` seals the actual original or tighter native plan after local public-source verification. A separate create-once start tombstone precedes authority construction, journals and transport opening. Missing enrollment, approval, claim or old parent-less package refuses activation. Historical v1 result inspection and retirement remain available.
+
+The controller now requires an existing `ParentCaps`, prepays both endpoints and consumes its instance permit before sending flat `meshticulum.public-pilot-package.v2` packages. The native v2 preparation receipt binds parent/policy, controller allocation, child caps, unit/boot/run/resource, original expiry, declared native deadline, plan hashes, secret fingerprint and grant context. Controller/SSH checks precede start; outcome checks preserve that receipt. Core may tighten the actual runtime monotonic deadline further, so the final bound must be no later than the declared one.
+
+Both runners compare the authority's reread canonical plan, actual grant and secret to the paid start claim before opening runtime resources. Owner probes retain exact authority/grant/lifetime references through callbacks, without recursively invoking authority liveness. An initial MR1 request must name its declared pack; local request and response relays preserve the authenticated source resource binding. A changed file or relabeled resource cannot substitute a larger unpaid grant or fresh expiry.
+
+The CLI requires `--parent-policy` and `--parent-ledger`, both selecting existing approved controller state. It observes its current boot independently and supplies no automatic enrollment/reset. Runtime manifests declare `public_parent_claims_required: true`; staging refuses an older parent-less bundle. Installation still grants no socket/radio authority, and private providers remain excluded.
+
+Combined source controls pass 202 with one expected skip; the full paired integration suite passes 946 with one expected skip, with 281 recorded Python inputs unchanged. These use real temporary SQLite, separate local processes and localhost TCP, plus modeled native facts/approval/prior debt and radio workers. Independent bounded review accepted request-resource, receipt and authority-reread fixes. No actual C/A/B native enrollment, physical transport, current debt reconciliation, measured RF performance or release readiness follows from these results.
 
 ## Explicit parent and costs
 

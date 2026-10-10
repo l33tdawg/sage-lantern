@@ -141,8 +141,14 @@ def _quarantine(directory, data):
 
 
 def _run(unit, directory, object_directory, *, public_service):
-    before = roles(unit)
-    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    facts_before = None
+    if public_service:
+        from lantern_meshticulum.ip.node import _facts
+        facts_before = _facts(unit)
+        before, boot = facts_before['services'], facts_before['host_boot_id']
+    else:
+        before = roles(unit)
+        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
     directory = Path(directory)
     _private_info(directory.lstat(), directory=True)
     result = {'schema': 'meshticulum.physical-service-run.v1' if public_service else 'meshticulum.physical-run.v1',
@@ -152,18 +158,75 @@ def _run(unit, directory, object_directory, *, public_service):
               'airtime_basis': 'LoRa source estimate; raw driver completion timings are separate',
               'application_data_channel': 'exclusive local radio only', 'stop_requested': False}
     worker = authority = flow = journal = store = channel = None
+    caps = None
+    authority_ref = grant_ref = profile_ref = authority_lifetime = start_binding = None
     runner = None
     saved_handlers = {}
     def stop(signum, _frame): result['stop_requested'] = True
     try:
         for number in (signal.SIGTERM, signal.SIGINT):
             saved_handlers[number] = signal.signal(number, stop)
-        owned = lambda: channel is not None and channel.lock_fd is not None and all(
-            os.fstat(fd) for fd in ([channel.fd] if unit in USB else [channel.spi_fd, channel.lines_fd]))
+        def authority_bound():
+            if authority_ref is None:
+                return authority is None
+            try:
+                return (authority is authority_ref and authority.grant is grant_ref
+                    and authority.profile is profile_ref
+                    and hashlib.sha256(json.dumps(authority.plan,sort_keys=True,separators=(',',':'),
+                                                 allow_nan=False).encode()).hexdigest()==start_binding[0]
+                    and authority.grant.digest.hex()==start_binding[1]
+                    and hashlib.sha256(authority.grant.secret).hexdigest()==start_binding[2]
+                    and authority.deadlines is authority_lifetime[0]
+                    and (authority.application_deadline_us,authority.deadline_us)==authority_lifetime[1:]
+                    and authority.application_expires_epoch_us==start_binding[3]
+                    and 0<authority.application_deadline_us<=start_binding[4])
+            except (TypeError, ValueError, AttributeError):
+                return False
+        def parent_current():
+            return (not public_service or (caps is not None and authority_bound()
+                    and caps.current() is True and authority_bound()))
+        def owned():
+            return parent_current() and channel is not None and channel.lock_fd is not None and all(
+                os.fstat(fd) for fd in ([channel.fd] if unit in USB else [channel.spi_fd, channel.lines_fd]))
+        if public_service:
+            from lantern_meshticulum.bench.pilot_native_caps import open_for_run
+            fd = _open(directory / 'grant.json')
+            try:
+                raw = os.read(fd, 16385)
+            finally:
+                os.close(fd)
+            require(0 < len(raw) <= 16384, 'invalid_grant_size')
+            native_plan = json.loads(raw)
+            require(native_plan.get('schema') == 'meshticulum.service-run.v1'
+                    and type(native_plan.get('service')) is dict
+                    and native_plan['service'].get('kind') == 'knowledge'
+                    and native_plan['service'].get('format') in ('MR1.request', 'MR1.response'),
+                    'private_service_requires_qualified_native_provider')
+            if native_plan.get('sender_unit') == unit:
+                from meshticulum.bench.services import _shape
+                _shape(_read_payload(directory / 'sender.bin', native_plan['object']),
+                       native_plan['service']['format'])
+            fd = _open(directory / 'secret.bin')
+            try:
+                secret = os.read(fd, 33)
+            finally:
+                os.close(fd)
+            require(len(secret) == 32, 'invalid_pilot_secret')
+            # Consume the independently prepared original claim before the
+            # core authority creates started, or any job/store/driver opens.
+            caps = open_for_run(directory.parent.parent, directory, facts_before, clock)
+            result['parent'] = caps.consume_start(native_plan['session_id'], native_plan, secret)
+            start_binding=tuple(result['parent'][name] for name in ('native_plan_sha256','grant_context_sha256',
+                'secret_sha256','application_expires_epoch_us','application_deadline_monotonic_us'))
+            require(parent_current(), 'pilot_parent_not_current')
+            result['facts_before'] = facts_before
         # Convert the OS-owner observation to an exact bool, never a caller flag.
         authority = RunAuthority(directory, radio_admission=RADIO_ADMISSION, expected_unit=unit, host_boot_id=boot,
                                  clock=clock, owner_probe=lambda: bool(owned()))
         if public_service:
+            authority_ref, grant_ref, profile_ref = authority, authority.grant, authority.profile
+            authority_lifetime=(authority.deadlines,authority.application_deadline_us,authority.deadline_us)
+            require(parent_current(), 'pilot_parent_authority_binding_changed')
             from meshticulum.contracts.identity import ServiceKind
             from meshticulum.bench.services import _shape
             require(authority.plan['schema'] == 'meshticulum.service-run.v1'
@@ -191,10 +254,13 @@ def _run(unit, directory, object_directory, *, public_service):
                 run_id=grant.session.session_id.hex(), grant_digest=grant.digest.hex(), transport='lora')
         # The fixed paths contain only bench state. No system or personal store
         # is queried as an identity/key source.
+        require(parent_current(), 'pilot_parent_not_current')
         store = SessionStore(directory / 'wire.sqlite', grant, authority.local_peer,
                              boot_id=boot, clock=clock, create=True)
+        require(parent_current(), 'pilot_parent_not_current')
         if unit in USB:
             channel, worker, radio = _serial(unit)
+            require(parent_current(), 'pilot_parent_not_current')
             result['radio'] = radio
             require(radio['boot_attempts'] < profile.max_boot_attempts
                     and radio['boot_reserved_estimated_airtime_us'] < profile.max_boot_estimated_airtime_us,
@@ -202,19 +268,22 @@ def _run(unit, directory, object_directory, *, public_service):
             binding = serial_binding(grant.digest, worker.identity, profile)
         else:
             channel = LinuxHAT()
+            require(parent_current(), 'pilot_parent_not_current')
             binding = hat_binding(grant.digest, boot, profile)
             result['radio'] = {'model': 'Waveshare SX1262 HF', 'spi': '/dev/spidev0.0'}
         journal = AttemptJournal(directory / 'attempts.sqlite', binding=binding,
             max_attempts=profile.max_boot_attempts, max_airtime_us=profile.max_boot_estimated_airtime_us,
             create=True)
         deadline = authority.deadline_us / 1000000
+        require(parent_current() and authority.live(), 'pilot_parent_or_grant_not_current_before_arm')
         if unit in USB:
             worker.arm(journal=journal, profile=profile, context_digest=grant.digest,
-                       authorize=authority.live, authority_deadline=deadline)
+                       authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline)
         else:
             worker = HATWorker(channel, journal=journal, profile=profile, context_digest=grant.digest,
-                authorize=authority.live, authority_deadline=deadline,
+                authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline,
                 antenna_confirmed=authority.plan['antenna_confirmed'])
+        require(parent_current(), 'pilot_parent_not_current')
         now = clock()[1]
         ledger = Ledger(BudgetPolicy(240000000, 60000000, 120000000, 1000000, quantization_us=1),
                         authority.ledger_epoch, now)
@@ -291,12 +360,22 @@ def _run(unit, directory, object_directory, *, public_service):
             cleanup('journal_close', journal.close)
         if channel is not None: cleanup('radio_close', channel.close)
         if authority is not None: cleanup('authority_close', authority.close)
+        if caps is not None:
+            cleanup('parent_snapshot', lambda: result.update(parent_caps=caps.snapshot()))
+            cleanup('parent_close', caps.close)
         for number, handler in saved_handlers.items(): signal.signal(number, handler)
         result['end_monotonic_us'] = clock()[1]
         usage = resource.getrusage(resource.RUSAGE_SELF)
         result['resource'] = {'user_cpu_seconds': usage.ru_utime, 'system_cpu_seconds': usage.ru_stime,
                               'max_rss_linux_kib': usage.ru_maxrss}
-        result['services_after'] = roles(unit)
+        if public_service:
+            cleanup('facts_after', lambda: result.update(facts_after=_facts(unit)))
+            if result.get('facts_after') != facts_before:
+                result['complete'] = False
+                result['lifecycle_changed'] = True
+            result['services_after'] = result.get('facts_after', {}).get('services')
+        else:
+            result['services_after'] = roles(unit)
         fd = os.open(directory / 'result.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, 'w') as output:
             json.dump(result, output, indent=2); output.write('\n'); output.flush(); os.fsync(output.fileno())

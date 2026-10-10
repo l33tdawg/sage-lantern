@@ -5,7 +5,8 @@ import pytest
 from lantern_meshticulum.bench.pilot_controller import Controller
 from meshticulum.bench.wire import WireError
 from meshticulum.resources import resource
-from tests.test_pilot_controller import ModelOperator,Clock,PEERS,BOOTS,PERMISSION,MANIFEST
+from tests.test_pilot_controller import (ModelOperator,Clock,PEERS,BOOTS,PERMISSION,MANIFEST,
+                                        model_parent,release_model_parents)
 
 
 class ResumeOperator(ModelOperator):
@@ -45,6 +46,7 @@ def setup(*,slower=False,cache_fault=False):
     clock=Clock();op=ResumeOperator(clock,slower=slower,cache_fault=cache_fault)
     pilot=Controller(op,campaign_id='d'*32,resource_sha256=MANIFEST,expires_epoch_us=1160000000,
         handoff_deadline_monotonic=200,peers=PEERS,boots=BOOTS,radio_permission=PERMISSION,
+        parent=model_parent(clock),
         clock=clock.mono,epoch=clock.epoch,sleep=clock.sleep)
     exchanges=[]
     for char in 'abcd':

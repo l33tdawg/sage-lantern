@@ -12,10 +12,13 @@ import io
 import stat
 import json
 import os
+import platform
+import subprocess
 from pathlib import Path
 import sys
 import tarfile
 import time
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'src'))
@@ -25,6 +28,7 @@ from lantern_meshticulum.ip.node import _read, _write
 from meshticulum.ip.journal import private
 from meshticulum.resources import lamplighter as ll
 from meshticulum.resources import resource
+from lantern_meshticulum.bench.pilot_parent_caps import ParentCaps, ParentPolicy
 
 
 def seed_package(config,unit,role,pack,trust,digest,manifest):
@@ -54,6 +58,22 @@ def runtime_bytes(path):
     finally:os.close(fd)
 
 
+def controller_boot():
+    """Observe the controller's current boot, independently of plan input."""
+    if platform.system() == 'Linux':
+        value = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    elif platform.system() == 'Darwin':
+        value = subprocess.check_output(['/usr/sbin/sysctl', '-n', 'kern.bootsessionuuid'],
+            text=True, timeout=5).strip().lower()
+    else:
+        raise RuntimeError('unsupported_controller_boot_observation')
+    return str(uuid.UUID(value))
+
+
+def parent_clock():
+    return time.time_ns()//1000, time.monotonic_ns()//1000
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config',type=Path,required=True)
@@ -61,6 +81,10 @@ def main():
     p.add_argument('--pack',type=Path,required=True)
     p.add_argument('--trust',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--parent-policy',type=Path,required=True,
+        help='Existing explicitly approved handoff policy; no automatic enrollment.')
+    p.add_argument('--parent-ledger',type=Path,required=True,
+        help='Existing enrolled controller ledger; opening never creates or resets it.')
     p.add_argument('--chunk-index',type=int,default=0)
     p.add_argument('--mode',choices=('mixed','resume'),default='mixed')
     p.add_argument('--loss-rx-bytes',type=int,default=512)
@@ -79,6 +103,8 @@ def main():
         manifest_raw=tar.extractfile('manifest.json').read(65537)
     if len(manifest_raw)>65536:p.error('Runtime manifest exceeds the bound.')
     if hashlib.sha256(manifest_raw).hexdigest()!=config['manifest_sha256']:p.error('Runtime manifest differs from config pin.')
+    if json.loads(manifest_raw).get('public_parent_claims_required') is not True:
+        p.error('Runtime does not require native public parent claims.')
     trust=json.loads(_read(args.trust,16384))
     raw=(args.pack/'manifest.json').read_bytes();digest=hashlib.sha256(raw).hexdigest()
     cache=ll.VerifiedCache(args.pack,trust,digest);manifest=cache.value
@@ -98,12 +124,21 @@ def main():
             exchanges.append((req,reply))
         if not 8<=args.loss_rx_bytes<len(exchanges[1][1]):p.error('Loss cutoff must interrupt the second response.')
     args.output.mkdir(mode=0o700,exist_ok=False);private(args.output.lstat(),True)
+    policy = ParentPolicy.from_dict(json.loads(_read(args.parent_policy,16384)))
+    if config['handoff_end_epoch_us'] > policy.expires_epoch_us:
+        p.error('Configured handoff exceeds the enrolled parent expiry.')
+    parent = ParentCaps.open(args.parent_ledger, policy, clock=parent_clock, boot_reader=controller_boot)
     passwords={}
-    if args.ask_sudo:
-        for unit,row in config['units'].items():
-            if row['sudo']:passwords[unit]=getpass.getpass('Sudo for '+unit+' (memory only): ')
-    operator=SSHOperator(config,provision_source=(ROOT/'firmware/meshticulum-bench/pilot_grant_bootstrap.py').read_bytes(),
-        runtime_source=(ROOT/'firmware/meshticulum-bench/runtime_bootstrap.py').read_bytes(),passwords=passwords)
+    try:
+        if args.ask_sudo:
+            for unit,row in config['units'].items():
+                if row['sudo']:passwords[unit]=getpass.getpass('Sudo for '+unit+' (memory only): ')
+        operator=SSHOperator(config,provision_source=(ROOT/'firmware/meshticulum-bench/pilot_grant_bootstrap.py').read_bytes(),
+            runtime_source=(ROOT/'firmware/meshticulum-bench/runtime_bootstrap.py').read_bytes(),passwords=passwords)
+    except BaseException:
+        passwords.clear()
+        parent.close()
+        raise
     passwords.clear()
     result=dict(schema='meshticulum.mixed-public-pilot-controller.v1',complete=False,
         runtime_sha256=config['runtime_sha256'],manifest_sha256=digest,
@@ -125,6 +160,7 @@ def main():
         controller=Controller(operator,campaign_id=secrets.token_hex(16),resource_sha256=digest,
             expires_epoch_us=expires,handoff_deadline_monotonic=operator.deadline,peers=peers,
             boots={unit:row['host_boot_id'] for unit,row in config['units'].items()},
+            parent=parent,
             radio_permission=dict(country=args.country,antenna_confirmed=args.antennas_confirmed))
         if args.mode=='resume':
             sequence=controller.failure_resume(exchanges,cutoff=args.loss_rx_bytes)
@@ -152,6 +188,17 @@ def main():
             result['management_connection_cleanup_error']=type(error).__name__
             result['complete']=False
         operator.passwords.clear()
+        try: result['controller_parent'] = parent.snapshot()
+        except BaseException as error:
+            result['parent_snapshot_error_type'] = type(error).__name__
+            result['complete'] = False
+        try:
+            if parent.close() is not True:
+                result['parent_close_unconfirmed'] = True
+                result['complete'] = False
+        except BaseException as error:
+            result['parent_close_error_type'] = type(error).__name__
+            result['complete'] = False
         result['management_events']=operator.events
         result['handoff_overrun']=any(item.get('outside_handoff') is True for item in operator.events)
         if result['handoff_overrun']:result['complete']=False

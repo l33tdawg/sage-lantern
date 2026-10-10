@@ -141,7 +141,8 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
         publisher_verified=False, private_admission=False, stop_requested=False,
         start_epoch_us=clock()[0], start_monotonic_us=clock()[1],
         radio_opened=False, measured_airtime_us=None, kernel_retransmission_bytes=None)
-    authority = journal = worker = store = flow = runner = connected = None
+    authority = journal = worker = store = flow = runner = connected = caps = None
+    authority_ref = grant_ref = authority_lifetime = start_binding = None
     directory_fd = None
     saved_handlers = {}
 
@@ -152,6 +153,8 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
         if result['stop_requested']:
             return False
         try:
+            if caps is None or not authority_bound() or caps.current() is not True or not authority_bound():
+                return False
             held = os.fstat(directory_fd); current = directory.lstat()
             private(held, True); private(current, True)
             if (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
@@ -162,6 +165,22 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
         except (OSError, TypeError, ValueError):
             return False
 
+    def authority_bound():
+        if authority_ref is None:
+            return authority is None
+        try:
+            return (authority is authority_ref and authority.grant is grant_ref
+                and hashlib.sha256(json.dumps(authority.plan,sort_keys=True,separators=(',',':'),
+                                             allow_nan=False).encode()).hexdigest()==start_binding[0]
+                and authority.grant.digest.hex()==start_binding[1]
+                and hashlib.sha256(authority.grant.secret).hexdigest()==start_binding[2]
+                and authority.deadlines is authority_lifetime[0]
+                and (authority.application_deadline_us,authority.deadline_us)==authority_lifetime[1:]
+                and authority.application_expires_epoch_us==start_binding[3]
+                and 0<authority.application_deadline_us<=start_binding[4])
+        except (TypeError, ValueError, AttributeError):
+            return False
+
     try:
         require(threading.current_thread() is threading.main_thread(), 'ip_node_requires_main_thread')
         for number in (signal.SIGTERM, signal.SIGINT):
@@ -170,9 +189,21 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
         # Peer input does not select this identity. It comes from the private
         # native provisioner's local plan, independently of socket ingress.
         native_plan = json.loads(_read(directory / 'grant.json', 16384))
+        require(native_plan.get('format') in ('MR1.request', 'MR1.response'),
+                'private_ip_service_requires_qualified_native_provider')
         local_peer = PeerID(**native_plan['local_peer'])
+        from lantern_meshticulum.bench.pilot_native_caps import open_for_run
+        caps = open_for_run(directory.parent.parent, directory, before, clock)
+        result['parent'] = caps.consume_start(native_plan['session']['session_id'], native_plan,
+                                             _read(directory / 'secret.bin', 32))
+        start_binding=tuple(result['parent'][name] for name in ('native_plan_sha256','grant_context_sha256',
+            'secret_sha256','application_expires_epoch_us','application_deadline_monotonic_us'))
+        require(caps.current() is True, 'pilot_parent_not_current')
         authority = IpAuthority(directory, local_peer=local_peer, host_boot_id=before['host_boot_id'],
                                 clock=clock, owner_probe=owned)
+        authority_ref,grant_ref=authority,authority.grant
+        authority_lifetime=(authority.deadlines,authority.application_deadline_us,authority.deadline_us)
+        require(owned(), 'pilot_parent_authority_binding_changed')
         require(authority.service_format in ('MR1.request', 'MR1.response'),
                 'private_ip_service_requires_qualified_native_provider')
         require(test_rx_cutoff is None or (type(test_rx_cutoff) is int and not authority.sends
@@ -195,8 +226,11 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
         from lantern_meshticulum.bench.pilot_job import record
         result['native_job'] = record(directory, unit=unit, boot=before['host_boot_id'],
             run_id=authority.grant.session.session_id.hex(), grant_digest=authority.grant.digest.hex(), transport='tcp')
+        require(caps.current() is True, 'pilot_parent_not_current')
         journal = IpJournal(directory / 'bytes.sqlite', authority.grant, create=True)
+        require(caps.current() is True, 'pilot_parent_not_current')
         connected = _connected(authority, lambda: result['stop_requested'], directory, directory_fd)
+        require(caps.current() is True, 'pilot_parent_not_current')
         worker = TcpWorker(connected, authority.grant, local_peer, journal,test_rx_cutoff=test_rx_cutoff)
         store = SessionStore(directory / 'wire.sqlite', authority.grant, local_peer,
             boot_id=before['host_boot_id'], clock=clock,
@@ -250,6 +284,9 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
             cleanup('journal_close', journal.close)
         if authority is not None:
             cleanup('authority_close', authority.close)
+        if caps is not None:
+            cleanup('parent_snapshot', lambda: result.update(parent_caps=caps.snapshot()))
+            cleanup('parent_close', caps.close)
         for number, handler in saved_handlers.items():
             signal.signal(number, handler)
         result['end_monotonic_us'] = clock()[1]

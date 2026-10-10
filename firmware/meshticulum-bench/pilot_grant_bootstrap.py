@@ -48,6 +48,7 @@ def main():
     manifest = json.loads(manifest_raw)
     need(manifest.get('schema') == 'meshticulum.bench-runtime-bundle.v1'
          and manifest.get('private_services_enabled') is False
+         and manifest.get('public_parent_claims_required') is True
          and manifest.get('public_ip_service_formats') == ['MR1.request', 'MR1.response'],
          'public_pilot_not_in_bundle')
     for name, expected in manifest['files'].items():

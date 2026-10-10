@@ -78,9 +78,19 @@ def retire(directory, *, unit, run_id, boot):
         require(len(raw)<=16384, 'pilot_retire_record_too_large')
         values[name]=json.loads(raw)
     provision, plan = values['provision.json'], values['grant.json']
-    require(provision['schema']=='meshticulum.provisioned-public-pilot.v1'
+    require(provision['schema'] in ('meshticulum.provisioned-public-pilot.v1', 'meshticulum.provisioned-public-pilot.v2')
             and provision['unit']==unit and provision['run_id']==run_id and plan['host_boot_id']==boot,
             'pilot_retire_requires_this_native_public_child')
+    parent = None
+    if provision['schema'] == 'meshticulum.provisioned-public-pilot.v2':
+        parent = provision.get('parent')
+        native_digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':'),
+                                                   allow_nan=False).encode()).hexdigest()
+        require(type(parent) is dict and parent.get('schema') == 'meshticulum.native-parent-claim.v1'
+                and parent.get('prepared') is True and parent.get('unit') == unit
+                and parent.get('host_boot_id') == boot and parent.get('run_id') == run_id
+                and parent.get('native_plan_sha256') == native_digest,
+                'pilot_retire_parent_binding_changed')
     if provision['transport']=='tcp':
         require(plan['schema']=='meshticulum.ip-service-run.v1' and plan['session']['session_id']==run_id
                 and plan['format'] in ('MR1.request','MR1.response'), 'pilot_retire_private_or_wrong_session')
@@ -91,8 +101,11 @@ def retire(directory, *, unit, run_id, boot):
                 and plan['service']['format'] in ('MR1.request','MR1.response'), 'pilot_retire_private_or_wrong_session')
         from meshticulum.bench.authority import revoke
     revoke(directory)
-    return dict(schema='meshticulum.retired-public-pilot.v1', unit=unit, run_id=run_id,
+    result = dict(schema='meshticulum.retired-public-pilot.v1', unit=unit, run_id=run_id,
         retired=True, debt_refunded=False, safe_handoff_proven=False)
+    if parent is not None:
+        result['parent'] = parent
+    return result
 
 
 def ready(directory, identity):

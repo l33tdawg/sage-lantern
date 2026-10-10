@@ -3,6 +3,7 @@
 These exercise source lifecycle, not physical host/native-backend qualification.
 """
 from dataclasses import asdict
+import base64
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ def facts(unit):
     return dict(unit=unit, host_boot_id=BOOT, services={'source_model_only': 'no_hardware'}, service_lifetimes={})
 
 
-def prepare(tmp_path, payload, format='MR1.request'):
+def prepare(tmp_path, payload, format='MR1.request', *, qualified=True):
     sockets = [socket.socket(), socket.socket()]
     for channel in sockets:
         channel.bind(('127.0.0.1', 0))
@@ -53,6 +54,45 @@ def prepare(tmp_path, payload, format='MR1.request'):
         if index == 0:
             node._write(directory / 'sender.bin', payload)
         directories.append(directory)
+    if not qualified or format not in ('MR1.request', 'MR1.response'):
+        return directories, grant
+    if format == 'MR1.request':
+        try:
+            resource.decode_request(payload)
+        except ValueError:
+            return directories, grant
+    from tests.public_parent_helpers import qualify
+    from lantern_meshticulum.bench.pilot_provision import provision
+    values = []
+    states = {}
+    for index, directory in enumerate(directories):
+        unit = ('unit-a', 'unit-b')[index]
+        state = tmp_path/unit
+        state.mkdir(mode=0o700)
+        states[unit] = state
+        plan = json.loads((directory/'grant.json').read_text())
+        plan['application_deadline_monotonic_us'] = None
+        values.append(dict(schema='meshticulum.public-pilot-package.v1',unit=unit,
+            campaign_id='c'*32,resource_sha256='a'*64,
+            application_expires_epoch_us=grant.application_expires_epoch_us,transport='tcp',grant=plan,
+            secret_base64=base64.b64encode(grant.secret).decode(),
+            payload_base64=base64.b64encode(payload).decode() if index==0 and format=='MR1.request' else None,
+            source_run_id='d'*32 if index==0 and format=='MR1.response' else None))
+    values, _ = qualify(values, states, node.clock)
+    if format == 'MR1.response':
+        prior = states['unit-a']/'runs'/('d'*32)
+        prior.mkdir(mode=0o700,parents=True); prior.parent.chmod(0o700)
+        receipt = dict(schema='meshticulum.ip-public-node-run.v1',unit='unit-a',host_boot_id=BOOT,
+            complete=True,sends=False,service_format=format,service_object_durable=True,
+            service_object_sha256=hashlib.sha256(payload).hexdigest(),
+            original_application_expires_epoch_us=grant.application_expires_epoch_us,
+            original_application_deadline_us=mono+18000000,parent=dict(resource_sha256='a'*64))
+        for name, raw in (('result.json',json.dumps(receipt).encode()),('receiver.bin',payload),('active',b'active\n')):
+            node._write(prior/name,raw)
+    directories = []
+    for value in values:
+        receipt = provision(value,state=states[value['unit']],facts=facts(value['unit']),clock=node.clock)
+        directories.append(states[value['unit']]/'runs'/receipt['run_id'])
     return directories, grant
 
 
@@ -96,8 +136,8 @@ def reap(process):
 
 @pytest.mark.parametrize('format', ['MR1.request', 'MR1.response'])
 def test_finite_public_jobs_complete_in_two_real_processes_with_exact_quarantine(tmp_path, format):
-    request = resource.encode_request('/packs/' + 'a' * 64 + '/manifest.json', 0, 16384)
-    payload = request if format == 'MR1.request' else resource.BlockServer(lambda _: b'x' * 16384).handle(request)
+    request = resource.encode_request('/packs/' + 'a' * 64 + '/manifest.json', 0, 16356)
+    payload = request if format == 'MR1.request' else resource.BlockServer(lambda _: b'x' * 16356).handle(request)
     directories, grant = prepare(tmp_path, payload, format)
     receiver = start(directories[1], 'unit-b')
     sender = None
@@ -117,6 +157,7 @@ def test_finite_public_jobs_complete_in_two_real_processes_with_exact_quarantine
             assert 'RF_DONE' not in result['byte_journal']['outcomes']
             assert result['byte_journal']['measured_airtime_us'] is None
             assert not result.get('cleanup_errors')
+            assert result['parent']['started'] and result['parent_caps']['starts']==1
         assert not (directories[0] / 'receiver.bin').exists()
         assert (directories[1] / 'receiver.bin').read_bytes() == payload
         assert outputs[1]['application_status'] == 'public_block_quarantined'
@@ -223,6 +264,64 @@ def test_create_only_writer_keeps_original_data_and_closes_owned_directory_on_fa
         node._write(directory / 'record', b'replacement')
     assert opened == closed
     assert (directory / 'record').read_bytes() == b'original'
+
+
+def test_historical_v1_native_plan_cannot_consume_or_open_a_connection(tmp_path,monkeypatch):
+    payload=resource.encode_request('/packs/'+'a'*64+'/manifest.json',0,32)
+    directories,_=prepare(tmp_path,payload,qualified=False)
+    monkeypatch.setattr(node,'_facts',facts)
+    opened=[];monkeypatch.setattr(node,'_connected',lambda *args:opened.append(args))
+    result=node.run_public_service('unit-a',directories[0])
+    assert not result['complete'] and not opened
+    assert not any((directories[0]/name).exists() for name in ('started','bytes.sqlite','wire.sqlite','job.json'))
+
+
+def test_current_parent_revocation_at_setup_refuses_socket_without_refunding_claim(tmp_path,monkeypatch):
+    import sqlite3
+    payload=resource.encode_request('/packs/'+'a'*64+'/manifest.json',0,32)
+    directories,_=prepare(tmp_path,payload)
+    directory=directories[0]
+    monkeypatch.setattr(node,'_facts',facts)
+    connect=node._connected
+    opened=[];original_socket=node.socket.socket
+    def socket_call(*args,**kwargs):
+        opened.append(True);return original_socket(*args,**kwargs)
+    def revoked(*args):
+        (directory.parent.parent/'parents'/('1'*32)/'native.sqlite.approval').write_bytes(b'retired\n')
+        return connect(*args)
+    monkeypatch.setattr(node.socket,'socket',socket_call)
+    monkeypatch.setattr(node,'_connected',revoked)
+    result=node.run_public_service('unit-a',directory)
+    assert not result['complete'] and not opened
+    connection=sqlite3.connect(directory.parent.parent/'parents'/('1'*32)/'native.sqlite')
+    try:
+        assert connection.execute('SELECT COUNT(*) FROM claims').fetchone()==(1,)
+        assert connection.execute('SELECT COUNT(*) FROM starts').fetchone()==(1,)
+    finally:connection.close()
+
+
+def test_authority_constructor_cannot_reread_larger_caps_than_consumed_parent_claim(tmp_path,monkeypatch):
+    import sqlite3
+    payload=resource.encode_request('/packs/'+'a'*64+'/manifest.json',0,32)
+    directories,_=prepare(tmp_path,payload);directory=directories[0]
+    monkeypatch.setattr(node,'_facts',facts)
+    original=node.IpAuthority
+    def substituted(path,**kwargs):
+        plan=json.loads((path/'grant.json').read_text())
+        plan['limits']['max_frames']+=1
+        (path/'grant.json').write_text(json.dumps(plan))
+        return original(path,**kwargs)
+    opened=[];monkeypatch.setattr(node,'_connected',lambda *args:opened.append(args))
+    monkeypatch.setattr(node,'IpAuthority',substituted)
+    result=node.run_public_service('unit-a',directory)
+    assert not result['complete'] and 'pilot_parent_authority_binding_changed' in result['error']
+    assert not opened and not (directory/'bytes.sqlite').exists() and not (directory/'wire.sqlite').exists()
+    connection=sqlite3.connect(directory.parent.parent/'parents'/('1'*32)/'native.sqlite')
+    try:
+        assert connection.execute('SELECT COUNT(*) FROM starts').fetchone()==(1,)
+        row=json.loads(connection.execute('SELECT body FROM claims').fetchone()[0])
+        assert row['child']['cost']['ip_frames']==2048
+    finally:connection.close()
 
 
 def test_help_never_opens_network_hardware_or_private_backend():

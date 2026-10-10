@@ -25,6 +25,7 @@ from meshticulum.bench.wire import BenchGrant
 from meshticulum.bench.services import _shape
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.ip.authority import grant_from_plan
+from meshticulum.resources.resource import decode_request
 from .profiles import RADIO_ADMISSION
 
 SCHEMA = 'meshticulum.public-parent-caps.v1'
@@ -119,6 +120,31 @@ class ParentPolicy:
         for unit in self.units: prior = prior.plus(unit.prior_debt)
         require(prior.within(self.aggregate_limits))
     def to_dict(self): return asdict(self)
+    @classmethod
+    def from_dict(cls, value):
+        """Strict metadata decoding; this supplies no enrollment approval."""
+        try:
+            require(type(value) is dict and set(value) == {
+                'parent_id', 'controller_boot_id', 'issued_epoch_us', 'expires_epoch_us',
+                'original_monotonic_us', 'deadline_monotonic_us', 'units',
+                'aggregate_limits', 'prior_snapshot_sha256'})
+            require(type(value['units']) in (list, tuple))
+            units = []
+            for unit in value['units']:
+                require(type(unit) is dict and set(unit) == {
+                    'unit', 'host_boot_id', 'peer', 'limits', 'prior_debt', 'prior_snapshot_sha256'})
+                require(type(unit['peer']) is dict and set(unit['peer']) == {'chain_id', 'agent_id'})
+                for key in ('limits', 'prior_debt'):
+                    require(type(unit[key]) is dict and set(unit[key]) == set(asdict(Cost())))
+                units.append(UnitCaps(unit['unit'], unit['host_boot_id'], PeerID(**unit['peer']),
+                    Cost(**unit['limits']), Cost(**unit['prior_debt']), unit['prior_snapshot_sha256']))
+            require(type(value['aggregate_limits']) is dict
+                    and set(value['aggregate_limits']) == set(asdict(Cost())))
+            return cls(value['parent_id'], value['controller_boot_id'], value['issued_epoch_us'],
+                value['expires_epoch_us'], value['original_monotonic_us'], value['deadline_monotonic_us'],
+                tuple(units), Cost(**value['aggregate_limits']), value['prior_snapshot_sha256'])
+        except Exception:
+            raise ParentCapsError() from None
     @property
     def digest(self): return hashlib.sha256(DOMAIN + canonical(self.to_dict())).hexdigest()
     def unit(self, value):
@@ -207,6 +233,7 @@ def child_caps(package, policy):
             require(base64.b64encode(raw).decode() == payload and len(raw) == obj['bytes']
                     and hashlib.sha256(raw).hexdigest() == obj['sha256'])
             _shape(raw, fmt)
+            require(decode_request(raw)[0].startswith('/packs/' + package['resource_sha256'] + '/'))
         metadata = dict(parent_id=policy.parent_id, policy_digest=policy.digest, unit=unit.unit,
             host_boot_id=unit.host_boot_id, campaign_id=package['campaign_id'], resource_sha256=package['resource_sha256'],
             run_id=run, sends=sends, sender=sender, receiver=receiver, transport=package['transport'], format=fmt,
@@ -245,6 +272,7 @@ class ParentCaps:
         self._owner = os.getpid(), threading.get_ident(); self._closed = self._busy = self._uncertain = False
         self._permits = {}; self.db = self._db_ref = None; self._fds = {}; self._ids = {}; self._fd_refs = {}
         self._operation_pending = False
+        self._last_read_clock = None
         self.pending = Path(str(self.path) + '.pending')
         try:
             private(self.path.parent.lstat(), True)
@@ -305,7 +333,9 @@ class ParentCaps:
         now = self._clock(); self._bound()
         require(not self._uncertain and type(now) is tuple and len(now) == 2 and all(type(v) is int and 0 < v <= MAX for v in now)
             and self.policy.issued_epoch_us <= now[0] < self.policy.expires_epoch_us
-            and self.policy.original_monotonic_us <= now[1] < self.policy.deadline_monotonic_us)
+            and self.policy.original_monotonic_us <= now[1] < self.policy.deadline_monotonic_us
+            and (self._last_read_clock is None or all(a >= b for a,b in zip(now,self._last_read_clock))))
+        self._last_read_clock = now
         return now
     def _validate(self):
         self._bound()
@@ -406,6 +436,30 @@ class ParentCaps:
         return dict(parent_id=self.policy.parent_id, policy_digest=self.policy.digest, allocations=len(rows),
             per_unit={unit: asdict(cost) for unit, cost in used.items()}, aggregate=asdict(total),
             uncertain=self._uncertain or self.pending.exists(), native_enforcement=False)
+    def current(self):
+        """Read-only current parent observation; never allocates or refunds."""
+        entered = False
+        try:
+            self._bound(); require(not self._uncertain and not self.pending.exists())
+            if self._busy:
+                self._uncertain = True
+                raise ParentCapsError()
+            self._busy = entered = True
+            now = self._time()
+            persisted = self.db.execute('SELECT epoch,mono FROM clock WHERE id=1').fetchone()
+            require(persisted is not None and all(a >= b for a, b in zip(now, persisted))
+                    and (self._last_read_clock is None
+                         or all(a >= b for a, b in zip(now, self._last_read_clock))))
+            self._bound(); require(not self._uncertain)
+            self._last_read_clock = now
+            return True
+        except Exception:
+            if entered:
+                self._uncertain = True
+            raise ParentCapsError() from None
+        finally:
+            if entered:
+                self._busy = False
     def close(self):
         if self._owner != (os.getpid(), threading.get_ident()): return False
         self._closed = True

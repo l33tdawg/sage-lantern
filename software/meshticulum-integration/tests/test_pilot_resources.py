@@ -14,6 +14,7 @@ from meshticulum.resources import lamplighter as ll
 from meshticulum.resources import resource
 from tests.test_ip_node import facts
 from tests.test_ip_node import prepare
+from tests.public_parent_helpers import authorize
 from tests.test_meshticulum_resources import pack
 
 
@@ -71,7 +72,7 @@ def test_response_grant_uses_native_verified_store_and_actual_received_request(p
     shutil.copytree(pack[0], public / 'pack')
     _write(public / 'trust.json', json.dumps(pack[1]).encode())
     fixture = tmp_path / 'reply-fixture'; fixture.mkdir()
-    directories, grant = prepare(fixture, response, 'MR1.response')
+    directories, grant = prepare(fixture, response, 'MR1.response', qualified=False)
     plan = json.loads((directories[0] / 'grant.json').read_text())
     plan['application_deadline_monotonic_us'] = None
     plan['application_expires_epoch_us'] = original['application_expires_epoch_us']
@@ -80,7 +81,10 @@ def test_response_grant_uses_native_verified_store_and_actual_received_request(p
         resource_sha256=pack[2], application_expires_epoch_us=original['application_expires_epoch_us'],
         transport='tcp', grant=plan, secret_base64=base64.b64encode(grant.secret).decode(),
         payload_base64=None, source_run_id={'kind':'served_public_chunk','request_run_id':'1' * 32})
+    package=authorize(package,root,clock,response)
     result = provision(package, state=root, facts=facts('unit-b'), clock=clock)
+    assert result['schema']=='meshticulum.provisioned-public-pilot.v2'
+    assert result['parent']['prepared'] and result['parent']['resource_sha256']==pack[2]
     assert result['source_basis'] == 'native_verified_public_store_response'
     assert (root / 'runs' / result['run_id'] / 'sender.bin').read_bytes() == response
     assert not (root / 'runs' / result['run_id'] / 'started').exists()

@@ -1,0 +1,382 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Protected per-unit public-pilot claims; no enrollment from a package.
+
+Explicit enrollment requires independent native facts, approval and prior-debt
+checks. Adapters open that retained enrollment and its revocable protected
+approval flag; neither creates policy or erases debt. Complete child maxima are
+charged before provision, and a separate append-only start tombstone precedes
+runtime construction. Receipts are inspection, never bearer grants. No socket,
+radio, process, controller or production service is opened by this module.
+"""
+from dataclasses import dataclass, asdict
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+import threading
+
+from meshticulum.contracts.identity import PeerID
+from .pilot_parent_caps import (Cost, ParentPolicy, child_caps, canonical,
+                                private, digest, identifier, boot, MAX)
+
+DOMAIN = b'meshticulum.native-parent-caps.v1\0'
+
+
+class NativeCapsError(RuntimeError):
+    def __init__(self): super().__init__('public_native_caps_unavailable')
+
+
+def require(value):
+    if not value: raise NativeCapsError()
+
+
+def hashed(value): return hashlib.sha256(DOMAIN + canonical(value)).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class NativeFacts:
+    unit: str
+    host_boot_id: str
+    peer: PeerID
+    def __post_init__(self):
+        require(self.unit in ('unit-a','unit-b','unit-c') and type(self.peer) is PeerID)
+        boot(self.host_boot_id)
+
+
+class Preparation:
+    """Exact instance-owned claim; construction or a copied receipt is no grant."""
+    def __init__(self, owner, claim_id, raw):
+        self._owner, self._claim_id, self._raw = owner, claim_id, raw
+    @property
+    def run_id(self): return json.loads(self._raw)['child']['metadata']['run_id']
+    @property
+    def application_expires_epoch_us(self): return json.loads(self._raw)['resource']['application_expires_epoch_us']
+    @property
+    def application_deadline_monotonic_us(self): return json.loads(self._raw)['resource']['application_deadline_monotonic_us']
+    def __repr__(self): return '<NativePublicPreparation>'
+
+
+class NativeCaps:
+    @classmethod
+    def enroll(cls,path,policy,*,unit,clock,facts,approve,prior_check):
+        return cls(path,policy,unit=unit,clock=clock,facts=facts,approve=approve,prior_check=prior_check,enroll=True)
+    @classmethod
+    def open(cls,path,policy,*,unit,clock,facts,approve):
+        return cls(path,policy,unit=unit,clock=clock,facts=facts,approve=approve,prior_check=None,enroll=False)
+    def __init__(self,path,policy,*,unit,clock,facts,approve,prior_check,enroll):
+        require(type(policy) is ParentPolicy and callable(clock) and callable(facts) and callable(approve)
+                and (not enroll or callable(prior_check)))
+        self.path=Path(path).absolute();self.policy=policy;self.unit=policy.unit(unit)
+        # Local cap enforcement implies an aggregate bound only with this
+        # conservative partition. Controller receipts are not global authority.
+        total=Cost()
+        for candidate in policy.units:total=total.plus(candidate.limits)
+        require(total.within(policy.aggregate_limits))
+        self._clock,self._facts,self._approve,self._prior=clock,facts,approve,prior_check
+        self._pid,self._thread=os.getpid(),threading.get_ident()
+        self._closed=self._uncertain=False;self._busy=True;self._preparations={};self._active=self._active_ref=None
+        self.pending=Path(str(self.path)+'.pending');self._fds={};self._fd_refs={};self._ids={}
+        self.db=self._db_ref=None;self._enrollment=None;self._approval_bytes=None;self._last=None
+        self._policy_bytes=canonical(policy.to_dict());self._pending_written=False
+        try:
+            private(self.path.parent.lstat(),True);require(self.path.parent.resolve()==self.path.parent)
+            for name,target in self._names().items():
+                flags=os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC
+                if enroll:flags|=os.O_CREAT|os.O_EXCL
+                fd=os.open(target,flags,0o600);self._fds[name]=self._fd_refs[name]=fd
+                info=os.fstat(fd);private(info);self._ids[name]=(info.st_dev,info.st_ino)
+                if name=='owner':fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.db=self._db_ref=sqlite3.connect(self.path.as_uri()+'?mode=rw',uri=True,isolation_level=None,timeout=.25)
+            require(self.db.execute('PRAGMA journal_mode=WAL').fetchone()==('wal',))
+            self.db.execute('PRAGMA synchronous=FULL')
+            require(self.db.execute('PRAGMA synchronous').fetchone()==(2,))
+            self._refs=(self.path,self.pending,policy,self.unit,clock,facts,approve,prior_check,self._fds,self._ids,
+                        tuple(self._fds.items()),tuple(self._ids.items()),self.db)
+            if enroll:
+                now=self._sample()
+                require(policy.issued_epoch_us<=now[0]<policy.expires_epoch_us)
+                deadline=now[1]+policy.expires_epoch_us-now[0];require(deadline<=MAX)
+                self._enrollment=dict(schema='meshticulum.native-parent-enrollment.v1',policy=policy.to_dict(),
+                    unit=unit,host_boot_id=self.unit.host_boot_id,original_epoch_us=now[0],
+                    original_monotonic_us=now[1],deadline_monotonic_us=deadline)
+                prior=canonical(dict(parent_id=policy.parent_id,policy_digest=policy.digest,unit=asdict(self.unit),
+                                     prior_snapshot_sha256=policy.prior_snapshot_sha256))
+                require(self._prior(prior) is True);self._available()
+                self._observe('enroll')
+                self._marker();self.db.execute('BEGIN IMMEDIATE')
+                self.db.execute('CREATE TABLE enrollment(id INTEGER PRIMARY KEY CHECK(id=1),body BLOB NOT NULL)')
+                self.db.execute('INSERT INTO enrollment VALUES(1,?)',(canonical(self._enrollment),))
+                self.db.execute('CREATE TABLE clock(id INTEGER PRIMARY KEY CHECK(id=1),epoch INTEGER,mono INTEGER)')
+                self.db.execute('INSERT INTO clock VALUES(1,?,?)',now)
+                for table in ('resources','claims','prepared','starts'):
+                    extra=',run_id TEXT UNIQUE' if table=='claims' else ''
+                    self.db.execute('CREATE TABLE '+table+'(id TEXT PRIMARY KEY,body BLOB NOT NULL'+extra+')')
+                    for action in ('UPDATE','DELETE'):
+                        self.db.execute('CREATE TRIGGER immutable_'+table+'_'+action+' BEFORE '+action+' ON '+table+
+                                        " BEGIN SELECT RAISE(ABORT,'append_only'); END")
+                self._commit()
+                self._approval_bytes=(hashed(self._enrollment)+'\n').encode()
+                os.write(self._fds['approval'],self._approval_bytes);os.fsync(self._fds['approval']);self._sync()
+                final=self._observe('enroll');self._save_clock(final);self._available();self._clear_marker()
+            else:
+                row=self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone();require(row is not None)
+                self._enrollment=json.loads(row[0]);require(canonical(self._enrollment)==row[0]
+                    and canonical(self._enrollment['policy'])==self._policy_bytes
+                    and self._enrollment['unit']==unit and self._enrollment['host_boot_id']==self.unit.host_boot_id)
+                self._approval_bytes=(hashed(self._enrollment)+'\n').encode()
+            self._enrollment_bytes=canonical(self._enrollment)
+            self._validate();self._uncertain=self.pending.exists() or self.pending.is_symlink()
+        except BaseException as error:
+            if self.db is self._db_ref and self.db is not None and self.db.in_transaction:self.db.execute('ROLLBACK')
+            self._busy=False;self.close()
+            if not isinstance(error,Exception):raise
+            raise NativeCapsError() from None
+        finally:self._busy=False
+    def __repr__(self):return '<NativePublicCaps>'
+    def _names(self):return {'owner':Path(str(self.path)+'.owner'),'db':self.path,'approval':Path(str(self.path)+'.approval')}
+    def _available(self):
+        require(not self._closed and self._pid==os.getpid() and self._thread==threading.get_ident())
+        r=self._refs
+        require(all(a is b for a,b in zip((self.path,self.pending,self.policy,self.unit,self._clock,self._facts,
+                    self._approve,self._prior,self._fds,self._ids),r[:10]))
+                and tuple(self._fds.items())==r[10] and tuple(self._ids.items())==r[11]
+                and self._fds==self._fd_refs and self.db is self._db_ref is r[12]
+                and canonical(self.policy.to_dict())==self._policy_bytes and self._active is self._active_ref)
+        private(self.path.parent.lstat(),True);require(self.path.parent.resolve()==self.path.parent)
+        for name,target in self._names().items():
+            held,named=os.fstat(self._fds[name]),target.lstat();private(held);private(named)
+            require((held.st_dev,held.st_ino)==(named.st_dev,named.st_ino)==self._ids[name])
+        if self._approval_bytes is not None:
+            require(os.pread(self._fds['approval'],129,0)==self._approval_bytes)
+        if hasattr(self,'_enrollment_bytes'):require(canonical(self._enrollment)==self._enrollment_bytes)
+    def _sample(self):
+        self._available();facts=self._facts();self._available()
+        require(type(facts) is NativeFacts and facts==NativeFacts(self.unit.unit,self.unit.host_boot_id,self.unit.peer))
+        now=self._clock();self._available()
+        require(type(now) is tuple and len(now)==2 and all(type(v) is int and 0<v<=MAX for v in now))
+        return now
+    def _live(self,now,limits=None):
+        e=self._enrollment
+        require(not self._uncertain and self.policy.issued_epoch_us<=now[0]<self.policy.expires_epoch_us
+                and e['original_epoch_us']<=now[0] and e['original_monotonic_us']<=now[1]<e['deadline_monotonic_us'])
+        if self._last is not None:require(all(a>=b for a,b in zip(now,self._last)))
+        if limits is not None:require(now[0]<limits[0] and now[1]<limits[1])
+    def _observe(self,phase,limits=None):
+        first=self._sample();self._live(first,limits)
+        binding=canonical(dict(enrollment=self._enrollment,phase=phase))
+        require(self._approve(binding) is True);self._available();require(not self._uncertain)
+        now=self._sample();self._live(now,limits);require(all(a>=b for a,b in zip(now,first)))
+        self._last=now;return now
+    def _sync(self):
+        fd=os.open(self.path.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:os.fsync(fd)
+        finally:os.close(fd)
+    def _marker(self):
+        if self._pending_written:return
+        fd=os.open(self.pending,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+        try:os.write(fd,self.policy.digest.encode());os.fsync(fd)
+        finally:os.close(fd)
+        self._pending_written=True;self._sync()
+    def _clear_marker(self):
+        os.unlink(self.pending);self._sync();self._pending_written=False
+    def _commit(self):self.db.execute('COMMIT')
+    def _save_clock(self,now):
+        self.db.execute('BEGIN IMMEDIATE');self.db.execute('UPDATE clock SET epoch=?,mono=? WHERE id=1',now);self._commit()
+    def _validate(self):
+        self._available()
+        row=self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone()
+        require(row==(canonical(self._enrollment),))
+        used=self.unit.prior_debt;rows=self.db.execute('SELECT id,body,run_id FROM claims').fetchall();require(len(rows)<=4096)
+        for claim_id,raw,run in rows:
+            claim=json.loads(raw);require(canonical(claim)==raw and hashed(claim)==claim_id)
+            meta=claim['child']['metadata'];cost=Cost(**claim['child']['cost'])
+            require(meta['unit']==self.unit.unit and meta['host_boot_id']==self.unit.host_boot_id
+                    and meta['policy_digest']==self.policy.digest and meta['run_id']==run)
+            resource=self.db.execute('SELECT body FROM resources WHERE id=?',(claim['resource_id'],)).fetchone()
+            require(resource==(canonical(claim['resource']),));used=used.plus(cost)
+        require(used.within(self.unit.limits));return rows,used
+    def _run(self,phase,action,verify):
+        entered=False
+        try:
+            self._available()
+            if self._busy:self._uncertain=True;raise NativeCapsError()
+            require(not self._uncertain and not self.pending.exists())
+            self._busy=entered=True
+            now=self._observe(phase);previous=self.db.execute('SELECT epoch,mono FROM clock WHERE id=1').fetchone()
+            require(previous is not None and all(a>=b for a,b in zip(now,previous)))
+            result,limits=action(now)
+            after=self._observe(phase,limits);self._validate()
+            require(verify() is True);self._available();require(not self._uncertain)
+            self._marker();self._save_clock(after);self._available();require(not self._uncertain)
+            self._clear_marker();return result
+        except BaseException as error:
+            if entered:self._uncertain=True
+            if entered and self.db is self._db_ref and self.db is not None and self.db.in_transaction:self.db.execute('ROLLBACK')
+            if self._pending_written and not self.pending.exists():
+                self._pending_written=False
+                try:self._marker()
+                except Exception:pass
+            if not isinstance(error,Exception):raise
+            raise NativeCapsError() from None
+        finally:
+            if entered:self._busy=False
+    def _package(self,package):
+        fields={'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
+                'transport','grant','secret_base64','payload_base64','source_run_id','parent'}
+        require(type(package) is dict and set(package)==fields and package['schema']=='meshticulum.public-pilot-package.v2')
+        parent=package['parent'];require(type(parent) is dict and set(parent)=={'schema','parent_id','policy_digest','allocation_id','child'}
+            and parent['schema']=='meshticulum.public-parent-allocation.v1' and parent['parent_id']==self.policy.parent_id
+            and parent['policy_digest']==self.policy.digest and package['unit']==self.unit.unit)
+        digest(parent['allocation_id']);base={k:v for k,v in package.items() if k!='parent'};base['schema']='meshticulum.public-pilot-package.v1'
+        child=child_caps(base,self.policy);require(child.to_dict()==parent['child'])
+        return child,parent['allocation_id']
+    def prepare_claim(self,package):
+        input_sha=hashlib.sha256(canonical(package)).hexdigest()
+        def prepare(now):
+            child,allocation=self._package(package);meta=json.loads(child.metadata)
+            require(now[0]<child.expires_epoch_us and package['grant']['issued_epoch_us']<=now[0])
+            resource_id=hashed(dict(parent_id=self.policy.parent_id,unit=self.unit.unit,resource_sha256=meta['resource_sha256']))
+            row=self.db.execute('SELECT body FROM resources WHERE id=?',(resource_id,)).fetchone()
+            if row is None:
+                resource=dict(resource_sha256=meta['resource_sha256'],application_expires_epoch_us=child.expires_epoch_us,
+                    original_epoch_us=now[0],original_monotonic_us=now[1],
+                    application_deadline_monotonic_us=min(self._enrollment['deadline_monotonic_us'],now[1]+child.expires_epoch_us-now[0]))
+            else:resource=json.loads(row[0]);require(canonical(resource)==row[0] and resource['application_expires_epoch_us']==child.expires_epoch_us)
+            limits=(child.expires_epoch_us,resource['application_deadline_monotonic_us']);self._live(now,limits)
+            require(now[0]>=resource['original_epoch_us'] and now[1]>=resource['original_monotonic_us'])
+            rows,used=self._validate();require(len(rows)<4096 and not any(run==child.run_id for _,_,run in rows))
+            require(used.plus(child.cost).within(self.unit.limits))
+            claim=dict(child=child.to_dict(),controller_allocation_id=allocation,resource_id=resource_id,resource=resource)
+            raw=canonical(claim);claim_id=hashed(claim)
+            self._marker();self.db.execute('BEGIN IMMEDIATE')
+            if row is None:self.db.execute('INSERT INTO resources VALUES(?,?)',(resource_id,canonical(resource)))
+            self.db.execute('INSERT INTO claims VALUES(?,?,?)',(claim_id,raw,child.run_id));self._commit()
+            preparation=Preparation(self,claim_id,raw)
+            self._preparations[id(preparation)]=(preparation,claim_id,raw,False)
+            return preparation,limits
+        return self._run('prepare',prepare,lambda:hashlib.sha256(canonical(package)).hexdigest()==input_sha)
+    def _receipt(self,claim_id,claim,native_plan,now):
+        meta=claim['child']['metadata'];require(type(native_plan) is dict)
+        deadline=native_plan.get('application_deadline_monotonic_us')
+        require(type(deadline) is int and now[1]<deadline<=claim['resource']['application_deadline_monotonic_us'])
+        normalized=dict(native_plan)
+        if meta['transport']=='tcp':normalized['application_deadline_monotonic_us']=None
+        else:normalized.pop('application_deadline_monotonic_us',None)
+        require(hashlib.sha256(canonical(normalized)).hexdigest()==meta['plan_sha256'])
+        return dict(schema='meshticulum.native-parent-claim.v1',parent_id=self.policy.parent_id,
+            policy_digest=self.policy.digest,controller_allocation_id=claim['controller_allocation_id'],native_claim_id=claim_id,
+            unit=self.unit.unit,host_boot_id=self.unit.host_boot_id,run_id=meta['run_id'],resource_sha256=meta['resource_sha256'],
+            application_expires_epoch_us=meta['application_expires_epoch_us'],application_deadline_monotonic_us=deadline,
+            child_caps=claim['child'],original_plan_sha256=meta['plan_sha256'],
+            native_plan_sha256=hashlib.sha256(canonical(native_plan)).hexdigest(),secret_sha256=meta['secret_sha256'],
+            grant_context_sha256=meta['grant_digest'],prepared=True)
+    def finalize_provision(self,preparation,native_plan):
+        input_sha=hashlib.sha256(canonical(native_plan)).hexdigest()
+        def finalize(now):
+            require(type(preparation) is Preparation and preparation._owner is self
+                and self._preparations.get(id(preparation))==(preparation,preparation._claim_id,preparation._raw,False))
+            claim_id=preparation._claim_id;claim=json.loads(preparation._raw)
+            require(self.db.execute('SELECT body FROM claims WHERE id=?',(claim_id,)).fetchone()==(preparation._raw,))
+            receipt=self._receipt(claim_id,claim,native_plan,now)
+            self._preparations[id(preparation)]=(preparation,claim_id,preparation._raw,True)
+            self._marker();self.db.execute('BEGIN IMMEDIATE')
+            self.db.execute('INSERT INTO prepared VALUES(?,?)',(claim_id,canonical(receipt)));self._commit()
+            return receipt,(receipt['application_expires_epoch_us'],receipt['application_deadline_monotonic_us'])
+        return self._run('finalize',finalize,lambda:hashlib.sha256(canonical(native_plan)).hexdigest()==input_sha)
+    def consume_start(self,run_id,native_plan,secret):
+        input_sha=hashlib.sha256(canonical(native_plan)).hexdigest()
+        def consume(now):
+            identifier(run_id);require(self._active is None and type(secret) is bytes and len(secret)==32)
+            row=self.db.execute('SELECT id,body FROM claims WHERE run_id=?',(run_id,)).fetchone();require(row is not None)
+            claim_id,raw=row;claim=json.loads(raw);expected=self._receipt(claim_id,claim,native_plan,now)
+            require(hashlib.sha256(secret).hexdigest()==expected['secret_sha256']
+                and self.db.execute('SELECT body FROM prepared WHERE id=?',(claim_id,)).fetchone()==(canonical(expected),))
+            receipt=dict(expected,schema='meshticulum.native-parent-start.v1',started=True)
+            self._marker();self.db.execute('BEGIN IMMEDIATE')
+            self.db.execute('INSERT INTO starts VALUES(?,?)',(claim_id,canonical(receipt)));self._commit()
+            self._active=self._active_ref=canonical(receipt)
+            return receipt,(receipt['application_expires_epoch_us'],receipt['application_deadline_monotonic_us'])
+        return self._run('start',consume,lambda:hashlib.sha256(canonical(native_plan)).hexdigest()==input_sha)
+    def current(self):
+        entered=False
+        try:
+            self._available();require(not self._busy and not self._uncertain and not self.pending.exists())
+            self._busy=entered=True;limits=None
+            if self._active is not None:
+                receipt=json.loads(self._active);limits=(receipt['application_expires_epoch_us'],receipt['application_deadline_monotonic_us'])
+                require(self.db.execute('SELECT body FROM starts WHERE id=?',(receipt['native_claim_id'],)).fetchone()==(self._active,))
+            self._observe('current',limits);self._validate();return True
+        except Exception:
+            if entered or self._busy:self._uncertain=True
+            return False
+        finally:
+            if entered:self._busy=False
+    def snapshot(self):
+        self._available();require(not self._busy);rows,used=self._validate()
+        return dict(parent_id=self.policy.parent_id,policy_digest=self.policy.digest,unit=self.unit.unit,
+            claims=len(rows),prepared=self.db.execute('SELECT COUNT(*) FROM prepared').fetchone()[0],
+            starts=self.db.execute('SELECT COUNT(*) FROM starts').fetchone()[0],debt=asdict(used),
+            uncertain=self._uncertain or self.pending.exists(),physical_handoff_proven=False)
+    def close(self):
+        if self._pid!=os.getpid() or self._thread!=threading.get_ident():return False
+        self._closed=True
+        if self._busy:return False
+        if self._db_ref is not None:self._db_ref.close();self.db=self._db_ref=None
+        valid=self._fds==self._fd_refs
+        for name,fd in list(self._fd_refs.items()):
+            try:
+                info=os.fstat(fd);require((info.st_dev,info.st_ino)==self._ids[name]);os.close(fd)
+            except Exception:valid=False
+        self._fds.clear();self._fd_refs.clear();return valid and not self._uncertain
+
+
+def _open_existing(state,parent_id,facts,clock):
+    """Protected local enrollment, not a policy transported by management."""
+    try:
+        identifier(parent_id);require(type(facts) is dict and callable(clock))
+        state=Path(state).absolute();private(state.lstat(),True);require(state.resolve()==state)
+        parents=state/'parents';directory=parents/parent_id
+        private(parents.lstat(),True);private(directory.lstat(),True)
+        path=directory/'native.sqlite';fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        connection=None
+        try:
+            private(os.fstat(fd));connection=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,isolation_level=None)
+            row=connection.execute('SELECT body FROM enrollment WHERE id=1').fetchone();require(row is not None)
+            value=json.loads(row[0]);policy=ParentPolicy.from_dict(value['policy']);require(policy.parent_id==parent_id and value['unit']==facts['unit'])
+        finally:
+            if connection is not None:connection.close()
+            os.close(fd)
+        unit=policy.unit(facts['unit']);require(facts['host_boot_id']==unit.host_boot_id)
+        # A retained protected enrollment flag supplies current approval; the
+        # adapter neither invokes enrollment nor fabricates a prior snapshot.
+        def observed():return NativeFacts(facts['unit'],facts['host_boot_id'],unit.peer)
+        return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=lambda _:True)
+    except Exception:raise NativeCapsError() from None
+
+
+def open_for_provision(state,facts,clock,package):
+    try:
+        require(type(package) is dict and package['schema']=='meshticulum.public-pilot-package.v2')
+        caps=_open_existing(state,package['parent']['parent_id'],facts,clock)
+        try:caps._package(package);require(caps.current());return caps
+        except BaseException:caps.close();raise
+    except Exception:raise NativeCapsError() from None
+
+
+def open_for_run(state,directory,facts,clock):
+    try:
+        directory=Path(directory).absolute();private(directory.lstat(),True)
+        fd=os.open(directory/'provision.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:private(os.fstat(fd));raw=os.read(fd,32769)
+        finally:os.close(fd)
+        require(len(raw)<=32768);receipt=json.loads(raw)
+        require(receipt['schema']=='meshticulum.provisioned-public-pilot.v2' and receipt['unit']==facts['unit'])
+        expected=receipt['parent'];caps=_open_existing(state,expected['parent_id'],facts,clock)
+        try:
+            require(caps.db.execute('SELECT body FROM prepared WHERE id=?',(expected['native_claim_id'],)).fetchone()==(canonical(expected),)
+                    and expected['run_id']==receipt['run_id'] and expected['unit']==facts['unit'] and caps.current())
+            return caps
+        except BaseException:caps.close();raise
+    except Exception:raise NativeCapsError() from None

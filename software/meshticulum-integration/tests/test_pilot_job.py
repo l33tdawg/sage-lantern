@@ -1,5 +1,6 @@
 """Process-handle controls. Invented facts do not qualify native radio ownership."""
 import json
+import hashlib
 import os
 import select
 import signal
@@ -129,16 +130,22 @@ time.sleep(10)
         process.stdout.close()
 
 
-def test_native_public_retirement_preserves_other_files_and_needs_no_live_role(tmp_path):
+@pytest.mark.parametrize('version',[1,2])
+def test_native_public_retirement_preserves_other_files_and_needs_no_live_role(tmp_path,version):
     from lantern_meshticulum.ip.node import _write
     path=tmp_path/'grant';path.mkdir(mode=0o700)
-    provision=dict(schema='meshticulum.provisioned-public-pilot.v1',unit='unit-a',run_id=RUN,transport='tcp')
+    provision=dict(schema='meshticulum.provisioned-public-pilot.v'+str(version),unit='unit-a',run_id=RUN,transport='tcp')
     grant=dict(schema='meshticulum.ip-service-run.v1',host_boot_id=BOOT,session=dict(session_id=RUN),format='MR1.request')
+    if version==2:
+        provision['parent']=dict(schema='meshticulum.native-parent-claim.v1',prepared=True,
+            unit='unit-a',host_boot_id=BOOT,run_id=RUN,parent_id='1'*32,
+            native_plan_sha256=hashlib.sha256(json.dumps(grant,sort_keys=True,separators=(',',':')).encode()).hexdigest())
     for name,value in [('provision.json',provision),('grant.json',grant)]:_write(path/name,json.dumps(value).encode())
     _write(path/'active',b'active\n');_write(path/'unrelated',b'preserve')
     value=job.retire(path,unit='unit-a',run_id=RUN,boot=BOOT)
     assert value['retired'] and not value['debt_refunded'] and not value['safe_handoff_proven']
     assert (path/'active').read_bytes()==b'retired\n' and (path/'unrelated').read_bytes()==b'preserve'
+    if version==2:assert value['parent']==provision['parent']
 
 
 @pytest.mark.parametrize('change',[{'unit':'unit-b'},{'run_id':'d'*32},{'schema':'meshticulum.provisioned-grant.v1'}])
@@ -152,3 +159,17 @@ def test_retirement_refuses_foreign_or_legacy_grant_without_modifying_marker(tmp
     _write(path/'active',b'active\n')
     with pytest.raises(WireError):job.retire(path,unit='unit-a',run_id=RUN,boot=BOOT)
     assert (path/'active').read_bytes()==b'active\n'
+
+
+def test_v2_retirement_refuses_changed_parent_plan_binding_and_preserves_original_debt_metadata(tmp_path):
+    from lantern_meshticulum.ip.node import _write
+    path=tmp_path/'grant';path.mkdir(mode=0o700)
+    grant=dict(schema='meshticulum.ip-service-run.v1',host_boot_id=BOOT,session=dict(session_id=RUN),format='MR1.request')
+    provision=dict(schema='meshticulum.provisioned-public-pilot.v2',unit='unit-a',run_id=RUN,transport='tcp',
+        parent=dict(schema='meshticulum.native-parent-claim.v1',prepared=True,unit='unit-a',
+                    host_boot_id=BOOT,run_id=RUN,native_plan_sha256='0'*64))
+    original=json.dumps(provision).encode()
+    _write(path/'provision.json',original);_write(path/'grant.json',json.dumps(grant).encode());_write(path/'active',b'active\n')
+    with pytest.raises(WireError,match='pilot_retire_parent_binding_changed'):
+        job.retire(path,unit='unit-a',run_id=RUN,boot=BOOT)
+    assert (path/'active').read_bytes()==b'active\n' and (path/'provision.json').read_bytes()==original
