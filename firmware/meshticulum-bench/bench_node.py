@@ -30,7 +30,7 @@ def trusted(path, limit=2000000):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('inspect', 'run', 'service-run', 'ip-service-run', 'pilot-facts', 'pilot-debt-snapshot', 'pilot-cache-status', 'pilot-result', 'pilot-status', 'pilot-stop', 'pilot-retire', 'pilot-verify', 'revoke', 'ip-revoke'))
+    parser.add_argument('action', choices=('inspect', 'run', 'service-run', 'ip-service-run', 'pilot-facts', 'pilot-debt-snapshot', 'pilot-parent-snapshot', 'pilot-cache-status', 'pilot-result', 'pilot-status', 'pilot-stop', 'pilot-retire', 'pilot-verify', 'revoke', 'ip-revoke'))
     parser.add_argument('unit', choices=('unit-a', 'unit-b', 'unit-c'))
     parser.add_argument('--run-id')
     parser.add_argument('--campaign-id')
@@ -91,6 +91,54 @@ def main():
             raise RuntimeError('debt_snapshot_native_lifecycle_changed')
         result['facts_before'],result['facts_after'] = before,after
         result['declared_runtime_archive_sha256'] = scope.runtime_sha256
+        result['runtime_archive_sha256_observed'] = False
+        result['runtime_manifest_and_payloads_verified'] = True
+    elif args.action == 'pilot-parent-snapshot':
+        if manifest.get('public_parent_snapshot_schemas') != ['meshticulum.public-parent-observation.v1']:
+            raise RuntimeError('parent_snapshot_not_in_bundle')
+        from lantern_meshticulum.bench.pilot_parent_snapshot import Scope, collect, public_json
+        from lantern_meshticulum.bench.pilot_debt_snapshot import Scope as DebtScope
+        from lantern_meshticulum.bench.pilot_manage import facts
+        from lantern_meshticulum.ip.node import clock
+        if (args.scope_file is None or args.expected_boot is None
+                or args.observation_end_epoch_us is None or args.scope_sha256 is None
+                or not re.fullmatch(r'[0-9a-f]{64}',args.scope_sha256)):
+            raise RuntimeError('parent_snapshot_explicit_scope_required')
+        raw = trusted(args.scope_file,200000)
+        if hashlib.sha256(raw).hexdigest() != args.scope_sha256:
+            raise RuntimeError('parent_snapshot_scope_changed')
+        wrapper = public_json(raw)
+        if (type(wrapper) is not dict or set(wrapper) != {'schema','parent_scope','legacy_scope',
+                'runtime_sha256','manifest_sha256'}
+                or wrapper['schema'] != 'meshticulum.public-parent-observation.v1'
+                or any(type(wrapper[k]) is not str or not re.fullmatch(r'[0-9a-f]{64}',wrapper[k])
+                       for k in ('runtime_sha256','manifest_sha256'))):
+            raise RuntimeError('parent_snapshot_invalid_wrapper')
+        scope = Scope.from_dict(wrapper['parent_scope'])
+        legacy = None if wrapper['legacy_scope'] is None else DebtScope.from_dict(wrapper['legacy_scope'])
+        before = facts(args.unit)
+        if (scope.role != 'native' or scope.owner_uid != 0 or scope.unit != args.unit
+                or scope.current_host_boot_id != args.expected_boot
+                or before['host_boot_id'] != args.expected_boot
+                or bundle.name != 'runtime-' + wrapper['runtime_sha256'][:16]
+                or wrapper['manifest_sha256'] != hashlib.sha256(manifest_bytes).hexdigest()
+                or scope.observation_expires_epoch_us != args.observation_end_epoch_us
+                or clock()[0] >= args.observation_end_epoch_us
+                or (legacy is not None and (legacy.unit != args.unit
+                    or legacy.current_host_boot_id != args.expected_boot
+                    or legacy.observation_expires_epoch_us != args.observation_end_epoch_us
+                    or legacy.runtime_sha256 != wrapper['runtime_sha256']
+                    or legacy.manifest_sha256 != wrapper['manifest_sha256']))):
+            raise RuntimeError('parent_snapshot_scope_or_native_facts_changed')
+        result = collect(Path('/var/lib/meshticulum-bench'),scope,clock=clock,
+            boot_reader=lambda:Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+            legacy_scope=legacy).to_dict()
+        after = facts(args.unit)
+        stable = lambda value:{k:v for k,v in value.items() if k not in ('epoch_us','monotonic_us')}
+        if stable(before) != stable(after) or clock()[0] >= args.observation_end_epoch_us:
+            raise RuntimeError('parent_snapshot_native_lifecycle_changed')
+        result['facts_before'],result['facts_after'] = before,after
+        result['declared_runtime_archive_sha256'] = wrapper['runtime_sha256']
         result['runtime_archive_sha256_observed'] = False
         result['runtime_manifest_and_payloads_verified'] = True
     elif args.action == 'pilot-cache-status':

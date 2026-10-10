@@ -30,3 +30,5 @@ A/B HELLO/STATUS requires a separate reviewed finite device-ownership scope. Exi
 ## Source verification
 
 The reviewed collector has 31 focused metadata/SQLite controls and nine launcher controls. The final integration suite passed 986 tests with one expected skip on 284 unchanged Python inputs. Root identity and native facts in these fixtures are explicitly modeled. These checks establish source behavior and file preservation; they do not qualify current native debt, enrollment, device ownership or physical performance.
+
+The [parent accounting reader](MESHTICULUM_PARENT_DEBT.md) adds separately scoped controller/native full-cap and legacy identity relations. It retains opaque prior lineage and global/enrollment limits; its observation creates no new authority.

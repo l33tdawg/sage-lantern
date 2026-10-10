@@ -71,6 +71,7 @@ def main():
         'public_parent_claims_required': True,
         'public_pilot_package_schemas': ['meshticulum.public-pilot-package.v2'],
         'public_debt_snapshot_schemas': ['meshticulum.public-debt-scope.v1'],
+        'public_parent_snapshot_schemas': ['meshticulum.public-parent-observation.v1'],
         'radio_mtu_bytes': 255, 'flow_payload_bytes': 193}
     files['manifest.json'] = json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'
     raw = io.BytesIO()
