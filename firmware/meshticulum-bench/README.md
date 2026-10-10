@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Lantern Meshticulum device tooling
 
-This directory owns Lantern's Meshticulum build, host-runtime, provisioning, deployment and finite pilot tooling. [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/0e240641d04b373402267c68cdf261a516a5156e) owns the raw radio protocol sources, including `main.cpp` and `protocol.hpp`, and the reusable drivers and flow. Lantern consumes them through an explicit, reviewed dependency; it does not maintain a second core implementation here.
+This directory owns Lantern's Meshticulum build, host-runtime, provisioning, deployment and finite pilot tooling. [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa) owns the raw radio protocol sources, including `main.cpp` and `protocol.hpp`, and the reusable drivers and flow. Lantern consumes them through an explicit, reviewed dependency; it does not maintain a second core implementation here.
 
 These are experimental tools with inherited lab assumptions. A fresh clone does not supply board-support trees, vendor toolchains, rollback firmware, device identities, management credentials or live grants. No automatic deployment, flashing or production qualification is implied.
 
@@ -47,6 +47,10 @@ Root guards, source pins and controller stop bounds each address one boundary. T
 Keep DATA, request, response, ACK and retry costs charged. TCP stream-byte evidence cannot settle RF debt. After failure or cancellation, preserve raw receipts and journals, stop only owned jobs, disarm and join actual workers, and verify terminal cleanup before returning a device. Expiry or a state file alone cannot prove quiescence.
 
 ## Validation and release scope
+
+The [native public TCP record](../../docs/lantern/evidence/meshticulum-native-tcp-20261010.json) qualifies a finite C/B prerequisite at its exact core, Lantern and runtime pins: one independently publisher-verified 977-byte piece, then deliberate loss after 512 received stream bytes with the partial piece rejected and the first piece retained. All eight children across four TCP sessions were retired without debt refunds; native readiness and service lifetimes were checked. C SPI/RF was never opened or armed. This is not the mixed LoRa/IP pilot or a capacity benchmark.
+
+Before any new preparation, apply the [private-state and staging checks](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#private-state-precheck-and-immutable-staging). Existing native state must be protected; digest-named staged inputs can be reused only as identical protected bytes. Native grants remain create-only. The earlier directory-permission refusal and sender-prompt timeout are retained in the record, with the all-handle polling correction bound to the qualified runtime.
 
 Host source controls live in [`software/meshticulum-integration/tests`](../../software/meshticulum-integration/tests) and consume synthetic fixtures from the explicit core checkout. Native guards are modeled in those controls. Real C→A LoRa→B IP, failover with fresh admission and verified-piece resume, measured route return and private-backend qualification remain separate physical/application gates.
 

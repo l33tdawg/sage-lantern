@@ -1,14 +1,37 @@
 # Lantern coordinated public LoRa/IP pilot
 
-This runbook belongs to **Lantern**, which depends on the separate [Meshticulum library](https://github.com/l33tdawg/meshticulum/tree/codex/authenticated-ip). Native Linux jobs, private application policy and fleet management are implemented in [`software/meshticulum-integration`](../../software/meshticulum-integration), under `lantern_meshticulum.bench` and `lantern_meshticulum.ip`. Runtime provisioning/deployment tools live in [`firmware/meshticulum-bench`](../../firmware/meshticulum-bench). Meshticulum contains the generic transport/resource primitives and imports no Lantern implementation.
+This runbook belongs to **Lantern**, which depends on the separate [Meshticulum library](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa). Native Linux jobs, private application policy and fleet management are implemented in [`software/meshticulum-integration`](../../software/meshticulum-integration), under `lantern_meshticulum.bench` and `lantern_meshticulum.ip`. Runtime provisioning/deployment tools live in [`firmware/meshticulum-bench`](../../firmware/meshticulum-bench). Meshticulum contains the generic transport/resource primitives and imports no Lantern implementation.
 
 The [generic TCP worker](https://github.com/l33tdawg/meshticulum/blob/6605ba714ce414445673b40bfcfe93fe467b86aa/src/meshticulum/ip/worker.py), [radio worker](https://github.com/l33tdawg/meshticulum/blob/6605ba714ce414445673b40bfcfe93fe467b86aa/src/meshticulum/bench/serial_worker.py) and [MR1 codec](https://github.com/l33tdawg/meshticulum/blob/6605ba714ce414445673b40bfcfe93fe467b86aa/src/meshticulum/resources/resource.py) supply carrier and verification boundaries. This document grants no device window, private-radio permission, SAGE admission or production activation.
 
-The finite public radio and TCP entries, native grant preparation, signed-public-store response and recipient publisher verification are source-prepared. The controller and the mixed hardware path remain under qualification. No fresh RF handoff is established by these sources or by a read-only preflight, and no native device execution is claimed at this checkpoint.
+The finite public TCP prerequisite now has recorded native C↔B execution: a selected public piece passed recipient publisher verification, and a deliberately interrupted second reply failed without entering the cache. The radio/TCP mixed path and full resume/route-return sequence remain under qualification. Source preparation, read-only preflight and historical results establish no fresh RF handoff.
 
-Before activation, obtain a fresh finite device handoff and inspect current hardware, firmware, boots, exclusive ownership, power/region/antenna records and service lifetimes. Confirm the native authentication needed on every participating host. Historical releases and benchmark pins are location hints. A report of no visible radio holders is one observation; the actual worker must still acquire its exclusive owner.
+Before radio activation, obtain a fresh finite device handoff and inspect current hardware, firmware, boots, exclusive ownership, power/region/antenna records and service lifetimes. Confirm the native authentication needed on every participating host. Historical releases and benchmark pins are location hints. A report of no visible radio holders is one observation; the actual worker must still acquire its exclusive owner.
 
 Use synthetic signed public resources and independent adjacent-link keys. Private SAGE providers remain disabled. Root privileges, an artifact hash, successful preparation and a current dispatch lease establish different facts.
+
+## Recorded native TCP prerequisite
+
+The [2026-10-10 native evidence](evidence/meshticulum-native-tcp-20261010.json), schema `lantern.meshticulum.native-public-tcp-qualification.v1`, records this finite public scope:
+
+| Identity | Qualified execution pin |
+| --- | --- |
+| Meshticulum core | [`6605ba714ce4`](https://github.com/l33tdawg/meshticulum/commit/6605ba714ce414445673b40bfcfe93fe467b86aa) |
+| Lantern integration | [`a41851a43010`](https://github.com/l33tdawg/sage-lantern/commit/a41851a4301008bd840a8508187a59a150eeaa0e) |
+| Host runtime SHA-256 | `d3194a92917056818dc58b6c7fce4f1320b37c4d6a16acaa9bc7512f593480a9` |
+| Bundle manifest SHA-256 | `5805dec36183d469c484f45e24cf5491032758d297e4f801ef517d09015d85df` |
+
+C sent an authenticated MR1 request to B. B prepared its reply from the actual received request and configured verified public store; C independently checked the original request binding, signed manifest/publisher and complete chunk before caching **977 useful verified bytes**. This is public-resource acceptance, with private admission and SAGE import both false.
+
+A second request/reply used separate child sessions under the same original **160-second resource expiry**. C's admitted response socket was interrupted after **512 received stream bytes**, including transport framing. Both response peers reported failure; C's receive journal was fenced, the partial object was neither durable nor cached, and the earlier verified piece remained unchanged. Failed stream-byte reservations stayed charged.
+
+The final campaign comprised **four TCP sessions and eight native children**. Actual pidfd-backed receiver readiness and stable native service lifetimes were checked. All eight children were retired, preserving their journals and debt. These observations are tied to this execution and its original deadlines; they are not reusable authority for another run.
+
+The single request-to-publisher-verification interval was **19.443863 seconds**, measured on C and including SSH/controller gaps. Its arithmetic rate, about **50.247 B/s**, describes this tiny-piece service transaction. It is not TCP link capacity, RF goodput, one-way latency or a matched benchmark. Kernel retransmission bytes, measured RF airtime, energy and EIRP remain unavailable.
+
+C's SPI/radio was never opened or armed. B's runtime inspection queried only disarmed HELLO/STATUS; the record contains zero RF ARM and TX commands. The result does not qualify C→A LoRa→B IP, fresh-LoRa resume, faster-IP return, private native storage or the public alpha. The remaining radio, private-backend, matched-upstream and release gates stay open.
+
+Two earlier attempts remain in the evidence rather than being counted as this campaign's success: C's legacy state directory had mode `0755` and was refused; a later reply setup timed out because short-circuit polling starved the sender's sudo prompt. The controller now polls every owned handle, including a sender waiting for authentication. Those failed attempts retain their own outcomes and context; they are not erased or folded into the final common expiry.
 
 ## Prepared source stages
 
@@ -73,6 +96,14 @@ python firmware/meshticulum-bench/build_runtime.py \
 ```
 
 [`source_core.py`](../../firmware/meshticulum-bench/source_core.py) checks that input against the integration's [`meshticulum-source-lock.json`](../../software/meshticulum-integration/meshticulum-source-lock.json). The lock covers the generic core Python/JSON sources, raw `.cpp`/`.hpp`/`.c`/`.dts` firmware inputs, LICENSE and NOTICE. Preserve the exact core and Lantern commit identities with the bundle and validation records. A matching source lock or successful archive build does not establish native ownership, qualify a board, install the runtime or authorize dispatch. Private services remain disabled in the public bundle.
+
+## Private-state precheck and immutable staging
+
+Before native preparation or installation, inspect the existing pilot state. The root-owned `/var/lib/meshticulum-bench` directory and its protected private subdirectories must satisfy the exact `0700` checks; native grant files use the private file rules. Parent paths must be root-owned directories without group/other write permission. A legacy `0755` directory is refused rather than silently accepted as private. Any authorized state preparation must preserve existing contexts, grants, receipts and journals.
+
+The management staging directory is separately owned by the SSH account and checked as `0700`. A staged package is `0600`, regular, single-link and opened without following a symlink. An existing digest-named staging file may be reused only after verifying identical length and **identical bytes** under those protections; different bytes or unsafe ownership/modes are refused. This avoids replacing a staged immutable input during repeated preparation.
+
+Staging reuse does not reuse native authority. The provisioner still creates a new native child directory and grant exactly once; an existing child/session is refused. It cannot renew the original resource deadline, reset replay state or refund prior debt. See [`pilot_ssh.py`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_ssh.py), [`runtime_bootstrap.py`](../../firmware/meshticulum-bench/runtime_bootstrap.py) and [`pilot_provision.py`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_provision.py).
 
 ## Concrete management operator
 
@@ -177,7 +208,9 @@ are retired and the incomplete object is never quarantined or publisher-accepted
 This hook is root/operator-selected, receiver-only and limited to public MR1
 responses; a peer cannot request it and private formats are refused.
 
-The controller rechecks C's signed cache before and after the failed piece, then
+The native TCP prerequisite proved the first-piece verification, bounded loss
+and unchanged cache through that loss. Its radio resume and faster-IP return
+were not executed. The full source sequence then rechecks C's signed cache and
 uses fresh direct LoRa request/response admission for that piece. The already
 verified piece remains present and is not retransferred. It samples a fresh IP
 generation on the third piece and sends the fourth over IP only if the new

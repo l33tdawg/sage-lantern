@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Lantern integration for Meshticulum
 
-This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/0e240641d04b373402267c68cdf261a516a5156e). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
+This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
 
-The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. It is candidate integration code, not an installed or qualified device service. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
+The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite has [recorded native C/B evidence](../../docs/lantern/evidence/meshticulum-native-tcp-20261010.json). That scope does not qualify the whole product, mixed radio path or private backend. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
 
 ## What lives here
 
@@ -52,6 +52,8 @@ python -m pytest software/meshticulum-integration/tests/integrations/sage
 Installing the extra makes dependencies available. It does not enable a private native provider, obtain consent, open a protected store or dispatch traffic. SDK MockTransport, modeled ownership and synthetic host facts remain source controls.
 
 ## Native execution and application boundaries
+
+The [native TCP prerequisite](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#recorded-native-tcp-prerequisite) verified one 977-byte public piece from C's request through B's verified store to C's independent publisher/chunk check. A second response failed at 512 received stream bytes without caching the partial piece; the first verified piece survived. Four sessions/eight retired children retained one original 160-second expiry and their stream-byte debt. Actual receiver readiness and service lifetimes were checked; C SPI/RF was not opened. The 19.443863-second transaction includes SSH/controller gaps and is not link capacity or a matched benchmark. Claims remain bound to the evidence's exact commits/runtime.
 
 The finite public radio entry point is `sage-lantern-meshticulum-service`. Its `--help` opens no device. Actual execution belongs to a fresh coordinated device window, current native admission and the trusted exclusive worker. The public radio/TCP deployment bundle disables private services; installation and inspection do not arm a radio or authorize a transfer.
 

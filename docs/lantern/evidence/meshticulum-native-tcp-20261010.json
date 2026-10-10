@@ -1,0 +1,499 @@
+{
+  "bundle_manifest_sha256": "5805dec36183d469c484f45e24cf5491032758d297e4f801ef517d09015d85df",
+  "c_radio_opened": false,
+  "cache_verified_chunks_after_loss": [
+    "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+  ],
+  "cache_verified_chunks_before_loss": [
+    "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+  ],
+  "complete": true,
+  "core_commit": "6605ba714ce414445673b40bfcfe93fe467b86aa",
+  "debt_refunded": false,
+  "failed_piece_rejected": true,
+  "faster_ip_return_qualified": false,
+  "kernel_retransmission_bytes": null,
+  "lantern_commit": "a41851a4301008bd840a8508187a59a150eeaa0e",
+  "links": [
+    {
+      "descriptor": {
+        "bytes": 74,
+        "sha256": "90ac8716fc0883885964ca2f32eed4774fd8afda40be585615af8f8a40f03d37"
+      },
+      "format": "MR1.request",
+      "outcomes": {
+        "unit-b": {
+          "authenticated_object_durable": true,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 148,
+            "lanes": {
+              "ACK": 2
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 214,
+            "reserved_stream_bytes": 148,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": true,
+          "error": null,
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": false,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 214,
+            "requested_rx_stream_bytes": null
+          }
+        },
+        "unit-c": {
+          "authenticated_object_durable": false,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 214,
+            "lanes": {
+              "ACK": 1,
+              "DATA": 1
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 148,
+            "reserved_stream_bytes": 214,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": true,
+          "error": null,
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": true,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 148,
+            "requested_rx_stream_bytes": null
+          }
+        }
+      },
+      "phase": "complete",
+      "receiver": "unit-b",
+      "retired_units": [
+        "unit-b",
+        "unit-c"
+      ],
+      "run_id": "f3dea18cd0bbe1c00262211fc401f569",
+      "sender": "unit-c",
+      "transport": "tcp"
+    },
+    {
+      "descriptor": {
+        "bytes": 1005,
+        "sha256": "5a52792d8595eb5c3deb8c6e44dbf00640b90ef4b8ebbe1957d3e9227a37d733"
+      },
+      "format": "MR1.response",
+      "outcomes": {
+        "unit-b": {
+          "authenticated_object_durable": false,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 1145,
+            "lanes": {
+              "ACK": 1,
+              "DATA": 1
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 148,
+            "reserved_stream_bytes": 1145,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": true,
+          "error": null,
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": true,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 148,
+            "requested_rx_stream_bytes": null
+          }
+        },
+        "unit-c": {
+          "authenticated_object_durable": true,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 148,
+            "lanes": {
+              "ACK": 2
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 1145,
+            "reserved_stream_bytes": 148,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": true,
+          "error": null,
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": false,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 1145,
+            "requested_rx_stream_bytes": null
+          }
+        }
+      },
+      "phase": "complete",
+      "receiver": "unit-c",
+      "retired_units": [
+        "unit-c",
+        "unit-b"
+      ],
+      "run_id": "653a2087303c0f3960db56a99f871a36",
+      "sender": "unit-b",
+      "transport": "tcp"
+    },
+    {
+      "descriptor": {
+        "bytes": 74,
+        "sha256": "2f5b4ec76344ec20775c4af5f1d5f281da5f8669c4232565c08ceda597554ba8"
+      },
+      "format": "MR1.request",
+      "outcomes": {
+        "unit-b": {
+          "authenticated_object_durable": true,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 148,
+            "lanes": {
+              "ACK": 2
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 214,
+            "reserved_stream_bytes": 148,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": true,
+          "error": null,
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": false,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 214,
+            "requested_rx_stream_bytes": null
+          }
+        },
+        "unit-c": {
+          "authenticated_object_durable": false,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 214,
+            "lanes": {
+              "ACK": 1,
+              "DATA": 1
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 148,
+            "reserved_stream_bytes": 214,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": true,
+          "error": null,
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": true,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 148,
+            "requested_rx_stream_bytes": null
+          }
+        }
+      },
+      "phase": "complete",
+      "receiver": "unit-b",
+      "retired_units": [
+        "unit-b",
+        "unit-c"
+      ],
+      "run_id": "98d51e9475591eb802b25f81334b6da5",
+      "sender": "unit-c",
+      "transport": "tcp"
+    },
+    {
+      "descriptor": {
+        "bytes": 1005,
+        "sha256": "b702cf03917192de19b554f20299ed0d00bd186bb04900f2bc158ed6c8882285"
+      },
+      "format": "MR1.response",
+      "outcomes": {
+        "unit-b": {
+          "authenticated_object_durable": false,
+          "byte_journal": {
+            "attempts": 2,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": false,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 1145,
+            "lanes": {
+              "ACK": 1,
+              "DATA": 1
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 2
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 74,
+            "reserved_stream_bytes": 1145,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": false,
+          "error": "WireError:service_transfer_not_live",
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": true,
+          "test_tcp_loss": {
+            "injected": false,
+            "known_rx_stream_bytes": 74,
+            "requested_rx_stream_bytes": null
+          }
+        },
+        "unit-c": {
+          "authenticated_object_durable": false,
+          "byte_journal": {
+            "attempts": 1,
+            "basis": "local TCP stream bytes; excludes IP/TCP headers and kernel retransmissions",
+            "fenced": true,
+            "kernel_retransmission_bytes": null,
+            "known_kernel_accepted_stream_bytes": 74,
+            "lanes": {
+              "ACK": 1
+            },
+            "measured_airtime_us": null,
+            "outcomes": {
+              "KERNEL_ACCEPTED": 1
+            },
+            "peer_receipt_established": false,
+            "pending_receive_stream_bytes": 0,
+            "received_stream_bytes": 512,
+            "reserved_stream_bytes": 74,
+            "transport": "tcp",
+            "unknown_receive_stream_bytes": 0
+          },
+          "complete": false,
+          "error": "IpError:explicit_public_pilot_tcp_loss",
+          "original_application_expires_epoch_us": 1791622610251835,
+          "sends": false,
+          "test_tcp_loss": {
+            "injected": true,
+            "known_rx_stream_bytes": 512,
+            "requested_rx_stream_bytes": 512
+          }
+        }
+      },
+      "phase": "expected_tcp_loss",
+      "receiver": "unit-c",
+      "retired_units": [
+        "unit-c",
+        "unit-b"
+      ],
+      "run_id": "364df2d76d29cec1b3d34cf024c2980f",
+      "sender": "unit-b",
+      "transport": "tcp"
+    }
+  ],
+  "matched_benchmark": false,
+  "measured_airtime_us": null,
+  "measured_eirp_dbm": null,
+  "measured_energy_joules": null,
+  "mixed_path_qualified": false,
+  "original_application_expires_epoch_us": 1791622610251835,
+  "original_application_window_seconds": 160,
+  "piece": {
+    "chunk_sha256": "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa",
+    "manifest_sha256": "0a76559b537cbf4e9adbb3d13b83f8eae22ac5c67472a18ce254e5542ec02e6c",
+    "private_admission": false,
+    "publisher_verified": true,
+    "request_to_verification_us": 19443863,
+    "reused": false,
+    "sage_imported": false,
+    "useful_verified_bytes": 977,
+    "useful_verified_bytes_per_second": 50.24721682106071
+  },
+  "prior_failed_attempts": [
+    {
+      "attempt": 1,
+      "complete": false,
+      "error": "native_management_command_failed",
+      "original_expiry_epoch_us": null,
+      "recorded_links": 0,
+      "result_sha256": "198bb4918ece6926b7ed8a36060fb36e1b7d98def955611a76d2e7f9dab543d5"
+    },
+    {
+      "attempt": 2,
+      "complete": false,
+      "error": "pilot_link_incomplete_or_rebound",
+      "original_expiry_epoch_us": 1791622174641701,
+      "recorded_links": 2,
+      "result_sha256": "c70090c47d0cdc07f43de6ec79557e32e358e2683cbb3a42fb837f7360bccda0"
+    }
+  ],
+  "private_backend_qualified": false,
+  "public_alpha_ready": false,
+  "public_manifest_sha256": "0a76559b537cbf4e9adbb3d13b83f8eae22ac5c67472a18ce254e5542ec02e6c",
+  "radio_resume_qualified": false,
+  "raw_management_sha256": {
+    "management-0001.out": "94dbc8bdf09326cf0455a6196bfb73569eeeef8f07b5400bc25ae95583a85ece",
+    "management-0002.out": "75cbf3ff5e822dd827d2e3b327fc309eb940f464b52b0f351c0ef8216c499efd",
+    "management-0003.out": "103d7494c0cbfa5b52d7a98f01902725c3664ddae19e91c0bdd191b8f02636f4",
+    "management-0004.out": "c8fe181b357eac998510e9e510efe4f648fa399da7667195e578dfffa2209a63",
+    "management-0005.out": "f4129ed91cbe134ebbf28b6538012fa17356aaca60b34000f530cdf4f6384730",
+    "management-0006.out": "8449a3e424bddb4206929524bf8b2dffa3d0fa651744be7e48fd1146a43b7744",
+    "management-0007.out": "30d0bf8de3711ebc81f06afb958d366488b480652a5e53d4b60ce448427f29e5",
+    "management-0008.out": "84aadd326cc88df31f7fda281b6ef50435e3ae847f9d26b6cd69d99ca3e8c222",
+    "management-0009.out": "fe6fbba08e54233d1603a56e18b7d26d3cdc30f325d3bf94cdc2057cf2598dc2",
+    "management-0010.out": "f67bb338e81252ede0ff107b1c1dc016767d48254054b53733bda35f91965544",
+    "management-0011.out": "d1d92b9a3b8816b752312be16cef509bf142d9c2a252a96148d98930cb569a45",
+    "management-0012.out": "9f09273762f038818fac615b72ed1aa7b627eec41fccc5f9f32ac19ec9a69a27",
+    "management-0013.out": "9f09273762f038818fac615b72ed1aa7b627eec41fccc5f9f32ac19ec9a69a27",
+    "management-0014.out": "dee71ecb1769d14bbf8851cbb9f1206860bc918b622246c4ebfcf6a522ee10e1",
+    "management-0015.out": "28179456b3bee1f26e28b960095f24df646851c889d160e102a9bb390374c2ab",
+    "management-0016.out": "f8d3fb97c234d9c679585c33ab8b493db30ceadd05d3ce1ffb9666be011b8346",
+    "management-0017.out": "459fc84128e606ed64c48cee9ab6cfe21c5c0bd5233490dd9e3deef43f2a7a67",
+    "management-0018.out": "4e992337cff15ad3367d04af341bb8bbddaa88ccf3de4bef864053fab9981107",
+    "management-0019.out": "1fe4505b7996fe87d16082b17cb8a701e044fc62d0c0a08b2dc428a9c2b39628",
+    "management-0020.out": "cf30cedd73b0062b86e0182cf7370b9a72d08763c121ab54c43b6cccd19f63d7",
+    "management-0021.out": "1b210dd55e7c2d6a53bf8afc066fbc1bef641ffa4f6fd944e34dc91c891459c4",
+    "management-0022.out": "74aabdcd40a4eb55e7ca75a8cb62afd6fe121e7bee8589b2e16752fd9bc0ba7d",
+    "management-0023.out": "f00b040e1520e5ebdea6bdb6d5258cae2513332ebee98af9a09cfa5705c341ec",
+    "management-0024.out": "4f883a7c21c408a2699dcb874090cad310a5622481cdb69af2f76491b7f0c0ff",
+    "management-0025.out": "b509f9d9daa84df6ff135e4e37468728cbca10b6b0f0d7040e8dd13092a5f9ce",
+    "management-0026.out": "3489f7fa1adf2edc9ca2b452ec76f77cd5c031039918dba10aec9b9daccea173",
+    "management-0027.out": "ca2c257629a94abce949599ffa1130ea65f40ba52539b62d0e9b16dfdee38080",
+    "management-0028.out": "03db38d5cd8e56b4fd7286dd859cc46512daf5a1c3bad519f556ae7a090bea99",
+    "management-0029.out": "5d05a5e6c0877f71c9a4ea60ba45cdc08970951d494e3388e62fc41945f50fd1",
+    "management-0030.out": "1270303007ee84cf7ee85a1aa4a00dc3b85878bb0c7b64d9bf63ce0ae4b90209",
+    "management-0031.out": "96318ea389ea4293debbafb3cf348e184fd35d320f888b4060d8af0167085612",
+    "management-0032.out": "86734cbb483c94a4daa8c1027e4506be8cc37106c557604027f5b9ec2a7e1bbd",
+    "management-0033.out": "c714cf8771af9436956c4d460b379bc2afed416fa7fca8ca7d0f3f3f6195d46c",
+    "management-0034.out": "42a3cddc2544938e109351841ad464646f68b2ba9b5eedbf3d1dc65a7224427f",
+    "management-0035.out": "d81ba9a0f0f972cb72c1db49c830bdd57b30e28eddefae07e5c278aa176f0cde",
+    "management-0036.out": "c760cdc8bc1d7d63ff2331e6d92d0ba07c6f74545d9338673cd5a885cd0861ad",
+    "management-0037.out": "a56e41b1ed41f90adbc5bfe0444c56262d2d1c2f423a8215d777119b4c6fcbbd",
+    "management-0038.out": "8b06cbb6b14438d87bedd585c736b7250135a114bab761ef518eee48bddbeeed",
+    "management-0039.out": "e66014ed4642af9816b29e0aa693503a64ecad98089218295dd91fd71480b26b",
+    "management-0040.out": "7fb431659c65cf1e36cba14fbbd13ecb66fbe3552e5589d1748e7c4f1d36e49f",
+    "management-0041.out": "1744ac8d0de884bc01657a90a4abaca75ce7cba3d863f96fe313cecf9297752f",
+    "management-0042.out": "d861fa808b028d61060406f416868cbd61ccff79b51bf1259502b3097c44c039",
+    "management-0043.out": "42d96a472f7e778c53352f19a389eb8244cecf6abab549c7f4e93f744cd0cb90",
+    "management-0044.out": "dae6590b27939cc3eaa688860d858e5ae4ea3af6a559dbf517582f3ce5a4f345",
+    "management-0045.out": "5b7bd2a7df382c9f4be22934ba23c842ae71eff634f68f1ea7657bdf3323ed74",
+    "management-0046.out": "721252f82e4a22505b28abd0d54db3081d8e951f881fb1b743b4c4d9736c6085",
+    "management-0047.out": "89c1fe9fa0da88a313600a053edc1f7686539ef246833d7560470bd368e66be6",
+    "management-0048.out": "9c65c7206caf2271bc41bfbac87ed011005fcda3b7a8f71a84060abe4b475e66",
+    "management-0049.out": "2955842946df9cc38de0c1c7a22e977ecc891faea48f472a7b44ebc13c7af769",
+    "management-0050.out": "0bc9b87b8599aad4c6bd98304fb8161edc81b8d4fba41a0b217c532d15822cd5",
+    "management-0051.out": "828d2c332b2ea78e721b42d46efaf7eebb0b8066e1cdb922f4fec5a33557dec8",
+    "management-0052.out": "9331b30d90292fe1d7694fa47145ba5ec7bcf6322f59ac82dc8e0a4cabe47359",
+    "management-0053.out": "da5f7727faf75f1dbc1a154587ff71fe40067040ba40577e5688660768c1fae2",
+    "management-0054.out": "96318ea389ea4293debbafb3cf348e184fd35d320f888b4060d8af0167085612",
+    "management-0055.out": "a4b8c56beffd7607c418625995afcc36f5e28307141dc8d3e3bbd20c593f3c0f",
+    "management-0056.out": "e9911d834241845eca2b9d26052344ccd43d3f0a58d13fa560ce4351884b8628",
+    "management-0057.out": "8215068957a6750c2728fa266eddf3afac3855a57c1418d46a60a66d1d87cf88",
+    "management-0058.out": "20c599c9d7a4333ef3eaff08842167adc6ca9f386ab129bf4b42faa7fa28e12e",
+    "management-0059.out": "c438c3b0694adc21b906e53736b65a0b86e7a8cf5f94bc4a44694615958da981",
+    "management-0060.out": "bd4dd99a40234b299d17b8104247381cecd0a1e64f61f74467138c135c4d48f0",
+    "management-0061.out": "4ad3f2f75ba57b70f59625d7213269668e8eb31342a1c69769d6ee79c4f62cee",
+    "management-0062.out": "30fc5b8557f07a366d5f2f46c25317d56f4200ba966cff7ea787d739d9e1666c"
+  },
+  "receiver_kernel_ready_observations": [
+    {
+      "grant_context_sha256": "bc0dc04e18250c447d771483bda528dad553e43dd2b96b963d518a8b9ce99af5",
+      "kernel_handle_opened": true,
+      "live": true,
+      "ready": true,
+      "run_id": "98d51e9475591eb802b25f81334b6da5",
+      "unit": "unit-b"
+    },
+    {
+      "grant_context_sha256": "18177ebd381a7bd449de32083cd248da42ebc41d8cdf9acbecbabd228a88ec05",
+      "kernel_handle_opened": true,
+      "live": true,
+      "ready": true,
+      "run_id": "653a2087303c0f3960db56a99f871a36",
+      "unit": "unit-c"
+    },
+    {
+      "grant_context_sha256": "6bbce6dc01ee13d41407a654e5a0250ae6e7981aaac8fb1125925d5e8221ad3c",
+      "kernel_handle_opened": true,
+      "live": true,
+      "ready": true,
+      "run_id": "364df2d76d29cec1b3d34cf024c2980f",
+      "unit": "unit-c"
+    },
+    {
+      "grant_context_sha256": "78534d41c1709ffacbdbf3da51aaa3ea290be525be85b2dc2518f4b1f11773d9",
+      "kernel_handle_opened": true,
+      "live": true,
+      "ready": true,
+      "run_id": "f3dea18cd0bbe1c00262211fc401f569",
+      "unit": "unit-b"
+    }
+  ],
+  "recorded_utc": "2026-10-10",
+  "result_sha256": "1862b8ec5e3b1400dc899a1965e3aede69de434668ff0e9d8c6e88a8824d94b9",
+  "retired_child_count": 8,
+  "rf_arm_commands": 0,
+  "rf_tx_commands": 0,
+  "runtime_sha256": "d3194a92917056818dc58b6c7fce4f1320b37c4d6a16acaa9bc7512f593480a9",
+  "schema": "lantern.meshticulum.native-public-tcp-qualification.v1",
+  "scope": "Finite native C/B public TCP prerequisite; no C SPI/RF operation",
+  "stable_native_service_lifetimes": true,
+  "timing_basis": "C original sent-request start to C publisher-verification receipt, including management/controller gaps; single tiny-piece service timing, not network capacity"
+}
