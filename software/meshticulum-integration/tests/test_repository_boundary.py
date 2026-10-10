@@ -34,6 +34,7 @@ def test_existing_lantern_runtime_envelope_is_the_canonical_core_module(tmp_path
 
 
 @pytest.mark.parametrize('relative', ['src/meshticulum/bench/services.py',
+                                    'src/meshticulum/privacy/forward_session.py',
                                     'firmware/meshticulum-bench/main.cpp'])
 def test_builder_refuses_changed_core_code_and_firmware_before_bundle_creation(tmp_path, relative):
     path = ROOT / 'firmware/meshticulum-bench/source_core.py'
