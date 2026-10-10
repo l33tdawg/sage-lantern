@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Lantern Meshticulum device tooling
 
-This directory owns Lantern's Meshticulum build, host-runtime, provisioning, deployment and finite pilot tooling. [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/c1ae555b97eb8a06d53132a769ee855b823f52e7) owns the raw radio protocol sources, including `main.cpp` and `protocol.hpp`, and the reusable drivers and flow. Lantern consumes them through an explicit, reviewed dependency; it does not maintain a second core implementation here.
+This directory owns Lantern's Meshticulum build, host-runtime, provisioning, deployment and finite pilot tooling. [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/b5f478db2e1c078808b24dc73da2a5df03bf64f8) owns the raw radio protocol sources, including `main.cpp` and `protocol.hpp`, and the reusable drivers and flow. Lantern consumes them through an explicit, reviewed dependency; it does not maintain a second core implementation here.
 
 These are experimental tools with inherited lab assumptions. A fresh clone does not supply board-support trees, vendor toolchains, rollback firmware, device identities, management credentials or live grants. No automatic deployment, flashing or production qualification is implied.
 
