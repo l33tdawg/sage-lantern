@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Proposed MPF2 receive-to-capture contract
 
-**Design requirement only.** Private MPF2 service wiring, a joint receive journal and the required Core receive-commit API are not implemented or natively qualified. The public bundle still excludes private providers. Lantern owns protected storage, capture, consent and native lifecycle; Meshticulum owns generic crypto/flow interfaces. The dependency remains Lantern → Meshticulum.
+**Protected integration remains unimplemented.** The current experimental Core source supplies a generic receive-commit API; Lantern has no qualified protected journal, private MPF2 service wiring or native provider for it. The public bundle still excludes private providers. Lantern owns protected storage, capture, consent and native lifecycle; Meshticulum owns generic crypto/flow interfaces. The dependency remains Lantern → Meshticulum.
 
 MPF2 DATA replay acceptance must commit with an exact recoverable sealed record. Calling the current `ForwardSession.open(packet)` and then `BinaryCapture.complete(...)` does not meet that requirement.
 
@@ -9,11 +9,19 @@ MPF2 DATA replay acceptance must commit with an exact recoverable sealed record.
 
 At the pinned [Core cf64d62](https://github.com/l33tdawg/meshticulum/blob/cf64d623abb707c342524fac951b88cf0a1e63e6/src/meshticulum/privacy/forward_session.py), `open()` authenticates the MPF2 record, checks the binary-envelope shape, commits its receive counter and then returns sealed LM1/LM2 bytes. Lantern's [BinaryCapture](../../software/meshticulum-integration/src/lantern_meshticulum/sage/mesh_binary_capture.py) separately persists those bytes with a [WorkflowStore](../../software/meshticulum-integration/src/lantern_meshticulum/sage/workflow_store.py) compare-and-swap.
 
-A crash or failed capture between those operations can leave a durable accepted counter with no captured bytes. Replaying the network record is refused, and persisting only the MPF2 ciphertext is insufficient when the non-resumable session keys are gone. Separate durable writes, or a second callback that runs after `open()`, do not remove this gap. Current APIs must remain unwired for this mode.
+A crash or failed capture between those operations can leave a durable accepted counter with no captured bytes. Replaying the network record is refused, and persisting only the MPF2 ciphertext is insufficient when the non-resumable session keys are gone. Separate durable writes, or a second callback that runs after `open()`, do not remove this gap. This return-then-capture pipeline must remain unwired for the private mode.
 
-## Required transaction
+## Implemented generic receive seam
 
-A future reviewed Core interface must make the authenticated sealed candidate available to one trusted commit adapter **before** committing DATA replay acceptance or returning it. This interface must preserve the session's callback fencing, original authority/deadlines and dedicated-key bindings. It must not expose decrypted application content or let callers bypass key confirmation. Core must not import Lantern or SAGE.
+The successor Core source increment adds constructor `receive_mode='commit'`, `receive_into(packet)` and a frozen `ReceiveCandidate`. It is experimental source work beyond the pinned cf64d62 baseline; a paired dependency/source-lock review is required before a candidate consumes it. Commit mode requires a callable `counters.commit_receive` before any claim and refuses `open()`. Default return mode refuses `receive_into()`. The mode is a local choice, without peer capability negotiation or storage attestation.
+
+After full confirmation, authenticated DATA, binary shape and original liveness checks, Core passes the candidate to that same counter provider. It contains context, local role, original counter binding/counter, transcript and outer hash, original monotonic deadline, observation times and sealed bytes hidden in its representation. Only literal `True` followed by successful liveness checks returns success, without returning payload. DATA uses no separate `record_receive`; confirmations retain that path. Unknown outcomes, closing callbacks or interruption fence the incarnation while a possibly committed capsule remains the provider's recovery responsibility.
+
+Core does not attest the callback's atomicity or native permission. A constructible candidate is not a bearer authorization; it does not supply a capture UUID, boot identity or private policy. The Lantern provider must independently bind those facts to the original prepared intention. There is no protected Lantern provider or new admitted format wired to this seam yet.
+
+## Required protected transaction
+
+The generic seam makes the authenticated sealed candidate available **before** the provider commits DATA acceptance. A production adapter must preserve callback fencing, original authority/deadlines and dedicated-key bindings. It must not expose decrypted application content or let callers bypass key confirmation. Core must not import Lantern or SAGE.
 
 The Lantern adapter must join the following in one authoritative, protected, durable receive transaction:
 
@@ -44,4 +52,6 @@ After protected capture, [MeshInbox](../../software/meshticulum-integration/src/
 
 [BinaryCapture source controls](../../software/meshticulum-integration/tests/integrations/sage/test_mesh_binary_capture.py) now refuse successful results when access/storage/peer/time callbacks, storage snapshots or lease exit close the producer. Nested WorkflowStore get/put callbacks also refuse remote dispatch after closure. Independent checks reproduced those refusals and retained committed-original-intention recovery. The callbacks use SDK MockTransport and modeled native leases; they do not qualify a production owner or implement the joint transaction above.
 
-Implementation still requires a reviewed generic receive API, atomic protected journal, explicit private service-format admission, bounded outbox/recovery and native lifecycle provider. Crash/power-loss, lost-return, concurrency, rollback, storage-generation, callback closure, original-expiry and boot-change controls must test the complete transaction. Key generation/purpose, storage/erasure, confirmation ordering/loss handling, private transport/performance and firmware/licensing/public-release gates remain open. No deployment, production mode or overall stronger-security claim follows from this design.
+Core's separate receive-commit controls use real single-file SQLite transactions and modeled authority. Independent checks reproduced rollback between two inserts with neither DATA row persisted, and lost returns/post-commit closure with both replay acceptance and sealed recovery bytes retained. Reopening the fixture recovers those bytes without old session keys. The fixture is not an encrypted protected backend, original private intention or native provider.
+
+Implementation still requires a reviewed atomic protected journal, explicit private service-format admission, bounded outbox/recovery and native lifecycle provider. Crash/power-loss, lost-return, concurrency, rollback, storage-generation, callback closure, original-expiry and boot-change controls must test the complete transaction. Key generation/purpose, storage/erasure, confirmation ordering/loss handling, private transport/performance and firmware/licensing/public-release gates remain open. No deployment, production mode or overall stronger-security claim follows from this design.

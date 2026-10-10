@@ -47,7 +47,7 @@
     "src/meshticulum/meshticulum_contracts/__init__.py": "33183531bef1288de32d83d4103acf076f4493a7f2e7841652bb6567e65e1fb4",
     "src/meshticulum/meshticulum_scheduler/__init__.py": "f503ab7b005255665332b4e7445e869cdadf69c1abdde38e6bcea83677610b15",
     "src/meshticulum/privacy/__init__.py": "0d7215eb172fa265ec80afa8c0e4c6c328a845b78f944bebc5fa5e31544a7370",
-    "src/meshticulum/privacy/forward_session.py": "27595088f9b4ae01c5bc7ea269f1ca3c98acd7f0206309cc4138aceb52cd32c8",
+    "src/meshticulum/privacy/forward_session.py": "e95b1f865793f11cd10ded4921f55fad4a254e893c0de4ec8127aac1841d4a91",
     "src/meshticulum/privacy/limits.py": "15584425d0d7eee9f1f50a36b7c92d1cd74c6ff68c8851ac9b6c8980f6285ff7",
     "src/meshticulum/privacy/mesh_binary_envelope.py": "4dcc21ca0fa3a5d703c9f77274028122b3a5711b62c1cb89dc7e02582b91cca6",
     "src/meshticulum/privacy/mesh_envelope.py": "8e70d9005510f9801f2ef61029b06263c25a106dad7d8472a4c8eb77a06502a5",
@@ -63,6 +63,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "cf64d623abb707c342524fac951b88cf0a1e63e6",
+  "revision": "30da5360961b17fd50a8ba304d6bc82e58c8ca26",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }

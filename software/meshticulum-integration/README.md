@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Lantern integration for Meshticulum
 
-This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/cf64d623abb707c342524fac951b88cf0a1e63e6). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
+This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/30da5360961b17fd50a8ba304d6bc82e58c8ca26). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
 
 The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite, [four-hop public LoRa/IP transfer](../../docs/lantern/evidence/meshticulum-native-mixed-20261010.json) and [fresh LoRa resume with measured IP return](../../docs/lantern/evidence/meshticulum-native-resume-20261010.json) have recorded native evidence at their respective exact pins. These qualify bounded public pilot scopes; our performance qualification, sourced published-comparison review, private production and public-release requirements remain open. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
 
@@ -21,7 +21,7 @@ The existing `sage_lantern.mesh_envelope` runtime import is a module-identity br
 
 [`pyproject.toml`](pyproject.toml) pins the exact Meshticulum Git revision used by this candidate. [`meshticulum-source-lock.json`](meshticulum-source-lock.json) additionally records the source repository, reviewed revision and file digests used by Lantern's builders. Keep the dependency URL and source lock on the same reviewed commit.
 
-The lock includes the core's [experimental v2 forward-session primitive](https://github.com/l33tdawg/meshticulum/blob/cf64d623abb707c342524fac951b88cf0a1e63e6/docs/FORWARD_SECRECY.md). It requires separate Noise static keys and pinned signing identities, rejects known legacy-key reuse and MPF1 framing, and preserves retired v1 ID/role claims. This pin supplies source for review; Lantern has no native/private wiring for that mode, and its public runtime bundle excludes it. Independent key generation/purpose, protected lifecycle, cryptographic composition, owner/capture/consent integration and private transport qualification remain open.
+The lock includes the core's [experimental v2 forward-session primitive](https://github.com/l33tdawg/meshticulum/blob/30da5360961b17fd50a8ba304d6bc82e58c8ca26/docs/FORWARD_SECRECY.md). It requires separate Noise static keys and pinned signing identities, rejects known legacy-key reuse and MPF1 framing, and preserves retired v1 ID/role claims. This pin supplies source for review; Lantern has no native/private wiring for that mode, and its public runtime bundle excludes it. Independent key generation/purpose, protected lifecycle, cryptographic composition, owner/capture/consent integration and private transport qualification remain open.
 
 Set `MESHTICULUM_SOURCE` to an explicit checkout of that reviewed Meshticulum revision. The [builder source guard](../../firmware/meshticulum-bench/source_core.py) compares the inventoried Python/JSON modules, raw firmware inputs and LICENSE/NOTICE against the lock, refusing missing or changed input. It checks content rather than discovering a sibling checkout. Revision review must still establish that the selected checkout and installed dependency correspond to the recorded commit.
 
@@ -108,7 +108,7 @@ New children retain original resource deadlines and prior attempt/stream-byte/ai
 
 ## Published comparisons and competitive target
 
-The competitive goal is **faster useful encrypted transfers and stronger encryption/security than both MeshCore and Reticulum**. Comparison uses their published figures and primary technical sources, starting from [the core comparison](https://github.com/l33tdawg/meshticulum/blob/cf64d623abb707c342524fac951b88cf0a1e63e6/docs/COMPARISON.md). We do not require or prepare our own counterpart-stack benchmark campaigns. Meshticulum's own native and sustained-performance qualification remains required.
+The competitive goal is **faster useful encrypted transfers and stronger encryption/security than both MeshCore and Reticulum**. Comparison uses their published figures and primary technical sources, starting from [the core comparison](https://github.com/l33tdawg/meshticulum/blob/30da5360961b17fd50a8ba304d6bc82e58c8ca26/docs/COMPARISON.md). We do not require or prepare our own counterpart-stack benchmark campaigns. Meshticulum's own native and sustained-performance qualification remains required.
 
 Record each published figure's source URL, date/version, hardware, modem settings, topology, payload, encryption, completion boundary, units, loss/retry costs and measurement scope. Compare it with our evidence only where those conditions support the claimed advantage. Missing or incompatible reference measurements remain unavailable; they do not establish a speed win.
 
