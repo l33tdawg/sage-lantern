@@ -265,6 +265,41 @@ def main():
         assert composed.close() and not incoming.client._client.is_closed
         initiator.close()
         checks['real_canonical_borrowed_client_forward_receiver']=True
+        # Actual protected parent CAS prepayment and lost return. No transport
+        # is opened here; this qualifies backend persistence, not ARM ordering.
+        from lantern_meshticulum.sage.forward_budget import ForwardBudget,ForwardBudgetError,Cost,ChildPlan
+        def parent():
+            return ForwardBudget(composed.store,context=context,intention=intention,
+                signing_key=second._signing_key,boot_id=boot,limits=Cost(20,2000000),
+                prior_debt=Cost(1,1000),slots=((1,False),(2,True)),owner_lease=fixture_lease,
+                access_check=lambda:permitted[0],storage_check=lambda:permitted[0],
+                native_check=lambda ctx,original,plan:permitted[0],
+                clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+        budget=parent();budget.prepare()
+        child=ChildPlan(0,1,False,hashlib.sha256(b'fixture child grant').hexdigest(),
+            hashlib.sha256(b'fixture H1 object').hexdigest(),77,'lora',
+            hashlib.sha256(b'fixture profile').hexdigest(),boot,context.expires_epoch_us,
+            deadline,Cost(10,1000000),32)
+        original_put=composed.client.workflow_put;lost=[False]
+        def allocation_committed_then_lost(*args,**kwargs):
+            result=original_put(*args,**kwargs)
+            if result.payload.get('schema')=='sage.lantern.forward-operation-budget.v1' and result.payload['body']['allocations']:
+                lost[0]=True;raise RuntimeError('fixture lost parent allocation return')
+            return result
+        composed.client.workflow_put=allocation_committed_then_lost
+        try:
+            try:budget.pre_admit(child)
+            except ForwardBudgetError:pass
+            else:raise AssertionError('unknown allocation reported permission')
+        finally:composed.client.workflow_put=original_put
+        assert lost[0] and budget._uncertain
+        persisted=composed.store.get(budget.record_id,kind='mesh_outbound',access_check=lambda:True)
+        assert persisted['payload']['body']['allocations']==[child.to_dict()]
+        try:parent().pre_admit(child)
+        except ForwardBudgetError:pass
+        else:raise AssertionError('spent child allocation was replayed')
+        assert composed.store.get(budget.record_id,kind='mesh_outbound',access_check=lambda:True)==persisted
+        checks['real_parent_allocation_lost_return_retains_debt_and_refuses_replay']=True
         permitted[0]=False
         try:capture().state()
         except CaptureError:pass
