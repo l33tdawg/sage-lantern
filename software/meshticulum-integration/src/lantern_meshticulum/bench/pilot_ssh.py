@@ -87,7 +87,13 @@ class Job:
             if not part:break
             self.output.extend(part)
             require(len(self.output)<=1000000,'native_management_output_limit')
-            if self.password and self.password.encode() in self.output:
+            # A hostname or source path can contain the same characters as a
+            # short credential. Refuse an echoed credential token, including
+            # one immediately after the sudo prompt, without treating those
+            # unrelated path/name substrings as authentication output.
+            if self.password and re.search(
+                    rb'(?<![A-Za-z0-9._/-])'+re.escape(self.password.encode())+rb'(?![A-Za-z0-9._/-])',
+                    bytes(self.output).replace(PROMPT,b'')):
                 self.output.clear()
                 raise RuntimeError('credential_echo_refused')
             count=self.output.count(PROMPT)

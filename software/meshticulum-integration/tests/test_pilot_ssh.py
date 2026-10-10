@@ -70,6 +70,27 @@ def test_password_reaches_only_one_prompt_and_is_never_retained_in_output():
     assert job.password is None
 
 
+def test_credential_substring_in_native_path_or_service_name_is_not_an_echo():
+    code="import sys;print('MESHTICULUM_SUDO_PROMPT:',end='',flush=True);assert sys.stdin.readline().strip()=='pilot';print('\\n{\"schema\":\"test\",\"path\":\"/opt/pilot/runtime\",\"service\":\"sage-pilot.service\"}')"
+    job=Job([sys.executable,'-c',code],password='pilot',deadline=time.monotonic()+3)
+    try:
+        assert job.wait()==0 and job.prompted
+        assert one_record(bytes(job.output),'test')['service']=='sage-pilot.service'
+    finally:job.close()
+    assert job.password is None
+
+
+@pytest.mark.parametrize('output',[b'pilot\\r\\n',b'MESHTICULUM_SUDO_PROMPT:pilot\\r\\n',b'debug: pilot\\n'])
+def test_standalone_or_prompt_adjacent_credential_echo_is_cleared(output):
+    code='import sys;sys.stdout.buffer.write('+repr(output)+');sys.stdout.flush()'
+    job=Job([sys.executable,'-c',code],password='pilot',deadline=time.monotonic()+3)
+    try:
+        with pytest.raises(RuntimeError,match='credential_echo_refused'):job.wait()
+        assert not job.output
+    finally:job.close()
+    assert job.password is None and job.process.poll() is not None
+
+
 @pytest.mark.parametrize('failure',['repeated','echo','timeout'])
 def test_bad_authentication_or_stalled_owned_child_is_reaped(failure):
     if failure=='repeated':code="import sys;print('MESHTICULUM_SUDO_PROMPT:',end='',flush=True);sys.stdin.readline();print('MESHTICULUM_SUDO_PROMPT:',end='',flush=True);sys.stdin.readline()"
