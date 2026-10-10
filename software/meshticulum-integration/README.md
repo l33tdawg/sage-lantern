@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Lantern integration for Meshticulum
 
-This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/a89c1ca6fdf1865d61367cf3a8d59ac1ab50cb39). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
+This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/44960c0fde955351eb9b44f965020e2e48da74d1). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
 
-The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite, [four-hop public LoRa/IP transfer](../../docs/lantern/evidence/meshticulum-native-mixed-20261010.json) and [fresh LoRa resume with measured IP return](../../docs/lantern/evidence/meshticulum-native-resume-20261010.json) have recorded native evidence at their respective exact pins. These qualify bounded public pilot scopes; private production, matched performance and public-release requirements remain open. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
+The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite, [four-hop public LoRa/IP transfer](../../docs/lantern/evidence/meshticulum-native-mixed-20261010.json) and [fresh LoRa resume with measured IP return](../../docs/lantern/evidence/meshticulum-native-resume-20261010.json) have recorded native evidence at their respective exact pins. These qualify bounded public pilot scopes; our performance qualification, sourced published-comparison review, private production and public-release requirements remain open. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
 
 ## What lives here
 
@@ -57,7 +57,7 @@ The [2026-10-10 compatibility evidence](../../docs/lantern/evidence/meshticulum-
 
 Eight fixture checks passed: signed live storage status, atomic stale conversation-guard refusal, actor isolation, capture restart with signed admission, durable replay to the same record, explicit acknowledgement, reconciliation after losing a committed HTTP PUT return, and fixture-policy revocation refusal. The SQLite main/WAL files contained no fixture plaintext canary. The [Python adapter exercise](tests/interop/backend_interop.py) and [Go backend fixture](tests/interop/backend_interop_test.go.txt) define the checks; their hashes and execution pins are in the evidence.
 
-The unknown-write injection loses the client return **after a real HTTP PUT commits**; it is not a network-disconnect experiment. Policy/lease callbacks and the capture boot ID remain modeled fixture inputs, with temporary Go fixture governance. This establishes isolated backend compatibility, not the production native owner/consent provider, private transport or production-store qualification. Private production remains disabled; private lifecycle, matched-benchmark, deployed-image/source correspondence, licensing, clean-public-history and release gates remain open.
+The unknown-write injection loses the client return **after a real HTTP PUT commits**; it is not a network-disconnect experiment. Policy/lease callbacks and the capture boot ID remain modeled fixture inputs, with temporary Go fixture governance. This establishes isolated backend compatibility, not the production native owner/consent provider, private transport or production-store qualification. Private production remains disabled; private lifecycle, our performance qualification, published-comparison review, deployed-image/source correspondence, licensing, clean-public-history and release gates remain open.
 
 With the compatible SDK installed, the [fixture runner](tests/interop/run_backend_fixture.py) uses an explicit SAGE/core checkout and a read-only Go overlay. It creates temporary fixture stores and saves a local log in a new output directory:
 
@@ -101,6 +101,14 @@ Private receive integration persists the original intention before DATA/ACK disp
 Public receive bytes enter durable quarantine, not a trusted cache. Bridge forwarding uses the actual local authenticated capture. A response comes from the received MR1 request and a configured verified public store; the recipient still checks its original request binding, pinned publisher/manifest and complete chunk before caching. Kernel acceptance, local RF completion, peer receipt, durable capture, publisher verification and SAGE admission are separate stages.
 
 New children retain original resource deadlines and prior attempt/stream-byte/airtime debt. A new grant, cancellation, restart or source migration cannot renew expired work or infer settlement. Keep unknown outcomes and raw failures, and let the native owner establish bounded disarm and cleanup.
+
+## Published comparisons and competitive target
+
+The competitive goal is **faster useful encrypted transfers and stronger encryption/security than both MeshCore and Reticulum**. Comparison uses their published figures and primary technical sources, starting from [the core comparison](https://github.com/l33tdawg/meshticulum/blob/44960c0fde955351eb9b44f965020e2e48da74d1/docs/COMPARISON.md). We do not require or prepare our own counterpart-stack benchmark campaigns. Meshticulum's own native and sustained-performance qualification remains required.
+
+Record each published figure's source URL, date/version, hardware, modem settings, topology, payload, encryption, completion boundary, units, loss/retry costs and measurement scope. Compare it with our evidence only where those conditions support the claimed advantage. Missing or incompatible reference measurements remain unavailable; they do not establish a speed win.
+
+Security comparisons require explicit properties and threat models, including recipient encryption, sender/peer authentication, key lifecycle and forward secrecy, replay, authorization/consent and metadata exposure. A primitive name or key size alone cannot prove stronger security. State which properties the sources and our tests actually establish; the target is not an achieved superiority claim. Historical evidence and its original comparison fields remain unchanged, without imposing a new self-run comparative campaign.
 
 ## Build and review
 
