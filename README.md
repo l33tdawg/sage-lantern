@@ -12,6 +12,14 @@ This repository is the private development home of that work — device runtime,
 touchscreen interface, firmware, provisioning tools, public website and the
 engineering documentation behind them.
 
+[Meshticulum](https://github.com/l33tdawg/meshticulum/tree/996edadfd5a88788a6480c6dfc5a9c48405f311c)
+owns the reusable transport, crypto, flow, drivers and resource protocols.
+Lantern consumes that pinned dependency and owns its
+[private/native integration](software/meshticulum-integration/README.md) and
+[device deployment tooling](firmware/meshticulum-bench/README.md). The dependency
+is Lantern → Meshticulum; see the [candidate boundary RFC](docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md)
+for ownership and open qualification gates.
+
 ## What we're building
 
 **SAGE Lantern — a handheld AI companion.** A 6.5-inch portrait touchscreen, a

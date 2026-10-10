@@ -1,0 +1,3 @@
+include LICENSE NOTICE README.md meshticulum-source-lock.json repository-boundary.json
+recursive-include tests *.py
+global-exclude __pycache__ *.py[cod] .DS_Store
