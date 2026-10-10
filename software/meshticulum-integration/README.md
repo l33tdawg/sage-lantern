@@ -3,7 +3,7 @@
 
 This package owns Lantern's application and device policy around [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa). The dependency goes one way: **Lantern → Meshticulum**. The reusable crypto, wire protocols, frozen flow, scheduler, generic drivers and verified-resource code remain in Meshticulum. They are not forked into this source tree.
 
-The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite has [recorded native C/B evidence](../../docs/lantern/evidence/meshticulum-native-tcp-20261010.json). That scope does not qualify the whole product, mixed radio path or private backend. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
+The package name is `sage-lantern-meshticulum`; its Python namespace is `lantern_meshticulum`. Its finite public TCP prerequisite has [recorded native C/B evidence](../../docs/lantern/evidence/meshticulum-native-tcp-20261010.json). That scope does not qualify the whole product, mixed radio path or production private backend. See the [candidate boundary RFC](../../docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md).
 
 ## What lives here
 
@@ -51,13 +51,21 @@ python -m pytest software/meshticulum-integration/tests/integrations/sage
 
 Installing the extra makes dependencies available. It does not enable a private native provider, obtain consent, open a protected store or dispatch traffic. SDK MockTransport, modeled ownership and synthetic host facts remain source controls.
 
+## Recorded encrypted-backend compatibility
+
+The [2026-10-10 compatibility evidence](../../docs/lantern/evidence/meshticulum-encrypted-backend-20261010.json) records the canonical Lantern adapters and SDK `11.19.10+lantern.20260906` against real temporary SAGE REST/SQLite/vault fixtures, locally on macOS and on actual B Linux/arm64. This used real signed REST requests, not SDK MockTransport. B used an isolated 14-wheel dependency target; its existing environment and native service lifetimes remained unchanged. No production stores, C or RF operation were involved.
+
+Eight fixture checks passed: signed live storage status, atomic stale conversation-guard refusal, actor isolation, capture restart with signed admission, durable replay to the same record, explicit acknowledgement, reconciliation after losing a committed HTTP PUT return, and fixture-policy revocation refusal. The SQLite main/WAL files contained no fixture plaintext canary. The [Python adapter exercise](tests/interop/backend_interop.py) and [Go backend fixture](tests/interop/backend_interop_test.go.txt) define the checks; their hashes and execution pins are in the evidence.
+
+The unknown-write injection loses the client return **after a real HTTP PUT commits**; it is not a network-disconnect experiment. Policy/lease callbacks and the capture boot ID remain modeled fixture inputs, with temporary Go fixture governance. This establishes isolated backend compatibility, not the production native owner/consent provider, private transport or production-store qualification. Private production remains disabled, and the mixed-path, private lifecycle, matched-benchmark and release gates remain open.
+
 ## Native execution and application boundaries
 
 The [native TCP prerequisite](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#recorded-native-tcp-prerequisite) verified one 977-byte public piece from C's request through B's verified store to C's independent publisher/chunk check. A second response failed at 512 received stream bytes without caching the partial piece; the first verified piece survived. Four sessions/eight retired children retained one original 160-second expiry and their stream-byte debt. Actual receiver readiness and service lifetimes were checked; C SPI/RF was not opened. The 19.443863-second transaction includes SSH/controller gaps and is not link capacity or a matched benchmark. Claims remain bound to the evidence's exact commits/runtime.
 
 The finite public radio entry point is `sage-lantern-meshticulum-service`. Its `--help` opens no device. Actual execution belongs to a fresh coordinated device window, current native admission and the trusted exclusive worker. The public radio/TCP deployment bundle disables private services; installation and inspection do not arm a radio or authorize a transfer.
 
-Private receive integration persists the original intention before DATA/ACK dispatch, retains sealed bytes and original boot/epoch/monotonic deadlines, and reconciles uncertain writes explicitly. The trusted native owner/consent/revocation lifecycle must be held for the exact grant. A Python policy object or a callback returning `True` is not evidence that this lifecycle exists. Real encrypted-backend and owner qualification remain open.
+Private receive integration persists the original intention before DATA/ACK dispatch, retains sealed bytes and original boot/epoch/monotonic deadlines, and reconciles uncertain writes explicitly. The trusted native owner/consent/revocation lifecycle must be held for the exact grant. A Python policy object or a callback returning `True` is not evidence that this lifecycle exists. The isolated backend checks above leave the production owner/consent provider, private transport and encrypted production-store qualification open.
 
 Public receive bytes enter durable quarantine, not a trusted cache. Bridge forwarding uses the actual local authenticated capture. A response comes from the received MR1 request and a configured verified public store; the recipient still checks its original request binding, pinned publisher/manifest and complete chunk before caching. Kernel acceptance, local RF completion, peer receipt, durable capture, publisher verification and SAGE admission are separate stages.
 

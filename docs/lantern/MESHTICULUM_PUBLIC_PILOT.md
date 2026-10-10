@@ -33,6 +33,12 @@ C's SPI/radio was never opened or armed. B's runtime inspection queried only dis
 
 Two earlier attempts remain in the evidence rather than being counted as this campaign's success: C's legacy state directory had mode `0755` and was refused; a later reply setup timed out because short-circuit polling starved the sender's sudo prompt. The controller now polls every owned handle, including a sender waiting for authentication. Those failed attempts retain their own outcomes and context; they are not erased or folded into the final common expiry.
 
+## Recorded backend fixture compatibility
+
+Separate [encrypted-backend evidence](evidence/meshticulum-encrypted-backend-20261010.json) records eight canonical-adapter checks using SDK `11.19.10+lantern.20260906` against real temporary REST/SQLite/vault fixtures, locally and on B Linux/arm64. B's isolated dependency target left its existing environment and service lifetimes unchanged. The [integration guide](../../software/meshticulum-integration/README.md#recorded-encrypted-backend-compatibility) links the exercises and their exact scope.
+
+Those checks include reconciliation after losing a client return following a real committed HTTP PUT; no real network disconnect was injected. Policy/lease and capture boot identity were modeled fixture inputs under temporary Go governance. No production stores, C or RF operation were involved. The result establishes backend compatibility only: it does not enable a private provider, qualify private transport or close this pilot's mixed-radio, resume/route-return, production lifecycle or release gates.
+
 ## Prepared source stages
 
 | Component | Current responsibility |
