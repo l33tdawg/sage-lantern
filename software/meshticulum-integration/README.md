@@ -53,6 +53,8 @@ python -m pytest software/meshticulum-integration/tests/integrations/sage
 
 Installing the extra makes dependencies available. It does not enable a private native provider, obtain consent, open a protected store or dispatch traffic. SDK MockTransport, modeled ownership and synthetic host facts remain source controls.
 
+The [sealed-capture fence controls](tests/integrations/sage/test_mesh_binary_capture.py) cover closure from access/storage/peer and clock callbacks, storage snapshots, native lease exit and nested WorkflowStore checks. Closing callbacks cannot publish success; nested get/put checks refuse remote dispatch after closure. Committed original intentions retain their UUID and deadlines for explicit recovery. These use SDK MockTransport and a modeled lease, establishing no native qualification or private MPF2 wiring. The [forward-session capture design](../../docs/lantern/MESHTICULUM_FORWARD_CAPTURE.md) keeps atomic replay/capture handoff as an unimplemented requirement.
+
 ## Recorded encrypted-backend compatibility
 
 The [2026-10-10 compatibility evidence](../../docs/lantern/evidence/meshticulum-encrypted-backend-20261010.json) records the canonical Lantern adapters and SDK `11.19.10+lantern.20260906` against real temporary SAGE REST/SQLite/vault fixtures, locally on macOS and on actual B Linux/arm64. This used real signed REST requests, not SDK MockTransport. B used an isolated 14-wheel dependency target; its existing environment and native service lifetimes remained unchanged. No production stores, C or RF operation were involved.

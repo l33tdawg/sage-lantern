@@ -65,6 +65,111 @@ def body(rig):
     return rig.rows[rig.capture.slot_id]['payload']['body']
 
 
+@pytest.mark.parametrize('callback',['access','storage'])
+def test_final_guard_callback_close_cannot_return_capture_state(capture_rig,callback):
+    rig=capture_rig;packet=capture(rig);before=copy.deepcopy(rig.rows);calls=[]
+    def access():
+        calls.append(True)
+        if callback=='access' and len(calls)==2:assert rig.capture.close(0) is False
+        return True
+    def storage():
+        if callback=='storage' and len(calls)==2:assert rig.capture.close(0) is False
+        return True
+    rig.capture._access=access;rig.capture._storage=storage
+    with pytest.raises(CaptureError):rig.capture.state()
+    assert rig.capture._closing and rig.capture._uncertain
+    assert rig.rows==before and to_binary(body(rig)['capture']['wire'])==packet
+
+
+def test_native_lease_exit_close_cannot_publish_capture_result(capture_rig):
+    rig=capture_rig;packet=capture(rig);before=copy.deepcopy(rig.rows)
+    @contextmanager
+    def closing_exit():
+        yield
+        assert rig.capture.close(0) is False
+    rig.capture._lease=closing_exit
+    with pytest.raises(CaptureError):rig.capture.state()
+    assert rig.capture._closing and rig.capture._uncertain and rig.rows==before
+    assert to_binary(body(rig)['capture']['wire'])==packet
+
+
+@pytest.mark.parametrize('point',[1,2])
+def test_storage_snapshot_close_fences_before_action_or_result(capture_rig,point):
+    rig=capture_rig;capture(rig);original=rig.store.storage.snapshot;calls=[];acted=[]
+    def snapshot():
+        calls.append(True)
+        if len(calls)==point:assert rig.capture.close(0) is False
+        return original()
+    rig.store.storage.snapshot=snapshot
+    with pytest.raises(CaptureError):rig.capture._run(lambda:acted.append(True) or 'metadata')
+    assert acted==([] if point==1 else [True])
+    assert rig.capture._uncertain is (point==2) and body(rig)['state']=='captured'
+
+
+def test_peer_callback_close_prevents_canonical_inbox_admission(capture_rig):
+    rig=capture_rig;packet=capture(rig);before=copy.deepcopy(rig.rows)
+    def peer(sender):
+        assert rig.capture.close(0) is False
+        return sender==SENDER
+    rig.capture._peer=peer
+    with pytest.raises(CaptureError):process(rig)
+    assert not records(rig) and rig.rows==before and rig.capture._uncertain
+    assert to_binary(body(rig)['capture']['wire'])==packet
+
+
+def test_late_callback_closure_retains_committed_original_intention(capture_rig):
+    rig=capture_rig;assert rig.capture.state()=='idle';packet=to_binary(sealed().decode());calls=[]
+    def access():
+        calls.append(True)
+        if len(calls)==5:assert rig.capture.close(0) is False
+        return True
+    rig.capture._access=access
+    with pytest.raises(CaptureError):prepare(rig,packet)
+    assert rig.capture._uncertain and body(rig)['state']=='receiving'
+    original=copy.deepcopy(body(rig)['capture']);assert original['operation_id']==OPERATION
+    restored=rig.new_capture()
+    assert restored.complete(OPERATION,packet,authority_digest='a'*64,permission_check=lambda:True)=='captured'
+    assert body(rig)['capture']['prepared_at_us']==original['prepared_at_us']
+    assert body(rig)['capture']['application_expires_epoch_us']==original['application_expires_epoch_us']
+    assert body(rig)['capture']['application_deadline_monotonic_us']==original['application_deadline_monotonic_us']
+
+
+@pytest.mark.parametrize('clock',['epoch','monotonic'])
+def test_closing_clock_callback_cannot_supply_admission_time(capture_rig,clock):
+    rig=capture_rig;capture(rig);called=[]
+    def closing():
+        called.append(True);assert rig.capture.close(0) is True
+        return rig.now if clock=='epoch' else rig.monotonic
+    if clock=='epoch':rig.capture._clock=closing;probe=rig.capture._time
+    else:rig.capture._monotonic_clock=closing;probe=rig.capture._monotonic
+    with pytest.raises(CaptureError):probe()
+    assert called==[True] and not rig.capture._uncertain
+
+
+@pytest.mark.parametrize('method',['get','put'])
+def test_nested_store_guard_closure_prevents_remote_dispatch(capture_rig,method):
+    rig=capture_rig;assert rig.capture.state()=='idle';before=copy.deepcopy(rig.rows)
+    active=[];sent=[];original_store=getattr(rig.store,method)
+    client=rig.store.client;remote='workflow_'+method;original_remote=getattr(client,remote)
+    def storage():
+        if active:assert rig.capture.close(0) is False
+        return True
+    def scoped_store(*args,**kwargs):
+        active.append(True)
+        try:return original_store(*args,**kwargs)
+        finally:active.pop()
+    def dispatch(*args,**kwargs):
+        sent.append(rig.capture._closing)
+        return original_remote(*args,**kwargs)
+    rig.capture._storage=storage
+    setattr(rig.store,method,scoped_store);setattr(client,remote,dispatch)
+    packet=to_binary(sealed().decode())
+    with pytest.raises(CaptureError):
+        if method=='get':rig.capture.state()
+        else:prepare(rig,packet)
+    assert not sent and rig.rows==before and rig.capture._uncertain
+
+
 def process(rig, *, owner=None, inbox=None, operation=OPERATION):
     return (owner or rig.capture).process_pending(inbox or rig.inbox, operation_id=operation)
 
@@ -276,6 +381,8 @@ def test_close_waits_for_capture_writer_and_never_closes_borrowed_store(capture_
     rig = capture_rig
     packet = to_binary(sealed().decode())
     prepare(rig, packet)
+    original_intention=copy.deepcopy(body(rig)['capture'])
+    puts_before=rig.puts
     entered, release = threading.Event(), threading.Event()
     original = rig.store.put
     def put(identifier, kind, revision, payload, **kwargs):
@@ -297,7 +404,14 @@ def test_close_waits_for_capture_writer_and_never_closes_borrowed_store(capture_
     release.set(); worker.join(5)
     assert not worker.is_alive() and errors == ['contained']
     assert rig.capture.close(0) is False
-    assert body(rig)['state'] == 'captured'
+    # The writer was paused before the remote call. Closing cannot authorize
+    # that later write; retain its original intention for explicit recovery.
+    assert body(rig)['state'] == 'receiving' and rig.puts==puts_before
+    assert body(rig)['capture']==original_intention
+    restored=rig.new_capture()
+    assert restored.complete(OPERATION,packet,authority_digest='a'*64,permission_check=lambda:True)=='captured'
+    assert body(rig)['capture']['prepared_at_us']==original_intention['prepared_at_us']
+    assert body(rig)['capture']['application_expires_epoch_us']==original_intention['application_expires_epoch_us']
     assert rig.store.storage.snapshot()
 
 

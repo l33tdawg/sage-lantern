@@ -99,22 +99,45 @@ class BinaryCapture:
         self._busy, self._closing, self._uncertain, self._known = None, False, False, None
 
     def _time(self):
+        self._available()
         value = self._clock()
+        self._available()
         _require(type(value) in (int, float) and math.isfinite(value)
                  and 0 <= value <= MAX_TIME_US / 1000000)
         return int(value * 1000000)
 
     def _monotonic(self):
+        self._available()
         value = self._monotonic_clock()
+        self._available()
         _require(type(value) in (int, float) and math.isfinite(value)
                  and 0 <= value <= MAX_TIME_US / 1000000)
         return int(value * 1000000)
 
+    def _available(self):
+        _require(not self._closing and not self._uncertain)
+
+    def _storage_allowed(self):
+        self._available()
+        result = self._storage()
+        self._available()
+        return result is True
+
     def _guard(self, sender=None):
-        _require(not self._closing and not self._uncertain
-                 and self._access() is True and self._storage() is True)
+        self._available()
+        access = self._access()
+        self._available()
+        _require(access is True)
+        storage = self._storage_allowed()
+        _require(storage is True)
         if sender is not None:
-            _require(self._peer(sender) is True)
+            peer = self._peer(sender)
+            self._available()
+            _require(peer is True)
+
+    def _peer_allowed(self, sender):
+        self._guard(sender)
+        return True
 
     def _run(self, action):
         with self._condition:
@@ -125,10 +148,13 @@ class BinaryCapture:
             with _Lease(self._lease()):
                 self._guard()
                 epoch = self.store.storage.snapshot().epoch
+                self._available()
                 entered = True
                 value = action()
                 self._guard()
                 _require(self.store.storage.snapshot().epoch == epoch)
+                self._available()
+            self._available()
             return value
         except BaseException as error:
             # After admission into the native lease, an escaping error can
@@ -217,7 +243,7 @@ class BinaryCapture:
     def _read(self):
         self._known = None
         try:
-            record = self.store.get(self.slot_id, kind='mesh_inbound', access_check=self._storage)
+            record = self.store.get(self.slot_id, kind='mesh_inbound', access_check=self._storage_allowed)
         except WorkflowNotFound:
             return self._write(0, dict(slot_id=self.slot_id, revision=0, recipient=self.recipient.to_dict(),
                 state='idle', last_epoch_us=0, last_monotonic_us=0, last_writer_boot_id=self.boot_id,
@@ -239,7 +265,7 @@ class BinaryCapture:
         signature = self.key.sign(DOMAIN + _canonical(body)).signature
         record = self.store.put(self.slot_id, 'mesh_inbound', revision,
             dict(schema=SCHEMA, body=body, signature=base64.b64encode(signature).decode('ascii')),
-            access_check=self._storage)
+            access_check=self._storage_allowed)
         checked = self._validate(record)
         self._known = checked['state']
         return record
@@ -325,8 +351,7 @@ class BinaryCapture:
                     if not last['acknowledged'] and last['decision']['status'] in ('admitted', 'duplicate'):
                         verified = inbox.reconcile_binary(to_binary(last['wire']), sender=_peer(last['sender']),
                             observed_at=last['observed_at_us'] // 1000000,
-                            peer_check=lambda peer: (not self._closing and self._access() is True
-                                and self._storage() is True and self._peer(peer) is True))
+                            peer_check=self._peer_allowed)
                         _require(type(verified) is IngestResult and verified.status == 'duplicate'
                                  and verified.record_id == last['decision']['record_id']
                                  and verified.remote_id == last['decision']['remote_id']
@@ -340,8 +365,7 @@ class BinaryCapture:
             self._guard(sender)
             if body['state'] == 'captured':
                 packet = to_binary(capture['wire'])
-                peer_check = lambda peer: (not self._closing and self._access() is True
-                    and self._storage() is True and self._peer(peer) is True)
+                peer_check = self._peer_allowed
                 decision = inbox.reconcile_binary(packet, sender=sender,
                     observed_at=capture['captured_at_us'] // 1000000, peer_check=peer_check)
                 if decision is None:
@@ -366,8 +390,7 @@ class BinaryCapture:
             if decision['status'] in ('admitted', 'duplicate'):
                 verified = inbox.reconcile_binary(to_binary(capture['wire']), sender=sender,
                     observed_at=capture['captured_at_us'] // 1000000,
-                    peer_check=lambda peer: (not self._closing and self._access() is True
-                        and self._storage() is True and self._peer(peer) is True))
+                    peer_check=self._peer_allowed)
                 _require(type(verified) is IngestResult and verified.status == 'duplicate'
                          and verified.record_id == decision['record_id']
                          and verified.remote_id == decision['remote_id']
