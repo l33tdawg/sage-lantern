@@ -16,7 +16,7 @@
 
 ## Summary and decision requested
 
-Review a strict source and dependency boundary: [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/c8ad83ee114a3d98719b0ca8c46b39185b6d8406) owns reusable cryptography, protocol, contracts, flow, scheduler, drivers and public resources. [SAGE Lantern](https://github.com/l33tdawg/sage-lantern) owns its application policy, protected SAGE integration, native nodes, device provisioning and fleet deployment. The dependency is **Lantern → Meshticulum**, with no reverse import or product-service prerequisite in the core.
+Review a strict source and dependency boundary: [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa) owns reusable cryptography, protocol, contracts, flow, scheduler, drivers and public resources. [SAGE Lantern](https://github.com/l33tdawg/sage-lantern) owns its application policy, protected SAGE integration, native nodes, device provisioning and fleet deployment. The dependency is **Lantern → Meshticulum**, with no reverse import or product-service prerequisite in the core.
 
 The user requested this source boundary. This candidate records that intent and the reviewable migration contract; it does not declare normative approval, production enablement, hardware qualification or publication permission.
 
