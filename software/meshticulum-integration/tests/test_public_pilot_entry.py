@@ -108,3 +108,27 @@ def test_resume_mode_reports_success_only_after_measured_faster_ip_return(pack,t
         with pytest.raises(SystemExit):module.main()
     result=json.loads((output/'RESULT.json').read_bytes())
     assert result['complete'] is faster and result['resume_sequence']['returned_to_ip'] is faster
+
+
+def test_verified_runtime_buffer_is_parsed_even_if_path_changes_after_read(pack,tmp_path,monkeypatch):
+    original=load;target=tmp_path/'runtime.tar.gz';changed=[]
+    replacement=io.BytesIO()
+    with tarfile.open(fileobj=replacement,mode='w:gz') as tar:
+        raw=b'{"different":true}';entry=tarfile.TarInfo('manifest.json');entry.size=len(raw)
+        tar.addfile(entry,io.BytesIO(raw))
+    def immutable_load():
+        module=original();read=module.runtime_bytes
+        def replace_after_read(path):
+            verified=read(path);target.write_bytes(replacement.getvalue());changed.append(True);return verified
+        monkeypatch.setattr(module,'runtime_bytes',replace_after_read);return module
+    monkeypatch.setattr(sys.modules[__name__],'load',immutable_load)
+    test_complete_entry_preserves_manifest_only_recipient_and_failure_evidence(pack,tmp_path,monkeypatch,None,False)
+    assert changed==[True] and target.read_bytes()==replacement.getvalue()
+
+
+def test_runtime_read_refuses_oversize_and_symlink_before_any_management(tmp_path):
+    module=load();path=tmp_path/'large.tar.gz'
+    with path.open('wb') as f:f.truncate(2000001)
+    with pytest.raises(ValueError):module.runtime_bytes(path)
+    alias=tmp_path/'alias';alias.symlink_to(path)
+    with pytest.raises(OSError):module.runtime_bytes(alias)

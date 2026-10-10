@@ -8,6 +8,8 @@ import argparse
 import base64
 import getpass
 import hashlib
+import io
+import stat
 import json
 import os
 from pathlib import Path
@@ -35,6 +37,23 @@ def seed_package(config,unit,role,pack,trust,digest,manifest):
         files={name:base64.b64encode(raw).decode() for name,raw in files.items()})
 
 
+def runtime_bytes(path):
+    """One bounded public artifact buffer, used for both hash and parsing."""
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK)
+    try:
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size>2000000:
+            raise ValueError('runtime_archive_not_bounded_regular_file')
+        data=bytearray()
+        while len(data)<=2000000:
+            part=os.read(fd,min(65536,2000001-len(data)))
+            if not part:break
+            data.extend(part)
+        if len(data)>2000000:raise ValueError('runtime_archive_too_large')
+        return bytes(data)
+    finally:os.close(fd)
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config',type=Path,required=True)
@@ -54,10 +73,11 @@ def main():
         help='Explicitly own finite SSH control connections; native admission remains separate.')
     args=p.parse_args();os.umask(0o077)
     config=json.loads(_read(args.config,16384))
-    archive=args.runtime_archive.read_bytes()
+    archive=runtime_bytes(args.runtime_archive)
     if hashlib.sha256(archive).hexdigest()!=config['runtime_sha256']:p.error('Runtime archive differs from config pin.')
-    with tarfile.open(args.runtime_archive,'r:gz') as tar:
-        manifest_raw=tar.extractfile('manifest.json').read()
+    with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tar:
+        manifest_raw=tar.extractfile('manifest.json').read(65537)
+    if len(manifest_raw)>65536:p.error('Runtime manifest exceeds the bound.')
     if hashlib.sha256(manifest_raw).hexdigest()!=config['manifest_sha256']:p.error('Runtime manifest differs from config pin.')
     trust=json.loads(_read(args.trust,16384))
     raw=(args.pack/'manifest.json').read_bytes();digest=hashlib.sha256(raw).hexdigest()
