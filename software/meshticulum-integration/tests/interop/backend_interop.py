@@ -300,6 +300,116 @@ def main():
         else:raise AssertionError('spent child allocation was replayed')
         assert composed.store.get(budget.record_id,kind='mesh_outbound',access_check=lambda:True)==persisted
         checks['real_parent_allocation_lost_return_retains_debt_and_refuses_replay']=True
+        # Dedicated operation-scoped Noise purpose with public-only real CAS
+        # revisions. This fixed scalar is a synthetic scan canary, not native
+        # entropy/custody evidence; the production generator stays independent.
+        import base64
+        from lantern_meshticulum.sage import noise_purpose as purpose_module
+        from lantern_meshticulum.sage.noise_purpose import NoisePurpose,NoisePurposeError,SCHEMA as PURPOSE_SCHEMA
+        scalar=hashlib.sha256(b'MESHTICULUM-NOISE-SECRET-CANARY').digest()
+        encoded_secrets=(scalar.hex().encode(),base64.b64encode(scalar))
+        class CanaryGenerator:
+            @staticmethod
+            def generate():return X25519PrivateKey.from_private_bytes(scalar)
+        generated_with=purpose_module.X25519PrivateKey
+        purpose_module.X25519PrivateKey=CanaryGenerator
+        now_us=time.time_ns()//1000;deadline=time.monotonic_ns()//1000+30000000
+        authority=hashlib.sha256(b'fixture independently approved Noise purpose').digest()
+        noise_intention=ReceiveIntention(str(uuid.uuid4()),hashlib.sha256(packet).hexdigest(),len(packet),
+            authority.hex(),boot,now_us+30000000,deadline)
+        remote_noise=X25519PrivateKey.generate();context_holder=[]
+        def purpose():
+            return NoisePurpose(outgoing,local=sender,remote=recipient,local_initiator=True,intention=noise_intention,
+                signing_key=first._signing_key,issued_epoch_us=now_us,
+                approval_digest=hashlib.sha256(b'fixture explicit purpose approval').hexdigest(),
+                owner_lease=fixture_lease,access_check=lambda:permitted[0],storage_check=lambda:permitted[0],
+                native_check=lambda binding:permitted[0] and binding.intention==noise_intention,
+                enrollment_check=lambda info,digest:permitted[0] and digest==context_holder[0].digest,
+                remote_pin_check=lambda peer,key,digest:permitted[0] and peer==recipient
+                    and key==public(remote_noise) and digest==context_holder[0].digest,
+                boot_reader=lambda:boot,clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+        public_revisions=[]
+        def audit_payload(payload):
+            assert set(payload)=={'schema','body','signature'} and payload['schema']==PURPOSE_SCHEMA
+            body=payload['body']
+            assert set(body)=={'record_id','revision','purpose','algorithm','binding','storage_epoch',
+                'prepared_epoch_us','prepared_monotonic_us','last_epoch_us','last_monotonic_us',
+                'state','public_key','context','retirement'}
+            assert body['algorithm']=='X25519' and body['purpose']==purpose_module.PURPOSE
+            raw=json.dumps(payload,sort_keys=True).encode()
+            assert scalar not in raw and all(secret not in raw for secret in encoded_secrets)
+            return body
+        def audit_request(request):
+            if request.method=='PUT' and '/v1/workflows/' in request.url.path:
+                value=json.loads(request.content);payload=value.get('payload',{})
+                if payload.get('schema')==PURPOSE_SCHEMA:
+                    public_revisions.append(audit_payload(payload)['state'])
+        outgoing.client._client.event_hooks['request'].append(audit_request)
+        key_owner=purpose()
+        try:info=key_owner.generate()
+        finally:purpose_module.X25519PrivateKey=generated_with
+        context=ForwardContext(sender,recipient,uuid.uuid4().bytes,authority,now_us,now_us+30000000,
+            64,info.public_key,public(remote_noise));context_holder.append(context)
+        handle=key_owner.bind(context)
+        sender_journal=ForwardReceiveJournal(outgoing,context=context,local_initiator=True,
+            local_signing_key=first._signing_key,intention=noise_intention,boot_id=boot,
+            owner_lease=fixture_lease,access_check=lambda:permitted[0],storage_check=lambda:permitted[0],
+            peer_check=lambda peer:peer==recipient,permission_check=lambda intent:permitted[0],
+            clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+        partial=[]
+        def create(key):
+            session=ForwardSession(context=context,initiator=True,signing_key=first._signing_key,
+                noise_static_key=key,counters=sender_journal,
+                authorize=lambda:key_owner.key_check(info.public_key,context.digest),
+                clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000),
+                application_deadline_monotonic_us=deadline)
+            partial.append(session);return session
+        def abort():
+            for session in partial:session.close()
+            return all(session._closed and not session._busy for session in partial)
+        initiator=handle.start(create,abort=abort)
+        receiver_journal=ForwardReceiveJournal(incoming,context=context,local_initiator=False,
+            local_signing_key=second._signing_key,intention=noise_intention,boot_id=boot,
+            owner_lease=fixture_lease,access_check=lambda:permitted[0],storage_check=lambda:permitted[0],
+            peer_check=lambda peer:peer==sender,permission_check=lambda intent:permitted[0],
+            clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+        responder=ForwardSession(context=context,initiator=False,signing_key=second._signing_key,
+            noise_static_key=remote_noise,counters=receiver_journal,authorize=lambda:permitted[0],
+            clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000),
+            application_deadline_monotonic_us=deadline,receive_mode='commit')
+        initiator.finish(responder.respond(initiator.start()))
+        initiator.verify_confirmation(responder.accept_confirmation(initiator.confirm()))
+        responder.receive_into(initiator.seal(packet))
+        assert initiator._s is None and receiver_journal.recover().sealed_record==packet
+        checks['real_noise_purpose_and_both_role_crypto_journals']=True
+        original_put=outgoing.client.workflow_put;retirement_lost=[False]
+        def retired_return_lost(*args,**kwargs):
+            result=original_put(*args,**kwargs)
+            if result.payload.get('schema')==PURPOSE_SCHEMA and result.payload['body']['state']=='retired':
+                retirement_lost[0]=True;raise RuntimeError('fixture lost retirement return')
+            return result
+        outgoing.client.workflow_put=retired_return_lost
+        try:
+            try:key_owner.retire()
+            except NoisePurposeError:pass
+            else:raise AssertionError('unknown retirement was reported confirmed')
+        finally:outgoing.client.workflow_put=original_put
+        assert retirement_lost[0] and initiator._closed and initiator._s is None and key_owner._key is None
+        stored=outgoing.get(key_owner.record_id,kind='mesh_outbound',access_check=lambda:True)
+        assert audit_payload(stored['payload'])['state']=='retired'
+        assert public_revisions==['reserved','generated','bound','retired']
+        checks['real_noise_public_only_put_revisions_and_get']=True
+        try:purpose().generate()
+        except NoisePurposeError:pass
+        else:raise AssertionError('retired original operation regenerated a Noise key')
+        assert outgoing.get(key_owner.record_id,kind='mesh_outbound',access_check=lambda:True)==stored
+        checks['real_noise_retirement_lost_return_tombstone_and_no_regeneration']=True
+        try:initiator.seal(packet)
+        except Exception:pass
+        else:raise AssertionError('retired split session remained usable')
+        checks['real_noise_split_session_closed_on_retirement']=True
+        responder.close()
+        outgoing.client._client.event_hooks['request'].remove(audit_request)
         permitted[0]=False
         try:capture().state()
         except CaptureError:pass

@@ -71,9 +71,9 @@ def test_borrowed_native_composition_uses_exact_durable_counter_store_and_role(i
         assert op.session.counters is owner._composition.journal
         assert op.session.counters.store is op.budget.store and op.session.counters._lease is op.budget._lease
         assert (op.receiver is None)==initiator and not h._mutex.locked()
-        assert len(r.state.rows)==2 # Prepared parent + create-only crypto claim.
+        assert len(r.state.rows)==3 # Prepared parent + signed idle quarantine + crypto claim.
         assert r.client._client.is_closed is False
-        assert owner.close() is False and r.client._client.is_closed is False # Unobserved capture remains conservative.
+        assert owner.close() is True and r.client._client.is_closed is False # Actual signed quarantine was observed.
         assert h._provider is None
 
 @pytest.mark.parametrize('missing',SCOPES)
@@ -182,12 +182,12 @@ def test_final_native_callback_counter_substitution_refuses_factory_publication(
         owner._peer_key_check=purpose
         with pytest.raises(ForwardNativeOwnerError):owner.operation(r.noise[0],limits=Cost(2000,300000000),
             prior_debt=Cost(),sealed_record=r.packet)
-        assert observed and owner._uncertain and len(r.state.rows)==2
+        assert observed and owner._uncertain and len(r.state.rows)==3
         assert not r.hardware._mutex.locked()
 
 
 def test_all_five_stages_use_borrowed_native_observers_and_canonical_both_role_journals(tmp_path):
-    from tests.integrations.sage.test_forward_operation import stage_pair
+    from tests.integrations.sage.test_forward_children import tracked_stage_pair
     with setup() as left:
         original=(left.context,left.intention,left.noise,left.packet)
         with setup(initiator=False,original=original) as right:
@@ -199,7 +199,7 @@ def test_all_five_stages_use_borrowed_native_observers_and_canonical_both_role_j
             ops=[o.operation(left.noise[i],limits=Cost(2000,300000000),prior_debt=Cost(),
                 sealed_record=left.packet if i==0 else None) for i,o in enumerate(owners)]
             p=SimpleNamespace(operations=ops,clock=clock,context=left.context)
-            for index in range(5):stage_pair(tmp_path,p,index)
+            for index in range(5):tracked_stage_pair(tmp_path,p,owners,index)
             assert ops[1].settle().status=='admitted'
             for o,r in zip(owners,(left,right)):
                 b=r.state.rows[o._composition.journal.record_id]['payload']['body']

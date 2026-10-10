@@ -179,6 +179,8 @@ class HardwareRuntime:
         self._read_receipts = None
         self._public_contact_check = public_contact_check
         self._initializing = False
+        self._forward_children = None
+        self._forward_admitted = False
         self._reconciled = None
         self._closing = False
         self._background_stop = threading.Event()
@@ -686,7 +688,15 @@ class HardwareRuntime:
         self._closing = True
         self._background_stop.set()
         deadline = time.monotonic() + timeout
-        if not self._mutex.acquire(timeout=max(0, timeout)):
+        forward = getattr(self, "_forward_children", None)
+        if getattr(self, "_forward_admitted", False) or forward is not None:
+            # Forward containment cannot run under the same mutex as its live
+            # native leases. Fence and join it before legacy resource shutdown.
+            from lantern_meshticulum.sage.forward_children import ForwardChildren
+            if (type(forward) is not ForwardChildren or forward.resource is not self
+                    or forward.close(max(0, deadline-time.monotonic())) is not True):
+                return False
+        if not self._mutex.acquire(timeout=max(0, deadline-time.monotonic())):
             return False
         try:
             if self._closed:

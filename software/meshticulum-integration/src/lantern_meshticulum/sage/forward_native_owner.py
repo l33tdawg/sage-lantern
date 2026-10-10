@@ -71,7 +71,7 @@ class ForwardNativeOwner:
         self.remote=context.responder if local_initiator else context.initiator
         self._key_check,self._peer_key_check,self._boot,self._clock=key_check,peer_key_check,boot_reader,clock_reader
         self._composition=None;self._composition_ref=None;self._constructing=False
-        self._budget=self._session=self._operation=None;self._budget_refs=None
+        self._budget=self._session=self._operation=None;self._budget_refs=None;self._registry=None
         self._owner=(os.getpid(),threading.get_ident());self._busy=self._closed=self._uncertain=False
         self._held=False;self._last_time=None
         self._native_refs=(resource,authority,native_context,context,intention,local_initiator,self.local,self.remote)
@@ -90,12 +90,16 @@ class ForwardNativeOwner:
         # Retain one stable callable object for receiver/budget lease identity.
         self.owner_lease=self._lease
         self.access_check()
+        from lantern_meshticulum.sage.forward_children import attach
+        self._registry=attach(self)
+        self.access_check()
 
     def __repr__(self):return '<ForwardNativeOwner>'
     def _available(self):
         require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident()))
         require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
             self.context,self.intention,self.local_initiator,self.local,self.remote))))
+        if self._registry is not None:self._registry.available(self)
         if self._composition is not None:require(self._composition is self._composition_ref)
         if self._budget is not None:
             receiver,store,journal,budget=self._budget_refs
@@ -108,6 +112,8 @@ class ForwardNativeOwner:
         if self._operation is not None:
             require(self._operation.session is self._session and self._operation.budget is self._budget
                 and self._operation.receiver is (None if self.local_initiator else self._composition))
+        if self._operation is not None and self._operation.active is not None:
+            self._registry.active_owned(self,self._operation.active)
         h=self.resource
         require(all(a is b for a,b in zip(self._refs,(h.supervisor,h.probe,h.probe.client,h.identity,
                 h.identity._signing_key,h._mutex))))
@@ -231,6 +237,9 @@ class ForwardNativeOwner:
                 clock=self.time)
             self._budget=budget;self._budget_refs=(receiver,receiver.store,receiver.journal,budget)
             budget.prepare()
+            # Observe the actual shared signed quarantine while original read
+            # authority is live; do not infer idle from a fresh Python object.
+            require(receiver.capture.state()=='idle')
             session=receiver.create_session(noise_static_key)
             self._session=session
             require(session.counters is receiver.journal and receiver.journal.store is budget.store
@@ -244,11 +253,51 @@ class ForwardNativeOwner:
             if self._composition is not None:self._composition.close()
             raise
         finally:self._constructing=False
-    def close(self):
+    def prepare_stage(self,plan,*,open_child,native_check,retire_child,contain_child,terminal_check,payload=None):
+        """Track cleanup ownership before the prepaid factory can open/ARM."""
+        from lantern_meshticulum.sage.forward_operation import prepare_stage
+        self.access_check();child=None
+        def open_tracked(candidate):
+            nonlocal child
+            child=self._registry.begin(self,candidate,contain=contain_child,terminal=terminal_check)
+            return open_child(candidate)
+        try:
+            runner=prepare_stage(self._operation,plan,open_child=open_tracked,native_check=native_check,
+                retire_child=retire_child,payload=payload)
+            self._registry.bind(child,runner);self._available();return runner
+        except BaseException:
+            if child is not None:self._registry.failed(child)
+            self._uncertain=True;raise
+    def retire_stage(self,runner):
+        self.access_check();require(runner.operation is self._operation)
+        self._registry.owns_runner(self,runner)
+        runner.retire();result=self._registry.retired(runner)
+        self._available();return result
+    def fence(self):
+        """Stop new work without touching resources still used by a producer."""
         self._closed=True
-        owner=self._owner==(os.getpid(),threading.get_ident())
+    def _close_components(self):
         operation_joined=self._operation is None or self._operation.close()
         budget_joined=self._budget is None or self._budget.close()
         joined=self._composition is None or self._composition.close()
-        return (owner and operation_joined and budget_joined and joined and not self._constructing
+        return (operation_joined and budget_joined and joined and not self._constructing
             and not self._held and not self._busy and not self._uncertain)
+    def _registry_close(self,registry):
+        """One-use same-process drain delegation after the registry idle barrier."""
+        require(registry is self._registry and os.getpid()==self._owner[0] and self._closed
+            and not self._held and not self._busy and not self._constructing)
+        require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
+            self.context,self.intention,self.local_initiator,self.local,self.remote))))
+        if self._composition is not None:require(self._composition is self._composition_ref)
+        if self._budget is not None:
+            receiver,store,journal,budget=self._budget_refs
+            require(self._composition is receiver and self._budget is budget and receiver.store is store
+                and receiver.journal is journal and journal.store is store and budget.store is store)
+        if self._session is not None:require(self._composition.session is self._session
+            and self._session.counters is self._budget_refs[2])
+        require(registry.consume_close_permit(self) is True)
+        return self._close_components()
+    def close(self):
+        self._closed=True
+        owner=self._owner==(os.getpid(),threading.get_ident())
+        return self._close_components() and owner
