@@ -46,6 +46,14 @@ Root guards, source pins and controller stop bounds each address one boundary. T
 
 Keep DATA, request, response, ACK and retry costs charged. TCP stream-byte evidence cannot settle RF debt. After failure or cancellation, preserve raw receipts and journals, stop only owned jobs, disarm and join actual workers, and verify terminal cleanup before returning a device. Expiry or a state file alone cannot prove quiescence.
 
+## Opt-in finite SSH connection reuse
+
+`run_public_pilot.py --reuse-management-connections` explicitly owns one local OpenSSH control master per configured host before installation/seed preparation and the resource clock. Construction opens no connection. Private short socket paths, owned-process liveness and directory/socket device/inode checks replace global/shared control paths; `ControlPersist=no` keeps the masters tied to the invocation. Original native authority, resource/handoff expiry and prior debt remain unchanged.
+
+Reused dispatch refuses a lost/replaced master or socket and uses `ProxyCommand=/usr/bin/false` to block accidental TCP fallback. Explicit native stop/retirement alone may recover through fresh pinned SSH after control loss, retaining boot/run/pidfd checks and recording that containment. Package/secret staging remains stdin-only and non-PTY; private production providers remain disabled.
+
+The CLI reaps clients and then masters in `finally`; cleanup failure makes its result incomplete. Local process/socket and actual OpenSSH controls cover fallback refusal and lifecycle behavior. Remote authentication, native reuse and performance remain unqualified, with no speed claim. See the [connection-reuse runbook](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#opt-in-owned-management-connections) and [`pilot_connections.py`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_connections.py). The recorded native milestones below stay at their earlier exact pins.
+
 ## Validation and release scope
 
 The [native mixed-path record](../../docs/lantern/evidence/meshticulum-native-mixed-20261010.json) now proves one finite C→A LoRa→B IP public request and B→A IP→C LoRa reply at its exact core/Lantern/runtime pins. C independently verified the publisher and 977-byte piece; all eight native children across four sessions were terminal and retired. It is a public-piece milestone, not a capacity or matched-performance result.

@@ -152,6 +152,20 @@ on exit. Repeated prompts, echoed credentials, excess output and command timeout
 refuse the operation. Grant packages travel on a separate channel without a
 PTY; only their digest and private staging path appear in management arguments.
 
+### Opt-in owned management connections
+
+Adding **`--reuse-management-connections`** to the reviewed finite invocation explicitly opens one locally owned OpenSSH `ControlMaster` for each configured host. The CLI does this before optional runtime installation, seed preparation and the original resource clock. Imports and `SSHOperator` construction open no connections; reuse is not the default. Connection setup still consumes the existing finite handoff window and preserves pinned host-key checking and SSH authentication requirements.
+
+[`pilot_connections.py`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_connections.py) creates a short private Unix-socket directory and holds its directory identity. Reused commands check the owned master process's liveness and the original directory/socket ownership, permissions and device/inode bindings. Loss or replacement refuses new work. Each reused client sets `ProxyCommand=/usr/bin/false`, so a missing control socket cannot silently create a fallback TCP connection. The mode configures no global/shared `ControlPath` or persistent master: `ControlPersist=no`, with the jobs owned by this CLI invocation.
+
+After control loss, only explicitly requested **native stop and retirement** may use a fresh pinned SSH connection for containment. That recovery is recorded in management events and still relies on the native boot/run/pidfd checks. Provisioning, installation, data dispatch, normal status/collection and recipient verification do not use this recovery exception to continue a failed path.
+
+The CLI's `finally` path retires its native work, reaps management clients, then closes and reaps the owned masters before removing their sockets/directory. Client, master or native cleanup failure makes the result incomplete; removing a socket alone does not prove that its process is terminal. Keep cleanup errors and recovery events in the outcome.
+
+Original resource/handoff expiry, create-only native grants, stdin-only non-PTY package staging, in-memory sudo handling, private-provider refusal and prior radio/stream-byte debt remain unchanged. Reuse supplies no native permission and renews no deadline.
+
+Source controls include local process/socket lifecycle and actual local OpenSSH refusal of fallback TCP when a control socket is missing. Remote authentication, native use of reused connections and their latency effects remain unqualified. Record master setup/cleanup costs separately in future qualification. No speed claim follows from this option, and the earlier native TCP/mixed milestones remain bound to their historical code/runtime pins above. See [`pilot_ssh.py`](../../software/meshticulum-integration/src/lantern_meshticulum/bench/pilot_ssh.py) and the [CLI](../../firmware/meshticulum-bench/run_public_pilot.py).
+
 `--install-runtime` is an explicit optional step. The installer checks the pinned
 archive and current host boot before writing, then inspects A/B firmware status.
 C's installation inspection checks its OS role and boot without opening SPI;
