@@ -32,8 +32,15 @@ root=Path.home()/'meshticulum-bench-staging'
 root.mkdir(mode=0o700,exist_ok=True)
 s=root.lstat();assert stat.S_ISDIR(s.st_mode) and s.st_uid==os.geteuid() and stat.S_IMODE(s.st_mode)==0o700
 target=root/('pilot-'+digest+'.json')
-fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-with os.fdopen(fd,'wb') as out:out.write(data);out.flush();os.fsync(out.fileno())
+try:fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+except FileExistsError:
+ fd=os.open(target,os.O_RDONLY|os.O_NOFOLLOW)
+ try:
+  s=os.fstat(fd);assert stat.S_ISREG(s.st_mode) and s.st_uid==os.geteuid() and s.st_nlink==1 and stat.S_IMODE(s.st_mode)==0o600 and s.st_size==len(data)
+  with os.fdopen(fd,'rb',closefd=False) as inp:assert inp.read(100001)==data
+ finally:os.close(fd)
+else:
+ with os.fdopen(fd,'wb') as out:out.write(data);out.flush();os.fsync(out.fileno())
 fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
 try:os.fsync(fd)
 finally:os.close(fd)

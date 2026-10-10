@@ -68,6 +68,10 @@ def main():
             and all(c in '0123456789abcdef' for c in digest), 'invalid_runtime_target')
     os.umask(0o077)
     files = members(read_regular(archive, 2000000), digest)
+    # Public/private journal consumers require exactly 0700, including when a
+    # legacy bench directory already exists. Refuse before installing a bundle;
+    # an operator must inspect current owners before migrating its permissions.
+    state = Path('/var/lib/meshticulum-bench'); private_root(state)
     root = Path('/opt/meshticulum-bench'); private_root(root, private=False)
     destination = root / ('runtime-' + digest[:16])
     if not destination.exists():
@@ -85,7 +89,6 @@ def main():
         private_root(path.parent)
         require(path.lstat().st_uid == 0 and not path.lstat().st_mode & 0o022
                 and read_regular(path, 500000) == data, 'runtime_installed_bytes_changed')
-    state = Path('/var/lib/meshticulum-bench'); private_root(state, private=False)
     for name in ('runs', 'objects'): private_root(state / name)
     executable = '/usr/bin/python3' if unit == 'unit-c' else '/root/esp-venv-r3/bin/python'
     os.chdir(destination)

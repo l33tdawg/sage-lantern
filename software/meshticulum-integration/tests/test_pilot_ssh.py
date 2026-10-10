@@ -7,7 +7,7 @@ import sys
 import time
 
 import pytest
-from lantern_meshticulum.bench.pilot_ssh import Job, SSHOperator, PROMPT, one_record
+from lantern_meshticulum.bench.pilot_ssh import Job, SSHOperator, PROMPT, STAGE, one_record
 from meshticulum.bench.wire import WireError
 
 
@@ -102,3 +102,35 @@ def test_bad_authentication_or_stalled_owned_child_is_reaped(failure):
     finally:job.close()
     assert job.process.poll() is not None and job.password is None
     if failure=='echo':assert not job.output
+
+
+def stage(tmp_path,raw):
+    prefix='from pathlib import Path\nPath.home=classmethod(lambda cls:Path('+repr(str(tmp_path))+'))\n'
+    return subprocess.run([sys.executable,'-I','-B','-c',prefix+STAGE,hashlib.sha256(raw).hexdigest()],
+        input=raw,capture_output=True,timeout=3)
+
+
+def test_immutable_staging_reuses_identical_protected_bytes_without_rewriting(tmp_path):
+    raw=b'synthetic staging object'
+    first=stage(tmp_path,raw);assert first.returncode==0
+    receipt=one_record(first.stdout,'meshticulum.staged-pilot-package.v1')
+    path=Path(receipt['path']);before=path.stat()
+    second=stage(tmp_path,raw);assert second.returncode==0
+    assert one_record(second.stdout,'meshticulum.staged-pilot-package.v1')==receipt
+    assert path.read_bytes()==raw and path.stat().st_ino==before.st_ino and path.stat().st_mtime_ns==before.st_mtime_ns
+
+
+@pytest.mark.parametrize('fault',['contents','permissions','hardlink','symlink'])
+def test_staging_refuses_existing_mutation_or_unsafe_identity_without_replacing_it(tmp_path,fault):
+    raw=b'synthetic staging object'
+    first=stage(tmp_path,raw);assert first.returncode==0
+    path=Path(one_record(first.stdout,'meshticulum.staged-pilot-package.v1')['path'])
+    if fault=='contents':path.write_bytes(b'changed staging contents')
+    elif fault=='permissions':path.chmod(0o644)
+    elif fault=='hardlink':(path.parent/'extra-link').hardlink_to(path)
+    else:
+        target=path.parent/'real-file';path.rename(target);path.symlink_to(target)
+    before=path.lstat()
+    assert stage(tmp_path,raw).returncode!=0
+    after=path.lstat()
+    assert (after.st_ino,after.st_mode,after.st_nlink)==(before.st_ino,before.st_mode,before.st_nlink)
