@@ -80,7 +80,7 @@ def test_credential_substring_in_native_path_or_service_name_is_not_an_echo():
     assert job.password is None
 
 
-@pytest.mark.parametrize('output',[b'pilot\\r\\n',b'MESHTICULUM_SUDO_PROMPT:pilot\\r\\n',b'debug: pilot\\n'])
+@pytest.mark.parametrize('output',[b'pilot\r\n',b'MESHTICULUM_SUDO_PROMPT:pilot\r\n',b'debug: pilot\n'])
 def test_standalone_or_prompt_adjacent_credential_echo_is_cleared(output):
     code='import sys;sys.stdout.buffer.write('+repr(output)+');sys.stdout.flush()'
     job=Job([sys.executable,'-c',code],password='pilot',deadline=time.monotonic()+3)
