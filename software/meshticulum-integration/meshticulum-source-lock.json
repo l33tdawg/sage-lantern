@@ -6,7 +6,7 @@
     "firmware/meshticulum-bench/main.cpp": "908ddaeeab3df3e042524233ffa66656060693f959a8dc95a165cf507d874ac9",
     "firmware/meshticulum-bench/orangepi5plus-sx1262-hat.dts": "51da823fc649872e0061997573329ffcec3b5f9b5a3ff880757da63134335469",
     "firmware/meshticulum-bench/protocol.hpp": "2e2596e8f8968869d1e0d5469ad9bc2b181f2880eee450ed1a72e17367fdf56a",
-    "src/meshticulum/__init__.py": "489b7aed60ed77383e1c6ea5563da6e4366ec4d186ed0ca0fd6da76c66c081cc",
+    "src/meshticulum/__init__.py": "1886490aa55f0eff293810f5f74d735be4b4c9c99d57140cb4984fea216d731c",
     "src/meshticulum/bench/SPEC.json": "1e4257b50b07934407a28ad4e5590336559941b1053881e55418373f9b05a39c",
     "src/meshticulum/bench/__init__.py": "0cce20c9d56fd9d420fd6fd28c5e6e0a807fa0218160b94c5cd0bd85dc622802",
     "src/meshticulum/bench/admission.py": "a2ea01e95609ad5cb072a20d15fc880bf17b1da73bce897e1af7f1a7b7676b8c",
@@ -63,6 +63,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "4fa36741fb9dd1b4d990be8fff81ed20c36baa6c",
+  "revision": "cee503693983380aaa3ec1cc7469ccef465224db",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }
