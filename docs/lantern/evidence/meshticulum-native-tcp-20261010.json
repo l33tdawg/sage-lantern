@@ -366,6 +366,116 @@
     "useful_verified_bytes": 977,
     "useful_verified_bytes_per_second": 50.24721682106071
   },
+  "post_expiry_readonly_retirement_audit": {
+    "unit-b": {
+      "audit_sha256": "c187d92206acb078286a19ce36d92191122e80ba39fe71898811e72fee0978b0",
+      "database_writes": false,
+      "deadline_extension": false,
+      "grants_unchanged": true,
+      "persistent_debt_matches_terminal_snapshots": true,
+      "radio_opened": false,
+      "retired_run_count": 6,
+      "run_receipts": [
+        {
+          "capture_present": true,
+          "grant_sha256": "92a377743c7e05546ecb6de2c2bf1341a09f7768850eb8cd7057cd4ec3e58d8c",
+          "original_expiry_epoch_us": 1791622174641701,
+          "result_sha256": "b937d883052a77d72f4524c8f2dc5f4fa55b59e78ac731e2fa96b86b7e3320ed",
+          "run_id": "0543764e49340d1f4e466440c38e9d6f"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "c06ca5370558b24f667d42a58881950f215dccceeef74aaf5b999473c9ddb3f8",
+          "original_expiry_epoch_us": 1791622174641701,
+          "result_sha256": "a411196d8116f659582ced4deb62df237cb43d9600ae1a2efcfb270f98d154c7",
+          "run_id": "1356dd5dc549b6140d700694cbe2d178"
+        },
+        {
+          "capture_present": true,
+          "grant_sha256": "e2a8bc6f5ff72404a39b9e28bf235557888ab43e9a937591423e26989985e515",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "c6763c455c738c605aa3ee4ac1d0f0eb07fd51cbb8780392816fa01edfe5f354",
+          "run_id": "f3dea18cd0bbe1c00262211fc401f569"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "c4693d33d4b57bef61d6d3e91141caeb8707772fc9199378fa72d96b9137ce46",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "61bdd5f904c6ca0cdb4ff8ec7533ce1f2280dae58863187067ce754e8cf71f4a",
+          "run_id": "653a2087303c0f3960db56a99f871a36"
+        },
+        {
+          "capture_present": true,
+          "grant_sha256": "dab3123fae9422f04d3d846c4ce512b824af2ec741e5eaa1f8d4c25c617e5400",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "f926057568a80ec8cd934151e287ffdd2cc6e3141efc0dd665560e18e7f86be5",
+          "run_id": "98d51e9475591eb802b25f81334b6da5"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "21c28a608674b81a11794be864be7878b9ee24259d4865ac9c94a29ca20edafc",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "22066afb2c8ab237dad98422595f374b52251836f63d8cd9cf346cc458bf2cac",
+          "run_id": "364df2d76d29cec1b3d34cf024c2980f"
+        }
+      ],
+      "wire_sessions_retired_where_started": true
+    },
+    "unit-c": {
+      "audit_sha256": "44463ef996e5c8f936d39b74a9b883f3365164aa1c285b7e88ce6ee421097f3c",
+      "database_writes": false,
+      "deadline_extension": false,
+      "grants_unchanged": true,
+      "persistent_debt_matches_terminal_snapshots": true,
+      "radio_opened": false,
+      "retired_run_count": 6,
+      "run_receipts": [
+        {
+          "capture_present": false,
+          "grant_sha256": "9ecaa83cbc1eab7b1c4eec119a66d40af4a500636ce552a06b43ed8debdd5ba5",
+          "original_expiry_epoch_us": 1791622174641701,
+          "result_sha256": "339ba1b92b0fc87dd6bede1f55b21dbdb0c85e31f93dad22e795341881fb5c3b",
+          "run_id": "0543764e49340d1f4e466440c38e9d6f"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "c3c5e534c11e67d4f858d4ab3c31da30b581c9189ec5b01029c72b309cf49d8f",
+          "original_expiry_epoch_us": 1791622174641701,
+          "result_sha256": "d0690be7de51af46d0a00c19cc54b6a174500b67ba8352482b84f065aff32688",
+          "run_id": "1356dd5dc549b6140d700694cbe2d178"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "5d4cb59c8c4f11502a001cd620ac465051f0f8bfb324543683ae9458eed3c674",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "3dc65f422d1153bfa4d5fc248ed51e86fabc47a4f27bef3e445a5fb16090b134",
+          "run_id": "f3dea18cd0bbe1c00262211fc401f569"
+        },
+        {
+          "capture_present": true,
+          "grant_sha256": "969c26b7d54f27f62043df298ffe0f7b068f472228057a21d10c93da7bfb8e4e",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "038564b8ece453f1f20410d8b363061661e11eb6052982a7faef5467d2e693b4",
+          "run_id": "653a2087303c0f3960db56a99f871a36"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "44a6a88f19b5ac1e8c2f68b0960df6a44002d0aa876eb8c57c9034ccc20bb767",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "e1771f25eda99cee0811e15d8d29101cd5d1b5020af7b292e415ca1aa6076cd5",
+          "run_id": "98d51e9475591eb802b25f81334b6da5"
+        },
+        {
+          "capture_present": false,
+          "grant_sha256": "c94b53d027e7d3d22204ebc5b0350763e1328b7e5deea5fefdbd924f28dc74e7",
+          "original_expiry_epoch_us": 1791622610251835,
+          "result_sha256": "2a02e5859b78eaa8d81428517dab47f02e560af440fa6bc90127337a52c8df5d",
+          "run_id": "364df2d76d29cec1b3d34cf024c2980f"
+        }
+      ],
+      "wire_sessions_retired_where_started": true
+    }
+  },
   "prior_failed_attempts": [
     {
       "attempt": 1,
