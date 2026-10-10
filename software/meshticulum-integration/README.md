@@ -59,6 +59,17 @@ Eight fixture checks passed: signed live storage status, atomic stale conversati
 
 The unknown-write injection loses the client return **after a real HTTP PUT commits**; it is not a network-disconnect experiment. Policy/lease callbacks and the capture boot ID remain modeled fixture inputs, with temporary Go fixture governance. This establishes isolated backend compatibility, not the production native owner/consent provider, private transport or production-store qualification. Private production remains disabled, and the mixed-path, private lifecycle, matched-benchmark and release gates remain open.
 
+With the compatible SDK installed, the [fixture runner](tests/interop/run_backend_fixture.py) uses an explicit SAGE/core checkout and a read-only Go overlay. It creates temporary fixture stores and saves a local log in a new output directory:
+
+```sh
+python tests/interop/run_backend_fixture.py \
+  --sage-source /path/to/sage \
+  --meshticulum-source /path/to/meshticulum \
+  --output ./build/backend-fixture-run
+```
+
+The runner keeps dependency resolution offline. It opens loopback fixture servers and grants no device, private-production or RF permission.
+
 ## Native execution and application boundaries
 
 The [native TCP prerequisite](../../docs/lantern/MESHTICULUM_PUBLIC_PILOT.md#recorded-native-tcp-prerequisite) verified one 977-byte public piece from C's request through B's verified store to C's independent publisher/chunk check. A second response failed at 512 received stream bytes without caching the partial piece; the first verified piece survived. Four sessions/eight retired children retained one original 160-second expiry and their stream-byte debt. Actual receiver readiness and service lifetimes were checked; C SPI/RF was not opened. The 19.443863-second transaction includes SSH/controller gaps and is not link capacity or a matched benchmark. Claims remain bound to the evidence's exact commits/runtime.
