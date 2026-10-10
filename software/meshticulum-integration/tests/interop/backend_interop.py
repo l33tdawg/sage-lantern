@@ -123,6 +123,80 @@ def main():
         recovered=restored.process_pending(inbox(),operation_id=operation2)
         assert recovered.status=='admitted' and capture().acknowledge(operation2) is True
         checks['real_committed_write_return_loss_reconciled']=True
+        # Actual MPF2 receive-to-journal uses one encrypted workflow CAS. Native
+        # permission/sender counters are fixture models; no projection/carrier.
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from meshticulum.privacy.forward_session import ForwardContext, ForwardSession, ForwardSessionError, public
+        from lantern_meshticulum.sage.forward_receive_journal import (
+            ForwardReceiveJournal, ForwardJournalError, ReceiveIntention, SCHEMA as JOURNAL_SCHEMA)
+        class SenderCounters:
+            def claim(self,binding):self.tx=0;return True
+            def reserve_transmit(self):self.tx+=1;return self.tx
+            def record_receive(self,n):return n==1
+        def forward_case(*, lose_return=False):
+            now_us=time.time_ns()//1000
+            deadline=time.monotonic_ns()//1000+30000000
+            expires=now_us+30000000
+            authority=hashlib.sha256(b'fixture original forward-private authority').digest()
+            noises=(X25519PrivateKey.generate(),X25519PrivateKey.generate())
+            context=ForwardContext(sender,recipient,uuid.uuid4().bytes,authority,
+                now_us,expires,64,public(noises[0]),public(noises[1]))
+            packet=to_binary(seal_message(first._signing_key,sender=sender,recipient=recipient,
+                message_id=str(uuid.uuid4()),content=CANARY,issued_at=int(time.time()),
+                expires_at=int(time.time())+60).wire)
+            intention=ReceiveIntention(str(uuid.uuid4()),hashlib.sha256(packet).hexdigest(),len(packet),
+                authority.hex(),boot,expires,deadline)
+            def make_journal(workflow):
+                return ForwardReceiveJournal(workflow,context=context,local_initiator=False,
+                    local_signing_key=second._signing_key,intention=intention,boot_id=boot,
+                    owner_lease=fixture_lease,access_check=lambda:permitted[0],
+                    storage_check=lambda:permitted[0],
+                    peer_check=lambda peer:permitted[0] and peer==sender,
+                    permission_check=lambda original:permitted[0] and original==intention,
+                    clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+            journal=make_journal(incoming)
+            initiator=ForwardSession(context=context,initiator=True,signing_key=first._signing_key,
+                noise_static_key=noises[0],counters=SenderCounters(),authorize=lambda:permitted[0],
+                clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000),
+                application_deadline_monotonic_us=deadline)
+            responder=ForwardSession(context=context,initiator=False,signing_key=second._signing_key,
+                noise_static_key=noises[1],counters=journal,authorize=lambda:permitted[0],
+                clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000),
+                application_deadline_monotonic_us=deadline,receive_mode='commit')
+            initiator.finish(responder.respond(initiator.start()))
+            initiator.verify_confirmation(responder.accept_confirmation(initiator.confirm()))
+            outer=initiator.seal(packet)
+            original_put=incoming.client.workflow_put;lost=[False]
+            def committed_then_lost(*args,**kwargs):
+                result=original_put(*args,**kwargs)
+                if result.payload.get('schema')==JOURNAL_SCHEMA and result.payload['body']['capsule'] is not None:
+                    lost[0]=True;raise RuntimeError('fixture lost joint-commit return')
+                return result
+            if lose_return:incoming.client.workflow_put=committed_then_lost
+            try:
+                if lose_return:
+                    try:responder.receive_into(outer)
+                    except ForwardSessionError:pass
+                    else:raise AssertionError('unknown joint commit reported success')
+                    assert lost[0] and journal._uncertain
+                else:assert responder.receive_into(outer) is None
+            finally:incoming.client.workflow_put=original_put
+            initiator.close();responder.close();journal.close()
+            # Fresh HTTP client/adapter; server stays live (no restart assertion).
+            fresh_store=store(config['second_url'],second,recipient)
+            recovered=make_journal(fresh_store).recover()
+            assert recovered.sealed_record==packet and recovered.intention==intention
+            assert recovered.outer_sha256==hashlib.sha256(outer).hexdigest()
+            remote=fresh_store.get(journal.record_id,kind='mesh_inbound',access_check=lambda:True)
+            assert remote['payload']['body']['capsule']['counter']==2
+            try:make_journal(fresh_store).claim(journal.binding)
+            except ForwardJournalError:pass
+            else:raise AssertionError('retired claim reused')
+            assert open_envelope(to_text(recovered.sealed_record),second._signing_key,
+                expected_sender=sender,expected_recipient=recipient,now=int(time.time())).content==CANARY
+            return True
+        checks['real_forward_joint_replay_capsule_and_fresh_client_recovery']=forward_case()
+        checks['real_forward_joint_commit_lost_return_recovery']=forward_case(lose_return=True)
         permitted[0]=False
         try:capture().state()
         except CaptureError:pass

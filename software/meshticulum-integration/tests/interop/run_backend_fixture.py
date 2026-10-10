@@ -29,6 +29,11 @@ def main():
     os.umask(0o077);out=args.output.resolve();out.mkdir(mode=0o700,exist_ok=False)
     fixture=Path(__file__).with_name('backend_interop_test.go.txt')
     script=Path(__file__).with_name('backend_interop.py')
+    inputs = [fixture, script, Path(__file__).resolve(),
+              sage/'api/rest/workflow_journal_handler_test.go', sage/'api/rest/message_storage_status.go']
+    inputs += sorted((PROJECT/'src').rglob('*.py'))
+    inputs += sorted((core/'src').rglob('*.py'))
+    input_hashes = {str(path):hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
     overlay=out/'overlay.json'
     overlay.write_text(json.dumps({'Replace':{str(sage/'api/rest/meshticulum_backend_interop_test.go'):str(fixture)}},sort_keys=True,indent=2)+'\n')
     env={k:v for k,v in os.environ.items() if not k.startswith(('SAGE_','LANTERN_','MESHTICULUM_'))}
@@ -40,15 +45,17 @@ def main():
     command=['go','test','-overlay',str(overlay),'./api/rest','-run','^TestMeshticulumEncryptedBackendInterop$','-count=1','-v']
     with (out/'output.log').open('wb') as log:
         run=subprocess.run(command,cwd=sage,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=240)
+    inputs_unchanged = all(hashlib.sha256(Path(path).read_bytes()).hexdigest()==digest
+                           for path,digest in input_hashes.items())
     record={'schema':'lantern.meshticulum.encrypted-backend-fixture-run.v1','returncode':run.returncode,
         'fixture_only':True,'production_owner_consent_qualified':False,'private_transport_qualified':False,
         'private_production_enabled':False,'radio_opened':False,
         'output_sha256':hashlib.sha256((out/'output.log').read_bytes()).hexdigest(),
-        'input_sha256':{str(path):hashlib.sha256(path.read_bytes()).hexdigest() for path in
-            (fixture,script,sage/'api/rest/workflow_journal_handler_test.go',sage/'api/rest/message_storage_status.go')},
+        'input_sha256':input_hashes, 'inputs_unchanged_during_run':inputs_unchanged,
         'sdk_version':version('sage-agent-sdk')}
     (out/'RESULT.json').write_text(json.dumps(record,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'saved':str(out/'RESULT.json'),'returncode':run.returncode,'fixture_only':True}))
     if run.returncode:raise SystemExit(run.returncode)
+    if not inputs_unchanged:raise SystemExit('fixture inputs changed during run; not qualified')
 
 if __name__=='__main__':main()
