@@ -31,7 +31,7 @@ from sage_sdk import AgentIdentity, SageClient
 
 from .community_service import CommunityMeshProvider
 from .device_access import access_epoch, device_locked, MARKER, _marker_state
-from .mesh_community import MeshReceiveConsent, MeshRequestAccess
+from .mesh_community import MeshReceiveConsent, MeshRequestAccess, MeshLeaseRefused
 from .mesh_envelope import Peer
 from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
 from .mesh_inbox import MeshInbox
@@ -457,7 +457,10 @@ class HardwareRuntime:
                                   delivery_receipts_enabled=self.config.get("delivery_receipts_enabled", False))
 
     def capture_lease(self, consent):
-        require(self.active() and consent == self.consent())
+        # No lease has been issued at this read-only admission boundary.
+        # A known refusal must not be turned into an uncertain acquisition.
+        if not self.active() or consent != self.consent():
+            raise MeshLeaseRefused()
         return self._capture_lease(consent, 30, lambda: self.consent() == consent)
 
     def beacon(self, guard):
@@ -508,7 +511,11 @@ class HardwareRuntime:
         def transport(value):
             nonlocal ended
             if value == {"op": "acquire", "epoch": consent.revision}:
-                require(not ended and self.active() and consent_check() is True)
+                # This local factory has not returned a token or admitted a
+                # capture. Exceptions remain uncertain; only an observed
+                # refusal is classified as having acquired no lease.
+                if ended or not self.active() or consent_check() is not True:
+                    raise MeshLeaseRefused()
                 return {"lease": token}
             require(value.get("lease") == token)
             if value["op"] == "finish":

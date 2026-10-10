@@ -50,6 +50,16 @@ class MeshReceiveConsent:
     delivery_receipts_enabled: bool = False
 
 
+class MeshLeaseRefused(RuntimeError):
+    """Trusted lease factory positively refused before issuing any lease.
+
+    This is a narrow no-acquisition signal, never evidence of safe retirement
+    or permission. Other failures, including a lost issued-token return, remain
+    uncertain. Callers must not infer it from message text or an empty journal.
+    """
+    def __init__(self):super().__init__('mesh_lease_refused')
+
+
 class MeshActionAuthority:
     def __init__(self):
         self._mutex = threading.Lock()
@@ -75,6 +85,8 @@ class MeshActionAuthority:
             raise ValueError("mesh_background_unavailable")
         try:
             lease = lease_factory(consent)
+        except MeshLeaseRefused:
+            raise
         except Exception:
             raise MeshLeaseUncertain() from None
         if type(lease) is not CaptureLease:
