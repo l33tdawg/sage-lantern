@@ -192,6 +192,40 @@ def main():
             try:make_journal(fresh_store).claim(journal.binding)
             except ForwardJournalError:pass
             else:raise AssertionError('retired claim reused')
+            def imported_capture():
+                return BinaryCapture(fresh_store,recipient=recipient,recipient_signing_key=second._signing_key,
+                    owner_lease=fixture_lease,access_check=access,storage_check=access,
+                    peer_check=lambda peer:access() and peer==sender,boot_id=boot)
+            owner=imported_capture()
+            original_put=fresh_store.client.workflow_put;projection_lost=[False]
+            def projection_committed_then_lost(*args,**kwargs):
+                result=original_put(*args,**kwargs)
+                if result.payload.get('schema')=='sage.lantern.mesh-binary-capture.v1' and result.payload['body']['state']=='captured':
+                    projection_lost[0]=True;raise RuntimeError('fixture lost import return after real PUT')
+                return result
+            read_permission=lambda original:permitted[0] and original==intention
+            if lose_return:fresh_store.client.workflow_put=projection_committed_then_lost
+            try:
+                if lose_return:
+                    try:owner.import_forward(make_journal(fresh_store),read_permission_check=read_permission)
+                    except CaptureError:pass
+                    else:raise AssertionError('unknown projection reported success')
+                    assert projection_lost[0] and owner._uncertain
+                else:assert owner.import_forward(make_journal(fresh_store),read_permission_check=read_permission)=='captured'
+            finally:fresh_store.client.workflow_put=original_put
+            assert imported_capture().import_forward(make_journal(fresh_store),read_permission_check=read_permission)=='captured'
+            pending_inbox=MeshInbox(fresh_store,recipient=recipient,recipient_signing_key=second._signing_key,
+                resolve_peer=lambda message:sender,access_check=access,storage_check=access)
+            admitted=imported_capture().process_pending(pending_inbox,operation_id=intention.operation_id)
+            assert admitted.status=='admitted'
+            # Fresh import reads actual source but cannot recreate settled state.
+            assert imported_capture().import_forward(make_journal(fresh_store),read_permission_check=read_permission)=='idle'
+            assert imported_capture().acknowledge(intention.operation_id)
+            assert imported_capture().import_forward(make_journal(fresh_store),read_permission_check=read_permission)=='idle'
+            reread=fresh_store.get(journal.record_id,kind='mesh_inbound',access_check=lambda:True)
+            assert reread==remote
+            checks['real_forward_import_lost_return_and_original_admission' if lose_return
+                   else 'real_forward_import_preserves_original_and_settlement']=True
             assert open_envelope(to_text(recovered.sealed_record),second._signing_key,
                 expected_sender=sender,expected_recipient=recipient,now=int(time.time())).content==CANARY
             return True
