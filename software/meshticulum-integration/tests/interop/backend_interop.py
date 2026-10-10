@@ -231,6 +231,40 @@ def main():
             return True
         checks['real_forward_joint_replay_capsule_and_fresh_client_recovery']=forward_case()
         checks['real_forward_joint_commit_lost_return_recovery']=forward_case(lose_return=True)
+        # Canonical composition borrows the already-owned client and identity;
+        # purpose/native observations remain explicit fixture policy.
+        from lantern_meshticulum.sage.forward_receiver import ForwardReceiver
+        now_us=time.time_ns()//1000;deadline=time.monotonic_ns()//1000+30000000
+        authority=hashlib.sha256(b'fixture canonical forward receiver').digest()
+        noises=(X25519PrivateKey.generate(),X25519PrivateKey.generate())
+        context=ForwardContext(sender,recipient,uuid.uuid4().bytes,authority,now_us,now_us+30000000,
+            64,public(noises[0]),public(noises[1]))
+        packet=to_binary(seal_message(first._signing_key,sender=sender,recipient=recipient,
+            message_id=str(uuid.uuid4()),content=CANARY,issued_at=int(time.time()),
+            expires_at=int(time.time())+60).wire)
+        intention=ReceiveIntention(str(uuid.uuid4()),hashlib.sha256(packet).hexdigest(),len(packet),
+            authority.hex(),boot,context.expires_epoch_us,deadline)
+        composed=ForwardReceiver(incoming.client,context=context,local_initiator=False,
+            intention=intention,boot_id=boot,endpoint=config['second_url'],signing_key=second._signing_key,
+            owner_lease=fixture_lease,access_check=lambda:permitted[0],storage_check=lambda:permitted[0],
+            peer_check=lambda peer:permitted[0] and peer==sender,
+            dispatch_check=lambda ctx,original:permitted[0] and ctx==context and original==intention,
+            read_check=lambda ctx,original:permitted[0] and ctx==context and original==intention,
+            key_check=lambda key,digest:permitted[0] and key==public(noises[1]) and digest==context.digest,
+            clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+        responder=composed.create_session(noises[1])
+        initiator=ForwardSession(context=context,initiator=True,signing_key=first._signing_key,
+            noise_static_key=noises[0],counters=SenderCounters(),authorize=lambda:permitted[0],
+            clock=lambda:(time.time_ns()//1000,time.monotonic_ns()//1000),application_deadline_monotonic_us=deadline)
+        initiator.finish(responder.respond(initiator.start()))
+        initiator.verify_confirmation(responder.accept_confirmation(initiator.confirm()))
+        responder.receive_into(initiator.seal(packet))
+        assert composed.client is incoming.client and composed.store.client is incoming.client
+        assert composed.import_pending()=='captured'
+        assert composed.settle().status=='admitted' and composed.acknowledge()
+        assert composed.close() and not incoming.client._client.is_closed
+        initiator.close()
+        checks['real_canonical_borrowed_client_forward_receiver']=True
         permitted[0]=False
         try:capture().state()
         except CaptureError:pass

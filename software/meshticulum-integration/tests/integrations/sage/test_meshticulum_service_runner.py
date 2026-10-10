@@ -195,3 +195,19 @@ def test_public_runner_module_does_not_load_private_runtime_or_sdk():
         'or n == "sage_sdk" or n.startswith("sage_sdk.") for n in sys.modules)'],
         cwd=root, env={**os.environ, 'PYTHONPATH': str(root) + os.pathsep + os.environ.get('PYTHONPATH', '')}, capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+def test_legacy_private_runner_refuses_forward_record_even_with_grant_policy(tmp_path):
+    from meshticulum.privacy.forward_session import HEADER,MAGIC,H1
+    clock=Clock();packet=HEADER.pack(MAGIC,H1,b'a'*16,0)+b'x'*48
+    service=dict(format='MPF2.record',kind='protected_message',
+                 application_expires_epoch_us=clock()[0]+60000000)
+    @contextmanager
+    def lease():yield
+    with carrier_pair(tmp_path/'forward',packet,clock,'unit-a','unit-b',211,service=service) as p:
+        transfer=ServiceTransfer(p.sender);before=p.sender.journal.snapshot()
+        with pytest.raises(WireError,match='forward_runner_requires_stage_adapter'):
+            ServiceRunner(transfer,payload=packet,private_policy=PrivatePolicy(
+                grant_digest=transfer.grant_digest,lease=lease,check=lambda binding:True))
+        assert not any(worker.sent for worker in p.workers)
+        assert p.sender.journal.snapshot()==before

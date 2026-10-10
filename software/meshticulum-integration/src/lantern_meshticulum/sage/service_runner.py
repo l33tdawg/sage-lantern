@@ -109,6 +109,8 @@ class ServiceRunner(_ServiceLoop):
         require(type(transfer) is ServiceTransfer, 'invalid_service_runner')
         private = transfer.kind is ServiceKind.MESSAGE
         if private:
+            require(transfer.format == 'LME.binary',
+                    'forward_runner_requires_stage_adapter')
             require(type(private_policy) is PrivatePolicy
                     and private_policy.grant_digest == transfer.grant_digest,
                     'private_runner_requires_native_policy')
@@ -163,4 +165,3 @@ class ServiceRunner(_ServiceLoop):
             self.state = 'failed'
             self.transfer.cancel()
             raise
-
