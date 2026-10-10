@@ -137,15 +137,29 @@ class Controller:
                 self.sleep(.02)
             handles[sender]=self.operator.start(sender,pair)
             row['phase']='running'
-            while any(handle.poll() is None for handle in handles.values()):
+            while True:
+                # Poll every owned child: poll() also services its one sudo
+                # prompt. Short-circuiting on a live receiver starves the
+                # sender's authentication until the receiver times out.
+                codes=[handle.poll() for handle in handles.values()]
+                if all(code is not None for code in codes):break
                 self.current();self.sleep(.02)
+            statuses={};collection_errors={};row['terminal_statuses']=statuses
             for unit in (sender,receiver):
-                status=self.operator.status(unit,pair['run_id'])
+                try:
+                    statuses[unit]=self.operator.status(unit,pair['run_id'])
+                    row['outcomes'][unit]=self.operator.collect(unit,pair['run_id'])
+                except Exception as error:
+                    collection_errors[unit]=type(error).__name__+':'+str(error)[:200]
+            if collection_errors:
+                row['collection_errors']=collection_errors
+                raise RuntimeError('pilot_native_outcome_collection_failed')
+            for unit in (sender,receiver):
+                status=statuses[unit]
                 require(status['unit']==unit and status['host_boot_id']==self.boots[unit]
                         and status['run_id']==pair['run_id'] and status['live'] is False,
                         'pilot_native_process_not_terminal')
-                result=self.operator.collect(unit,pair['run_id'])
-                row['outcomes'][unit]=result
+                result=row['outcomes'][unit]
                 require(result['unit']==unit and result['host_boot_id']==self.boots[unit]
                         and result['session_id']==pair['run_id'] and result['service_format']==format
                         and result['sends'] is (unit==sender)

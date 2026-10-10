@@ -160,3 +160,44 @@ def test_later_piece_keeps_its_own_tighter_sent_request_deadline():
     with pytest.raises(WireError,match='pilot_native_piece_verification_missing_or_rebound'):
         pilot.mixed_piece(REQUEST,RESPONSE)
     assert len(pilot.verified)==1
+
+
+def test_live_receiver_does_not_starve_a_sender_prompt_that_requires_polling():
+    pilot,op,clock=controller()
+    original=op.start;auth_polls=[]
+    def start(unit,pair):
+        handle=original(unit,pair)
+        if unit==pair['sender']:
+            receiver=op.handles[(pair['receiver'],pair['run_id'])]
+            handle.code=receiver.code=None
+            def poll_sender():
+                auth_polls.append(unit)
+                handle.code=receiver.code=0
+                return 0
+            handle.poll=poll_sender
+        return handle
+    op.start=start
+    pilot.link('unit-b','unit-c','tcp','MR1.response',RESPONSE,source='1'*32)
+    assert auth_polls and pilot.links[0]['phase']=='complete'
+    assert clock.now<pilot.deadline
+
+
+@pytest.mark.parametrize('fault',['failed_sender','sender_collection_error'])
+def test_failed_sender_still_preserves_the_other_native_outcome(fault):
+    pilot,op,clock=controller()
+    original=op.collect
+    def collect(unit,run):
+        value=original(unit,run)
+        if unit=='unit-b':
+            if fault=='sender_collection_error':raise RuntimeError('source collection refusal')
+            value['complete']=False
+        return value
+    op.collect=collect
+    with pytest.raises((WireError,RuntimeError)):
+        pilot.link('unit-b','unit-c','tcp','MR1.response',RESPONSE,source='1'*32)
+    row=pilot.links[0]
+    assert row['phase']=='failed' and 'unit-c' in row['outcomes']
+    assert {event[1] for event in op.events if event[0]=='collect'}=={'unit-b','unit-c'}
+    assert set(row['retired'])=={'unit-b','unit-c'}
+    if fault=='failed_sender':assert row['outcomes']['unit-b']['complete'] is False
+    else:assert 'unit-b' in row['collection_errors']
