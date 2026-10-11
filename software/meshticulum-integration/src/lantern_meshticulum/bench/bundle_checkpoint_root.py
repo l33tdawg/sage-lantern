@@ -14,7 +14,7 @@ import threading
 import stat
 import math
 
-from meshticulum.bench.wire import require
+from meshticulum.bench.wire import require,WireError
 from .pilot_parent_caps import ParentCaps,canonical
 from .pilot_bundle import BundleCampaign,BundleContext
 from .pilot_parent_snapshot import Scope,Snapshot,collect
@@ -26,6 +26,12 @@ from .history_metadata_fence import _stamp
 RPC_ENTRY='\nimport base64,hashlib,importlib,json,os,stat,sys,lzma,time\nfrom pathlib import Path\nroot,pin,adapter_pin,action,unit,blob,input_sha,epoch_end,mono_end=sys.argv[1:]\nepoch_end,mono_end=int(epoch_end),int(mono_end)\nfirst=(time.time_ns()//1000,time.monotonic_ns()//1000);last=first\ndef window():\n global last\n now=(time.time_ns()//1000,time.monotonic_ns()//1000)\n need(now[0]<epoch_end and now[1]<mono_end and all(a>=b for a,b in zip(now,last)),"remote_checkpoint_window_expired")\n last=now;return now\ndef need(v,r):\n if not v:raise RuntimeError(r)\ndef read(path,limit):\n window()\n for p in (path.parent,*path.parent.parents):\n  s=p.lstat();need(stat.S_ISDIR(s.st_mode) and s.st_uid==0 and not s.st_mode&0o022 and p.resolve()==p,\'runtime_ancestry\')\n fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK)\n try:\n  s=os.fstat(fd);need(stat.S_ISREG(s.st_mode) and s.st_uid==0 and s.st_nlink==1 and not s.st_mode&0o022 and s.st_size<=limit,\'runtime_record\')\n  raw=os.pread(fd,limit+1,0);need(len(raw)==s.st_size and os.fstat(fd)==path.lstat(),\'runtime_record_changed\');return raw\n finally:os.close(fd)\nwindow()\nneed(os.geteuid()==0,\'actual_root_required\');root=Path(root)\nmraw=read(root/\'manifest.json\',65536);need(hashlib.sha256(mraw).hexdigest()==pin,\'runtime_manifest_pin\')\nm=json.loads(mraw);need(m[\'private_services_enabled\'] is False and m[\'public_parent_claims_required\'] is True,\'public_runtime_required\')\nfor name,h in m[\'files\'].items():\n part=Path(name);need(not part.is_absolute() and \'..\' not in part.parts,\'runtime_member\')\n need(hashlib.sha256(read(root/part,500000)).hexdigest()==h,\'runtime_member_pin\')\nneed(m[\'files\'].get(\'lantern_meshticulum/bench/pilot_resume_rpc.py\')==adapter_pin,\'native_adapter_pin\')\ncompressed=base64.b64decode(blob,validate=True);need(len(compressed)<=70000,\'RPC_compressed_bound\')\nd=lzma.LZMADecompressor(format=lzma.FORMAT_XZ,memlimit=33554432);raw=d.decompress(compressed,max_length=2000001)\nneed(len(raw)<=2000000 and d.eof and not d.unused_data\n and hashlib.sha256(raw).hexdigest()==input_sha,\'RPC_input_bound_or_pin\')\nsys.path.insert(0,str(root));module=importlib.import_module(\'lantern_meshticulum.bench.pilot_resume_rpc\')\nneed(getattr(module,\'CONTRACT_SCHEMA\',None)==\'meshticulum.private-resume-native-rpc.v1\',\'native_integration_contract_missing\')\n# dispatch MUST implement the reviewed real-admission integration described\n# above; no local fallback, lambda approval or deserialized Snapshot allowed.\npayload=json.loads(raw)\nneed(payload["checkpoint_remote_end_epoch_us"]==epoch_end and payload["checkpoint_remote_deadline_monotonic_us"]==mono_end,"remote_checkpoint_window_rebound")\nwindow()\nresult=module.dispatch(action,unit,payload,runtime_root=root,manifest_sha256=pin)\nfinished=window()\nresult.update(checkpoint_callback_completed=True,checkpoint_remote_end_epoch_us=epoch_end,checkpoint_callback_finished_epoch_us=finished[0])\nneed(type(result) is dict and result.get(\'schema\')==\'meshticulum.private-resume-native-rpc.v1\'\n and result.get(\'unit\')==unit and result.get(\'action\')==action,\'RPC_result_scope\')\nprint(json.dumps(result,sort_keys=True),flush=True)\n'
 
 REMOTE_TIMEOUT_ENTRY="import os,sys,time\nend,mono,python,*args=sys.argv[1:]\nend,mono=int(end),int(mono)\nleft=min(end-time.time_ns()//1000,mono-time.monotonic_ns()//1000)-100000\nif left<=0:raise RuntimeError('original_checkpoint_remote_window_expired')\nseconds=str(left//1000000)+'.'+str(left%1000000).zfill(6)+'s'\nos.execv('/usr/bin/timeout',['/usr/bin/timeout','--signal=TERM','--kill-after=1s',seconds,python,*args])\n"
+
+DIAGNOSTIC_REASONS=frozenset(('checkpoint_native_callback_failed','checkpoint_native_response_changed',
+    'checkpoint_remote_callback_completion_unproved','checkpoint_preparations_changed','native_management_deadline',
+    'missing_or_ambiguous_native_record','credential_echo_refused','unexpected_or_repeated_sudo_prompt',
+    'native_management_output_limit','checkpoint_metadata_bound','checkpoint_remote_cleanup_reserve_exhausted',
+    'Root_checkpoint_producer_rebound','original_checkpoint_manager_window_expired'))
 
 PROJECTION=('status','scoped_rows_complete','pending_unknown','policy_row_sha256','prior_lineage','detail','files')
 
@@ -148,6 +154,15 @@ class CheckpointProducer:
                  deadline_monotonic_us=policy.deadline_monotonic_us),self._last)
         self._last=now;return end,mono
 
+    def diagnostics(self):
+        """Bounded metadata, available after refusal; supplies no authority."""
+        require((os.getpid(),threading.get_native_id())==self._pid and len(self.callback_attempts)<=16,
+                'checkpoint_diagnostic_owner_or_bound_changed')
+        keys=('unit','action','remote_terminal_proven','remote_end_epoch_us','started_epoch_us','finished_epoch_us',
+              'returncode','local_closed','callback_completed','error_type','reason','cleanup_error_type')
+        rows=[{key:value.get(key) for key in keys} for value in self.callback_attempts]
+        require(len(canonical(rows))<=16000,'checkpoint_diagnostics_too_large');return rows
+
     def _payload(self,unit,index):
         return dict(policy=self.campaign.parent.policy.to_dict(),owner=self.owners[unit],prior=self.priors[unit],
                     preparation_sha256=dict(self.preparations[unit]),checkpoint_index=index)
@@ -177,16 +192,20 @@ class CheckpointProducer:
                          action,unit,blob,sha(raw),str(remote_end),str(native_mono)]
                 argv=self.operator._argv(unit,command,root=True,use_connections=False);self.current(index)
                 job=Job(argv,password=self.operator.passwords.get(unit),deadline=local_deadline/1000000,clock=self.operator.clock)
-                attempt=dict(unit=unit,action=action,remote_terminal_proven=False,remote_end_epoch_us=remote_end)
+                attempt=dict(unit=unit,action=action,remote_terminal_proven=False,remote_end_epoch_us=remote_end,
+                    started_epoch_us=self.campaign.epoch(),finished_epoch_us=None,returncode=None,local_closed=False,
+                    callback_completed=False,error_type=None,reason=None,cleanup_error_type=None)
                 self.callback_attempts.append(attempt)
                 jobs.append((unit,action,job,attempt));input_pins[unit]=sha(raw)
             for unit,action,job,attempt in jobs:
                 require(canonical(self.preparations)==preparation_bytes,'checkpoint_preparations_changed')
-                require(job.wait()==0,'checkpoint_native_callback_failed')
+                attempt['returncode']=job.wait()
+                require(attempt['returncode']==0,'checkpoint_native_callback_failed')
                 value=one_record(bytes(job.output),CONTRACT_SCHEMA)
                 require(value['unit']==unit and value['action']==action and value['private_production'] is False
                     and value['global_debt_complete'] is False and value['radio_opened'] is (action=='checkpoint'),
                     'checkpoint_native_response_changed')
+                attempt['callback_completed']=value.get('checkpoint_callback_completed') is True
                 require(value.get('checkpoint_callback_completed') is True
                     and value.get('checkpoint_remote_end_epoch_us')==attempt['remote_end_epoch_us']
                     and type(value.get('checkpoint_callback_finished_epoch_us')) is int
@@ -194,11 +213,20 @@ class CheckpointProducer:
                     'checkpoint_remote_callback_completion_unproved')
                 attempt['remote_terminal_proven']=True
                 values[unit]=value;self.current(index)
+        except BaseException as error:
+            reason=str(error)
+            reason=reason if isinstance(error,WireError) and reason in DIAGNOSTIC_REASONS else 'exception_detail_omitted'
+            for unit,action,job,attempt in jobs:
+                if not attempt['remote_terminal_proven']:
+                    attempt['error_type']=type(error).__name__[:64];attempt['reason']=reason
+            raise
         finally:
             errors=[]
             for unit,action,job,attempt in jobs:
                 try:job.close()
-                except BaseException as error:errors.append(type(error).__name__)
+                except BaseException as error:
+                    errors.append(type(error).__name__);attempt['cleanup_error_type']=type(error).__name__[:64]
+                attempt.update(returncode=job.process.poll(),local_closed=job.closed,finished_epoch_us=self.campaign.epoch())
                 states.append(dict(unit=unit,action=action,returncode=job.process.poll(),closed=job.closed,remote_terminal_proven=attempt['remote_terminal_proven']))
             require(not errors and all(type(v['returncode']) is int and v['returncode']==0 and v['closed'] is True and v['remote_terminal_proven'] is True for v in states),
                     'checkpoint_owned_clients_not_terminal')
