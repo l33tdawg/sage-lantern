@@ -75,14 +75,14 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
                 and mono<result['original_application_deadline_us'],'native_piece_receipt_deadline_expired')
         result.update(verified_epoch_us=epoch,verified_monotonic_us=mono)
         from .pilot_native_caps import _open_existing
-        from .pilot_bundle import KIND,accept_native_part
+        from .pilot_bundle import BUNDLE_KINDS,accept_native_part
         # Native policy is read from the original protected parent, never the
         # result DTO. Single32 and legacy results keep their existing shape.
         parent_id=receipt.get('parent',{}).get('parent_id')
         if parent_id is not None:
             from .pilot_parent_caps import ParentPolicy
             saved_policy=ParentPolicy.from_dict(json.loads(_read(root/'parents'/identifier(parent_id)/'policy.json',20000)))
-            if saved_policy.qualification_kind==KIND:
+            if saved_policy.qualification_kind in BUNDLE_KINDS:
                 caps=_open_existing(root,parent_id,facts,clock)
                 try:result['bundle_part']=accept_native_part(caps,state=root,facts=facts,campaign_id=campaign_id,
                     request_run_id=request_run_id,response_run_id=response_run_id,verified=result,clock=clock)
