@@ -28,7 +28,7 @@ from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
 from .profiles import RADIO_ADMISSION
 
-BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2'))
+BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3'))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
 
 SCHEMA = 'meshticulum.public-parent-caps.v1'

@@ -14,6 +14,7 @@ import stat
 import fcntl
 from contextlib import ExitStack
 from pathlib import Path
+from types import MappingProxyType
 
 from meshticulum.bench.wire import require
 from meshticulum.resources import byte_bundle as bundle, knowledge_pack as kp, lamplighter as ll, resource
@@ -25,6 +26,15 @@ KIND_V2 = 'c-bundle100k-v2'
 SCHEMA_V2 = 'meshticulum.native-public100k-bundle-context.v2'
 COMMITMENT_SCHEMA = 'meshticulum.public100k-capture-commitment.v2'
 SSH_SCHEMA_V2 = 'meshticulum.finite-ssh-bundle100k.v2'
+KIND_V3 = 'c-bundle100k-v3'
+SCHEMA_V3 = 'meshticulum.native-public100k-bundle-context.v3'
+COMMITMENT_SCHEMA_V3 = 'meshticulum.public100k-capture-commitment.v3'
+SSH_SCHEMA_V3 = 'meshticulum.finite-ssh-bundle100k.v3'
+# Versioned original scopes; never upgrade or renew an existing context.
+COMMITTED_CONTRACTS = MappingProxyType({
+    KIND_V2:(SCHEMA_V2,1200000000,1205000000,150000000,COMMITMENT_SCHEMA,SSH_SCHEMA_V2,'meshticulum.private-resume-actual-capture.v2'),
+    KIND_V3:(SCHEMA_V3,1350000000,1355000000,180000000,COMMITMENT_SCHEMA_V3,SSH_SCHEMA_V3,'meshticulum.private-resume-actual-capture.v3'),
+})
 
 
 def _context_data(value, *, parent_id=None):
@@ -33,8 +43,8 @@ def _context_data(value, *, parent_id=None):
     v=json.loads(raw)
     required={'schema','manifest_base64','signature_base64','trust','manifest_sha256','whole_bytes','whole_sha256',
           'original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us','stages'}
-    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2),'bundle_context_policy_changed')
-    kind=KIND if v['schema']==SCHEMA else KIND_V2
+    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3),'bundle_context_policy_changed')
+    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3}[v['schema']]
     for key in ('manifest_sha256','whole_sha256'):digest(v[key])
     manifest_raw=base64.b64decode(v['manifest_base64'],validate=True)
     signature_raw=base64.b64decode(v['signature_base64'],validate=True)
@@ -48,10 +58,11 @@ def _context_data(value, *, parent_id=None):
     require(all(type(v[k]) is int and v[k]>0 for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us'))
         and 0<v['original_monotonic_us']<v['deadline_monotonic_us']
         <=v['original_monotonic_us']+v['expires_epoch_us']-v['original_epoch_us']
-        and 0<v['expires_epoch_us']-v['original_epoch_us']<=(894000000 if kind==KIND else 1200000000),'original_whole_window_changed')
-    if kind==KIND_V2:
-        require(v['expires_epoch_us']-v['original_epoch_us']==1200000000
-                and v['deadline_monotonic_us']-v['original_monotonic_us']==1200000000,'v2_original_whole_window_changed')
+        and 0<v['expires_epoch_us']-v['original_epoch_us']<=(894000000 if kind==KIND else COMMITTED_CONTRACTS[kind][1]),'original_whole_window_changed')
+    if kind in COMMITTED_CONTRACTS:
+        whole=COMMITTED_CONTRACTS[kind][1]
+        require(v['expires_epoch_us']-v['original_epoch_us']==whole
+                and v['deadline_monotonic_us']-v['original_monotonic_us']==whole,'v2_original_whole_window_changed')
     require(type(v['stages']) is list and len(v['stages'])==5,'exact_five_bundle_stages_required')
     previous=v['original_epoch_us']; campaigns=set()
     for index,stage in enumerate(v['stages']):
@@ -63,27 +74,28 @@ def _context_data(value, *, parent_id=None):
         a,z,h=(stage[k] for k in ('issued_epoch_us','expires_epoch_us','handoff_end_epoch_us'))
         require(all(type(n) is int for n in (a,z,h)) and previous<=a<z
             and z-a<=180000000 and z+10000000<=h<=v['expires_epoch_us'], 'bundle_stage_window_changed')
-        if kind==KIND_V2:require(z-a==150000000,'v2_part_window_changed')
+        if kind in COMMITTED_CONTRACTS:require(z-a==COMMITTED_CONTRACTS[kind][3],'v2_part_window_changed')
         previous=h
     return raw,v,manifest_raw,signature_raw,manifest,expected,kind
 
 
 def public_context_commitment(value, *, parent_id):
-    """Pure signed v2 schedule commitment; supplies no enrollment authority."""
+    """Pure signed versioned schedule commitment; supplies no enrollment authority."""
     identifier(parent_id)
     raw,v,*_,kind=_context_data(value,parent_id=parent_id)
-    require(kind==KIND_V2,'explicit_v2_capture_required')
-    return dict(schema=COMMITMENT_SCHEMA,parent_id=parent_id,qualification_kind=kind,context_schema=v['schema'],
+    require(kind in COMMITTED_CONTRACTS,'explicit_v2_capture_required')
+    contract=COMMITTED_CONTRACTS[kind]
+    return dict(schema=contract[4],parent_id=parent_id,qualification_kind=kind,context_schema=v['schema'],
         context_sha256=hashlib.sha256(raw).hexdigest(),
         **{k:v[k] for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us')},
-        phase_start_epoch_us=v['original_epoch_us'],phase_end_epoch_us=v['original_epoch_us']+1205000000)
+        phase_start_epoch_us=v['original_epoch_us'],phase_end_epoch_us=v['original_epoch_us']+contract[2])
 
 
 def validate_capture_commitment(owner, captured, policy):
-    """Require the pre-enrollment commitment on every protected v2 open."""
-    if policy.qualification_kind==KIND_V2:
+    """Require the pre-enrollment commitment on every protected versioned open."""
+    if policy.qualification_kind in COMMITTED_CONTRACTS:
         expected=public_context_commitment(owner['bundle_context'],parent_id=policy.parent_id)
-        require(captured['schema']=='meshticulum.private-resume-actual-capture.v2'
+        require(captured['schema']==COMMITTED_CONTRACTS[policy.qualification_kind][6]
             and captured['bundle_capture_commitment']==owner['bundle_capture_commitment']==expected
             and expected['context_sha256']==policy.bundle_context_sha256
             and (captured['phase_start_epoch_us'],captured['phase_end_epoch_us'])
@@ -460,7 +472,7 @@ def context_value(manifest_raw,signature_raw,trust,manifest_sha256,*,chunks,poli
         rows.append(dict(stage,index=index,response_sha256=hashlib.sha256(response).hexdigest()))
     issued,mono,expires,deadline=policy_clock
     require(qualification_kind in BUNDLE_KINDS,'unknown_bundle_contract')
-    return dict(schema=SCHEMA if qualification_kind==KIND else SCHEMA_V2,manifest_base64=base64.b64encode(manifest_raw).decode(),
+    return dict(schema=SCHEMA if qualification_kind==KIND else COMMITTED_CONTRACTS[qualification_kind][0],manifest_base64=base64.b64encode(manifest_raw).decode(),
         signature_base64=base64.b64encode(signature_raw).decode(),trust=trust,manifest_sha256=manifest_sha256,
         whole_bytes=expected['bytes'],whole_sha256=expected['sha256'],original_epoch_us=issued,
         original_monotonic_us=mono,expires_epoch_us=expires,deadline_monotonic_us=deadline,stages=rows)

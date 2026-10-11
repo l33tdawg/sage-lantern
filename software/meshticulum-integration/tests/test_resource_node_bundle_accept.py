@@ -14,16 +14,17 @@ from lantern_meshticulum.bench.pilot_controller import pair_packages
 from lantern_meshticulum.ip.node import _write
 from tests.test_pilot_bundle import data,packet,protected_bundle,postterminal_fixture
 from tests.test_bundle_v2_native import v2,records
+from tests.test_bundle_v3_native import v3,records as records_v3
 from tests.test_public32_pilot import tmp_path,protected_source,clock,facts,PEERS,BOOT
 
 
-@pytest.mark.parametrize('kind',['v1','v2'])
-def test_verify_actual_signed_piece_requests_and_publishes_bundle_part_via_protected_owner(data,v2,tmp_path,protected_source,monkeypatch,kind):
-    payload,chunks,value,p=data if kind=='v1' else v2
+@pytest.mark.parametrize('kind',['v1','v2','v3'])
+def test_verify_actual_signed_piece_requests_and_publishes_bundle_part_via_protected_owner(data,v2,v3,tmp_path,protected_source,monkeypatch,kind):
+    payload,chunks,value,p={'v1':data,'v2':v2,'v3':v3}[kind]
     root=tmp_path/'native'
     if kind=='v1':p,directory=protected_bundle(root,p,value,'unit-a')
     else:
-        p,directory,binding=records(root,p,value,'unit-a')
+        p,directory,binding=(records_v3 if kind=='v3' else records)(root,p,value,'unit-a')
         approve=_Public32Approval(directory,p,'unit-a',facts('unit-a'),clock)
         prior=lambda raw:json.loads(raw)==dict(parent_id=p.parent_id,policy_digest=p.digest,unit=asdict(p.unit('unit-a')),prior_snapshot_sha256=p.prior_snapshot_sha256)
         caps=NativeCaps.enroll(directory/'native.sqlite',p,unit='unit-a',clock=clock,facts=lambda:NativeFacts('unit-a',BOOT,p.unit('unit-a').peer),approve=approve,prior_check=prior,history_binding_sha256=binding)
@@ -34,7 +35,8 @@ def test_verify_actual_signed_piece_requests_and_publishes_bundle_part_via_prote
     for parent in (public,public.parent):parent.chmod(0o700)
     _write(public/'trust.json',canonical(value['trust']))
     _write(received/'manifest.json',c.manifest_raw);_write(received/'manifest.sig.json',c.signature_raw)
-    now=(stage['issued_epoch_us']+1000000,801000000);local_clock=lambda:now
+    now_epoch=stage['issued_epoch_us']+1000000
+    now=(now_epoch,clock()[1]+now_epoch-clock()[0]);local_clock=lambda:now
     request_pair=packet(value,p,0,now[0])
     reply_pair=pair_packages(campaign_id=stage['campaign_id'],resource_sha256=value['manifest_sha256'],application_expires_epoch_us=stage['expires_epoch_us'],
         sender='unit-c',receiver='unit-a',transport='lora',format='MR1.response',descriptor=dict(bytes=len(response),sha256=hashlib.sha256(response).hexdigest()),

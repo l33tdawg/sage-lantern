@@ -359,11 +359,14 @@ class Runtime:
 def phase_check(unit, expected, start, end, phase, *, commitment=None):
     maximum=899000000
     if commitment is not None:
-        need(type(commitment) is dict and commitment['schema']=='meshticulum.public100k-capture-commitment.v2'
-             and commitment['qualification_kind']=='c-bundle100k-v2'
+        from .pilot_bundle import COMMITTED_CONTRACTS
+        need(type(commitment) is dict and type(commitment.get('qualification_kind')) is str
+             and commitment['qualification_kind'] in COMMITTED_CONTRACTS,'v2_capture_phase_not_original')
+        contract=COMMITTED_CONTRACTS[commitment['qualification_kind']]
+        need(commitment['schema']==contract[4] and commitment['context_schema']==contract[0]
              and (start,end)==(commitment['phase_start_epoch_us'],commitment['phase_end_epoch_us'])
-             and end-start==1205000000,'v2_capture_phase_not_original')
-        maximum=1205000000
+             and end-start==contract[2],'v2_capture_phase_not_original')
+        maximum=contract[2]
     now = clock()
     need(type(start) is int and type(end) is int and start <= now[0] < end
          and phase['epoch_us'] <= now[0] and phase['monotonic_us'] <= now[1]
@@ -885,10 +888,10 @@ def seal_inputs(reader, unit, known, original, newer):
 
 def capture_request_commitment(p):
     """Pure pre-policy schedule validation; no DTO supplies admission."""
-    from .pilot_bundle import KIND_V2, public_context_commitment
-    if p.get('qualification_kind')==KIND_V2:
+    from .pilot_bundle import COMMITTED_CONTRACTS, public_context_commitment
+    if type(p.get('qualification_kind')) is str and p['qualification_kind'] in COMMITTED_CONTRACTS:
         commitment=public_context_commitment(p['bundle_context'],parent_id=p['parent_id'])
-        need(p['bundle_capture_commitment']==commitment
+        need(commitment['qualification_kind']==p['qualification_kind'] and p['bundle_capture_commitment']==commitment
              and (p['phase_start_epoch_us'],p['phase_end_epoch_us'])
                 ==(commitment['phase_start_epoch_us'],commitment['phase_end_epoch_us']),
              'v2_capture_commitment_not_reviewed')
@@ -936,7 +939,8 @@ def capture_history(unit, p, runtime):
             review_sha256=p['review_sha256'],reports=reports,actual_history_verified=True,
             original_unknown_actual_cost=None,refunds=0,global_debt_complete=False)
         if commitment is not None:
-            record['schema']='meshticulum.private-resume-actual-capture.v2'
+            from .pilot_bundle import COMMITTED_CONTRACTS
+            record['schema']=COMMITTED_CONTRACTS[commitment['qualification_kind']][6]
             record['bundle_capture_commitment']=commitment
         raw = canonical(record); write_new(target,'capture.json',raw); runtime.check()
         return dict(actual_history_verified=True,history_binding_sha256=binding_pin,
