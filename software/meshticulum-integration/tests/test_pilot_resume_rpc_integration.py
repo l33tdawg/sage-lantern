@@ -114,6 +114,10 @@ def test_actual_enroll_guard_audit_under_explicit_local_models(local_scope):
     assert first['snapshot']['claims'] == first['snapshot']['prepared'] == first['snapshot']['starts'] == 0
     guard = rpc.enrolled_action('guard','unit-a',p,runtime)
     audit = rpc.enrolled_action('audit','unit-a',p,runtime)
+    for action, actual in (('enroll',first),('guard',guard),('audit',audit)):
+        wrapped = rpc.response_metadata(action,'unit-a',actual)
+        assert wrapped['schema']==rpc.CONTRACT_SCHEMA and wrapped['action']==action
+        assert wrapped['global_debt_complete'] is False and all(wrapped[k]==v for k,v in actual.items())
     assert first['snapshot'] == guard['snapshot'] == audit['snapshot']
     assert not audit['snapshot']['uncertain'] and audit['terminal_observation']['local_control_only']
     assert len([c for c in calls if c[0]=='explicit_modeled_old_typed_collection']) == 2

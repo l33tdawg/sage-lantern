@@ -472,6 +472,21 @@ def qualify_terminal(observed, owner, preparations):
              and r['separate_debt_sum_permitted'] is False for r in relation['links']), 'own_terminal_endpoint_relation_unqualified')
 
 
+def response_metadata(action, unit, result):
+    """Compose invariant envelope without rejecting matching writer metadata.
+
+    Action results may repeat exact invariant fields; conflicting values or
+    types are refused rather than silently overridden. A response is metadata,
+    never native admission, capture provenance or transport qualification.
+    """
+    envelope = dict(schema=CONTRACT_SCHEMA,unit=unit,action=action,radio_opened=False,
+                    private_production=False,global_debt_complete=False)
+    need(type(result) is dict and all(key not in result or
+         (type(result[key]) is type(value) and result[key] == value)
+         for key, value in envelope.items()), 'native_resume_result_invariant_conflict')
+    return result | envelope
+
+
 def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
     """Actual root entry; import alone performs no native operation."""
     need(os.geteuid() == 0 and unit in ('unit-a','unit-b','unit-c')
@@ -488,5 +503,4 @@ def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
             result = dict(observation=observe_native(*raw,payload['pins'],tuple(payload['wanted'])))
             need(before == stable(native_facts(unit)), 'cache_observation_facts_changed')
         runtime.check()
-    return dict(schema=CONTRACT_SCHEMA,unit=unit,action=action,radio_opened=False,
-                private_production=False,global_debt_complete=False,**result)
+    return response_metadata(action,unit,result)
