@@ -15,11 +15,10 @@ from pathlib import Path
 import select
 import signal
 import socket
-import subprocess
 import threading
 import time
 
-from lantern_meshticulum.bench.node import PERSONAL, roles
+from lantern_meshticulum.bench.node import role_facts
 from meshticulum.bench.service_runner import ServiceRunner
 from meshticulum.bench.services import ServiceTransfer, _shape
 from meshticulum.contracts.identity import PeerID
@@ -36,15 +35,7 @@ def clock():
 
 
 def _facts(unit):
-    states = roles(unit)  # Independently checks Linux/root and actual unit roles.
-    names = PERSONAL if unit == 'unit-c' else PERSONAL[:3] + ('sage-lantern-mesh-runtime.service',)
-    lifetimes = {}
-    for name in names:
-        result = subprocess.run(['/usr/bin/systemctl', 'show', name, '-p', 'MainPID',
-            '-p', 'InvocationID', '-p', 'ExecMainStartTimestampMonotonic'],
-            capture_output=True, text=True, timeout=5)
-        require(result.returncode == 0, 'cannot_read_ip_service_lifetime')
-        lifetimes[name] = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    states, lifetimes = role_facts(unit)  # Fresh Linux/root, role and identity checks; no cache.
     return dict(unit=unit, host_boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
                 services=states, service_lifetimes=lifetimes)
 

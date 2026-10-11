@@ -36,17 +36,37 @@ def clock():
     return time.time_ns() // 1000, time.monotonic_ns() // 1000
 
 
-def roles(unit):
+def role_facts(unit):
+    """One fresh checked systemctl sample of exact unit states and lifetimes."""
     require(platform.system() == 'Linux' and os.geteuid() == 0, 'requires_linux_root')
     require(unit in ('unit-a', 'unit-b', 'unit-c'), 'unknown_bench_unit')
-    states = {}
     units = PERSONAL if unit == 'unit-c' else (PERSONAL[:3] + ('sage-lantern-mesh-runtime.service',))
+    properties = ('Id', 'ActiveState', 'MainPID', 'InvocationID', 'ExecMainStartTimestampMonotonic')
+    command = ['/usr/bin/systemctl', '--no-pager', '--all', 'show', *units]
+    for name in properties: command.extend(('-p', name))
+    result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+    require(result.returncode == 0 and len(result.stdout) <= 65536, 'cannot_read_service_role')
+    rows, row = {}, {}
+    for line in [*result.stdout.splitlines(), '']:
+        if not line:
+            if not row: continue
+            require(set(row) == set(properties) and row['Id'] in units and row['Id'] not in rows,
+                    'invalid_service_role_sample')
+            rows[row['Id']] = row; row = {}
+        else:
+            key, separator, value = line.partition('=')
+            require(separator and key in properties and key not in row, 'invalid_service_role_sample')
+            row[key] = value
+    require(set(rows) == set(units), 'incomplete_service_role_sample')
+    states, lifetimes = {}, {}
     for name in units:
-        result = subprocess.run(['/usr/bin/systemctl', 'show', name, '-p', 'ActiveState', '-p', 'MainPID'],
-                                capture_output=True, text=True, timeout=5)
-        require(result.returncode == 0, 'cannot_read_service_role')
-        row = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        row = rows[name]
+        require(row['ActiveState'] and all(row[key].isascii() and row[key].isdecimal()
+                for key in ('MainPID','ExecMainStartTimestampMonotonic'))
+                and (not row['InvocationID'] or len(row['InvocationID']) == 32
+                     and all(c in '0123456789abcdef' for c in row['InvocationID'])), 'invalid_service_role_sample')
         states[name] = row['ActiveState']
+        lifetimes[name] = {key:row[key] for key in properties[2:]}
         if unit != 'unit-c':
             require(row['ActiveState'] in ('inactive', 'failed') and row['MainPID'] == '0',
                     'private_or_legacy_radio_service_active')
@@ -57,7 +77,11 @@ def roles(unit):
         root = Path('/etc/sage-lamplighter-lab')
         require(json.loads((root / 'operator.json').read_text())['unit'] == unit
                 and (root / 'enabled').is_file(), 'wrong_public_carrier_unit')
-    return states
+    return states, lifetimes
+
+
+def roles(unit):
+    return role_facts(unit)[0]
 
 
 def _serial(unit):
