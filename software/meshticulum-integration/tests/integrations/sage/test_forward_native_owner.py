@@ -24,7 +24,7 @@ from tests.integrations.sage.test_mesh_inbox import SENDER,RECIPIENT,SENDER_KEY,
 from tests.test_meshticulum_bench_runtime import BOOT
 
 @contextmanager
-def setup(*,initiator=True,scopes=SCOPES,approval_override=None,original=None):
+def setup(*,initiator=True,scopes=SCOPES,approval_override=None,original=None,peer_observer=None):
     state,client,endpoint=backend(SENDER_KEY if initiator else KEY)
     state.owner_live=True;state.epoch='e'*32;state.boot=BOOT;state.now=(100000000,50000000)
     noise=(X25519PrivateKey.generate(),X25519PrivateKey.generate())
@@ -55,7 +55,7 @@ def setup(*,initiator=True,scopes=SCOPES,approval_override=None,original=None):
                          approval_binding=approval_override or approved) as native_context:
         create=lambda:ForwardNativeOwner(h,authority,native_context,context=ctx,intention=intention,
             local_initiator=initiator,key_check=lambda p,d:p==public(noise[0 if initiator else 1]) and d==ctx.digest,
-            peer_key_check=lambda peer,p,d:peer==remote and p==public(noise[1 if initiator else 0]) and d==ctx.digest,
+            peer_key_check=peer_observer or (lambda peer,p,d:peer==remote and p==public(noise[1 if initiator else 0]) and d==ctx.digest),
             boot_reader=lambda:state.boot,clock_reader=lambda:state.now)
         try:yield SimpleNamespace(state=state,client=client,hardware=h,supervisor=supervisor,authority=authority,
             native_context=native_context,context=ctx,intention=intention,noise=noise,packet=packet,create=create)
@@ -86,6 +86,33 @@ def test_generic_old_approval_cannot_be_used_as_original_forward_permission():
     with setup(approval_override='f'*64) as r:
         with pytest.raises(ForwardNativeOwnerError):r.create()
         assert not r.state.rows
+
+@pytest.mark.parametrize('field',['_key_check','_peer_key_check','_boot','_clock','owner_lease'])
+def test_observer_or_lease_replacement_cannot_bypass_original_native_binding(field):
+    with setup() as r:
+        owner=r.create()
+        original=getattr(owner,field)
+        replacement={'_key_check':lambda *args:True,'_peer_key_check':lambda *args:True,
+                     '_boot':lambda:r.state.boot,'_clock':lambda:r.state.now,
+                     'owner_lease':lambda:None}[field]
+        setattr(owner,field,replacement)
+        with pytest.raises(ForwardNativeOwnerError):owner.access_check()
+        assert owner._uncertain is True and not r.state.rows and not r.hardware._mutex.locked()
+        setattr(owner,field,original)
+        with pytest.raises(ForwardNativeOwnerError):owner.access_check()
+
+@pytest.mark.parametrize('field',['_key_check','_peer_key_check','_boot','_clock','owner_lease'])
+def test_observer_replacement_inside_callback_fences_before_returning_success(field):
+    with setup() as r:
+        owner=r.create();original=r.hardware.configured
+        def configured():
+            result=original()
+            setattr(owner,field,lambda *args:True)
+            return result
+        r.hardware.configured=configured
+        with pytest.raises(ForwardNativeOwnerError):owner.access_check()
+        assert owner._uncertain is True and not r.state.rows
+        with pytest.raises(ForwardNativeOwnerError):owner.access_check()
 
 @pytest.mark.parametrize('mutation',['closing','closed','uncertain','broker','resource','supervisor','probe',
     'identity','authority','native-context','config','owner','access-epoch','storage-epoch','boot','expired','deadline','peer-purpose','local-purpose'])
@@ -144,12 +171,13 @@ def test_scope_expiry_after_actual_authority_context_exit_refuses_reads():
     with pytest.raises(ForwardNativeOwnerError):owner.access_check()
 
 def test_native_callback_caught_reentry_fences_owner_before_publication():
-    with setup() as r:
-        owner=r.create()
-        def purpose(*args):
-            with pytest.raises(ForwardNativeOwnerError):owner.access_check()
-            return True
-        owner._peer_key_check=purpose
+    holder={}
+    def purpose(*args):
+        if 'owner' in holder:
+            with pytest.raises(ForwardNativeOwnerError):holder['owner'].access_check()
+        return True
+    with setup(peer_observer=purpose) as r:
+        owner=r.create();holder['owner']=owner
         with pytest.raises(ForwardNativeOwnerError):owner.access_check()
         assert owner._uncertain and not r.state.rows
 
@@ -173,13 +201,14 @@ def test_constructing_owner_close_cannot_certify_parent_cas_join():
 
 
 def test_final_native_callback_counter_substitution_refuses_factory_publication():
-    with setup() as r:
-        owner=r.create();observed=[];original=owner._peer_key_check
-        def purpose(*args):
-            if owner._operation is not None:
-                observed.append(True);owner._composition.session.counters=object()
-            return original(*args)
-        owner._peer_key_check=purpose
+    holder={};observed=[]
+    def purpose(*args):
+        owner=holder.get('owner')
+        if owner is not None and owner._operation is not None:
+            observed.append(True);owner._composition.session.counters=object()
+        return True
+    with setup(peer_observer=purpose) as r:
+        owner=r.create();holder['owner']=owner
         with pytest.raises(ForwardNativeOwnerError):owner.operation(r.noise[0],limits=Cost(2000,300000000),
             prior_debt=Cost(),sealed_record=r.packet)
         assert observed and owner._uncertain and len(r.state.rows)==3

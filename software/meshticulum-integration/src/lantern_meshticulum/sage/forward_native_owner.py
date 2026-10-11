@@ -70,6 +70,7 @@ class ForwardNativeOwner:
         self.local=context.initiator if local_initiator else context.responder
         self.remote=context.responder if local_initiator else context.initiator
         self._key_check,self._peer_key_check,self._boot,self._clock=key_check,peer_key_check,boot_reader,clock_reader
+        self._observer_refs=(key_check,peer_key_check,boot_reader,clock_reader)
         self._composition=None;self._composition_ref=None;self._constructing=False
         self._budget=self._session=self._operation=None;self._budget_refs=None;self._registry=None
         self._owner=(os.getpid(),threading.get_ident());self._busy=self._closed=self._uncertain=False
@@ -89,6 +90,7 @@ class ForwardNativeOwner:
             and intention.application_expires_epoch_us==context.expires_epoch_us)
         # Retain one stable callable object for receiver/budget lease identity.
         self.owner_lease=self._lease
+        self._lease_ref=self.owner_lease
         self.access_check()
         from lantern_meshticulum.sage.forward_children import attach
         self._registry=attach(self)
@@ -97,6 +99,10 @@ class ForwardNativeOwner:
     def __repr__(self):return '<ForwardNativeOwner>'
     def _available(self):
         require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident()))
+        observers_bound=all(a is b for a,b in zip(self._observer_refs,
+            (self._key_check,self._peer_key_check,self._boot,self._clock)))
+        if not observers_bound or self.owner_lease is not self._lease_ref:
+            self._uncertain=True;raise ForwardNativeOwnerError()
         require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
             self.context,self.intention,self.local_initiator,self.local,self.remote))))
         if self._registry is not None:self._registry.available(self)
