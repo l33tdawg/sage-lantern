@@ -87,6 +87,7 @@ def controller_observation(parent,context,index):
     context._check();end,mono_end=clock_bounds(now,context.value['stages'][index-1],context.value,
         dict(original_epoch_us=policy.issued_epoch_us,original_monotonic_us=policy.original_monotonic_us,
              deadline_monotonic_us=policy.deadline_monotonic_us))
+    observation_end=min(end,now[0]+55000000,policy.expires_epoch_us)
     require(original_boot==policy.controller_boot_id and parent.close() is True
         and parent._closed and not parent._uncertain,'controller_owner_close_unproved')
     reopened=None
@@ -97,7 +98,7 @@ def controller_observation(parent,context,index):
                 and parent.path is path and parent.policy is policy and parent._clock is clock and parent._boot is boot
                 and canonical(policy.to_dict())==policy_bytes and boot()==original_boot,'controller_handoff_binding_changed')
             snapshot=collect(path.parent,Scope('meshticulum.public-parent-snapshot-scope.v1','controller',os.geteuid(),
-                policy.parent_id,policy.digest,sha(raw),None,original_boot,end),clock=clock,boot_reader=boot)
+                policy.parent_id,policy.digest,sha(raw),None,original_boot,observation_end),clock=clock,boot_reader=boot)
             require(type(snapshot) is Snapshot,'genuine_typed_controller_observation_required')
             observed=snapshot.to_dict()
             require(observed['status']=='scoped_rows_observed' and observed['scoped_rows_complete'] is True
