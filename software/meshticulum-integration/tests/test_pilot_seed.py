@@ -20,7 +20,7 @@ def package(pack,unit,role):
 
 
 def test_source_is_verified_and_recipient_gets_no_management_chunks(pack,tmp_path):
-    for unit,role in [('unit-b','source'),('unit-c','recipient')]:
+    for unit,role in [('unit-a','source'),('unit-b','source'),('unit-c','recipient')]:
         root=tmp_path/unit;root.mkdir(mode=0o700)
         value=package(pack,unit,role)
         result=install(value,state=root,facts=facts(unit))
@@ -43,4 +43,25 @@ def test_invalid_seed_does_not_create_a_native_public_store(pack,tmp_path,fault)
     if fault=='boot':value['host_boot_id']='31f9c178-6090-40d9-9359-ecf1c7b950b1'
     if fault=='role':value['role']='source'
     with pytest.raises(ValueError):install(value,state=root,facts=facts('unit-c'))
+    assert not (root/'public').exists()
+
+
+@pytest.mark.parametrize('fault',['wrong_unit','wrong_boot','bad_trust','recipient_role','altered_chunk','missing_chunk'])
+def test_A_source_keeps_exact_facts_signature_and_complete_file_requirements(pack,tmp_path,fault):
+    root=tmp_path/'state';root.mkdir(mode=0o700);value=package(pack,'unit-a','source')
+    if fault=='wrong_unit':value['unit']='unit-b'
+    elif fault=='wrong_boot':value['host_boot_id']='31f9c178-6090-40d9-9359-ecf1c7b950b1'
+    elif fault=='bad_trust':value['trust']['keys'][0]['status']='revoked'
+    elif fault=='recipient_role':value['role']='recipient'
+    else:
+        name='chunks/'+pack[3]['chunks'][0]['sha256']+'.json'
+        if fault=='missing_chunk':value['files'].pop(name)
+        else:value['files'][name]=base64.b64encode(b'altered public bytes').decode()
+    with pytest.raises(ValueError):install(value,state=root,facts=facts('unit-a'))
+    assert not (root/'public').exists()
+
+
+def test_C_never_becomes_a_management_seeded_source(pack,tmp_path):
+    root=tmp_path/'state';root.mkdir(mode=0o700)
+    with pytest.raises(ValueError):install(package(pack,'unit-c','source'),state=root,facts=facts('unit-c'))
     assert not (root/'public').exists()

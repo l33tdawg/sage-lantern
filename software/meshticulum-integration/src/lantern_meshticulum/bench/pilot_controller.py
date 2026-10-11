@@ -317,15 +317,19 @@ class Controller:
             self.retire()
             raise
 
-    def direct_piece(self,request,response,transport,*,test_rx_cutoff=None):
-        """Direct C↔B exchange, or one explicitly interrupted IP reply."""
+    def direct_piece(self,request,response,transport,*,test_rx_cutoff=None,publisher='unit-b'):
+        """Direct C↔A/B exchange, or one explicitly interrupted IP reply."""
         path,offset,size=resource.decode_request(request)
         require(offset==0 and path.startswith('/packs/'+self.resource_sha256+'/chunks/')
                 and path.endswith('.json'),'pilot_requires_whole_selected_public_chunk')
+        require(type(publisher) is str and publisher in ('unit-a','unit-b')
+                and publisher in {unit.unit for unit in self.parent.policy.units}
+                and 'unit-c' in {unit.unit for unit in self.parent.policy.units},
+                'pilot_direct_publisher_not_in_parent')
         index=len(self.links)
         try:
-            first=self.link('unit-c','unit-b',transport,'MR1.request',request)
-            second=self.link('unit-b','unit-c',transport,'MR1.response',response,
+            first=self.link('unit-c',publisher,transport,'MR1.request',request)
+            second=self.link(publisher,'unit-c',transport,'MR1.response',response,
                 source=dict(kind='served_public_chunk',request_run_id=first),test_rx_cutoff=test_rx_cutoff)
             if test_rx_cutoff is not None:return dict(interrupted=True,request_run_id=first,response_run_id=second)
             self.current()

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Install a signed public pilot source at B or manifest-only recipient at C.
+"""Install a signed public pilot source at A/B or manifest-only recipient at C.
 
 No transport, production identity or private store is opened. Recipient chunks
 must arrive through the separately admitted service path.
@@ -25,7 +25,7 @@ def install(package, *, state, facts):
             and package['unit']==facts['unit'] and package['host_boot_id']==facts['host_boot_id'],
             'invalid_native_public_seed')
     role=package['role']
-    require((role=='source' and facts['unit']=='unit-b') or (role=='recipient' and facts['unit']=='unit-c'),
+    require((role=='source' and facts['unit'] in ('unit-a','unit-b')) or (role=='recipient' and facts['unit']=='unit-c'),
             'wrong_public_pilot_seed_role')
     require(type(package['files']) is dict and 2<=len(package['files'])<=10,'invalid_public_seed_files')
     files={name:base64.b64decode(value,validate=True) for name,value in package['files'].items()}
