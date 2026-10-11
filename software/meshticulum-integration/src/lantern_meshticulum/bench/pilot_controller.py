@@ -317,36 +317,36 @@ class Controller:
             self.retire()
             raise
 
-    def direct_piece(self,request,response,transport,*,test_rx_cutoff=None,publisher='unit-b'):
-        """Direct C↔A/B exchange, or one explicitly interrupted IP reply."""
+    def direct_piece(self,request,response,transport,*,test_rx_cutoff=None,publisher='unit-b',requester='unit-c'):
+        """Direct A/B→C piece, or explicit C→A public reverse piece."""
         path,offset,size=resource.decode_request(request)
         require(offset==0 and path.startswith('/packs/'+self.resource_sha256+'/chunks/')
                 and path.endswith('.json'),'pilot_requires_whole_selected_public_chunk')
-        require(type(publisher) is str and publisher in ('unit-a','unit-b')
-                and publisher in {unit.unit for unit in self.parent.policy.units}
-                and 'unit-c' in {unit.unit for unit in self.parent.policy.units},
+        require(type(publisher) is str and type(requester) is str
+                and (publisher,requester) in (('unit-a','unit-c'),('unit-b','unit-c'),('unit-c','unit-a'))
+                and {publisher,requester} <= {unit.unit for unit in self.parent.policy.units},
                 'pilot_direct_publisher_not_in_parent')
         index=len(self.links)
         try:
-            first=self.link('unit-c',publisher,transport,'MR1.request',request)
-            second=self.link(publisher,'unit-c',transport,'MR1.response',response,
+            first=self.link(requester,publisher,transport,'MR1.request',request)
+            second=self.link(publisher,requester,transport,'MR1.response',response,
                 source=dict(kind='served_public_chunk',request_run_id=first),test_rx_cutoff=test_rx_cutoff)
             if test_rx_cutoff is not None:return dict(interrupted=True,request_run_id=first,response_run_id=second)
             self.current()
-            verified=self.operator.verify('unit-c',self.campaign_id,first,second)
+            verified=self.operator.verify(requester,self.campaign_id,first,second)
             self.current()
             require(verified['schema']=='meshticulum.pilot-verified-piece.v1'
                     and verified['publisher_verified'] is True and verified['private_admission'] is False
-                    and verified['sage_imported'] is False and verified['unit']=='unit-c'
+                    and verified['sage_imported'] is False and verified['unit']==requester
                     and verified['campaign_id']==self.campaign_id and verified['manifest_sha256']==self.resource_sha256
                     and verified['response_run_id']==second and verified['chunk_sha256']==path.rsplit('/',1)[-1][:-5]
                     and verified['original_application_expires_epoch_us']==self.expires_epoch_us
                     and type(verified['original_application_deadline_us']) is int
                     and 0<verified['original_application_deadline_us']<=min(
-                        self.links[index]['outcomes']['unit-c']['original_application_deadline_us'],
-                        self.links[index+1]['outcomes']['unit-c']['original_application_deadline_us']),
+                        self.links[index]['outcomes'][requester]['original_application_deadline_us'],
+                        self.links[index+1]['outcomes'][requester]['original_application_deadline_us']),
                     'pilot_direct_piece_verification_missing_or_rebound')
-            start=self.links[index]['outcomes']['unit-c']['start_monotonic_us']
+            start=self.links[index]['outcomes'][requester]['start_monotonic_us']
             end=verified['verified_monotonic_us']
             require(type(start) is int and type(end) is int and end>start,'pilot_native_verification_timing_missing')
             verified=dict(verified,request_to_verification_us=end-start,transport=transport,

@@ -133,7 +133,7 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
         if unit=='unit-a':return radio.plus(radio).plus(tcp).plus(tcp)
         if unit=='unit-b':return tcp.plus(tcp)
         return radio.plus(radio)
-    if qualification_kind=='a-bulk-v1':
+    if qualification_kind in ('a-bulk-v1','c-bulk-v1'):
         return Cost() if unit=='unit-b' else radio.plus(radio)
     need(qualification_kind=='mixed-bulk-v1', 'unknown_public_qualification_kind')
     if unit=='unit-c': return radio.plus(radio).plus(radio).plus(radio)
@@ -975,6 +975,13 @@ def response_metadata(action, unit, result):
     return result | envelope
 
 
+def cache_recipient(unit, payload):
+    """C remains default; an A public recipient must be selected explicitly."""
+    recipient=payload.get('recipient','unit-c')
+    need(type(recipient) is str and recipient in ('unit-a','unit-c') and unit==recipient,
+         'cache_observer_requires_selected_public_recipient')
+
+
 def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
     """Actual root entry; import alone performs no native operation."""
     need(os.geteuid() == 0 and unit in ('unit-a','unit-b','unit-c')
@@ -985,7 +992,7 @@ def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
         elif action in ('enroll','guard','audit'): result = enrolled_action(action,unit,payload,runtime)
         elif action=='inspect-paid-parent': result=inspect_paid_parent(unit,payload,runtime)
         else:
-            need(unit == 'unit-c', 'cache_observer_requires_C_recipient')
+            cache_recipient(unit,payload)
             from .public_cache_observer import observe_native
             before = stable(native_facts(unit))
             raw = [base64.b64decode(payload[k],validate=True) for k in ('manifest','signature','trust')]

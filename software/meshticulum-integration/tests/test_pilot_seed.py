@@ -61,7 +61,10 @@ def test_A_source_keeps_exact_facts_signature_and_complete_file_requirements(pac
     assert not (root/'public').exists()
 
 
-def test_C_never_becomes_a_management_seeded_source(pack,tmp_path):
+def test_explicit_C_public_source_is_signed_and_complete_for_reverse_route(pack,tmp_path):
     root=tmp_path/'state';root.mkdir(mode=0o700)
-    with pytest.raises(ValueError):install(package(pack,'unit-c','source'),state=root,facts=facts('unit-c'))
-    assert not (root/'public').exists()
+    result=install(package(pack,'unit-c','source'),state=root,facts=facts('unit-c'))
+    source=root/'public'/pack[2]/'pack'
+    assert result['unit']=='unit-c' and result['role']=='source' and result['publisher_verified']
+    assert ll.VerifiedCache(source,pack[1],pack[2]).piece(pack[3]['chunks'][0]['sha256'])
+    assert not result['radio_opened'] and not result['socket_opened'] and not result['private_admission']
