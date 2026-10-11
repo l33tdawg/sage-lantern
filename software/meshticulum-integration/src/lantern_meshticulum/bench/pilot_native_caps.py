@@ -60,14 +60,22 @@ class Preparation:
 
 class NativeCaps:
     @classmethod
-    def enroll(cls,path,policy,*,unit,clock,facts,approve,prior_check):
-        return cls(path,policy,unit=unit,clock=clock,facts=facts,approve=approve,prior_check=prior_check,enroll=True)
+    def enroll(cls,path,policy,*,unit,clock,facts,approve,prior_check,history_binding_sha256=None):
+        """Optional guarded history is hashed into enrollment and approval.
+
+        None retains the original v1 body. A digest explicitly opts into v2;
+        opening a retained enrollment never supplies or changes that digest.
+        """
+        return cls(path,policy,unit=unit,clock=clock,facts=facts,approve=approve,prior_check=prior_check,
+                   enroll=True,history_binding_sha256=history_binding_sha256)
     @classmethod
     def open(cls,path,policy,*,unit,clock,facts,approve):
         return cls(path,policy,unit=unit,clock=clock,facts=facts,approve=approve,prior_check=None,enroll=False)
-    def __init__(self,path,policy,*,unit,clock,facts,approve,prior_check,enroll):
+    def __init__(self,path,policy,*,unit,clock,facts,approve,prior_check,enroll,history_binding_sha256=None):
         require(type(policy) is ParentPolicy and callable(clock) and callable(facts) and callable(approve)
                 and (not enroll or callable(prior_check)))
+        if history_binding_sha256 is not None:
+            require(enroll);digest(history_binding_sha256)
         self.path=Path(path).absolute();self.policy=policy;self.unit=policy.unit(unit)
         # Local cap enforcement implies an aggregate bound only with this
         # conservative partition. Controller receipts are not global authority.
@@ -101,6 +109,9 @@ class NativeCaps:
                 self._enrollment=dict(schema='meshticulum.native-parent-enrollment.v1',policy=policy.to_dict(),
                     unit=unit,host_boot_id=self.unit.host_boot_id,original_epoch_us=now[0],
                     original_monotonic_us=now[1],deadline_monotonic_us=deadline)
+                if history_binding_sha256 is not None:
+                    self._enrollment.update(schema='meshticulum.native-parent-enrollment.v2',
+                                            history_binding_sha256=history_binding_sha256)
                 prior=canonical(dict(parent_id=policy.parent_id,policy_digest=policy.digest,unit=asdict(self.unit),
                                      prior_snapshot_sha256=policy.prior_snapshot_sha256))
                 require(self._prior(prior) is True);self._available()
@@ -125,6 +136,7 @@ class NativeCaps:
                 self._enrollment=json.loads(row[0]);require(canonical(self._enrollment)==row[0]
                     and canonical(self._enrollment['policy'])==self._policy_bytes
                     and self._enrollment['unit']==unit and self._enrollment['host_boot_id']==self.unit.host_boot_id)
+                self._history_binding()
                 self._approval_bytes=(hashed(self._enrollment)+'\n').encode()
             self._enrollment_bytes=canonical(self._enrollment)
             self._validate();self._uncertain=self.pending.exists() or self.pending.is_symlink()
@@ -135,6 +147,19 @@ class NativeCaps:
             raise NativeCapsError() from None
         finally:self._busy=False
     def __repr__(self):return '<NativePublicCaps>'
+    def _history_binding(self):
+        fields={'schema','policy','unit','host_boot_id','original_epoch_us','original_monotonic_us','deadline_monotonic_us'}
+        value=self._enrollment
+        require(type(value) is dict)
+        if value.get('schema')=='meshticulum.native-parent-enrollment.v1':
+            require(set(value)==fields);return None
+        require(value.get('schema')=='meshticulum.native-parent-enrollment.v2'
+                and set(value)==fields|{'history_binding_sha256'})
+        digest(value['history_binding_sha256']);return value['history_binding_sha256']
+    @property
+    def history_binding_sha256(self):
+        """Classification comes from the protected, approval-bound enrollment."""
+        self._validate();return self._history_binding()
     def _names(self):return {'owner':Path(str(self.path)+'.owner'),'db':self.path,'approval':Path(str(self.path)+'.approval')}
     def _available(self):
         require(not self._closed and self._pid==os.getpid() and self._thread==threading.get_ident())

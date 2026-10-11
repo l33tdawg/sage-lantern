@@ -491,9 +491,14 @@ def _native(db, scope, reader):
     rows = _rows(db, 'enrollment', ('id', 'body'))
     need(len(rows) == 1 and type(rows[0][0]) is int and rows[0][0] == 1, 'invalid_enrollment')
     enrollment = _body(rows[0][1])
-    need(type(enrollment) is dict and set(enrollment) == {'schema', 'policy', 'unit', 'host_boot_id',
-        'original_epoch_us', 'original_monotonic_us', 'deadline_monotonic_us'}
-         and enrollment['schema'] == 'meshticulum.native-parent-enrollment.v1', 'invalid_enrollment')
+    fields = {'schema', 'policy', 'unit', 'host_boot_id',
+              'original_epoch_us', 'original_monotonic_us', 'deadline_monotonic_us'}
+    need(type(enrollment) is dict, 'invalid_enrollment')
+    guarded = enrollment.get('schema') == 'meshticulum.native-parent-enrollment.v2'
+    need(set(enrollment) == (fields | {'history_binding_sha256'} if guarded else fields)
+         and enrollment['schema'] in ('meshticulum.native-parent-enrollment.v1',
+                                      'meshticulum.native-parent-enrollment.v2'), 'invalid_enrollment')
+    if guarded: hex_value(enrollment['history_binding_sha256'], 64)
     policy = _policy(canonical(enrollment['policy']), scope)
     unit = policy.unit(scope.unit)
     need(enrollment['unit'] == unit.unit and enrollment['host_boot_id'] == unit.host_boot_id, 'invalid_enrollment')
@@ -571,6 +576,7 @@ def _native(db, scope, reader):
         claims=claim_rows, claim_count=len(claims), resource_count=len(resources), prepared_count=len(prepared),
         start_count=len(starts), full_prepaid_caps=asdict(additions), prior_plus_prepaid_caps=asdict(paid), limit=asdict(unit.limits),
         underlying_native_plan_correspondence_verified=False)
+    if guarded: detail['enrollment']['history_binding_sha256'] = enrollment['history_binding_sha256']
     return policy, detail, [dict(native_claim_id=k, **v, prepared_receipt=prepared.get(k),
                                 start_record=starts.get(k)) for k, v in claims.items()]
 

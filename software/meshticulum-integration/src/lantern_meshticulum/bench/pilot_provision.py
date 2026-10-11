@@ -36,6 +36,64 @@ def _directory(path):
     return path
 
 
+def _history_guarded(state, caps):
+    """Legacy absence is allowed; any guarded declaration must be complete."""
+    parent = state / 'parents' / caps.policy.parent_id
+    enrolled_binding = caps.history_binding_sha256
+    fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    def stamp(info):
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_nlink,
+                info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'pilot_duplicate_history_key'); result[key] = value
+        return result
+    try:
+        parent_identity = os.fstat(fd); private(parent_identity, True)
+        values, raw_binding = {}, None
+        for name in ('owner.json', 'prior.json', 'history-binding.json'):
+            try:
+                source = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=fd)
+            except FileNotFoundError:
+                values[name] = None; continue
+            try:
+                original = os.fstat(source); private(original)
+                maximum = 16384 if name == 'history-binding.json' else 200000
+                require(original.st_size <= maximum, 'pilot_history_metadata_too_large')
+                raw = os.pread(source, maximum + 1, 0)
+                require(len(raw) == original.st_size and stamp(original) == stamp(os.fstat(source))
+                        == stamp(os.stat(name, dir_fd=fd, follow_symlinks=False)), 'pilot_history_metadata_changed')
+                value = json.loads(raw, object_pairs_hook=unique)
+                require(type(value) is dict, 'invalid_pilot_history_metadata')
+                values[name] = value
+                if name == 'history-binding.json': raw_binding = raw
+                if name == 'prior.json':
+                    require(hashlib.sha256(raw).hexdigest() == caps.unit.prior_snapshot_sha256,
+                            'pilot_history_prior_mismatch')
+            finally:
+                os.close(source)
+        private(parent.lstat(), True)
+        require(stamp(os.fstat(fd))[:4] == stamp(parent_identity)[:4] == stamp(parent.lstat())[:4],
+                'pilot_history_parent_rebound')
+        key = 'history_binding_sha256'
+        declared = [item is not None and key in item for item in (values['owner.json'], values['prior.json'])]
+        if enrolled_binding is None and raw_binding is None and not any(declared): return False
+        require(all(declared) and raw_binding is not None, 'pilot_incomplete_history_binding')
+        expected = values['owner.json'][key]
+        require(type(expected) is str and re.fullmatch('[0-9a-f]{64}', expected)
+                and values['prior.json'][key] == expected
+                and enrolled_binding == expected
+                and hashlib.sha256(raw_binding).hexdigest() == expected, 'pilot_history_binding_mismatch')
+        binding = values['history-binding.json']
+        require(binding.get('schema') == 'meshticulum.private-resume-history-binding.v2'
+                and binding.get('parent_id') == caps.policy.parent_id
+                and binding.get('unit') == caps.unit.unit, 'invalid_pilot_history_binding')
+        return True
+    finally:
+        os.close(fd)
+
+
 def provision(package, *, state, facts, clock):
     from lantern_meshticulum.bench.pilot_native_caps import open_for_provision
     caps = open_for_provision(state, facts, clock, package)
@@ -174,10 +232,31 @@ def _provision(package, *, state, facts, clock, leases, caps):
         require(caps.current() is True, 'pilot_parent_not_current')
         _write(staging / name, raw)
     require(caps.current() is True, 'pilot_parent_not_current')
-    os.rename(staging, target)
-    fd = os.open(runs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    guarded = _history_guarded(state, caps)
+    held = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
-        os.fsync(fd)
+        def unchanged(path):
+            original, named = os.fstat(held), path.lstat()
+            private(original, True); private(named, True)
+            require((original.st_dev, original.st_ino, original.st_mode, original.st_uid)
+                    == (named.st_dev, named.st_ino, named.st_mode, named.st_uid),
+                    'pilot_prepared_directory_rebound')
+        unchanged(staging)
+        os.rename(staging, target)
+        fd = os.open(runs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        unchanged(target)
+        if guarded:
+            from .resume_parent_guard import record_prepared
+            from .pilot_parent_caps import canonical
+            record = record_prepared(state, caps, preparation, held_staging_fd=held)
+            unchanged(target)
+            require(_history_guarded(state, caps) is True, 'pilot_history_binding_changed')
+            # RPC-only evidence: changing provision.json would form a hash cycle.
+            receipt['prepared_identity_sha256'] = hashlib.sha256(canonical(record)).hexdigest()
     finally:
-        os.close(fd)
+        os.close(held)
     return receipt
