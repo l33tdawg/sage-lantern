@@ -833,13 +833,20 @@ def enrolled_action(action, unit, p, runtime):
              'resume_endpoint_caps_not_exact')
         owner_raw, prior_raw, policy_raw = canonical(owner), canonical(prior), canonical(policy.to_dict())
         last_clock = [clock()]
+        checkpoint_actions=('checkpoint-audit','store-handoff','checkpoint')
+        remote_check=None
+        if action in checkpoint_actions:
+            from . import bundle_checkpoint_adapter as adapter
+            remote_check=adapter.remote_guard(policy,owner,unit,p,clock)
         def bounds():
             now = clock(); phase = saved['native_phase']
             need(owner['phase_start_epoch_us'] <= now[0] < owner['phase_end_epoch_us']
                  and phase['epoch_us'] <= now[0] and phase['monotonic_us'] <= now[1]
                  < phase['deadline_monotonic_us'] and all(a >= b for a,b in zip(now,last_clock[0]))
                  and boot() == local.host_boot_id, 'native_phase_expired_regressed_or_rebooted')
-            last_clock[0] = now; reader.check(); return True
+            last_clock[0] = now
+            if remote_check is not None:remote_check()
+            reader.check(); return True
         def current_facts():
             bounds(); value = stable(native_facts(unit)); bounds()
             need(value == owner['facts'][unit], 'native_service_lifetime_changed')
@@ -885,21 +892,47 @@ def enrolled_action(action, unit, p, runtime):
         strict=parse(reader.read(target/'history-identity-seal.json',2000000))
         legacy=parse(reader.read(target/'legacy-grant-seal.json',2000000))
         reserve_descriptor_capacity(strict['files'],strict['directories'],legacy['rows'])
-        with ResumeParentGuard(STATE,policy,unit,owner_sha256=sha(owner_raw),prior_sha256=sha(prior_raw),
-                binding_sha256=binding,preparation_sha256=p['preparation_sha256'],
-                management_phase='postterminal' if action == 'audit' else 'prelaunch',clock=clock,
-                facts=current_facts,approve=approve,runtime_check=runtime.check) as guard:
-            # Constructor ends with genuine guard.check; export its still-held
-            # canonical ledger rather than repeat native systemctl samples.
-            need(guard.caps.history_binding_sha256 == binding, 'native_enrollment_history_tag_changed')
-            snapshot = guard.caps.snapshot()
-        if action == 'audit':
+        serial_owner=primitives=serial_close=None;checkpoint_result=None
+        def bounded_runtime_check():
+            bounds();value=runtime.check();bounds();return value
+        if action in checkpoint_actions:
+            from . import bundle_checkpoint_adapter as adapter
+            adapter.context_for(unit,policy,owner,p['checkpoint_index'])
+        try:
+            if action=='checkpoint':
+                # Retain a genuine low serial FD BEFORE large protected history
+                # fences. Owner/records/policy were independently checked above.
+                records();serial_owner,primitives=adapter.open_serial(unit,policy,owner,p['checkpoint_index'])
+                from .bundle_radio_checkpoint import primitives_current,checkpoint
+                serial_close=primitives_current(primitives)[4].__get__(serial_owner)
+                records()
+            with ResumeParentGuard(STATE,policy,unit,owner_sha256=sha(owner_raw),prior_sha256=sha(prior_raw),
+                    binding_sha256=binding,preparation_sha256=p['preparation_sha256'],
+                    management_phase='postterminal' if action=='audit' or action in checkpoint_actions else 'prelaunch',clock=clock,
+                    facts=current_facts,approve=approve,runtime_check=bounded_runtime_check) as guard:
+                need(guard.caps.history_binding_sha256 == binding, 'native_enrollment_history_tag_changed')
+                snapshot = guard.caps.snapshot()
+                if action=='checkpoint':
+                    checkpoint_result=checkpoint(guard,serial_owner=serial_owner,primitives=primitives,
+                        next_index=p['checkpoint_index'],handoff_sha256=p['handoff_sha256'])
+        finally:
+            if serial_close is not None:serial_close()
+        if action == 'checkpoint':
+            records();return dict(parent_id=policy.parent_id,policy_digest=policy.digest,snapshot=snapshot,
+                checkpoint=checkpoint_result,arm_commands=0,tx_commands=0,native_transport_permission=False)
+        if action == 'audit' or action in checkpoint_actions:
             full_history(reader,unit,saved['history'],history_gate,own_parent=policy.parent_id,
                          own_runs=tuple(p['preparation_sha256']))
             terminal = terminal_observation(reader,unit,policy,owner,p['preparation_sha256'],p.get('expected_cut_run'))
         else: terminal = None
+        extra={}
+        if action in ('checkpoint-audit','store-handoff'):
+            children=adapter.terminal_children(reader,unit,policy,terminal)
+            if action=='store-handoff':
+                records();extra=adapter.store(reader,unit,policy,owner,p,terminal,children);records()
+            else:extra=dict(terminal_children=children)
         records(); return dict(parent_id=policy.parent_id,policy_digest=policy.digest,snapshot=snapshot,
-                               terminal_observation=terminal)
+                               terminal_observation=terminal,**extra)
 
 
 def terminal_observation(reader, unit, policy, owner, preparations, expected_cut_run=None):
@@ -1131,7 +1164,7 @@ def response_metadata(action, unit, result):
     types are refused rather than silently overridden. A response is metadata,
     never native admission, capture provenance or transport qualification.
     """
-    envelope = dict(schema=CONTRACT_SCHEMA,unit=unit,action=action,radio_opened=False,
+    envelope = dict(schema=CONTRACT_SCHEMA,unit=unit,action=action,radio_opened=action=='checkpoint',
                     private_production=False,global_debt_complete=False)
     need(type(result) is dict and all(key not in result or
          (type(result[key]) is type(value) and result[key] == value)
@@ -1149,11 +1182,11 @@ def cache_recipient(unit, payload):
 def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
     """Actual root entry; import alone performs no native operation."""
     need(os.geteuid() == 0 and unit in ('unit-a','unit-b','unit-c')
-         and action in ('capture','enroll','guard','audit','observe-cache','inspect-paid-parent')
+         and action in ('capture','enroll','guard','audit','observe-cache','inspect-paid-parent','checkpoint-audit','store-handoff','checkpoint')
          and type(payload) is dict and len(canonical(payload)) <= 2000000, 'invalid_native_resume_RPC')
     with Runtime(runtime_root,manifest_sha256) as runtime:
         if action == 'capture': result = capture_history(unit,payload,runtime)
-        elif action in ('enroll','guard','audit'): result = enrolled_action(action,unit,payload,runtime)
+        elif action in ('enroll','guard','audit','checkpoint-audit','store-handoff','checkpoint'): result = enrolled_action(action,unit,payload,runtime)
         elif action=='inspect-paid-parent': result=inspect_paid_parent(unit,payload,runtime)
         else:
             cache_recipient(unit,payload)
