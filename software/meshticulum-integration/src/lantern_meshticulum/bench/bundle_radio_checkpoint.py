@@ -18,7 +18,7 @@ from pathlib import Path
 
 from meshticulum.bench.wire import require
 from .pilot_parent_caps import canonical
-from .pilot_bundle import BundleContext,KIND
+from .pilot_bundle import BundleContext,KIND,BUNDLE_KINDS
 from .resume_parent_guard import ResumeParentGuard,HISTORY
 from .pilot_resume_rpc import Reader,boot,parse,write_new
 from . import pilot_parent_snapshot as parent_snapshot,pilot_debt_snapshot as debt,pilot_job
@@ -195,7 +195,7 @@ def checkpoint(guard,*,serial_owner,primitives,next_index,handoff_sha256):
     owner=serial_owner;close=primitive_refs[4].__get__(owner)
     pid,thread=os.getpid(),threading.get_native_id();last=None;resetting=False
     try:
-        require(type(guard) is ResumeParentGuard and guard.unit=='unit-a' and guard.policy.qualification_kind==KIND
+        require(type(guard) is ResumeParentGuard and guard.unit=='unit-a' and guard.policy.qualification_kind in BUNDLE_KINDS
             and os.geteuid()==0 and type(next_index) is int and 1<=next_index<5,'protected_A_bundle_guard_required')
         refs=(guard,guard.caps,guard.policy,guard.caps._clock,owner,owner.channel)
         source_owner=guard._records()['owner'];protected=json.loads(source_owner)

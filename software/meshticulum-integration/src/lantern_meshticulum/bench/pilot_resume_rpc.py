@@ -27,7 +27,7 @@ from .legacy_grant_fence import capture as legacy_capture, LegacyGrantFence
 from .legacy_grant_fence import MAX_RUNS, OWNERS
 from .pilot_parent_snapshot import Scope, collect, _child_ref
 from .pilot_debt_snapshot import Scope as DebtScope
-from .pilot_parent_caps import ParentPolicy, Cost, canonical
+from .pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentPolicy, Cost, canonical
 from .pilot_native_caps import NativeCaps, NativeFacts
 from .pilot_manage import facts as native_facts
 from .resume_parent_guard import HISTORY, ResumeParentGuard, install_seals
@@ -181,6 +181,7 @@ def reserve_descriptor_capacity(files, directories, legacy_rows):
 def endpoint_budget(unit, qualification_kind, radio, tcp):
     """Exact owner-bound public scope; no caller-selected arbitrary maxima."""
     need(unit in ('unit-a','unit-b','unit-c'), 'unknown_endpoint_budget_unit')
+    need(qualification_kind is None or type(qualification_kind) is str, 'unknown_public_qualification_kind')
     if qualification_kind is None:
         return Cost() if unit=='unit-a' else radio.plus(radio).plus(
             Cost(ip_frames=tcp.ip_frames*8,tx_stream_bytes=tcp.tx_stream_bytes*8,
@@ -189,7 +190,7 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
         if unit=='unit-a':return radio.plus(radio).plus(tcp).plus(tcp)
         if unit=='unit-b':return tcp.plus(tcp)
         return radio.plus(radio)
-    if qualification_kind == 'c-bundle100k-v1':
+    if qualification_kind in BUNDLE_KINDS:
         return Cost() if unit == 'unit-b' else Cost(radio.radio_attempts*10,radio.estimated_airtime_us*10)
     if qualification_kind in ('a-bulk-v1','c-bulk-v1','c-bulk-8k-v1','c-bulk32-v1'):
         return Cost() if unit=='unit-b' else radio.plus(radio)
@@ -343,11 +344,18 @@ class Runtime:
     def __exit__(self, *_): self.close()
 
 
-def phase_check(unit, expected, start, end, phase):
+def phase_check(unit, expected, start, end, phase, *, commitment=None):
+    maximum=899000000
+    if commitment is not None:
+        need(type(commitment) is dict and commitment['schema']=='meshticulum.public100k-capture-commitment.v2'
+             and commitment['qualification_kind']=='c-bundle100k-v2'
+             and (start,end)==(commitment['phase_start_epoch_us'],commitment['phase_end_epoch_us'])
+             and end-start==1205000000,'v2_capture_phase_not_original')
+        maximum=1205000000
     now = clock()
     need(type(start) is int and type(end) is int and start <= now[0] < end
          and phase['epoch_us'] <= now[0] and phase['monotonic_us'] <= now[1]
-         < phase['deadline_monotonic_us'] and end-start <= 899000000,
+         < phase['deadline_monotonic_us'] and end-start <= maximum,
          'original_native_phase_expired')
     observed = stable(native_facts(unit))
     need(observed == expected and observed['host_boot_id'] == boot(), 'native_facts_changed')
@@ -855,14 +863,35 @@ def seal_inputs(reader, unit, known, original, newer):
     return files,dirs
 
 
+def capture_request_commitment(p):
+    """Pure pre-policy schedule validation; no DTO supplies admission."""
+    from .pilot_bundle import KIND_V2, public_context_commitment
+    if p.get('qualification_kind')==KIND_V2:
+        commitment=public_context_commitment(p['bundle_context'],parent_id=p['parent_id'])
+        need(p['bundle_capture_commitment']==commitment
+             and (p['phase_start_epoch_us'],p['phase_end_epoch_us'])
+                ==(commitment['phase_start_epoch_us'],commitment['phase_end_epoch_us']),
+             'v2_capture_commitment_not_reviewed')
+        return commitment
+    need(p.get('qualification_kind') in (None,'c-bulk32-v1','c-bundle100k-v1')
+         and 'bundle_capture_commitment' not in p and 'bundle_context' not in p,
+         'unknown_or_mismatched_capture_contract')
+    return None
+
+
 def capture_history(unit, p, runtime):
     parent = p['parent_id']; need(SID.fullmatch(parent) and parent not in HISTORY
                                  and parent not in CAPTURE_ONLY_PARENTS, 'invalid_own_parent')
     need(HEX.fullmatch(p['review_sha256']) and p['facts']['unit'] == unit, 'invalid_capture_review')
+    commitment=capture_request_commitment(p)
+    original_capture=canonical({k:p.get(k) for k in ('qualification_kind','bundle_context','bundle_capture_commitment',
+        'parent_id','phase_start_epoch_us','phase_end_epoch_us')})
     first = clock(); phase = dict(epoch_us=first[0],monotonic_us=first[1],
         deadline_monotonic_us=first[1]+p['phase_end_epoch_us']-first[0])
     def guard():
-        runtime.check(); phase_check(unit,p['facts'],p['phase_start_epoch_us'],p['phase_end_epoch_us'],phase)
+        need(canonical({k:p.get(k) for k in ('qualification_kind','bundle_context','bundle_capture_commitment',
+            'parent_id','phase_start_epoch_us','phase_end_epoch_us')})==original_capture,'capture_original_context_changed')
+        runtime.check(); phase_check(unit,p['facts'],p['phase_start_epoch_us'],p['phase_end_epoch_us'],phase,commitment=commitment)
         return dict(phase_end_epoch_us=p['phase_end_epoch_us'])
     with Reader() as reader:
         known, original, newer, reports = full_history(reader,unit,p['history'],guard)
@@ -886,6 +915,9 @@ def capture_history(unit, p, runtime):
             phase_start_epoch_us=p['phase_start_epoch_us'],phase_end_epoch_us=p['phase_end_epoch_us'],
             review_sha256=p['review_sha256'],reports=reports,actual_history_verified=True,
             original_unknown_actual_cost=None,refunds=0,global_debt_complete=False)
+        if commitment is not None:
+            record['schema']='meshticulum.private-resume-actual-capture.v2'
+            record['bundle_capture_commitment']=commitment
         raw = canonical(record); write_new(target,'capture.json',raw); runtime.check()
         return dict(actual_history_verified=True,history_binding_sha256=binding_pin,
             capture_record_sha256=sha(raw),native_phase=phase,original_unknown_actual_cost=None,refunds=0,
@@ -916,6 +948,8 @@ def enrolled_action(action, unit, p, runtime):
              and prior['legacy_inventory'] == saved['history']['legacy_inventory']
              and prior['complete_global_debt'] is False and prior['actual_cost'] is None and prior['refunds'] == 0,
              'own_prior_refund_or_debt_changed')
+        from .pilot_bundle import validate_capture_commitment
+        validate_capture_commitment(owner,saved,policy)
         authorization = owner['authorization']
         need(authorization['human_statement'] == 'run it bro' and authorization['count_authorized'] == 1
              and authorization['public_only'] is True and authorization['private_production'] is False,
@@ -925,10 +959,10 @@ def enrolled_action(action, unit, p, runtime):
         need(policy.issued_epoch_us == owner['phase_start_epoch_us']
              and policy.expires_epoch_us == owner['phase_end_epoch_us']-5000000,
              'original_parent_window_changed')
-        need((owner.get('qualification_kind') in ('c-bulk32-v1','c-bundle100k-v1')) == (policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1'))
+        need((owner.get('qualification_kind') in PUBLIC32_KINDS) == (policy.qualification_kind in PUBLIC32_KINDS)
              and (policy.qualification_kind is None or owner.get('qualification_kind') == policy.qualification_kind),
              'public32_policy_kind_not_owner_bound')
-        if policy.qualification_kind == 'c-bundle100k-v1':
+        if policy.qualification_kind in BUNDLE_KINDS:
             from .pilot_bundle import BundleContext
             BundleContext(owner['bundle_context'],policy).current(clock())
         rf, rp, ip = owner['rf_record'], profile_for('sf7-500'), IpLimits()

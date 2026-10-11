@@ -156,9 +156,18 @@ class SSHOperator:
                  parallel_preparation=False):
         require(type(parallel_preparation) is bool,'invalid_parallel_preparation_mode')
         self.parallel_preparation=parallel_preparation;self._preparation_lock=Lock()
-        require(type(config) is dict and set(config)=={'schema','runtime_sha256','manifest_sha256',
-            'provision_sha256','runtime_bootstrap_sha256','handoff_end_epoch_us','port_base','units'}
-            and config['schema']=='meshticulum.finite-ssh-pilot.v1','invalid_ssh_pilot_config')
+        require(type(config) is dict,'invalid_ssh_pilot_config')
+        from .pilot_bundle import SSH_SCHEMA_V2, public_context_commitment
+        v2=config.get('schema')==SSH_SCHEMA_V2
+        fields={'schema','runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256',
+                'handoff_end_epoch_us','port_base','units'}
+        require(set(config)==(fields|{'bundle_parent_id','bundle_context','bundle_capture_commitment'} if v2 else fields)
+            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',SSH_SCHEMA_V2),'invalid_ssh_pilot_config')
+        commitment=None
+        if v2:
+            commitment=public_context_commitment(config['bundle_context'],parent_id=config['bundle_parent_id'])
+            require(config['bundle_capture_commitment']==commitment
+                    and config['handoff_end_epoch_us']==commitment['phase_end_epoch_us'],'ssh_v2_original_context_changed')
         for key in ('runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256'):
             require(type(config[key]) is str and re.fullmatch('[0-9a-f]{64}',config[key]),'invalid_ssh_pilot_pin')
         require(hashlib.sha256(provision_source).hexdigest()==config['provision_sha256'], 'pilot_provision_source_changed')
@@ -168,9 +177,16 @@ class SSHOperator:
         self.config=json.loads(json.dumps(config));self.source=provision_source.decode('utf-8')
         self.runtime_source=runtime_source.decode('utf-8') if runtime_source is not None else None
         self.clock=clock;self.epoch=epoch or (lambda:time.time_ns()//1000)
-        remaining=(config['handoff_end_epoch_us']-self.epoch())/1e6
-        require(20<remaining<=900,'current_finite_ssh_window_required')
-        self.deadline=self.clock()+remaining;self.passwords=dict(passwords or {})
+        now_epoch,now_mono=self.epoch(),self.clock()
+        remaining=(config['handoff_end_epoch_us']-now_epoch)/1e6
+        require(20<remaining<=(1205 if v2 else 900),'current_finite_ssh_window_required')
+        self.deadline=now_mono+remaining
+        if v2:
+            original_end=(commitment['original_monotonic_us']+1205000000)/1000000
+            require(commitment['phase_start_epoch_us']<=now_epoch and commitment['original_monotonic_us']/1000000<=now_mono<original_end,
+                    'ssh_v2_original_clock_expired_or_regressed')
+            self.deadline=min(self.deadline,original_end)
+        self.passwords=dict(passwords or {})
         self.next_port=config['port_base'];require(type(self.next_port) is int and 1024<=self.next_port<=65400,'invalid_pilot_port_range')
         self.jobs={};self.events=[];self.connections=None
         for unit,row in self.config['units'].items():

@@ -18,7 +18,7 @@ from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
 from lantern_meshticulum.bench.profiles import RADIO_ADMISSION, profile_for
-from lantern_meshticulum.bench.pilot_parent_caps import ParentCaps, canonical
+from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
 UNITS = ('unit-a', 'unit-b', 'unit-c')
@@ -101,13 +101,13 @@ class Controller:
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
-        require(type(public32) is bool and public32 == (parent.policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')),
+        require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
                 'public32_parent_kind_mismatch')
         require(type(lora_sender_first) is bool and (not lora_sender_first or public32),
                 'invalid_lora_startup_order')
         self.lora_sender_first = self._lora_sender_first = lora_sender_first
         self.bundle_context = None
-        if parent.policy.qualification_kind == 'c-bundle100k-v1':
+        if parent.policy.qualification_kind in BUNDLE_KINDS:
             from .pilot_bundle import BundleContext
             self.bundle_context = BundleContext(bundle_context,parent.policy)
             self.bundle_context.stage(campaign_id,expires_epoch_us)

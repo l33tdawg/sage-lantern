@@ -2,7 +2,7 @@
 """Explicit protected checkpoint adapter; no admission on import or defaults."""
 from pathlib import Path
 from .pilot_parent_caps import canonical
-from .pilot_bundle import BundleContext,KIND
+from .pilot_bundle import BundleContext,KIND,BUNDLE_KINDS
 from . import bundle_radio_checkpoint as checkpoint_api,pilot_job
 from .pilot_resume_rpc import need,parse,sha,STATE,boot,clock,write_new
 
@@ -33,7 +33,7 @@ def remote_guard(policy,owner,unit,payload,clock):
 
 
 def context_for(unit,policy,owner,next_index):
-    need(unit in ('unit-a','unit-c') and policy.qualification_kind==KIND
+    need(unit in ('unit-a','unit-c') and policy.qualification_kind in BUNDLE_KINDS
          and type(next_index) is int and 1<=next_index<5,'invalid_bundle_checkpoint_scope')
     context=BundleContext(owner['bundle_context'],policy)
     authorization=owner.get('bundle_radio_checkpoint')

@@ -18,7 +18,7 @@ import sqlite3
 import threading
 
 from meshticulum.contracts.identity import PeerID
-from .pilot_parent_caps import (Cost, ParentPolicy, UnitCaps, child_caps, canonical,
+from .pilot_parent_caps import (BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, UnitCaps, child_caps, canonical,
                                 private, digest, identifier, boot, MAX, DOMAIN as POLICY_DOMAIN)
 
 DOMAIN = b'meshticulum.native-parent-caps.v1\0'
@@ -100,7 +100,7 @@ class _Public32Approval:
             self._owned_close=lambda:reader.close() if own==(os.getpid(),threading.get_ident()) else None
             raw=self.reader.read(directory/'owner.json',200000);owner=parse(raw)
             require(owner['schema']=='meshticulum.finite-public-resume-owner.v1'
-                    and owner['qualification_kind']==policy.qualification_kind and policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1') and owner['policy_digest']==policy.digest)
+                    and owner['qualification_kind']==policy.qualification_kind and policy.qualification_kind in PUBLIC32_KINDS and owner['policy_digest']==policy.digest)
             self.runtime=self._runtime_ref=Runtime(Path(__file__).absolute().parents[2],owner['manifest_sha256'])
             runtime=self.runtime
             def close_owned():
@@ -115,6 +115,8 @@ class _Public32Approval:
             binding_raw=self.reader.read(directory/'history-binding.json',16384);binding=parse(binding_raw)
             require(sha(self.reader.read(directory/'history-identity-seal.json',2000000))==binding['strict_sha256']
                     and sha(self.reader.read(directory/'legacy-grant-seal.json',2000000))==binding['legacy_sha256'])
+            from .pilot_bundle import validate_capture_commitment
+            validate_capture_commitment(owner,captured,policy)
             local=policy.unit(unit);history_pin=sha(binding_raw)
             require(sha(captured_raw)==owner['capture_record_sha256'] and captured['unit']==unit
                     and captured['parent_id']==policy.parent_id and captured['actual_history_verified'] is True
@@ -144,7 +146,7 @@ class _Public32Approval:
                     and policy.expires_epoch_us==owner['phase_end_epoch_us']-5000000
                     and stable(facts)==owner['facts'][unit] and facts['host_boot_id']==local.host_boot_id)
             self.bundle = None
-            if policy.qualification_kind == 'c-bundle100k-v1':
+            if policy.qualification_kind in BUNDLE_KINDS:
                 from .pilot_bundle import BundleContext
                 self.bundle = BundleContext(owner['bundle_context'],policy)
             self._bundle_ref=self.bundle
@@ -439,7 +441,7 @@ class NativeCaps:
         def prepare(now):
             child,allocation=self._package(package);meta=json.loads(child.metadata)
             bundle = getattr(self._approve,'bundle',None)
-            if self.policy.qualification_kind == 'c-bundle100k-v1':
+            if self.policy.qualification_kind in BUNDLE_KINDS:
                 from .pilot_bundle import BundleContext
                 require(type(self._approve) is _Public32Approval and type(bundle) is BundleContext and bundle is self._approve._bundle_ref)
                 stage=bundle.package(package,now[0])
@@ -581,7 +583,7 @@ def _open_existing(state,parent_id,facts,clock):
         # adapter neither invokes enrollment nor fabricates a prior snapshot.
         def observed():return NativeFacts(facts['unit'],facts['host_boot_id'],unit.peer)
         approve=lambda _:True
-        if policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1'):
+        if policy.qualification_kind in PUBLIC32_KINDS:
             approve=_Public32Approval(directory,policy,unit.unit,facts,clock)
         try:return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=approve)
         except BaseException:

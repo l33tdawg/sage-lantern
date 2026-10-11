@@ -28,6 +28,9 @@ from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
 from .profiles import RADIO_ADMISSION
 
+BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2'))
+PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
+
 SCHEMA = 'meshticulum.public-parent-caps.v1'
 DOMAIN = b'meshticulum.public-parent-caps.v1\0'
 MAX = 2**63 - 1
@@ -114,8 +117,8 @@ class ParentPolicy:
     bundle_context_sha256: str | None = None
     def __post_init__(self):
         require(self.qualification_kind is None or (type(self.qualification_kind) is str
-                and self.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')))
-        require((self.qualification_kind == 'c-bundle100k-v1') == (self.bundle_context_sha256 is not None))
+                and self.qualification_kind in PUBLIC32_KINDS))
+        require((self.qualification_kind in BUNDLE_KINDS) == (self.bundle_context_sha256 is not None))
         if self.bundle_context_sha256 is not None: digest(self.bundle_context_sha256)
         identifier(self.parent_id); boot(self.controller_boot_id); digest(self.prior_snapshot_sha256)
         require(all(type(v) is int and 0 < v <= MAX for v in
@@ -144,7 +147,7 @@ class ParentPolicy:
                 'parent_id', 'controller_boot_id', 'issued_epoch_us', 'expires_epoch_us',
                 'original_monotonic_us', 'deadline_monotonic_us', 'units',
                 'aggregate_limits', 'prior_snapshot_sha256'})
-            require('qualification_kind' not in value or value['qualification_kind'] in ('c-bulk32-v1','c-bundle100k-v1'))
+            require('qualification_kind' not in value or value['qualification_kind'] in PUBLIC32_KINDS)
             require(type(value['units']) in (list, tuple))
             units = []
             for unit in value['units']:
@@ -231,7 +234,7 @@ def child_caps(package, policy):
             profile = asdict(rp); frame_limit = grant.max_frames; expiry = p['service']['application_expires_epoch_us']
         from meshticulum.bench.public_block import public32_service, object_limit
         public32 = public32_service(p.get('service',{}))
-        require(public32 == (policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')))
+        require(public32 == (policy.qualification_kind in PUBLIC32_KINDS))
         if public32:
             require(package['transport'] == 'lora' and (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,
                 rp.coding_rate,rp.chip_power_dbm,rp.preamble,rp.sync_word)==(921375000,500000,7,5,0,8,0x42)
@@ -271,7 +274,7 @@ def child_caps(package, policy):
             grant_digest=grant.digest.hex(), profile=profile, cipher_frame_limit=frame_limit,
             secret_sha256=hashlib.sha256(secret).hexdigest(), plan_sha256=hashlib.sha256(canonical(p)).hexdigest())
         if public32: metadata['public_response_max_bytes'] = 32768
-        if policy.qualification_kind == 'c-bundle100k-v1': metadata['bundle_context_sha256'] = policy.bundle_context_sha256
+        if policy.qualification_kind in BUNDLE_KINDS: metadata['bundle_context_sha256'] = policy.bundle_context_sha256
         return ChildCaps(unit.unit, run, sends, canonical(metadata), cost, expiry)
     except Exception:
         raise ParentCapsError() from None

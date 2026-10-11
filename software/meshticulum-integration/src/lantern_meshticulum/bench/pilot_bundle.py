@@ -17,53 +17,100 @@ from pathlib import Path
 
 from meshticulum.bench.wire import require
 from meshticulum.resources import byte_bundle as bundle, knowledge_pack as kp, lamplighter as ll, resource
-from .pilot_parent_caps import canonical, digest, identifier, Cost
+from .pilot_parent_caps import BUNDLE_KINDS, canonical, digest, identifier, Cost
 
 KIND = 'c-bundle100k-v1'
 SCHEMA = 'meshticulum.native-public100k-bundle-context.v1'
+KIND_V2 = 'c-bundle100k-v2'
+SCHEMA_V2 = 'meshticulum.native-public100k-bundle-context.v2'
+COMMITMENT_SCHEMA = 'meshticulum.public100k-capture-commitment.v2'
+SSH_SCHEMA_V2 = 'meshticulum.finite-ssh-bundle100k.v2'
+
+
+def _context_data(value, *, parent_id=None):
+    require(type(value) is dict, 'missing_bundle_context')
+    raw=canonical(value); require(len(raw)<=100000,'bundle_context_too_large')
+    v=json.loads(raw)
+    required={'schema','manifest_base64','signature_base64','trust','manifest_sha256','whole_bytes','whole_sha256',
+          'original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us','stages'}
+    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2),'bundle_context_policy_changed')
+    kind=KIND if v['schema']==SCHEMA else KIND_V2
+    for key in ('manifest_sha256','whole_sha256'):digest(v[key])
+    manifest_raw=base64.b64decode(v['manifest_base64'],validate=True)
+    signature_raw=base64.b64decode(v['signature_base64'],validate=True)
+    require(base64.b64encode(manifest_raw).decode()==v['manifest_base64']
+        and base64.b64encode(signature_raw).decode()==v['signature_base64'],'noncanonical_bundle_metadata')
+    manifest=ll.manifest(manifest_raw,signature_raw,v['trust'],v['manifest_sha256'])
+    expected=bundle.descriptor(manifest)
+    require(type(v['whole_bytes']) is int and v['whole_bytes']==expected['bytes']==100000
+        and v['whole_sha256']==expected['sha256'] and len(expected['parts'])==5
+        and all(c['bytes']==32740 for c in manifest['chunks']), 'wrong_signed_whole_bundle')
+    require(all(type(v[k]) is int and v[k]>0 for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us'))
+        and 0<v['original_monotonic_us']<v['deadline_monotonic_us']
+        <=v['original_monotonic_us']+v['expires_epoch_us']-v['original_epoch_us']
+        and 0<v['expires_epoch_us']-v['original_epoch_us']<=(894000000 if kind==KIND else 1200000000),'original_whole_window_changed')
+    if kind==KIND_V2:
+        require(v['expires_epoch_us']-v['original_epoch_us']==1200000000
+                and v['deadline_monotonic_us']-v['original_monotonic_us']==1200000000,'v2_original_whole_window_changed')
+    require(type(v['stages']) is list and len(v['stages'])==5,'exact_five_bundle_stages_required')
+    previous=v['original_epoch_us']; campaigns=set()
+    for index,stage in enumerate(v['stages']):
+        require(type(stage) is dict and set(stage)=={'index','campaign_id','issued_epoch_us','expires_epoch_us','handoff_end_epoch_us','response_sha256'}
+            and type(stage['index']) is int and stage['index']==index,'bundle_part_order_changed')
+        digest(stage['response_sha256'])
+        identifier(stage['campaign_id']);require(stage['campaign_id'] != parent_id and stage['campaign_id'] not in campaigns,'bundle_campaign_reused')
+        campaigns.add(stage['campaign_id'])
+        a,z,h=(stage[k] for k in ('issued_epoch_us','expires_epoch_us','handoff_end_epoch_us'))
+        require(all(type(n) is int for n in (a,z,h)) and previous<=a<z
+            and z-a<=180000000 and z+10000000<=h<=v['expires_epoch_us'], 'bundle_stage_window_changed')
+        if kind==KIND_V2:require(z-a==150000000,'v2_part_window_changed')
+        previous=h
+    return raw,v,manifest_raw,signature_raw,manifest,expected,kind
+
+
+def public_context_commitment(value, *, parent_id):
+    """Pure signed v2 schedule commitment; supplies no enrollment authority."""
+    identifier(parent_id)
+    raw,v,*_,kind=_context_data(value,parent_id=parent_id)
+    require(kind==KIND_V2,'explicit_v2_capture_required')
+    return dict(schema=COMMITMENT_SCHEMA,parent_id=parent_id,qualification_kind=kind,context_schema=v['schema'],
+        context_sha256=hashlib.sha256(raw).hexdigest(),
+        **{k:v[k] for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us')},
+        phase_start_epoch_us=v['original_epoch_us'],phase_end_epoch_us=v['original_epoch_us']+1205000000)
+
+
+def validate_capture_commitment(owner, captured, policy):
+    """Require the pre-enrollment commitment on every protected v2 open."""
+    if policy.qualification_kind==KIND_V2:
+        expected=public_context_commitment(owner['bundle_context'],parent_id=policy.parent_id)
+        require(captured['schema']=='meshticulum.private-resume-actual-capture.v2'
+            and captured['bundle_capture_commitment']==owner['bundle_capture_commitment']==expected
+            and expected['context_sha256']==policy.bundle_context_sha256
+            and (captured['phase_start_epoch_us'],captured['phase_end_epoch_us'])
+                ==(expected['phase_start_epoch_us'],expected['phase_end_epoch_us'])
+            and (policy.issued_epoch_us,policy.expires_epoch_us,policy.original_monotonic_us,policy.deadline_monotonic_us)
+                ==tuple(expected[k] for k in ('original_epoch_us','expires_epoch_us','original_monotonic_us','deadline_monotonic_us')),
+            'v2_capture_owner_policy_commitment_changed')
+    else:
+        require(captured.get('schema','meshticulum.private-resume-actual-capture.v1')=='meshticulum.private-resume-actual-capture.v1'
+            and 'bundle_capture_commitment' not in captured and 'bundle_capture_commitment' not in owner
+            and captured['phase_end_epoch_us']-captured['phase_start_epoch_us']<=899000000,
+            'legacy_capture_window_changed')
 
 
 class BundleContext:
     """Signed data + immutable schedule; protected owner supplies authority."""
     def __init__(self, value, policy):
-        require(type(value) is dict, 'missing_bundle_context')
-        self.raw=canonical(value); require(len(self.raw)<=100000,'bundle_context_too_large')
-        self.policy=policy; self.value=json.loads(self.raw)
-        required={'schema','manifest_base64','signature_base64','trust','manifest_sha256','whole_bytes','whole_sha256',
-                  'original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us','stages'}
-        v=self.value
-        require(set(v)==required and v['schema']==SCHEMA and policy.qualification_kind==KIND
-                and hashlib.sha256(self.raw).hexdigest()==policy.bundle_context_sha256,'bundle_context_policy_changed')
-        for key in ('manifest_sha256','whole_sha256'):digest(v[key])
-        self.manifest_raw=base64.b64decode(v['manifest_base64'],validate=True)
-        self.signature_raw=base64.b64decode(v['signature_base64'],validate=True)
-        require(base64.b64encode(self.manifest_raw).decode()==v['manifest_base64']
-                and base64.b64encode(self.signature_raw).decode()==v['signature_base64'],'noncanonical_bundle_metadata')
-        manifest=ll.manifest(self.manifest_raw,self.signature_raw,v['trust'],v['manifest_sha256'])
-        self.expected=bundle.descriptor(manifest)
-        require(type(v['whole_bytes']) is int and v['whole_bytes']==self.expected['bytes']==100000
-                and v['whole_sha256']==self.expected['sha256'] and len(self.expected['parts'])==5
-                and all(c['bytes']==32740 for c in manifest['chunks']), 'wrong_signed_whole_bundle')
-        require(all(type(v[k]) is int for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us'))
-                and (v['original_epoch_us'],v['original_monotonic_us'],v['expires_epoch_us'],v['deadline_monotonic_us'])
-                  ==(policy.issued_epoch_us,policy.original_monotonic_us,policy.expires_epoch_us,policy.deadline_monotonic_us)
-                and 0<v['expires_epoch_us']-v['original_epoch_us']<=894000000,'original_whole_window_changed')
-        require(type(v['stages']) is list and len(v['stages'])==5,'exact_five_bundle_stages_required')
-        previous=v['original_epoch_us']; campaigns=set()
-        for index,stage in enumerate(v['stages']):
-            require(type(stage) is dict and set(stage)=={'index','campaign_id','issued_epoch_us','expires_epoch_us','handoff_end_epoch_us','response_sha256'}
-                    and type(stage['index']) is int and stage['index']==index,'bundle_part_order_changed')
-            digest(stage['response_sha256'])
-            identifier(stage['campaign_id']);require(stage['campaign_id'] != policy.parent_id and stage['campaign_id'] not in campaigns,'bundle_campaign_reused')
-            campaigns.add(stage['campaign_id'])
-            a,z,h=(stage[k] for k in ('issued_epoch_us','expires_epoch_us','handoff_end_epoch_us'))
-            require(all(type(n) is int for n in (a,z,h)) and previous<=a<z
-                    and z-a<=180000000 and z+10000000<=h<=v['expires_epoch_us'], 'bundle_stage_window_changed')
-            previous=h
-        self.manifest=manifest
+        data=_context_data(value,parent_id=policy.parent_id)
+        self.raw,self.value,self.manifest_raw,self.signature_raw,self.manifest,self.expected,kind=data
+        self.policy=policy
+        require(policy.qualification_kind==kind and hashlib.sha256(self.raw).hexdigest()==policy.bundle_context_sha256
+                and tuple(self.value[k] for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us'))
+                ==(policy.issued_epoch_us,policy.original_monotonic_us,policy.expires_epoch_us,policy.deadline_monotonic_us),
+                'bundle_context_policy_changed')
         self._refs=(policy,self.raw,self.manifest_raw,self.signature_raw)
         self._policy_bytes=canonical(policy.to_dict())
-        self._manifest_bytes=canonical(manifest);self._expected_bytes=canonical(self.expected)
+        self._manifest_bytes=canonical(self.manifest);self._expected_bytes=canonical(self.expected)
         self._last=None
 
     def _check(self):
@@ -125,7 +172,7 @@ class _NativeOwner:
         from .pilot_native_caps import NativeCaps,_Public32Approval
         from lantern_meshticulum.ip import node
         require(type(caps) is NativeCaps and type(caps._approve) is _Public32Approval
-                and caps.policy.qualification_kind==KIND and clock is caps._clock,'protected_bundle_owner_required')
+                and caps.policy.qualification_kind in BUNDLE_KINDS and clock is caps._clock,'protected_bundle_owner_required')
         self.caps,self.clock,self.facts_reader=caps,clock,node._facts
         self.context=caps._approve.bundle;require(type(self.context) is BundleContext,'protected_bundle_context_required')
         self.state=self._state_ref=caps.path.parent.parent.parent
@@ -399,7 +446,7 @@ def finish_native_bundle(caps, *, state, clock):
         return value
 
 
-def context_value(manifest_raw,signature_raw,trust,manifest_sha256,*,chunks,policy_clock,stages):
+def context_value(manifest_raw,signature_raw,trust,manifest_sha256,*,chunks,policy_clock,stages,qualification_kind=KIND):
     """Prepare signed-data pins for Root review; creates no approval or records."""
     manifest=ll.manifest(manifest_raw,signature_raw,trust,manifest_sha256);expected=bundle.descriptor(manifest)
     require(expected['bytes']==100000 and len(expected['parts'])==5 and type(stages) is list and len(stages)==5,
@@ -412,7 +459,8 @@ def context_value(manifest_raw,signature_raw,trust,manifest_sha256,*,chunks,poli
         response=resource.RESPONSE.pack(resource.MAGIC,hashlib.sha256(request).digest()[:16],0,len(raw),0)+raw
         rows.append(dict(stage,index=index,response_sha256=hashlib.sha256(response).hexdigest()))
     issued,mono,expires,deadline=policy_clock
-    return dict(schema=SCHEMA,manifest_base64=base64.b64encode(manifest_raw).decode(),
+    require(qualification_kind in BUNDLE_KINDS,'unknown_bundle_contract')
+    return dict(schema=SCHEMA if qualification_kind==KIND else SCHEMA_V2,manifest_base64=base64.b64encode(manifest_raw).decode(),
         signature_base64=base64.b64encode(signature_raw).decode(),trust=trust,manifest_sha256=manifest_sha256,
         whole_bytes=expected['bytes'],whole_sha256=expected['sha256'],original_epoch_us=issued,
         original_monotonic_us=mono,expires_epoch_us=expires,deadline_monotonic_us=deadline,stages=rows)
@@ -427,7 +475,7 @@ def native_action(unit,parent_id,action):
     state=Path('/var/lib/meshticulum-bench');facts=_facts(unit)
     caps=_open_existing(state,identifier(parent_id),facts,clock)
     try:
-        require(caps.policy.qualification_kind==KIND and caps.public32_owner_current() is True,'bundle_parent_not_current')
+        require(caps.policy.qualification_kind in BUNDLE_KINDS and caps.public32_owner_current() is True,'bundle_parent_not_current')
         owner=_NativeOwner(caps,clock);c=owner.context;indices=[]
         if action=='finish':result=finish_native_bundle(caps,state=state,clock=clock)
         else:

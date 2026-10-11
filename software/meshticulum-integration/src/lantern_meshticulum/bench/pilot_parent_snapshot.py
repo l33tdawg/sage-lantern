@@ -19,7 +19,7 @@ import weakref
 
 from meshticulum.bench.serial_protocol import RadioProfile
 from meshticulum.ip.wire import IpLimits
-from .pilot_parent_caps import Cost, ParentPolicy, DOMAIN as PARENT_DOMAIN
+from .pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, DOMAIN as PARENT_DOMAIN
 from . import pilot_debt_snapshot as debt
 from .pilot_debt_snapshot import (SnapshotError, need, canonical, sha, integer,
     identifier, hex_value, boot, public_json, _identity, MAX_DB)
@@ -363,12 +363,12 @@ _META = {'parent_id', 'policy_digest', 'unit', 'host_boot_id', 'campaign_id', 'r
 def _child(value, policy):
     need(type(value) is dict and set(value) == {'metadata', 'cost', 'digest'}, 'invalid_child')
     m = value['metadata']
-    public32 = policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')
+    public32 = policy.qualification_kind in PUBLIC32_KINDS
     fields = _META | ({'public_response_max_bytes'} if public32 else set())
-    if policy.qualification_kind == 'c-bundle100k-v1': fields.add('bundle_context_sha256')
+    if policy.qualification_kind in BUNDLE_KINDS: fields.add('bundle_context_sha256')
     need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
-    if policy.qualification_kind == 'c-bundle100k-v1':
+    if policy.qualification_kind in BUNDLE_KINDS:
         need(m['bundle_context_sha256'] == policy.bundle_context_sha256, 'bundle_child_context_changed')
     unit = policy.unit(m['unit'])
     need(m['host_boot_id'] == unit.host_boot_id and type(m['sends']) is bool
@@ -535,7 +535,7 @@ def _native(db, scope, reader):
     resources, resource_rows = {}, []
     for rid, raw in _rows(db, 'resources', ('id', 'body')):
         hex_value(rid, 64); r = _body(raw)
-        bundle = policy.qualification_kind == 'c-bundle100k-v1'
+        bundle = policy.qualification_kind in BUNDLE_KINDS
         need(type(r) is dict and set(r) == (_RESOURCE | {'campaign_id','bundle_context_sha256','bundle_original_epoch_us','bundle_original_monotonic_us','bundle_original_deadline_monotonic_us'} if bundle else _RESOURCE), 'invalid_resource')
         binding=dict(parent_id=policy.parent_id,unit=unit.unit,resource_sha256=r['resource_sha256'])
         if bundle:
@@ -560,7 +560,7 @@ def _native(db, scope, reader):
              and canonical(resources.get(claim['resource_id'])) == canonical(claim['resource'])
              and m['resource_sha256'] == claim['resource']['resource_sha256']
              and m['application_expires_epoch_us'] == claim['resource']['application_expires_epoch_us'], 'invalid_claim')
-        if policy.qualification_kind == 'c-bundle100k-v1':
+        if policy.qualification_kind in BUNDLE_KINDS:
             need(m['campaign_id'] == claim['resource']['campaign_id'] and m['bundle_context_sha256'] == claim['resource']['bundle_context_sha256'], 'bundle_claim_resource_changed')
         paid = paid.plus(cost); additions = additions.plus(cost)
         claims[cid] = claim
