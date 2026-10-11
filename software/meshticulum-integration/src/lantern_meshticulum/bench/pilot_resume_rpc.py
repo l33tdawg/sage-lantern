@@ -57,7 +57,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '1411f2db5d331a56b3d395e7b8443a516a766d69139275dd3276d7a8bfe19293',
     '5a837b0e365421ff9b9c5511ec768a16d458b16b3720af8c4aa1e6a085a8c827',
     '0de0a7d00510c4bdbe3ee6857a5130f1000576e305c8382b84bc27d40418d5d1',
-    '2fd26f804a8d7d8d095e4d90584814a788a70b47ec36962c53b4d5f7239d4b8d')
+    '2fd26f804a8d7d8d095e4d90584814a788a70b47ec36962c53b4d5f7239d4b8d',
+    '47a8f82ef0b7ba29ba785623b870138487786c9e5a5e9371b00c84544ab5e53b')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -106,8 +107,12 @@ PUBLIC32_OUTCOMES = {PUBLIC32_PAID:(PUBLIC32_REQUEST,PUBLIC32_RESPONSE,PUBLIC32_
     PUBLIC32_RETRY_PAID:(PUBLIC32_RETRY_REQUEST,PUBLIC32_RETRY_RESPONSE,PUBLIC32_RETRY_RESULT_CANONICAL,16),
     PUBLIC32_SENDER_READY_PAID:(PUBLIC32_SENDER_READY_REQUEST,PUBLIC32_SENDER_READY_RESPONSE,PUBLIC32_SENDER_READY_RESULT_CANONICAL,17),
     PUBLIC32_COMPLETE_PAID:(PUBLIC32_COMPLETE_REQUEST,PUBLIC32_COMPLETE_RESPONSE,PUBLIC32_COMPLETE_RESULT_CANONICAL,18)}
+ENROLLED_ZERO_PAID = '141c892d83b6064a800c11aab6444f28'
+ENROLLED_ZERO_DATABASES = {'unit-a':'2e9ffd06bce50b8e870fe29c2f0bbcf7ef7c76d807b5bf59f5e04f6ecc4711f2',
+    'unit-b':'e141104945fc1322e398b61a55ec7b037f6f5bf32fb320245642446515c140e1',
+    'unit-c':'4cb43e56a11f60e35017ff2b570b659820ab05cd822f4ee4c6eb76b7f8cd88f8'}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -485,7 +490,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     need(sha(raw) == record['sha256'], 'old_typed_file_changed')
         for name, record in observed['files'].items():
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
-        if policy.parent_id!=PARTIAL_PAID:
+        if policy.parent_id==ENROLLED_ZERO_PAID:
+            qualify_enrolled_zero_costs(unit,policy,observed,v)
+        elif policy.parent_id!=PARTIAL_PAID:
             need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
         if index: need(asdict(policy.unit(unit).prior_debt) == old[index-1]['paid_caps'], 'old_paid_debt_chain_changed')
         reports.append(dict(parent_id=policy.parent_id,paid_caps=v['paid_caps'],actual_children=len(v['runs'])))
@@ -559,6 +566,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id in PUBLIC32_PARENTS:
         expected=PUBLIC32_OUTCOMES[policy.parent_id][2]
         need(ids==set(expected[unit]) and not absent,'public32_claim_scope_changed')
+    elif policy.parent_id==ENROLLED_ZERO_PAID:
+        need(not ids and not absent and not claims,'enrolled_zero_child_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
@@ -617,6 +626,38 @@ def qualify_mixed_receiver(row,result,raw):
          and result['flow']['complete'] is True and result['flow']['received_bytes']==1028
          and result['publisher_verified'] is False and not result.get('cleanup_errors'),
          'mixed_failed_durable_receiver_changed')
+
+def qualify_enrolled_zero_costs(unit,policy,observed,value):
+    """One exact enrolled zero-child attempt: retain limits, never invent spent cost."""
+    need(policy.parent_id==ENROLLED_ZERO_PAID and policy.digest==OLD_DIGESTS[19]
+         and policy.qualification_kind=='c-bundle100k-v1' and unit in ENROLLED_ZERO_DATABASES,
+         'unknown_enrolled_zero_parent')
+    detail=observed['detail'];local=policy.unit(unit);actual=detail['prior_plus_prepaid_caps']
+    need(observed['policy_expired_at_observation'] is True
+         and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
+         and observed['observation_original_epoch_us']>=policy.expires_epoch_us
+         and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
+         'enrolled_zero_original_clocks_not_expired')
+    extra=Cost(2560,600000000) if unit in ('unit-a','unit-c') else Cost()
+    need(all(type(detail[k]) is int and detail[k]==0 for k in
+             ('claim_count','prepared_count','start_count','resource_count'))
+         and detail['claims']==[] and detail['resources']==[]
+         and detail['full_prepaid_caps']==asdict(Cost())
+         and detail['approval_bytes_match_enrollment'] is True
+         and detail['enrollment']['history_binding_sha256']==value['owner']['history_binding_sha256']
+         and observed['expected_database_sha256']==value['database_sha256']==ENROLLED_ZERO_DATABASES[unit]
+         and observed['legacy_runs'] is None and observed['legacy_relation'] is None,
+         'enrolled_zero_actual_rows_changed')
+    need(actual==asdict(local.prior_debt)==value['actual_native_paid_caps']
+         ==value['actual_controller_paid_caps'] and detail['limit']==asdict(local.limits)
+         and local.limits==local.prior_debt.plus(extra)
+         and value['conservative_unused_enrollment_caps']==asdict(extra)
+         and value['paid_caps']==asdict(local.limits), 'enrolled_zero_conservative_bound_changed')
+    need(value['runs']==value['retired_unstarted']==value['controller_endpoint_refs']==[]
+         and value['preparation_sha256']=={} and value['legacy_sha256'] is None
+         and value['require_result_complete'] is False and value['failed_started_runs']==[],
+         'enrolled_zero_retention_scope_changed')
+
 
 def qualify_partial_costs(unit,observed,value,native_refs):
     """Fixed historical conservative charge; never a grant or native claim."""

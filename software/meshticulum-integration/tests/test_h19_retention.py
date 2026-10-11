@@ -73,10 +73,10 @@ def test_old_source_and_captured_prefixes_remain_exact():
     assert old==assignments(Path(retained_capture.__file__),set(old))
     old_history=next(ast.literal_eval(node.value) for node in ast.parse((base/'retained_capture.py').read_bytes()).body
         if isinstance(node,ast.Assign) and isinstance(node.targets[0],ast.Name) and node.targets[0].id=='PAID_HISTORY')
-    assert retained_capture.PAID_HISTORY[:-1]==old_history
+    assert retained_capture.PAID_HISTORY[:18]==old_history
     assert retained_capture.UNADMITTED_PAID_HISTORY==old_history[:12]
-    assert len(rpc.HISTORY)==19 and rpc.HISTORY[-1]==rpc.PUBLIC32_COMPLETE_PAID
-    assert rpc.OLD_DIGESTS[-1]==ParentPolicy.from_dict(json.loads((D/'POLICY.json').read_bytes())).digest
+    assert len(rpc.HISTORY)==20 and rpc.HISTORY[18]==rpc.PUBLIC32_COMPLETE_PAID
+    assert rpc.OLD_DIGESTS[18]==ParentPolicy.from_dict(json.loads((D/'POLICY.json').read_bytes())).digest
 
 
 @pytest.mark.parametrize('count',(0,1,2,3))

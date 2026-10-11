@@ -109,7 +109,7 @@ def test_runtime_refuses_unpinned_or_foreign_root():
 
 def test_rpc_contract_schema_and_import_scope():
     assert rpc.CONTRACT_SCHEMA == 'meshticulum.private-resume-native-rpc.v1'
-    assert len(rpc.HISTORY) == 19 and len(set(rpc.HISTORY)) == 19
+    assert len(rpc.HISTORY) == 20 and len(set(rpc.HISTORY)) == 20
     assert rpc.HISTORY[:5] == ('28765d19f654ce3162525afe9c3f89c5',
         '5ad7e65b7e50901a6f63629c04a776e2', '4d1b5d6fe8d4b022c5cf1e21cef7f8ca',
         'd60d8308326314a7753e651fa43a99e3', '4559277fa43913ce3935b078d6744a55')
