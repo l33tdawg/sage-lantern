@@ -29,3 +29,15 @@ def test_unknown_modes_are_not_enable_flags(kind):
 
 def test_unknown_unit_cannot_borrow_public_caps():
     with pytest.raises(RuntimeError):endpoint_budget('foreign','mixed-bulk-v1',RADIO,TCP)
+
+
+@pytest.mark.parametrize('unit', ['unit-a','unit-b','unit-c'])
+def test_explicit_c_bulk_8k_keeps_two_rf_endpoints_and_no_B_budget(unit):
+    expected = Cost() if unit=='unit-b' else RADIO.plus(RADIO)
+    assert endpoint_budget(unit,'c-bulk-8k-v1',RADIO,TCP)==expected
+    assert endpoint_budget(unit,'c-bulk-8k-v1',RADIO,TCP)==endpoint_budget(unit,'c-bulk-v1',RADIO,TCP)
+
+
+@pytest.mark.parametrize('kind', ['c-bulk-8k-v2','c-bulk-16k-v1','c-bulk-8k',True])
+def test_unreviewed_small_bulk_modes_do_not_get_a_fallback_budget(kind):
+    with pytest.raises(RuntimeError):endpoint_budget('unit-a',kind,RADIO,TCP)
