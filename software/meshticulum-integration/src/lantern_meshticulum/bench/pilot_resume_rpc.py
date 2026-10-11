@@ -43,14 +43,20 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '1ca1774780928427f15befecf723064cd87aff6ad402b6ef94b137f5d45f6d33',
     '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1',
     '0d153ed60782be5028fe7b75f3345b0441e62ef95b8db629270d5b309fd0e049',
-    'c4dac314abe5afac2d14c8f82f08466863bac438c7674864c0864c8eae5e2eb7')
+    'c4dac314abe5afac2d14c8f82f08466863bac438c7674864c0864c8eae5e2eb7',
+    '617cdde5e1bb0bfb162552861abb6b84e25a389a981d16b5b17e7e5d5daaf10c')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
 BULK_RECEIVER_RUN = 'b024cea0883f00b3b6978533f66c1a19'
 BULK_RECEIVER_RESULT_SHA = '3144a2ab5108bd8a5363a03ca6da541cf56a150048c40753b2cd6f91ef7758ab'
 BULK_OBJECT_SHA = '29aab48fe22c08588643e5d1e11f48696405697e8a59607ef34702cc2a1e0465'
-GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[-3], COMPLETE_PAID: OLD_DIGESTS[-2], BULK_PAID: OLD_DIGESTS[-1]}
+MIXED_PAID = 'ba4572e95e598ad6c17fc954c3792db7'
+MIXED_RECEIVER_RUN = '9dd5b8dd6466600acfdc8f1884db3da8'
+MIXED_RECEIVER_RESULT_SHA = '5f594b1cba94b24883327f2457d1a79541e5cbffbe4fd073fc547ddeaabb08b6'
+MIXED_OBJECT_SHA = 'd61126423d81a20aab75ada153b03c326d60fcc781884bba9f84d3d5821d134d'
+GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -67,6 +73,23 @@ def clock(): return time.time_ns()//1000, time.monotonic_ns()//1000
 def boot(): return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 def stable(value): return {k:value[k] for k in ('unit','host_boot_id','services','service_lifetimes')}
 
+def reserve_history_descriptor_capacity():
+    """Reserve before history Reader growth, retaining all continuity handles.
+
+    Reader duplicates for verified inputs and strict capture are bounded by
+    published metadata limits. This affects only the current process soft limit.
+    """
+    current=len(os.listdir('/proc/self/fd'))
+    required=current+3*MAX_FILES+3*MAX_DIRS+2*MAX_RUNS*(3+len(OWNERS))+4*64+32+21
+    soft,hard=resource.getrlimit(resource.RLIMIT_NOFILE)
+    need(hard==resource.RLIM_INFINITY or required<=hard,'history_descriptor_hard_limit_insufficient')
+    changed=soft!=resource.RLIM_INFINITY and soft<required
+    if changed:resource.setrlimit(resource.RLIMIT_NOFILE,(required,hard))
+    actual_soft,actual_hard=resource.getrlimit(resource.RLIMIT_NOFILE)
+    need(actual_hard==hard and (actual_soft==resource.RLIM_INFINITY or actual_soft>=required),
+         'history_descriptor_capacity_not_established')
+    return dict(current_descriptors=current,required_soft_limit=required,soft_limit=actual_soft,
+                hard_limit=actual_hard,changed=changed,scope='this process only; before history reads')
 
 def reserve_descriptor_capacity(files, directories, legacy_rows):
     """Keep every continuity FD; raise only this RPC's soft limit within hard."""
@@ -96,6 +119,10 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
         return Cost() if unit=='unit-a' else radio.plus(radio).plus(
             Cost(ip_frames=tcp.ip_frames*8,tx_stream_bytes=tcp.tx_stream_bytes*8,
                  rx_stream_bytes=tcp.rx_stream_bytes*8))
+    if qualification_kind=='mixed-only-v1':
+        if unit=='unit-a':return radio.plus(radio).plus(tcp).plus(tcp)
+        if unit=='unit-b':return tcp.plus(tcp)
+        return radio.plus(radio)
     need(qualification_kind=='mixed-bulk-v1', 'unknown_public_qualification_kind')
     if unit=='unit-c': return radio.plus(radio).plus(radio).plus(radio)
     return radio.plus(radio).plus(tcp).plus(tcp)
@@ -202,6 +229,7 @@ def write_new(directory, name, raw):
 
 def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
     """Actual three-parent collect plus all original full grants, not DTO authority."""
+    reserve_history_descriptor_capacity()
     old = history['previous']; inventory = history['legacy_inventory']
     policies = [ParentPolicy.from_dict(v['policy']) for v in old]
     need(tuple(p.parent_id for p in policies) == HISTORY
@@ -288,6 +316,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id == BULK_PAID:
             need(v.get('failed_started_runs',[]) == ([BULK_RECEIVER_RUN] if unit=='unit-c' else []),
                  'bulk_failed_endpoint_scope_changed')
+        if policy.parent_id == MIXED_PAID:
+            need(v.get('failed_started_runs',[]) == ([MIXED_RECEIVER_RUN] if unit=='unit-c' else []),
+                 'mixed_failed_endpoint_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
             relation = observed['legacy_relation']
@@ -313,6 +344,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                      and result['parent']['parent_id'] == policy.parent_id, 'old_actual_result_rebound')
                 if policy.parent_id == BULK_PAID and unit=='unit-c' and row['run_id']==BULK_RECEIVER_RUN:
                     qualify_bulk_receiver(row,result,result_raw)
+                if policy.parent_id == MIXED_PAID and unit=='unit-c' and row['run_id']==MIXED_RECEIVER_RUN:
+                    qualify_mixed_receiver(row,result,result_raw)
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -359,6 +392,11 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
             'unit-b':{'7abd5cfd2c3da01ae4a5f687867073d4',BULK_RECEIVER_RUN,'d19e8fa1002399b8db98f8ddf26b4296','deea3ba36c13cd67b350cdd01785a80a'},
             'unit-c':{'27e27a319d4a86cdc32236554de58cf7',BULK_RECEIVER_RUN,'d19e8fa1002399b8db98f8ddf26b4296','da4ef48b14383c3f6cad0a8bc1ba396a'}}
         need(ids==expected[unit] and not absent,'bulk_paid_claim_scope_changed')
+    elif policy.parent_id == MIXED_PAID:
+        expected={'unit-a':{'2b12eb6b8edad86af9ef926820bdca34','76fb18ac4571c12a4c461a9b9c18de43',MIXED_RECEIVER_RUN,'bab9e8237656cf6860cae9e2c0eb9cbe'},
+            'unit-b':{'76fb18ac4571c12a4c461a9b9c18de43','8c749476914d876554f0052ab841a0d2','9fcc14ee8e50a8f9093e0e1362f34d76','bab9e8237656cf6860cae9e2c0eb9cbe'},
+            'unit-c':{'2b12eb6b8edad86af9ef926820bdca34','8c749476914d876554f0052ab841a0d2',MIXED_RECEIVER_RUN,'9fcc14ee8e50a8f9093e0e1362f34d76'}}
+        need(ids==expected[unit] and not absent,'mixed_paid_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
@@ -379,6 +417,22 @@ def qualify_bulk_receiver(row,result,raw):
          and result['publisher_verified'] is False and not result.get('cleanup_errors'),
          'bulk_failed_durable_receiver_changed')
 
+def qualify_mixed_receiver(row,result,raw):
+    """Exact expired H7 receiver: durable wire object, application still failed."""
+    need(row['run_id']==MIXED_RECEIVER_RUN and row['transport']=='lora'
+         and row['status']=='scoped_rows_observed' and row['wire']['retired']==1
+         and not row['journal']['has_unknown_or_pending']
+         and sha(raw)==row['files']['result.json']['sha256']==MIXED_RECEIVER_RESULT_SHA
+         and result['unit']=='unit-c' and result['session_id']==MIXED_RECEIVER_RUN
+         and result['complete'] is False and result['error']=='WireError:bench_application_deadline'
+         and result['sends'] is False and result['service_format']=='MR1.response'
+         and result['parent']['parent_id']==MIXED_PAID and result['parent']['started'] is True
+         and result['disarmed_on_exit'] is True and not result['attempt_journal']['fenced']
+         and result['service_object_durable'] is True and result['service_object_sha256']==MIXED_OBJECT_SHA
+         and result['object']['bytes']==1028 and result['object']['sha256']==MIXED_OBJECT_SHA
+         and result['flow']['complete'] is True and result['flow']['received_bytes']==1028
+         and result['publisher_verified'] is False and not result.get('cleanup_errors'),
+         'mixed_failed_durable_receiver_changed')
 
 def retired_unstarted(reader,unit,policy,observed,row,now):
     """Bind one actual paid/prepared/nonstarted retired TCP endpoint; cost unknown.
@@ -805,6 +859,10 @@ def inspect_paid_parent(unit,p,runtime):
             failed=next(row for row in actual['legacy_runs'] if row['run_id']==BULK_RECEIVER_RUN)
             raw=reader.read(STATE/'runs'/BULK_RECEIVER_RUN/'result.json',300000)
             qualify_bulk_receiver(failed,parse(raw),raw)
+        if policy.parent_id==MIXED_PAID and unit=='unit-c':
+            failed=next(row for row in actual['legacy_runs'] if row['run_id']==MIXED_RECEIVER_RUN)
+            raw=reader.read(STATE/'runs'/MIXED_RECEIVER_RUN/'result.json',300000)
+            qualify_mixed_receiver(failed,parse(raw),raw)
         unknown=[retired_unstarted(reader,unit,policy,actual,row,clock) for row in unstarted]
         reasons=[]
         if started:
