@@ -91,12 +91,23 @@ class _Public32Approval:
         self.reader=self.runtime=None;self._closed=False
         self.policy,self.unit,self.facts,self.clock=policy,unit,facts,clock
         self._pid,self._thread=os.getpid(),threading.get_ident()
+        self._owner_ref=(self._pid,self._thread);self._reader_ref=self._runtime_ref=None
+        self._captured_refs=None
+        self._owned_close=lambda:None
         try:
-            self.reader=Reader()
+            self.reader=self._reader_ref=Reader()
+            reader,own=self.reader,self._owner_ref
+            self._owned_close=lambda:reader.close() if own==(os.getpid(),threading.get_ident()) else None
             raw=self.reader.read(directory/'owner.json',200000);owner=parse(raw)
             require(owner['schema']=='meshticulum.finite-public-resume-owner.v1'
                     and owner['qualification_kind']==policy.qualification_kind and policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1') and owner['policy_digest']==policy.digest)
-            self.runtime=Runtime(Path(__file__).absolute().parents[2],owner['manifest_sha256'])
+            self.runtime=self._runtime_ref=Runtime(Path(__file__).absolute().parents[2],owner['manifest_sha256'])
+            runtime=self.runtime
+            def close_owned():
+                if own==(os.getpid(),threading.get_ident()):
+                    try:runtime.close()
+                    finally:reader.close()
+            self._owned_close=close_owned
             require(self.runtime.root.name=='runtime-'+owner['runtime_sha256'][:16]);digest(owner['runtime_sha256'])
             prior_raw=self.reader.read(directory/'prior.json',200000);prior=parse(prior_raw)
             require(self.reader.read(directory/'policy.json',20000)==canonical(policy.to_dict()))
@@ -141,35 +152,74 @@ class _Public32Approval:
             self._facts_bytes=canonical(owner['facts'][unit])
             self._start,self._end=owner['phase_start_epoch_us'],owner['phase_end_epoch_us']
             self._reader_ref,self._runtime_ref=self.reader,self.runtime
+            self._policy_state=_state(policy)
+            self._facts_state=_state({k:facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')})
+            self._phase_bounds=(captured['native_phase']['epoch_us'],captured['native_phase']['monotonic_us'],
+                                captured['native_phase']['deadline_monotonic_us'])
+            self._bounds_ref=self._phase_bounds
+            refs=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
+                  self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
+                  self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle)
+            self._state_refs=self._state_refs_ref=refs
+            self._captured_refs=lambda:refs
             self._last=None;self.check()
         except BaseException:self.close();raise
-    def check(self):
-        require(not self._closed and self._pid==os.getpid() and self._thread==threading.get_ident()
-                and self.reader is self._reader_ref and self.runtime is self._runtime_ref)
-        self.reader.check();self.runtime.check();now=self.clock();phase=json.loads(self._phase)
-        require(self.bundle is self._bundle_ref)
-        if self.bundle is not None: self.bundle.current(now)
+    def _bound(self,last):
+        refs=self._captured_refs()
+        current=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
+                 self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
+                 self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle)
+        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==18
+                and self._state_refs is refs and self._state_refs_ref is refs
+                and len(current)==len(refs) and all(a is b for a,b in zip(current,refs))
+                and self._owner_ref==(os.getpid(),threading.get_ident())
+                and self.reader is self._reader_ref is refs[4] and self.runtime is self._runtime_ref is refs[5]
+                and self._phase_bounds is self._bounds_ref is refs[16] and self._last is last
+                and _unchanged(self.policy,refs[14]) and type(self.facts) is dict
+                and _unchanged({k:self.facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')},refs[15])
+                and self.bundle is self._bundle_ref is refs[17]
+                and (self.policy.qualification_kind=='c-bulk32-v1') is (refs[17] is None))
+    def _time(self,last,previous):
+        self._bound(last);now=self.clock();self._bound(last)
+        if self.bundle is not None:self.bundle.current(now)
+        self._bound(last)
+        epoch,mono,end=self._phase_bounds
         require(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
-                and canonical({k:self.facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')})==self._facts_bytes
-                and self._start<=now[0]<self._end and phase['epoch_us']<=now[0]
-                and phase['monotonic_us']<=now[1]<phase['deadline_monotonic_us']
-                and (self._last is None or all(a>=b for a,b in zip(now,self._last))))
+                and self._start<=now[0]<self._end and epoch<=now[0] and mono<=now[1]<end
+                and (previous is None or all(a>=b for a,b in zip(now,previous))))
+        return now
+    def _verified(self,last,now):
+        # No callback result is cached. Every callback re-reads every held
+        # owner/source byte and checks full stamps, names and ancestry, after
+        # both external clocks and binding parsing have finished.
+        self._bound(last);self.reader.check();self._bound(last)
+        self.runtime.check();self._bound(last)
         self._last=now;return True
+    def check(self):
+        last=self._last
+        try:
+            first=self._time(last,last);second=self._time(last,first)
+            return self._verified(last,second)
+        except BaseException:self.close();raise
     def __call__(self,raw):
         from .pilot_resume_rpc import parse
-        self.check();value=parse(raw);e=value['enrollment'];local=self.policy.unit(self.unit)
-        require(value['phase'] in ('enroll','current','prepare','finalize','start') and e['schema']=='meshticulum.native-parent-enrollment.v2'
-                and canonical(e['policy'])==canonical(self.policy.to_dict()) and e['history_binding_sha256']==self._binding
-                and e['unit']==self.unit and e['host_boot_id']==local.host_boot_id
-                and self._start<=e['original_epoch_us']<self.policy.expires_epoch_us
-                and e['deadline_monotonic_us']==e['original_monotonic_us']+self.policy.expires_epoch_us-e['original_epoch_us']
-                and e['deadline_monotonic_us']<json.loads(self._phase)['deadline_monotonic_us'])
-        return self.check()
+        last=self._last
+        try:
+            first=self._time(last,last);value=parse(raw);self._bound(last)
+            e=value['enrollment'];local=self.policy.unit(self.unit)
+            require(value['phase'] in ('enroll','current','prepare','finalize','start') and e['schema']=='meshticulum.native-parent-enrollment.v2'
+                    and canonical(e['policy'])==canonical(self.policy.to_dict()) and e['history_binding_sha256']==self._binding
+                    and e['unit']==self.unit and e['host_boot_id']==local.host_boot_id
+                    and self._start<=e['original_epoch_us']<self.policy.expires_epoch_us
+                    and e['deadline_monotonic_us']==e['original_monotonic_us']+self.policy.expires_epoch_us-e['original_epoch_us']
+                    and e['deadline_monotonic_us']<self._phase_bounds[2])
+            self._bound(last);second=self._time(last,first)
+            return self._verified(last,second)
+        except BaseException:self.close();raise
     def close(self):
-        if self._closed:return
-        self._closed=True
-        if self.runtime is not None:self.runtime.close()
-        if self.reader is not None:self.reader.close()
+        # The closure retains the constructor's original owners independently
+        # of mutable reader/runtime fields or comparison metadata.
+        self._closed=True;self._owned_close()
 
 
 class NativeCaps:
