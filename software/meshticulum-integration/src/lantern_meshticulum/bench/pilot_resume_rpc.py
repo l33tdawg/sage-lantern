@@ -22,7 +22,7 @@ import time
 from .history_identity_seal import _Ancestry, capture, SealedHistory
 from .history_metadata_fence import _FLAGS, _FILES, _stamp, MAX_FILE
 from .legacy_grant_fence import capture as legacy_capture, LegacyGrantFence
-from .pilot_parent_snapshot import Scope, collect
+from .pilot_parent_snapshot import Scope, collect, _child_ref
 from .pilot_debt_snapshot import Scope as DebtScope
 from .pilot_parent_caps import ParentPolicy, Cost, canonical
 from .pilot_native_caps import NativeCaps, NativeFacts
@@ -38,7 +38,11 @@ CONTRACT_SCHEMA = 'meshticulum.private-resume-native-rpc.v1'
 STATE = Path('/var/lib/meshticulum-bench')
 OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af',
     '6d337c78faf8c2dbea7a0a0d29e82aa8af8d1452f954fb6b664106459c33d256',
-    '1ca1774780928427f15befecf723064cd87aff6ad402b6ef94b137f5d45f6d33')
+    '1ca1774780928427f15befecf723064cd87aff6ad402b6ef94b137f5d45f6d33',
+    '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1')
+LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
+RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
+KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 HEX = re.compile(r'[0-9a-f]{64}\Z')
 SID = re.compile(r'[0-9a-f]{32}\Z')
 
@@ -159,7 +163,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
     need(tuple(p.parent_id for p in policies) == HISTORY
          and tuple(p.digest for p in policies) == OLD_DIGESTS, 'wrong_retained_parents')
     original = {r['run_id']:r for r in inventory['rows']}
-    newer = {r['run_id']:r for v in old for r in v['runs']}
+    newer = {r['run_id']:r for v in old for r in v['runs']+v.get('retired_unstarted',[])}
     need(len(original) == {'unit-a':41,'unit-b':64,'unit-c':63}[unit]
          and len(original) == len(inventory['rows']) and not set(original)&set(newer), 'wrong_legacy_inventory')
     known, reports = {}, []
@@ -226,26 +230,37 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         need(local['prior_snapshot_sha256'] == sha(canonical(prior)) == policy.unit(unit).prior_snapshot_sha256,
              'old_local_lineage_changed')
         claims = observed['detail']['claims']
+        if policy.parent_id == LATEST_PAID:
+            for relative,pin in latest_preparation_files(reader,unit,policy,observed,
+                                                       v['preparation_sha256']).items(): known[relative]=pin
         refs = sorted([dict(controller_allocation_id=c['controller_allocation_id'],child=c['child'])
                        for c in claims],key=lambda c:c['child']['run_id'])
-        need(refs == v['controller_endpoint_refs'] and all(c['prepared'] is True and c['started'] is True for c in claims)
-             and observed['detail']['claim_count'] == observed['detail']['prepared_count']
-             == observed['detail']['start_count'] == len(v['runs']), 'old_child_relation_changed')
+        unstarted = v.get('retired_unstarted',[])
+        need(refs == v['controller_endpoint_refs'], 'old_child_relation_changed')
+        qualify_history_claims(policy,unit,observed,v['runs'],unstarted)
+        for row in unstarted:
+            evidence = retired_unstarted(reader,unit,policy,observed,row,clock)
+            for name,pin in evidence['files'].items(): known[name] = pin
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
             relation = observed['legacy_relation']
-            need(relation is not None and not relation['native_claims_without_scoped_actuals']
+            omitted = relation['native_claims_without_scoped_actuals'] if relation is not None else []
+            need(relation is not None and {r['run_id'] for r in omitted} == {r['run_id'] for r in unstarted}
                  and len(relation['links']) == len(v['runs']) and all(r['no_refund'] is True
                  and r['separate_debt_sum_permitted'] is False for r in relation['links']), 'old_actual_coverage_missing')
             if v['require_result_complete']:
                 need(observed['legacy_scoped_rows_complete'] and relation['scoped_linkage_complete']
                      and all(r['relation'] == 'same_endpoint_allocation' for r in relation['links']), 'old_endpoint_overlap_unqualified')
             for row in observed['legacy_runs']:
-                need(row['status'] == 'scoped_rows_observed' and row['wire']['retired'] == 1
-                     and row['journal']['has_unknown_or_pending'] is False, 'old_actual_journal_unsettled')
+                need(row['status'] == 'scoped_rows_observed' and row['wire']['retired'] == 1,
+                     'old_actual_journal_unsettled')
+                if row['journal']['has_unknown_or_pending']:
+                    qualify_known_cut(reader,unit,policy,v['owner'],observed,row,
+                                     KNOWN_CUT_RUN if policy.parent_id==LATEST_PAID else None)
                 result_raw = metadata(STATE/'runs'/row['run_id']/'result.json',300000); result = parse(result_raw)
                 need(sha(result_raw) == row['files']['result.json']['sha256']
-                     and result['complete'] is v['require_result_complete']
+                     and result['complete'] is (row['run_id'] not in v.get('failed_started_runs',[])
+                          if policy.parent_id == LATEST_PAID else v['require_result_complete'])
                      and (row['transport'] == 'tcp' or result['disarmed_on_exit'] is True)
                      and result['parent']['started'] is True and result['parent']['run_id'] == row['run_id']
                      and result['parent']['parent_id'] == policy.parent_id, 'old_actual_result_rebound')
@@ -262,6 +277,91 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
     return known, original, newer, reports
 
 
+def latest_preparation_files(reader,unit,policy,observed,pins):
+    ids={c['child']['run_id'] for c in observed['detail']['claims']}
+    need(set(pins)==ids,'latest_preparation_scope_changed')
+    target=STATE/'parents'/policy.parent_id/'prepared-identities';reader.directory(target)
+    need(set(os.listdir(target))=={run+'.json' for run in ids},'latest_preparation_namespace_changed')
+    files={}
+    for run,pin in pins.items():
+        raw=reader.read(target/(run+'.json'),4096)
+        need(sha(raw)==pin,'latest_preparation_record_changed')
+        files[str((target/(run+'.json')).relative_to(STATE))]=pin
+    reader.check();return files
+
+
+def qualify_history_claims(policy,unit,observed,started,unstarted):
+    """Predicate over the actual collector result; never DTO admission."""
+    detail=observed['detail']; claims=detail['claims']
+    ids={r['run_id'] for r in started}; absent={r['run_id'] for r in unstarted}
+    actual_started={c['child']['run_id'] for c in claims if c['started'] is True}
+    actual_absent={c['child']['run_id'] for c in claims if c['started'] is False}
+    need(not ids&absent and detail['claim_count']==detail['prepared_count']==len(ids|absent)
+         and detail['start_count']==len(ids) and all(c['prepared'] is True for c in claims)
+         and actual_started==ids and actual_absent==absent,'old_child_relation_changed')
+    if policy.parent_id != LATEST_PAID: need(not unstarted,'unexpected_old_unstarted_claim')
+    else:
+        need((len(ids),absent)==((0,set()) if unit=='unit-a' else (8,{RETIRED_UNSTARTED})),
+             'latest_paid_claim_scope_changed')
+
+
+def retired_unstarted(reader,unit,policy,observed,row,now):
+    """Bind one actual paid/prepared/nonstarted retired TCP endpoint; cost unknown.
+
+    No missing file becomes a zero measurement or process-terminal claim.
+    The canonical collector must have read the native append-only start table.
+    """
+    run=row['run_id'];need(policy.parent_id==LATEST_PAID and unit in ('unit-b','unit-c')
+         and run==RETIRED_UNSTARTED,'unexpected_retired_unstarted_scope')
+    claims=[c for c in observed['detail']['claims'] if c['child']['run_id']==run]
+    need(len(claims)==1 and claims[0]['prepared'] is True and claims[0]['started'] is False
+         and claims[0]['start_row_sha256'] is None,'retired_unstarted_native_start_present')
+    claim=claims[0];target=STATE/'runs'/run;files={}
+    def public(path,maximum):
+        raw=reader.read(path,maximum);files[str(path.relative_to(STATE))]=sha(raw);return raw
+    grant_raw=public(target/'grant.json',16384);plan=parse(grant_raw)
+    provision=parse(public(target/'provision.json',32768));receipt=provision['parent']
+    need(_child_ref(receipt['child_caps'])==claim['child'],'retired_unstarted_child_projection_changed')
+    meta=receipt['child_caps']['metadata']
+    need(meta['transport']=='tcp' and plan['schema']=='meshticulum.ip-service-run.v1'
+         and provision['schema']=='meshticulum.provisioned-public-pilot.v2'
+         and provision['unit']==unit and provision['run_id']==run and provision['transport']=='tcp'
+         and sha(grant_raw)==row['grant_sha256'] and sha(canonical(receipt))==claim['prepared_row_sha256']
+         and receipt['native_claim_id']==claim['native_claim_id'] and receipt['child_caps']['cost']==claim['child']['full_caps']
+         and receipt['run_id']==run and receipt['parent_id']==policy.parent_id
+         and receipt['policy_digest']==policy.digest and receipt['unit']==unit
+         and receipt['host_boot_id']==policy.unit(unit).host_boot_id==boot()
+         and sha(canonical(plan))==receipt['native_plan_sha256']==claim['native_plan_sha256'],
+         'retired_unstarted_provision_rebound')
+    normalized=dict(plan,application_deadline_monotonic_us=None)
+    need(sha(canonical(normalized))==meta['plan_sha256']==receipt['original_plan_sha256']
+         and canonical(plan['limits'])==canonical(meta['profile'])
+         and canonical({k:plan['object'][k] for k in ('bytes','sha256')})==canonical(meta['object'])
+         and plan['session']['session_id']==run and plan['format']==meta['format']
+         and canonical(plan['session']['initiator'])==canonical(asdict(policy.unit(meta['sender']).peer))
+         and canonical(plan['session']['responder'])==canonical(asdict(policy.unit(meta['receiver']).peer))
+         and canonical(plan['local_peer'])==canonical(asdict(policy.unit(unit).peer)),
+         'retired_unstarted_plan_rebound')
+    sampled=now();need(plan['expires_epoch_us']<sampled[0]
+         and receipt['application_expires_epoch_us']<sampled[0]
+         and receipt['application_deadline_monotonic_us']<sampled[1]
+         and public(target/'active',128)==b'retired\n','retired_unstarted_live_or_not_retired')
+    for name in os.listdir(target):
+        need(name not in ('job.json','started','bytes.sqlite','wire.sqlite','attempts.sqlite')
+             and not name.endswith(('-wal','-shm','-journal')),'retired_unstarted_runtime_record_present')
+    identity_path=STATE/'parents'/policy.parent_id/'prepared-identities'/(run+'.json')
+    identity_raw=public(identity_path,4096);identity=parse(identity_raw);reader.directory(target)
+    need(sha(identity_raw)==row['prepared_identity_sha256'] and identity['run_id']==run
+         and identity['parent_id']==policy.parent_id and identity['policy_digest']==policy.digest
+         and identity['unit']==unit and identity['directory_identity']==reader.directories[target]
+         and identity['prepared_sha256']==sha(canonical(receipt))
+         and identity['provision_sha256']==files[str((target/'provision.json').relative_to(STATE))],
+         'retired_unstarted_capture_rebound')
+    reader.check();return dict(run_id=run,prepared=True,started=False,retired=True,actual_cost=None,
+        full_prepaid_caps=claim['child']['full_caps'],no_refund=True,separate_debt_sum_permitted=False,
+        physical_quiescence_observed=False,live_terminal_ownership_observed=False,files=files)
+
+
 def capture_history(unit, p, runtime):
     parent = p['parent_id']; need(SID.fullmatch(parent) and parent not in HISTORY
                                  and parent != CAPTURE_PARENT, 'invalid_own_parent')
@@ -276,11 +376,12 @@ def capture_history(unit, p, runtime):
         files, dirs = {}, {}
         for path in [STATE,STATE/'parents',STATE/'runs',*[STATE/'parents'/v for v in HISTORY],
                      *[STATE/v for v in capture_paths(STATE,unit)['directories']],
+                     STATE/'parents'/LATEST_PAID/'prepared-identities',
                      *[STATE/'runs'/v for v in sorted(newer)]]:
             reader.directory(path); rel = str(path.relative_to(STATE)) if path != STATE else ''
             entries = sorted(os.listdir(path)); dirs[rel] = entries
             for name in entries:
-                if name in _FILES:
+                if name in _FILES or path == STATE/'parents'/LATEST_PAID/'prepared-identities':
                     key = (rel+'/' if rel else '')+name; raw = reader.read(path/name,MAX_FILE)
                     files[key] = sha(raw); need(key not in known or files[key] == known[key], 'metadata_changed_before_seal')
         strict_known = {k:v for k,v in known.items() if not any(k.startswith('runs/'+r+'/') for r in original)}
@@ -418,13 +519,13 @@ def enrolled_action(action, unit, p, runtime):
         if action == 'audit':
             full_history(reader,unit,saved['history'],history_gate,own_parent=policy.parent_id,
                          own_runs=tuple(p['preparation_sha256']))
-            terminal = terminal_observation(reader,unit,policy,owner,p['preparation_sha256'])
+            terminal = terminal_observation(reader,unit,policy,owner,p['preparation_sha256'],p.get('expected_cut_run'))
         else: terminal = None
         records(); return dict(parent_id=policy.parent_id,policy_digest=policy.digest,snapshot=snapshot,
                                terminal_observation=terminal)
 
 
-def terminal_observation(reader, unit, policy, owner, preparations):
+def terminal_observation(reader, unit, policy, owner, preparations, expected_cut_run=None):
     """Scoped actual endpoint linkage after exclusive native ownership ended."""
     runs = []
     for run in preparations:
@@ -461,8 +562,11 @@ def terminal_observation(reader, unit, policy, owner, preparations):
         relation = observed['legacy_relation']
         need(relation is not None and not relation['native_claims_without_scoped_actuals']
              and len(relation['links']) == len(runs) and all(r['status'] == 'scoped_rows_observed'
-             and r['wire']['retired'] == 1 and r['journal']['has_unknown_or_pending'] is False
+             and r['wire']['retired'] == 1
              for r in observed['legacy_runs']), 'own_terminal_journals_unsettled')
+        for row in observed['legacy_runs']:
+            if row['journal']['has_unknown_or_pending']:
+                qualify_known_cut(reader,unit,policy,owner,observed,row,expected_cut_run)
     reader.check(); return observed
 
 
@@ -471,7 +575,7 @@ def qualify_terminal(observed, owner, preparations):
     need(detail['approval_bytes_match_enrollment'] is True
          and detail['enrollment']['history_binding_sha256'] == owner['history_binding_sha256']
          and detail['claim_count'] == detail['prepared_count'] == detail['start_count'] == len(preparations)
-         and {c['child']['metadata']['run_id'] for c in detail['claims']} == set(preparations), 'own_terminal_enrollment_or_claims_changed')
+         and {c['child']['run_id'] for c in detail['claims']} == set(preparations), 'own_terminal_enrollment_or_claims_changed')
     if preparations:
         relation = observed['legacy_relation']
         need(relation is not None and relation['scoped_linkage_complete'] is True
@@ -479,6 +583,159 @@ def qualify_terminal(observed, owner, preparations):
              and {r['run_id'] for r in relation['links']} == set(preparations)
              and all(r['relation'] == 'same_endpoint_allocation' and r['no_refund'] is True
              and r['separate_debt_sum_permitted'] is False for r in relation['links']), 'own_terminal_endpoint_relation_unqualified')
+
+
+def qualify_cut_journal(journal):
+    """Typed known-byte fence predicate; never clears or edits journal state."""
+    j=journal['owner'];attempts=journal['attempts']
+    need(journal['has_unknown_or_pending'] is True and j['fenced'] is True
+         and type(j['rx_pending']) is int and j['rx_pending']==0
+         and type(j['rx_unknown']) is int and j['rx_unknown']==0
+         and type(j['rx_settled']) is int and j['rx_settled']==512
+         and attempts and all(a['state']=='KERNEL_ACCEPTED' and a['lane']=='ACK'
+             and type(a['written_bytes']) is int and a['written_bytes']==a['reserved_bytes']>0 for a in attempts),
+         'fenced_cut_has_unsettled_bytes')
+    return None
+
+
+def qualify_known_cut(reader,unit,policy,owner,observed,row,expected_run):
+    """Exact intentional receiver cutoff; original fenced flag stays TRUE.
+
+    This is scoped retired evidence, not a repaired journal or reusable credit.
+    All full prepaid caps remain charged; no missing/unknown byte is forgiven.
+    """
+    need(unit=='unit-c' and expected_run is not None and row['run_id']==expected_run
+         and row['transport']=='tcp' and row['status']=='scoped_rows_observed'
+         and row['wire']['retired']==1,'unexpected_fenced_cut_scope')
+    run=row['run_id'];qualify_cut_journal(row['journal'])
+    if policy.parent_id==LATEST_PAID:
+        attempts=row['journal']['attempts']
+        need(run==KNOWN_CUT_RUN and len(attempts)==1 and attempts[0]['reserved_bytes']==74
+             and attempts[0]['written_bytes']==74 and row['actual_cost']==dict(radio_attempts=0,
+                 estimated_airtime_us=0,ip_frames=1,tx_stream_bytes=74,rx_stream_bytes=512),
+             'historical_fenced_cut_cost_changed')
+    target=STATE/'runs'/run;raw=reader.read(target/'result.json',300000);result=parse(raw)
+    provision=parse(reader.read(target/'provision.json',32768));receipt=provision['parent']
+    claims=[c for c in observed['detail']['claims'] if c['child']['run_id']==run]
+    need(len(claims)==1 and claims[0]['started'] is True and claims[0]['prepared'] is True
+         and sha(canonical(receipt))==claims[0]['prepared_row_sha256']
+         and _child_ref(receipt['child_caps'])==claims[0]['child'],'fenced_cut_parent_projection_changed')
+    meta=receipt['child_caps']['metadata'];loss=result['test_tcp_loss']
+    need(sha(raw)==row['files']['result.json']['sha256'] and result['complete'] is False
+         and result.get('error')=='IpError:explicit_public_pilot_tcp_loss'
+         and loss['injected'] is True and type(loss['requested_rx_stream_bytes']) is int
+         and type(loss['known_rx_stream_bytes']) is int
+         and loss['requested_rx_stream_bytes']==loss['known_rx_stream_bytes']==512
+         and result['byte_journal']['fenced'] is True and not result.get('service_object_durable')
+         and result['session_id']==run and result['service_format']==meta['format']=='MR1.response'
+         and meta['sends'] is False and meta['unit']==unit and meta['receiver']==unit
+         and meta['sender']=='unit-b' and meta['transport']=='tcp' and meta['object']['bytes']>512
+         and result['parent']==dict(receipt,schema='meshticulum.native-parent-start.v1',started=True)
+         and row['admitted_caps']==row['conservative_unknown_caps']==claims[0]['child']['full_caps'],
+         'fenced_cut_result_or_credit_changed')
+    try: (target/'receiver.bin').lstat()
+    except FileNotFoundError: pass
+    else: raise RuntimeError('fenced_cut_receiver_body_exists')
+    plan=parse(reader.read(target/'grant.json',16384))
+    need(sha(canonical(plan))==receipt['native_plan_sha256'] and plan['format']=='MR1.response'
+         and plan['session']['session_id']==run,'fenced_cut_plan_changed')
+    from .pilot_ssh import INVOKE
+    python=owner.get('native_python',{}).get(unit)
+    if python is None and policy.parent_id==LATEST_PAID and run==KNOWN_CUT_RUN: python='/usr/bin/python3'
+    need(type(python) is str and python.startswith('/'),'fenced_cut_native_python_unbound')
+    argv=[python,'-I','-B','-c',INVOKE,'/opt/meshticulum-bench/runtime-'+owner['runtime_sha256'][:16]+'/bench_node.py',
+          owner['manifest_sha256'],'ip-service-run',unit,'--run-id',run,'--test-rx-cutoff','512']
+    command=sha(b'\0'.join(a.encode() for a in argv)+b'\0')
+    need(row['terminal_metadata']['command_sha256']==command
+         and result['native_job']['command_sha256']==command,'fenced_cut_native_argv_changed')
+    reader.check();return dict(run_id=run,classification='intentional_known_512_byte_receiver_cut',
+                               fenced_preserved=True,refunds=0,full_caps_retained=True)
+
+
+def inspect_paid_parent(unit,p,runtime):
+    """Read-only typed rollover evidence, independently of expired admission.
+
+    No enrollment/current constructor, radio, grant or ledger write occurs.
+    Started membership comes from actual protected native rows, not input DTOs.
+    Missing unstarted cost stays null and full prepaid debt remains charged.
+    """
+    policy=ParentPolicy.from_dict(p['policy']);owner=p['owner'];prior=p['prior'];local=policy.unit(unit)
+    need(policy.parent_id==LATEST_PAID and policy.digest==OLD_DIGESTS[-1]
+         and local.host_boot_id==boot(),'wrong_paid_parent_scope')
+    end=clock()[0]+35000000;target=STATE/'parents'/policy.parent_id
+    with Reader() as reader:
+        for name,value in (('policy.json',policy.to_dict()),('owner.json',owner),('prior.json',prior)):
+            need(reader.read(target/name,200000)==canonical(value),'paid_parent_input_changed')
+        sampled=clock();phase=owner['native_phase'][unit]
+        need(sampled[0]>=owner['phase_end_epoch_us']>policy.expires_epoch_us
+             and sampled[1]>=phase['deadline_monotonic_us'],'paid_parent_phase_not_expired')
+        before=stable(native_facts(unit));database=reader.read(target/'native.sqlite',MAX_FILE)
+        scope=Scope('meshticulum.public-parent-snapshot-scope.v1','native',0,policy.parent_id,
+                    policy.digest,sha(database),unit,boot(),end)
+        initial=collect(STATE,scope,clock=clock,boot_reader=boot).to_dict()
+        need(initial['status']=='scoped_rows_observed' and initial['scoped_rows_complete']
+             and initial['policy_expired_at_observation'] and not initial['pending_unknown']
+             and initial['detail']['approval_bytes_match_enrollment'] is True
+             and initial['detail']['enrollment']['history_binding_sha256']==owner['history_binding_sha256'],
+             'paid_parent_actual_rows_unavailable')
+        latest_preparation_files(reader,unit,policy,initial,p['preparation_sha256'])
+        started=[];unstarted=[]
+        from .pilot_job import inspect as inspect_job
+        for claim in initial['detail']['claims']:
+            meta=claim['child'];run=meta['run_id'];child=STATE/'runs'/run
+            grant_raw=reader.read(child/'grant.json',16384);grant=parse(grant_raw)
+            provision=parse(reader.read(child/'provision.json',32768));context=provision['parent']['grant_context_sha256']
+            row=dict(run_id=run,host_boot_id=boot(),transport=meta['transport'],grant_sha256=sha(grant_raw),
+                     grant_context_sha256=context,attempt_binding_sha256=context)
+            need(reader.read(child/'active',128,lock=True)==b'retired\n','paid_child_not_retired')
+            if claim['started'] is False:
+                row['prepared_identity_sha256']=p['preparation_sha256'][run];unstarted.append(row);continue
+            status=inspect_job(child,unit=unit,run_id=run,boot=boot())
+            need(status['job_record_found'] is True and status['live'] is False,'paid_started_job_not_terminal')
+            result=parse(reader.read(child/'result.json',300000))
+            if meta['transport']=='lora':
+                profile=RadioProfile(**grant['profile'])
+                if unit=='unit-c':binding=sha(b'meshticulum.hat-attempts.v1\0'+bytes.fromhex(context)+boot().encode('ascii')+profile.encode(board_id=2))
+                else:
+                    radio=result['radio'];binding=sha(b'meshticulum.radio-attempts.v1\0'+bytes.fromhex(context)
+                        +bytes.fromhex(radio['mcu_boot'])+bytes([1])+radio['firmware'].encode('ascii')+profile.encode(board_id=1))
+                need(result['disarmed_on_exit'] is True,'paid_radio_exit_unqualified')
+                row['attempt_binding_sha256']=binding
+            started.append(row)
+        qualify_history_claims(policy,unit,initial,started,unstarted)
+        legacy=DebtScope.from_dict(dict(schema='meshticulum.public-debt-scope.v1',unit=unit,
+            current_host_boot_id=boot(),runtime_sha256=owner['runtime_sha256'],manifest_sha256=owner['manifest_sha256'],
+            observation_expires_epoch_us=end,runs=started)) if started else None
+        actual=collect(STATE,scope,clock=clock,boot_reader=boot,legacy_scope=legacy).to_dict()
+        need(actual['status']=='scoped_rows_observed' and actual['scoped_rows_complete'] and not actual['pending_unknown']
+             and actual['detail']==initial['detail'],'paid_parent_rows_changed_during_inspection')
+        unknown=[retired_unstarted(reader,unit,policy,actual,row,clock) for row in unstarted]
+        reasons=[]
+        if started:
+            relation=actual['legacy_relation']
+            qualified=(relation is not None and relation['scoped_linkage_complete'] is True
+                 and len(relation['links'])==8 and {r['run_id'] for r in relation['native_claims_without_scoped_actuals']}
+                     =={r['run_id'] for r in unstarted}
+                 and all(r['status']=='scoped_rows_observed' and r['wire']['retired']==1
+                         and r['journal']['has_unknown_or_pending'] is False for r in actual['legacy_runs']))
+            if not qualified:
+                try:
+                    need(relation is not None and relation['scoped_linkage_complete'] is True
+                         and len(relation['links'])==8
+                         and {r['run_id'] for r in relation['native_claims_without_scoped_actuals']}
+                             =={r['run_id'] for r in unstarted},'paid_started_relation_unqualified')
+                    for row in actual['legacy_runs']:
+                        need(row['status']=='scoped_rows_observed' and row['wire']['retired']==1,
+                             'paid_started_row_unqualified')
+                        if row['journal']['has_unknown_or_pending']:
+                            qualify_known_cut(reader,unit,policy,owner,actual,row,KNOWN_CUT_RUN)
+                except Exception as error: reasons.append(str(error))
+        need(stable(native_facts(unit))==before,'paid_parent_inspection_facts_changed');reader.check();runtime.check()
+        return dict(parent_id=policy.parent_id,policy_digest=policy.digest,observation=actual,
+                    started_runs=started,retired_unstarted=unstarted,retired_unstarted_evidence=unknown,
+                    eligible_for_rollover=False,scoped_retirement_checks_satisfied=not reasons,
+                    rollover_refusal_reasons=reasons,
+                    physical_handoff_proven=False,complete_global_debt=False,native_ledger_writes=False)
 
 
 def response_metadata(action, unit, result):
@@ -499,11 +756,12 @@ def response_metadata(action, unit, result):
 def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
     """Actual root entry; import alone performs no native operation."""
     need(os.geteuid() == 0 and unit in ('unit-a','unit-b','unit-c')
-         and action in ('capture','enroll','guard','audit','observe-cache')
+         and action in ('capture','enroll','guard','audit','observe-cache','inspect-paid-parent')
          and type(payload) is dict and len(canonical(payload)) <= 2000000, 'invalid_native_resume_RPC')
     with Runtime(runtime_root,manifest_sha256) as runtime:
         if action == 'capture': result = capture_history(unit,payload,runtime)
         elif action in ('enroll','guard','audit'): result = enrolled_action(action,unit,payload,runtime)
+        elif action=='inspect-paid-parent': result=inspect_paid_parent(unit,payload,runtime)
         else:
             need(unit == 'unit-c', 'cache_observer_requires_C_recipient')
             from .public_cache_observer import observe_native

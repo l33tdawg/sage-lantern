@@ -39,7 +39,8 @@ def state(monkeypatch):
         history_binding_sha256=sha(binding),review_sha256=retained.CAPTURE_REVIEW,
         facts=dict(unit='unit-c',host_boot_id=retained.CAPTURE_BOOT),phase_start_epoch_us=retained.CAPTURE_START,
         phase_end_epoch_us=retained.CAPTURE_END,native_phase=phase,actual_history_verified=True,
-        global_debt_complete=False,original_unknown_actual_cost=None,refunds=0)
+        global_debt_complete=False,original_unknown_actual_cost=None,refunds=0,
+        history=dict(previous=[dict(parent_id=parent) for parent in retained.PAID_HISTORY[:3]]))
     raws={'capture.json':canonical(record),'history-binding.json':binding,
           'history-identity-seal.json':strict,'legacy-grant-seal.json':legacy}
     for name,raw in raws.items(): write(target/name,raw)
@@ -52,6 +53,9 @@ def state(monkeypatch):
 
 def test_exact_capture_retained_without_becoming_a_paid_parent(state):
     root,target,clock=state; before={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
+    assert retained.PAID_HISTORY[-1]=='d60d8308326314a7753e651fa43a99e3'
+    assert len(retained.PAID_HISTORY)==4 and guard.HISTORY is retained.PAID_HISTORY
+    assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
     assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,)
     assert retained.historical_parent_ids(root,'unit-a',clock)==retained.PAID_HISTORY
     assert retained.historical_parent_ids(root,'unit-b',clock)==retained.PAID_HISTORY

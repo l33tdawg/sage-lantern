@@ -12,7 +12,7 @@ from .history_metadata_fence import _FLAGS, _need, _stamp
 from meshticulum.ip.journal import private
 
 PAID_HISTORY = ('28765d19f654ce3162525afe9c3f89c5', '5ad7e65b7e50901a6f63629c04a776e2',
-                '4d1b5d6fe8d4b022c5cf1e21cef7f8ca')
+                '4d1b5d6fe8d4b022c5cf1e21cef7f8ca', 'd60d8308326314a7753e651fa43a99e3')
 CAPTURE_PARENT = 'd0f37a4030fbe55d2829e8c0cebcee5b'
 CAPTURE_BOOT = '21f9c178-6090-40d9-9359-ecf1c7b950b1'
 CAPTURE_START = 1791686240849957
@@ -47,7 +47,7 @@ def capture_paths(state, unit):
                 directories=() if unit != 'unit-c' else (parent,parent+'/prepared-identities'))
 
 def historical_parent_ids(state, unit, clock=current_clock, *, require_retained=False):
-    """Read exact expired artifact; absent optional fixtures retain three parents."""
+    """Read exact expired artifact; optional absence retains only paid parents."""
     _need(unit in ('unit-a','unit-b','unit-c') and callable(clock)
           and type(require_retained) is bool, 'invalid_retained_capture_scope')
     if unit != 'unit-c': return PAID_HISTORY

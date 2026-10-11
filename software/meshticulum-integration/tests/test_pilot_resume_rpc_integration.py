@@ -151,7 +151,7 @@ def test_terminal_qualification_rejects_explicit_modeled_bad_collect_results(att
     # Explicitly modeled typed output exercises qualification predicates only;
     # it supplies no Snapshot or native authority and runs no collector.
     observed = dict(detail=dict(approval_bytes_match_enrollment=True,enrollment=dict(history_binding_sha256='a'*64),
-        claim_count=1,prepared_count=1,start_count=1,claims=[dict(child=dict(metadata=dict(run_id=OLD)))]),
+        claim_count=1,prepared_count=1,start_count=1,claims=[dict(child=dict(run_id=OLD))]),
         legacy_relation=dict(scoped_linkage_complete=True,native_claims_without_scoped_actuals=[],
             links=[dict(run_id=OLD,relation='same_endpoint_allocation',no_refund=True,separate_debt_sum_permitted=False)]))
     if attack == 'stale_approval': observed['detail']['approval_bytes_match_enrollment'] = False

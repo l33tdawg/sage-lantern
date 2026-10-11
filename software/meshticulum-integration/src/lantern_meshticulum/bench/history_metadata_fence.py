@@ -23,6 +23,8 @@ _FILES = frozenset(('grant.json', 'active', 'provision.json', 'job.json',
     tuple(db + suffix for db in _DBS for suffix in ('.owner', '.approval', '.pending')) +
     ('capture.json', 'history-binding.json', 'history-identity-seal.json', 'legacy-grant-seal.json'))
 _CAPTURE_DIRECTORY = 'parents/d0f37a4030fbe55d2829e8c0cebcee5b'
+_PAID_PREPARED_DIRECTORY = 'parents/d60d8308326314a7753e651fa43a99e3'
+_PAID_IDENTITIES = _PAID_PREPARED_DIRECTORY+'/prepared-identities'
 _CAPTURE_FILES = frozenset(('capture.json','history-binding.json','history-identity-seal.json','legacy-grant-seal.json'))
 _FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 
@@ -76,12 +78,16 @@ class HistoricalMetadataFence:
             self._entries = {}
             for path, entries in expected_directories.items():
                 path = _relative(path, root=True)
-                _need(path in ('', 'parents', 'runs', _CAPTURE_DIRECTORY+'/prepared-identities')
+                _need(path in ('', 'parents', 'runs', _CAPTURE_DIRECTORY+'/prepared-identities', _PAID_IDENTITIES)
                       or re.fullmatch(r'(parents|runs)/[^/]+', path),
                       'outside_historical_metadata_namespace')
                 names = tuple(entries)
                 if path == _CAPTURE_DIRECTORY+'/prepared-identities':
                     _need(not names, 'retained_capture_prepared_namespace_not_empty')
+                if path == _PAID_IDENTITIES:
+                    _need(len(names) in (0,9) and all(re.fullmatch(r'[0-9a-f]{32}\.json', n)
+                          and int(n[:-5],16) != 0 for n in names),
+                          'invalid_historical_prepared_identity_name')
                 _need(len(names) == len(set(names)) and all(
                     _relative(n) == n and '/' not in n for n in names), 'invalid_entry_set')
                 _need(not any(n.endswith(('-wal', '-shm', '-journal')) for n in names), 'sqlite_sidecar')
@@ -94,12 +100,16 @@ class HistoricalMetadataFence:
                           for n in names if n.endswith('.owner')), 'unverified_owner_lock')
             for path, digest in self._hashes.items():
                 _relative(path)
-                _need(path.split('/')[-1] in _FILES, 'prohibited_metadata_file')
-                if path.split('/')[-1] in _CAPTURE_FILES:
-                    _need(path.rpartition('/')[0] == _CAPTURE_DIRECTORY, 'outside_retained_capture_metadata')
-                _need(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest), 'invalid_sha256')
                 parent, _, name = path.rpartition('/')
+                identity = parent == _PAID_IDENTITIES and re.fullmatch(r'[0-9a-f]{32}\.json', name)
+                _need(name in _FILES or identity and int(name[:-5],16) != 0, 'prohibited_metadata_file')
+                if path.split('/')[-1] in _CAPTURE_FILES:
+                    _need(parent in (_CAPTURE_DIRECTORY, _PAID_PREPARED_DIRECTORY), 'outside_retained_capture_metadata')
+                _need(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest), 'invalid_sha256')
                 _need(parent in self._entries and name in self._entries[parent], 'unscoped_file')
+            if _PAID_IDENTITIES in self._entries:
+                _need(all(_PAID_IDENTITIES+'/'+name in self._hashes for name in self._entries[_PAID_IDENTITIES]),
+                      'unverified_historical_prepared_identity')
             self._own = tuple(new_own_namespaces)
             _need(len(self._own) == len(set(self._own)), 'duplicate_own_namespace')
             for path in self._own:

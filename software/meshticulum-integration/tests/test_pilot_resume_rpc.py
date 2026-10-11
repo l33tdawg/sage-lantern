@@ -109,7 +109,7 @@ def test_runtime_refuses_unpinned_or_foreign_root():
 
 def test_rpc_contract_schema_and_import_scope():
     assert rpc.CONTRACT_SCHEMA == 'meshticulum.private-resume-native-rpc.v1'
-    assert len(rpc.HISTORY) == 3
+    assert len(rpc.HISTORY) == 4
     assert rpc.HEX.fullmatch('a'*64) and rpc.SID.fullmatch('a'*32)
     assert rpc.stable(dict(unit='unit-c',host_boot_id='b',services={},service_lifetimes={},epoch_us=5)) == \
         dict(unit='unit-c',host_boot_id='b',services={},service_lifetimes={})
