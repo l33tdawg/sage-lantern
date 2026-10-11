@@ -285,8 +285,8 @@ class SSHOperator:
         require(package['host_boot_id']==self.config['units'][package['unit']]['host_boot_id'],'public_seed_wrong_native_boot')
         return self._package(package,'meshticulum.installed-public-pilot-seed.v1')
 
-    def install_runtime(self,unit,archive):
-        require(self.runtime_source is not None and len(archive)<=2000000
+    def install_runtime(self,unit,archive,*,metadata_only=False):
+        require(type(metadata_only) is bool and self.runtime_source is not None and len(archive)<=2000000
                 and hashlib.sha256(archive).hexdigest()==self.config['runtime_sha256']
                 and self.clock()<self.deadline,'pilot_runtime_archive_changed_or_expired')
         # Same create-only private staging discipline, with a separate name and
@@ -305,8 +305,10 @@ class SSHOperator:
         # Check the independent host boot before the installer makes any write.
         prefix="from pathlib import Path\nimport sys\nassert Path('/proc/sys/kernel/random/boot_id').read_text().strip()==sys.argv.pop()\n"
         row=self.config['units'][unit]
+        mode=['--metadata-only'] if metadata_only else []
+        schema='meshticulum.native-pilot-facts.v1' if metadata_only else 'meshticulum.native-bench-inspection.v1'
         value=self._command(unit,[row['python'],'-I','-B','-c',prefix+self.runtime_source,unit,
-            staged['path'],self.config['runtime_sha256'],row['host_boot_id']], 'meshticulum.native-bench-inspection.v1')
+            staged['path'],self.config['runtime_sha256'],*mode,row['host_boot_id']],schema)
         require(value['unit']==unit and value['host_boot_id']==row['host_boot_id']
                 and value['bundle_manifest_sha256']==self.config['manifest_sha256'],'wrong_installed_pilot_runtime')
         return value

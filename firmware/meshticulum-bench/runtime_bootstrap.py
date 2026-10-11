@@ -61,9 +61,11 @@ def read_regular(path, limit):
 
 
 def main():
-    require(os.geteuid() == 0 and sys.flags.isolated and len(sys.argv) == 4,
+    require(os.geteuid() == 0 and sys.flags.isolated and (len(sys.argv) == 4
+            or len(sys.argv) == 5 and sys.argv[4] == '--metadata-only'),
             'requires_isolated_root_unit_archive_hash')
-    unit, archive, digest = sys.argv[1:]
+    metadata_only = len(sys.argv) == 5
+    unit, archive, digest = sys.argv[1:4]
     require(unit in ('unit-a', 'unit-b', 'unit-c') and len(digest) == 64
             and all(c in '0123456789abcdef' for c in digest), 'invalid_runtime_target')
     os.umask(0o077)
@@ -92,7 +94,8 @@ def main():
     for name in ('runs', 'objects'): private_root(state / name)
     executable = '/usr/bin/python3' if unit == 'unit-c' else '/root/esp-venv-r3/bin/python'
     os.chdir(destination)
-    os.execve(executable, [executable, '-I', '-B', str(destination / 'bench_node.py'), 'inspect', unit],
+    action = 'pilot-facts' if metadata_only else 'inspect'
+    os.execve(executable, [executable, '-I', '-B', str(destination / 'bench_node.py'), action, unit],
               {'HOME': '/root', 'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
 
 
