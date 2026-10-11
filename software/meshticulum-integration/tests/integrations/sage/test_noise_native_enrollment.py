@@ -15,7 +15,7 @@ from lantern_meshticulum.sage.message_contacts import RecipientID
 from lantern_meshticulum.sage.message_storage import MessageStorageProbe
 from lantern_meshticulum.sage.workflow_store import WorkflowStore
 from lantern_meshticulum.sage.noise_purpose import NoiseBinding,NoisePublic,PURPOSE,ALGORITHM
-from lantern_meshticulum.sage.noise_native_enrollment import NativeNoiseEnrollment,NativeNoiseEnrollmentError,SCHEMA,SIGNATURE_DOMAIN,KIND
+from lantern_meshticulum.sage.noise_native_enrollment import NativeNoiseEnrollment,NativeNoiseEnrollmentError,SCHEMA,SIGNATURE_DOMAIN,KIND,ENROLL_SCOPE
 from lantern_meshticulum.sage.mesh_inbox import _canonical
 from meshticulum.privacy.forward_session import public
 from tests.integrations.sage.test_forward_native_owner import setup
@@ -131,3 +131,55 @@ def test_higher_signed_revision_cannot_be_rolled_back_or_equivocated_live():
         record();assert p.key_check(info.public_key,r.context.digest)
         record(state='revoked')
         with pytest.raises(NativeNoiseEnrollmentError):p.key_check(info.public_key,r.context.digest)
+
+
+def test_explicit_original_root_enrollment_scope_creates_one_signed_public_record():
+    with fixture(SCOPES+(ENROLL_SCOPE,)) as (r,p,info,_):
+        r.hardware.capture_lease=lambda *args:pytest.fail('must not obtain another lease')
+        assert r.state.rows=={}
+        with r.hardware._mutex: assert p.enroll() is True
+        assert set(r.state.rows)=={p.record_id}
+        row=r.state.rows[p.record_id];assert row['revision']==1 and row['payload']['body']['state']=='active'
+        assert p.enrollment_check(info,r.context.digest) is True
+        encoded=_canonical(row)
+        secret=r.noise[0].private_bytes_raw()
+        assert secret not in encoded and secret.hex().encode() not in encoded and base64.b64encode(secret) not in encoded
+        assert r.client._client.is_closed is False
+
+
+def test_four_exchange_scopes_do_not_implicitly_authorize_enrollment_write():
+    with fixture() as (r,p,_,_):
+        called=[];original=r.client.workflow_put
+        r.client.workflow_put=lambda **args:(called.append(args),original(**args))[1]
+        with pytest.raises(NativeNoiseEnrollmentError):p.enroll()
+        assert not called and r.state.rows=={} and p._uncertain is True
+
+
+@pytest.mark.parametrize('state',['active','revoked'])
+def test_enrollment_never_overwrites_existing_or_retired_original_namespace(state):
+    with fixture(SCOPES+(ENROLL_SCOPE,)) as (r,p,_,record):
+        before=record(state=state)
+        with pytest.raises(NativeNoiseEnrollmentError):p.enroll()
+        assert r.state.rows=={p.record_id:before}
+
+
+@pytest.mark.parametrize('attack',['lost_return','revoked_after_put','close_after_put','clock_swap','reentry','cas_race'])
+def test_unknown_put_or_final_guard_preserves_actual_committed_row_and_fences_writer(attack):
+    with fixture(SCOPES+(ENROLL_SCOPE,)) as (r,p,info,record):
+        original=r.client.workflow_put
+        def put(**args):
+            if attack=='cas_race':record(state='revoked')
+            returned=original(**args)
+            if attack=='lost_return':raise RuntimeError('simulated_committed_return_loss')
+            if attack=='revoked_after_put':r.state.owner_live=False
+            elif attack=='close_after_put':p.close()
+            elif attack=='clock_swap':p._clock=lambda:r.state.now
+            elif attack=='reentry':
+                with pytest.raises(NativeNoiseEnrollmentError):p.enroll()
+            return returned
+        r.client.workflow_put=put
+        with pytest.raises(NativeNoiseEnrollmentError):p.enroll()
+        assert p._uncertain is True and p.record_id in r.state.rows
+        assert r.state.rows[p.record_id]['revision']==1
+        assert r.state.rows[p.record_id]['payload']['body']['state']==('revoked' if attack=='cas_race' else 'active')
+        with pytest.raises(NativeNoiseEnrollmentError):p.enroll()

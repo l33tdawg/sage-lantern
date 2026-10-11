@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Read-only, locally signed native Noise enrollment observation.
+"""Explicit root-authorized enrollment and signed native Noise observation.
 
-This component creates no key, record, grant, client, lease or transport. A
-separate authenticated root enrollment request must already have written the
-record. Missing records refuse. Setup approval (before key generation) and
+Read observers create no key, record, grant, client, lease or transport. The
+explicit enroll method creates one public record only when the SAME original
+authenticated root request additionally grants ENROLL_SCOPE. Missing records
+still refuse read observers. Setup approval (before key generation) and
 full exchange approval (after both pins form ForwardContext) remain distinct.
 The local record explicitly approves the remote pin; it never reads another
 actor's NoisePurpose record with the local client. Source use is not native
@@ -12,6 +13,7 @@ qualification or production activation, and Python close is not secure erasure.
 import base64
 import hashlib
 import os
+import json
 import threading
 
 from nacl.signing import VerifyKey
@@ -20,11 +22,12 @@ from .forward_native_owner import SCOPES,approval_binding,host_boot,clock
 from .forward_receive_journal import ReceiveIntention
 from .mesh_inbox import _canonical,_id,_uuid
 from .noise_purpose import NoisePublic,PURPOSE,ALGORITHM
-from .workflow_store import WorkflowStore
+from .workflow_store import WorkflowStore,WorkflowNotFound
 
 SCHEMA='sage.lantern.native-noise-enrollment.v1'
 SIGNATURE_DOMAIN=b'sage.lantern.native-noise-enrollment.v1/signature\0'
 KIND='mesh_outbound'
+ENROLL_SCOPE='meshticulum_forward_noise_enroll'
 
 
 class NativeNoiseEnrollmentError(RuntimeError):
@@ -169,6 +172,45 @@ class NativeNoiseEnrollment:
             self._busy=entered=True;self._guard()
             record=self.store.get(self.record_id,kind=KIND,access_check=self._guard)
             self._validate(record);self._guard();return True
+        except BaseException as error:
+            if entered:self._uncertain=True
+            if not isinstance(error,Exception):raise
+            raise NativeNoiseEnrollmentError() from None
+        finally:
+            if entered:self._busy=False
+
+    def _enroll_guard(self):
+        self._guard()
+        require(self._checked(self.authority.authorized,self.native_context,ENROLL_SCOPE,None) is True)
+        self._guard();return True
+
+    def enroll(self):
+        """Create-only signed public enrollment under explicit original approval.
+
+        Existing active, revoked or malformed records are NEVER overwritten.
+        CAS uncertainty fences this instance; retained committed public state
+        must be re-read by a fresh authorized observer. No lease, key generation,
+        peer registration, native transport or production activation occurs.
+        """
+        entered=False
+        try:
+            self._available()
+            if self._busy:self._uncertain=True;raise NativeNoiseEnrollmentError()
+            self._busy=entered=True;self._enroll_guard()
+            try:self.store.get(self.record_id,kind=KIND,access_check=self._enroll_guard)
+            except WorkflowNotFound:pass
+            else:raise NativeNoiseEnrollmentError()
+            self._enroll_guard()
+            body=dict(record_id=self.record_id,revision=1,purpose=PURPOSE,algorithm=ALGORITHM,
+                      binding=json.loads(self._binding),state='active')
+            signed=self._checked(self._refs[9].sign,SIGNATURE_DOMAIN+_canonical(body))
+            payload=dict(schema=SCHEMA,body=body,signature=base64.b64encode(signed.signature).decode('ascii'))
+            self._enroll_guard()
+            returned=self.store.put(self.record_id,KIND,0,payload,access_check=self._enroll_guard)
+            self._validate(returned);require(self._body==_canonical(body));self._enroll_guard()
+            observed=self.store.get(self.record_id,kind=KIND,access_check=self._enroll_guard)
+            self._validate(observed);require(self._body==_canonical(body));self._enroll_guard()
+            return True
         except BaseException as error:
             if entered:self._uncertain=True
             if not isinstance(error,Exception):raise
