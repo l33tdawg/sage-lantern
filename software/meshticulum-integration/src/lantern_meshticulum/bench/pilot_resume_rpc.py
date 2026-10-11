@@ -42,10 +42,15 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '6d337c78faf8c2dbea7a0a0d29e82aa8af8d1452f954fb6b664106459c33d256',
     '1ca1774780928427f15befecf723064cd87aff6ad402b6ef94b137f5d45f6d33',
     '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1',
-    '0d153ed60782be5028fe7b75f3345b0441e62ef95b8db629270d5b309fd0e049')
+    '0d153ed60782be5028fe7b75f3345b0441e62ef95b8db629270d5b309fd0e049',
+    'c4dac314abe5afac2d14c8f82f08466863bac438c7674864c0864c8eae5e2eb7')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
-GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[-2], COMPLETE_PAID: OLD_DIGESTS[-1]}
+BULK_PAID = '4034f8979b985660df21859606c4f8a7'
+BULK_RECEIVER_RUN = 'b024cea0883f00b3b6978533f66c1a19'
+BULK_RECEIVER_RESULT_SHA = '3144a2ab5108bd8a5363a03ca6da541cf56a150048c40753b2cd6f91ef7758ab'
+BULK_OBJECT_SHA = '29aab48fe22c08588643e5d1e11f48696405697e8a59607ef34702cc2a1e0465'
+GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[-3], COMPLETE_PAID: OLD_DIGESTS[-2], BULK_PAID: OLD_DIGESTS[-1]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -280,6 +285,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         for row in unstarted:
             evidence = retired_unstarted(reader,unit,policy,observed,row,clock)
             for name,pin in evidence['files'].items(): known[name] = pin
+        if policy.parent_id == BULK_PAID:
+            need(v.get('failed_started_runs',[]) == ([BULK_RECEIVER_RUN] if unit=='unit-c' else []),
+                 'bulk_failed_endpoint_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
             relation = observed['legacy_relation']
@@ -303,6 +311,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                      and (row['transport'] == 'tcp' or result['disarmed_on_exit'] is True)
                      and result['parent']['started'] is True and result['parent']['run_id'] == row['run_id']
                      and result['parent']['parent_id'] == policy.parent_id, 'old_actual_result_rebound')
+                if policy.parent_id == BULK_PAID and unit=='unit-c' and row['run_id']==BULK_RECEIVER_RUN:
+                    qualify_bulk_receiver(row,result,result_raw)
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -344,7 +354,30 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id == COMPLETE_PAID:
         need((len(ids),absent)==((0,set()) if unit=='unit-a' else (10,set())),
              'complete_paid_claim_scope_changed')
+    elif policy.parent_id == BULK_PAID:
+        expected={'unit-a':{'27e27a319d4a86cdc32236554de58cf7','7abd5cfd2c3da01ae4a5f687867073d4','da4ef48b14383c3f6cad0a8bc1ba396a','deea3ba36c13cd67b350cdd01785a80a'},
+            'unit-b':{'7abd5cfd2c3da01ae4a5f687867073d4',BULK_RECEIVER_RUN,'d19e8fa1002399b8db98f8ddf26b4296','deea3ba36c13cd67b350cdd01785a80a'},
+            'unit-c':{'27e27a319d4a86cdc32236554de58cf7',BULK_RECEIVER_RUN,'d19e8fa1002399b8db98f8ddf26b4296','da4ef48b14383c3f6cad0a8bc1ba396a'}}
+        need(ids==expected[unit] and not absent,'bulk_paid_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
+
+
+def qualify_bulk_receiver(row,result,raw):
+    """One exact failed but durable receiver; never publisher acceptance."""
+    need(row['run_id']==BULK_RECEIVER_RUN and row['transport']=='lora'
+         and row['status']=='scoped_rows_observed' and row['wire']['retired']==1
+         and not row['journal']['has_unknown_or_pending']
+         and sha(raw)==row['files']['result.json']['sha256']==BULK_RECEIVER_RESULT_SHA
+         and result['unit']=='unit-c' and result['session_id']==BULK_RECEIVER_RUN
+         and result['complete'] is False and result['error']=='WireError:service_transfer_not_live'
+         and result['sends'] is False and result['service_format']=='MR1.response'
+         and result['parent']['parent_id']==BULK_PAID and result['parent']['started'] is True
+         and result['disarmed_on_exit'] is True and not result['attempt_journal']['fenced']
+         and result['service_object_durable'] is True and result['service_object_sha256']==BULK_OBJECT_SHA
+         and result['object']['bytes']==16384 and result['object']['sha256']==BULK_OBJECT_SHA
+         and result['flow']['complete'] is True and result['flow']['received_bytes']==16384
+         and result['publisher_verified'] is False and not result.get('cleanup_errors'),
+         'bulk_failed_durable_receiver_changed')
 
 
 def retired_unstarted(reader,unit,policy,observed,row,now):
@@ -768,6 +801,10 @@ def inspect_paid_parent(unit,p,runtime):
         actual=collect(STATE,scope,clock=clock,boot_reader=boot,legacy_scope=legacy).to_dict()
         need(actual['status']=='scoped_rows_observed' and actual['scoped_rows_complete'] and not actual['pending_unknown']
              and actual['detail']==initial['detail'],'paid_parent_rows_changed_during_inspection')
+        if policy.parent_id==BULK_PAID and unit=='unit-c':
+            failed=next(row for row in actual['legacy_runs'] if row['run_id']==BULK_RECEIVER_RUN)
+            raw=reader.read(STATE/'runs'/BULK_RECEIVER_RUN/'result.json',300000)
+            qualify_bulk_receiver(failed,parse(raw),raw)
         unknown=[retired_unstarted(reader,unit,policy,actual,row,clock) for row in unstarted]
         reasons=[]
         if started:
