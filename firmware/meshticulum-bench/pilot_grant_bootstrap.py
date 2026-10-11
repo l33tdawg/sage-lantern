@@ -16,32 +16,64 @@ def need(ok, message):
     if not ok: raise RuntimeError(message)
 
 
-def read(path, maximum, *, root=False):
+def read(path, maximum, *, root=False, public_seed=False):
+    ancestry=[]
+    identity=lambda v:(v.st_dev,v.st_ino,v.st_mode,v.st_uid,v.st_gid)
+    if public_seed:
+        need(path.is_absolute() and path.resolve()==path and path.parent.name=='meshticulum-bench-staging',
+             'unscoped_public_seed_source')
+        parent=path.parent.lstat()
+        need(stat.S_ISDIR(parent.st_mode) and stat.S_IMODE(parent.st_mode)==0o700,'unprotected_public_seed_source')
+        ancestry.append((path.parent,identity(parent)))
+        for ancestor in path.parent.parents:
+            info=ancestor.lstat()
+            need(stat.S_ISDIR(info.st_mode) and not info.st_mode&0o022 and ancestor.resolve()==ancestor,
+                 'unsafe_public_seed_ancestry')
+            ancestry.append((ancestor,identity(info)))
     if root:
         for parent in (path.parent, *path.parent.parents):
             info = parent.lstat()
             need(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022,
                  'unsafe_grant_parent')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         info = os.fstat(fd)
         need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= maximum
              and (not root or info.st_uid == 0 and not info.st_mode & 0o022), 'unsafe_grant_file')
-        with os.fdopen(fd, 'rb', closefd=False) as inp: return inp.read(maximum + 1)
+        if public_seed:
+            need(stat.S_IMODE(info.st_mode)==0o600 and info.st_uid==parent.st_uid,'unprotected_public_seed_file')
+        with os.fdopen(fd, 'rb', closefd=False) as inp:raw=inp.read(maximum + 1)
+        stamp=lambda v:(v.st_dev,v.st_ino,v.st_mode,v.st_uid,v.st_nlink,v.st_size,v.st_mtime_ns,v.st_ctime_ns)
+        need(len(raw)==info.st_size and stamp(os.fstat(fd))==stamp(path.lstat())==stamp(info),
+             'source_package_changed')
+        need(all(identity(parent.lstat())==saved and parent.resolve()==parent for parent,saved in ancestry),
+             'public_seed_ancestry_changed')
+        return raw
     finally: os.close(fd)
 
 
+def load_package(source,digest,*,public_seed=False):
+    need(type(public_seed) is bool,'invalid_public_seed_selection')
+    path=Path(source)
+    if public_seed:need(path.name=='public-seed-'+digest+'.json','wrong_public_seed_source_name')
+    raw=read(path,700000 if public_seed else 100000,public_seed=public_seed)
+    need(hashlib.sha256(raw).hexdigest()==digest,'pilot_package_hash_mismatch')
+    package=json.loads(raw)
+    need(not public_seed or package.get('schema')=='meshticulum.pilot-public-seed.v1','large_public_seed_schema_required')
+    return package
+
+
 def main():
-    need(os.geteuid() == 0 and sys.flags.isolated and len(sys.argv) == 6,
+    need(os.geteuid() == 0 and sys.flags.isolated and len(sys.argv) in (6,7),
          'expected_isolated_root_unit_package_hash_runtime_manifest')
-    unit, source, digest, runtime_digest, manifest_digest = sys.argv[1:]
+    public_seed=len(sys.argv)==7
+    need(not public_seed or sys.argv[-1]=='--public-seed','invalid_public_seed_selection')
+    unit, source, digest, runtime_digest, manifest_digest = sys.argv[1:6]
     for value in (digest, runtime_digest, manifest_digest):
         need(len(value) == 64 and all(c in '0123456789abcdef' for c in value), 'invalid_pin')
     need(unit in ('unit-a', 'unit-b', 'unit-c'), 'invalid_unit')
     os.umask(0o077)
-    raw = read(Path(source), 100000)
-    need(hashlib.sha256(raw).hexdigest() == digest, 'pilot_package_hash_mismatch')
-    package = json.loads(raw)
+    package=load_package(source,digest,public_seed=public_seed)
     bundle = Path('/opt/meshticulum-bench') / ('runtime-' + runtime_digest[:16])
     manifest_raw = read(bundle / 'manifest.json', 20000, root=True)
     need(hashlib.sha256(manifest_raw).hexdigest() == manifest_digest, 'runtime_manifest_changed')

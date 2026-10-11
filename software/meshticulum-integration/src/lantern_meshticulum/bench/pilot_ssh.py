@@ -49,6 +49,24 @@ finally:os.close(fd)
 print(json.dumps(dict(schema='meshticulum.staged-pilot-package.v1',path=str(target),sha256=digest)))
 '''
 
+# Explicit public-seed path. Child/grant staging above remains exactly100000.
+# Bodies pass only through the unprivileged non-PTY stdin, never argv.
+PUBLIC_SEED_STAGE = STAGE.replace('100001','700001').replace('100000','700000')
+PUBLIC_SEED_STAGE = PUBLIC_SEED_STAGE.replace("'pilot-'+digest+'.json'","'public-seed-'+digest+'.json'")
+PUBLIC_SEED_STAGE = PUBLIC_SEED_STAGE.replace('meshticulum.staged-pilot-package.v1','meshticulum.staged-public-seed.v1')
+PUBLIC_SEED_STAGE = PUBLIC_SEED_STAGE.replace("root=Path.home()",'''value=json.loads(data)
+assert type(value) is dict and set(value)=={'schema','unit','host_boot_id','role','manifest_sha256','trust','files'}
+assert value['schema']=='meshticulum.pilot-public-seed.v1' and value['unit'] in ('unit-a','unit-b','unit-c')
+assert value['role']=='source' or value['role']=='recipient' and value['unit'] in ('unit-a','unit-c')
+assert type(value['files']) is dict and 2<=len(value['files'])<=10 and {'manifest.json','manifest.sig.json'}<=set(value['files'])
+assert type(value['trust']) is dict and len(json.dumps(value['trust'],sort_keys=True).encode())<=16384
+import base64
+assert all(type(n) is str and type(v) is str and len(v)<=87384 for n,v in value['files'].items())
+files={n:base64.b64decode(v,validate=True) for n,v in value['files'].items()}
+assert all(len(v)<=65536 for v in files.values()) and sum(map(len,files.values()))<=525000
+assert value['role']!='recipient' or set(files)=={'manifest.json','manifest.sig.json'}
+root=Path.home()''')
+
 # The fixed root launcher is checked against the operator's manifest pin, not
 # merely against a potentially changed manifest's own source map.
 INVOKE = '''import hashlib,json,os,runpy,stat,sys
@@ -260,20 +278,26 @@ class SSHOperator:
                receiver:(self.config['units'][receiver]['ip_address'],self.next_port+1)}
         self.next_port+=2;return value
 
-    def _package(self,package,schema):
+    def _package(self,package,schema,*,public_seed=False):
+        require(type(public_seed) is bool,'invalid_public_seed_staging_selection')
         unit=package['unit'];row=self.config['units'][unit]
+        if public_seed:
+            from .pilot_seed import validate
+            validate(package,facts=dict(unit=unit,host_boot_id=row['host_boot_id']))
         raw=json.dumps(package,sort_keys=True,separators=(',',':')).encode();digest=hashlib.sha256(raw).hexdigest()
-        require(len(raw)<=100000 and self.clock()<self.deadline,'pilot_staging_bounds')
-        result=subprocess.run(self._argv(unit,['python3','-I','-B','-c',STAGE,digest],root=False),input=raw,
+        maximum=700000 if public_seed else 100000
+        prefix='public-seed-' if public_seed else 'pilot-'
+        require(len(raw)<=maximum and self.clock()<self.deadline,'pilot_staging_bounds')
+        result=subprocess.run(self._argv(unit,['python3','-I','-B','-c',PUBLIC_SEED_STAGE if public_seed else STAGE,digest],root=False),input=raw,
                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=min(5,self.deadline-self.clock()))
         require(result.returncode==0,'pilot_package_staging_failed')
-        staged=one_record(result.stdout,'meshticulum.staged-pilot-package.v1')
+        staged=one_record(result.stdout,'meshticulum.staged-public-seed.v1' if public_seed else 'meshticulum.staged-pilot-package.v1')
         path=Path(staged['path'])
-        require(staged['sha256']==digest and path.is_absolute() and path.name=='pilot-'+digest+'.json'
+        require(staged['sha256']==digest and path.is_absolute() and path.name==prefix+digest+'.json'
                 and path.parent.name=='meshticulum-bench-staging' and '..' not in path.parts,
                 'wrong_staged_pilot_package')
         value=self._command(unit,[row['python'],'-I','-B','-c',self.source,unit,staged['path'],digest,
-            self.config['runtime_sha256'],self.config['manifest_sha256']],schema)
+            self.config['runtime_sha256'],self.config['manifest_sha256'],*(['--public-seed'] if public_seed else [])],schema)
         require(value['unit']==unit and value['package_sha256']==digest,'wrong_native_provision_receipt')
         return value
 
@@ -309,7 +333,7 @@ class SSHOperator:
 
     def seed(self,package):
         require(package['host_boot_id']==self.config['units'][package['unit']]['host_boot_id'],'public_seed_wrong_native_boot')
-        return self._package(package,'meshticulum.installed-public-pilot-seed.v1')
+        return self._package(package,'meshticulum.installed-public-pilot-seed.v1',public_seed=True)
 
     def install_runtime(self,unit,archive,*,metadata_only=False):
         require(type(metadata_only) is bool and self.runtime_source is not None and len(archive)<=2000000

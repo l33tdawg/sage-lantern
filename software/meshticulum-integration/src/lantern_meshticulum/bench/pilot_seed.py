@@ -17,8 +17,14 @@ from meshticulum.resources import lamplighter as ll
 from lantern_meshticulum.bench.pilot_provision import _directory
 from meshticulum.bench.wire import require
 
+MAX_PACKAGE_BYTES=700000
+MAX_FILE_BYTES=65536
+MAX_DECODED_BYTES=525000
+MAX_TRUST_BYTES=16384
 
-def install(package, *, state, facts):
+
+def validate(package, *, facts):
+    """Bound and verify a public seed before staging or namespace writes."""
     fields={'schema','unit','host_boot_id','role','manifest_sha256','trust','files'}
     require(type(package) is dict and set(package)==fields
             and package['schema']=='meshticulum.pilot-public-seed.v1'
@@ -28,7 +34,15 @@ def install(package, *, state, facts):
     require((role=='source' and facts['unit'] in ('unit-a','unit-b','unit-c')) or (role=='recipient' and facts['unit'] in ('unit-a','unit-c')),
             'wrong_public_pilot_seed_role')
     require(type(package['files']) is dict and 2<=len(package['files'])<=10,'invalid_public_seed_files')
+    require(len(json.dumps(package,sort_keys=True,separators=(',',':'),allow_nan=False).encode())<=MAX_PACKAGE_BYTES
+            and type(package['trust']) is dict
+            and len(json.dumps(package['trust'],sort_keys=True,allow_nan=False).encode())<=MAX_TRUST_BYTES,
+            'public_seed_aggregate_bound')
+    require(all(type(name) is str and type(value) is str and len(value)<=4*((MAX_FILE_BYTES+2)//3)
+                for name,value in package['files'].items()),'public_seed_encoded_file_bound')
     files={name:base64.b64decode(value,validate=True) for name,value in package['files'].items()}
+    require(all(len(raw)<=MAX_FILE_BYTES for raw in files.values())
+            and sum(map(len,files.values()))<=MAX_DECODED_BYTES,'public_seed_decoded_bound')
     require({'manifest.json','manifest.sig.json'}<=set(files),'public_seed_manifest_missing')
     manifest=ll.manifest(files['manifest.json'],files['manifest.sig.json'],package['trust'],package['manifest_sha256'])
     require(len(manifest['chunks'])<=8,'public_pilot_seed_too_many_chunks')
@@ -39,6 +53,11 @@ def install(package, *, state, facts):
     if role=='source':
         records=[ll.chunk(files['chunks/'+entry['sha256']+'.json'],entry) for entry in manifest['chunks']]
         ll.kp.validate_pack_rules(manifest,records)
+    return files
+
+
+def install(package, *, state, facts):
+    files=validate(package,facts=facts);role=package['role']
     root=Path(state);private(root.lstat(),True)
     public=_directory(root/'public')
     target=public/package['manifest_sha256']
@@ -61,4 +80,5 @@ def install(package, *, state, facts):
     return dict(schema='meshticulum.installed-public-pilot-seed.v1',unit=facts['unit'],role=role,
         manifest_sha256=package['manifest_sha256'],publisher_verified=True,
         files_sha256={name:hashlib.sha256(raw).hexdigest() for name,raw in files.items()},
+        decoded_seed_bytes=sum(map(len,files.values())),
         recipient_chunks_installed=False,radio_opened=False,socket_opened=False,private_admission=False)
