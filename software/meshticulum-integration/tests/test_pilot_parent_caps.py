@@ -327,6 +327,23 @@ def test_prior_cost_and_digest_are_mandatory_explicit_inputs():
     with pytest.raises(ParentCapsError):Cost(ip_frames=2**63-1).plus(Cost(ip_frames=1))
 
 
+@pytest.mark.parametrize('field', tuple(asdict(Cost())))
+def test_each_cost_dimension_retains_exact_boundary_and_overflow(field):
+    maximum = Cost(**{field: 2**63-1})
+    one = Cost(**{field: 1})
+    below = Cost(**{field: 2**63-2})
+    assert below.plus(one) == maximum
+    assert below.within(maximum) and maximum.within(maximum)
+    assert not maximum.within(below)
+    with pytest.raises(ParentCapsError):maximum.plus(one)
+
+
+@pytest.mark.parametrize('other', [None, {}, (0, 0, 0, 0, 0), True])
+def test_cost_arithmetic_refuses_untyped_inputs(other):
+    with pytest.raises(ParentCapsError):Cost().plus(other)
+    with pytest.raises(ParentCapsError):Cost().within(other)
+
+
 def test_policy_json_decode_preserves_exact_binding_and_refuses_missing_prior():
     p=policy();value=json.loads(canonical(p.to_dict()))
     assert ParentPolicy.from_dict(value)==p

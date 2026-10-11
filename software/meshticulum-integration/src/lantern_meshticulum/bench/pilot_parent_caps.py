@@ -73,10 +73,12 @@ class Cost:
         require(all(type(v) is int and 0 <= v <= MAX for v in asdict(self).values()))
     def plus(self, other):
         require(type(other) is Cost)
-        return Cost(**{k: v + asdict(other)[k] for k, v in asdict(self).items()})
+        other_values = asdict(other)
+        return Cost(**{k: v + other_values[k] for k, v in asdict(self).items()})
     def within(self, other):
         require(type(other) is Cost)
-        return all(v <= asdict(other)[k] for k, v in asdict(self).items())
+        other_values = asdict(other)
+        return all(v <= other_values[k] for k, v in asdict(self).items())
 
 
 @dataclass(frozen=True, slots=True)
