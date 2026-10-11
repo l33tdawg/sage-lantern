@@ -58,7 +58,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '5a837b0e365421ff9b9c5511ec768a16d458b16b3720af8c4aa1e6a085a8c827',
     '0de0a7d00510c4bdbe3ee6857a5130f1000576e305c8382b84bc27d40418d5d1',
     '2fd26f804a8d7d8d095e4d90584814a788a70b47ec36962c53b4d5f7239d4b8d',
-    '47a8f82ef0b7ba29ba785623b870138487786c9e5a5e9371b00c84544ab5e53b')
+    '47a8f82ef0b7ba29ba785623b870138487786c9e5a5e9371b00c84544ab5e53b',
+    '75629c69abee33dbeb9e7f9f74b62a8af4fd3bdead281089ee5202e345e83464')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -111,8 +112,17 @@ ENROLLED_ZERO_PAID = '141c892d83b6064a800c11aab6444f28'
 ENROLLED_ZERO_DATABASES = {'unit-a':'2e9ffd06bce50b8e870fe29c2f0bbcf7ef7c76d807b5bf59f5e04f6ecc4711f2',
     'unit-b':'e141104945fc1322e398b61a55ec7b037f6f5bf32fb320245642446515c140e1',
     'unit-c':'4cb43e56a11f60e35017ff2b570b659820ab05cd822f4ee4c6eb76b7f8cd88f8'}
+PARTIAL_BUNDLE_PAID = '05c36e09fd4056c94d341d2dd32243f4'
+PARTIAL_BUNDLE_RUNS = ('2ab6b641bc0f5d5c3ad63051d093d80f','b42ad6cb0629adfc17147f2d8b961ff8')
+PARTIAL_BUNDLE_DATABASES = {'unit-a':'e64bc7d43de661d43028702a526b41834f9b9230fb4bd86968593792261c29c9',
+    'unit-b':'631834bb8380eeb87a51e230d332c770800cf8286f45b8272bb758166772c856',
+    'unit-c':'6a3b56796127f0acd1e6ab3030535189956dd8d4130027f35c3fe11ae078cd57'}
+PARTIAL_BUNDLE_OUTCOMES = {'unit-a':{'2ab6b641bc0f5d5c3ad63051d093d80f':'f0566c67181b925ba393d99bc8e68c4efdd83e2e367cd723a31058d269cdf2e2',
+    'b42ad6cb0629adfc17147f2d8b961ff8':'39b61bab0af2d5eaac966606bf73b0795f1368eb20a6772eb590bc13678c7fe2'},'unit-b':{},
+    'unit-c':{'2ab6b641bc0f5d5c3ad63051d093d80f':'ab7f63d7ce184334272e23cf385982f32c78e48d903340ab68077a919a4e42b5',
+    'b42ad6cb0629adfc17147f2d8b961ff8':'86843e110fc1d29ccbd10df24acd55bb0c3365d7cbdd12cbcc9f1acd43b444dc'}}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -456,6 +466,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
         if policy.parent_id in PUBLIC32_PARENTS:
             qualify_public32_failure_scope(unit,policy.parent_id,v)
+        if policy.parent_id==PARTIAL_BUNDLE_PAID:
+            need(v['require_result_complete'] is True and v.get('failed_started_runs')==[],
+                 'partial_bundle_failure_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
             relation = observed['legacy_relation']
@@ -484,6 +497,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                 if policy.parent_id == MIXED_PAID and unit=='unit-c' and row['run_id']==MIXED_RECEIVER_RUN:
                     qualify_mixed_receiver(row,result,result_raw)
                 if policy.parent_id in PUBLIC32_PARENTS: qualify_public32_result(unit,row['run_id'],result,parent_id=policy.parent_id)
+                if policy.parent_id==PARTIAL_BUNDLE_PAID: qualify_partial_bundle_result(unit,row['run_id'],result)
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -492,6 +506,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
         if policy.parent_id==ENROLLED_ZERO_PAID:
             qualify_enrolled_zero_costs(unit,policy,observed,v)
+        elif policy.parent_id==PARTIAL_BUNDLE_PAID:
+            qualify_partial_bundle_costs(unit,policy,observed,v)
         elif policy.parent_id!=PARTIAL_PAID:
             need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
         if index: need(asdict(policy.unit(unit).prior_debt) == old[index-1]['paid_caps'], 'old_paid_debt_chain_changed')
@@ -566,6 +582,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id in PUBLIC32_PARENTS:
         expected=PUBLIC32_OUTCOMES[policy.parent_id][2]
         need(ids==set(expected[unit]) and not absent,'public32_claim_scope_changed')
+    elif policy.parent_id==PARTIAL_BUNDLE_PAID:
+        need(ids==set(PARTIAL_BUNDLE_OUTCOMES[unit]) and not absent,'partial_bundle_claim_scope_changed')
     elif policy.parent_id==ENROLLED_ZERO_PAID:
         need(not ids and not absent and not claims,'enrolled_zero_child_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
@@ -657,6 +675,60 @@ def qualify_enrolled_zero_costs(unit,policy,observed,value):
          and value['preparation_sha256']=={} and value['legacy_sha256'] is None
          and value['require_result_complete'] is False and value['failed_started_runs']==[],
          'enrolled_zero_retention_scope_changed')
+
+
+def qualify_partial_bundle_result(unit,run,result):
+    """Two exact completed stage runs; whole file/checkpoint remain unproved."""
+    need(unit in PARTIAL_BUNDLE_OUTCOMES and run in PARTIAL_BUNDLE_OUTCOMES[unit]
+         and sha(canonical(result))==PARTIAL_BUNDLE_OUTCOMES[unit][run]
+         and result['complete'] is True and result['disarmed_on_exit'] is True
+         and result['parent']['started'] is True and result['parent']['parent_id']==PARTIAL_BUNDLE_PAID
+         and result['parent']['policy_digest']==OLD_DIGESTS[20] and result['parent']['run_id']==run,
+         'partial_bundle_retained_result_changed')
+
+
+def qualify_partial_bundle_costs(unit,policy,observed,value):
+    """Full original five-part bound once; actual two prepaid endpoints separate."""
+    need(policy.parent_id==PARTIAL_BUNDLE_PAID and policy.digest==OLD_DIGESTS[20]
+         and policy.qualification_kind=='c-bundle100k-v1' and unit in PARTIAL_BUNDLE_DATABASES,
+         'unknown_partial_bundle_parent')
+    detail=observed['detail'];local=policy.unit(unit);count=0 if unit=='unit-b' else 2
+    actual_extra=Cost() if not count else Cost(512,120000000)
+    full_extra=Cost() if not count else Cost(2560,600000000)
+    unused=Cost() if not count else Cost(2048,480000000)
+    actual=asdict(local.prior_debt.plus(actual_extra))
+    need(observed['policy_expired_at_observation'] is True
+         and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
+         and observed['observation_original_epoch_us']>=policy.expires_epoch_us
+         and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
+         'partial_bundle_original_clocks_not_expired')
+    need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
+         and type(detail['resource_count']) is int and detail['resource_count']==(1 if count else 0)
+         and len(detail['claims'])==count and len(detail['resources'])==(1 if count else 0)
+         and detail['full_prepaid_caps']==asdict(actual_extra)
+         and detail['approval_bytes_match_enrollment'] is True
+         and detail['enrollment']['history_binding_sha256']==value['owner']['history_binding_sha256']
+         and observed['expected_database_sha256']==value['database_sha256']==PARTIAL_BUNDLE_DATABASES[unit],
+         'partial_bundle_actual_rows_changed')
+    need(detail['prior_plus_prepaid_caps']==value['actual_native_paid_caps']
+         ==value['actual_controller_paid_caps']==actual and detail['limit']==asdict(local.limits)
+         and local.limits==local.prior_debt.plus(full_extra)
+         and value['conservative_unused_enrollment_caps']==asdict(unused)
+         and value['paid_caps']==asdict(local.limits),'partial_bundle_conservative_bound_changed')
+    expected=set(PARTIAL_BUNDLE_OUTCOMES[unit])
+    need(len(value['runs'])==count and {r['run_id'] for r in value['runs']}==expected
+         and len(value['controller_endpoint_refs'])==count
+         and {r['child']['run_id'] for r in value['controller_endpoint_refs']}==expected
+         and set(value['preparation_sha256'])==expected and value['retired_unstarted']==[]
+         and value['require_result_complete'] is True and value['failed_started_runs']==[],
+         'partial_bundle_retention_scope_changed')
+    if count:
+        need(len(observed['legacy_runs'])==count and observed['legacy_scoped_rows_complete'] is True
+             and observed['legacy_relation']['scoped_linkage_complete'] is True
+             and not observed['legacy_relation']['native_claims_without_scoped_actuals'],
+             'partial_bundle_actual_coverage_missing')
+    else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
+              and value['legacy_sha256'] is None,'partial_bundle_zero_peer_scope_changed')
 
 
 def qualify_partial_costs(unit,observed,value,native_refs):

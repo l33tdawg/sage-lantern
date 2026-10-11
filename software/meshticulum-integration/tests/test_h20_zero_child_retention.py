@@ -91,14 +91,14 @@ def test_zero_child_conservative_bound_refuses_changed_actual_or_scope(zero_rows
 
 
 def test_exact_twenty_parent_roster_keeps_nineteen_and_capture_prefix_twelve():
-    assert len(retained_capture.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==20
-    assert retained_capture.PAID_HISTORY[-1]==rpc.ENROLLED_ZERO_PAID
+    assert len(retained_capture.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==21
+    assert retained_capture.PAID_HISTORY[19]==rpc.ENROLLED_ZERO_PAID
     assert resume_parent_guard.HISTORY is retained_capture.PAID_HISTORY
     assert len(retained_capture.UNADMITTED_PAID_HISTORY)==12
-    assert retained_capture.PAID_HISTORY[-2]=='62bcef4f1c74532fd7ab3ada1b8b94e2'
+    assert retained_capture.PAID_HISTORY[18]=='62bcef4f1c74532fd7ab3ada1b8b94e2'
     if (ROOT/'resume-history-preparation-18/unit-a.json').is_file():
         old=json.loads((ROOT/'resume-history-preparation-18/unit-a.json').read_bytes())
-        assert list(retained_capture.PAID_HISTORY[:-1])==[r['policy']['parent_id'] for r in old['previous']]
+        assert list(retained_capture.PAID_HISTORY[:19])==[r['policy']['parent_id'] for r in old['previous']]
 
 
 def test_actual_live_terminal_metadata_does_not_prove_expiry_or_create_rollover():
