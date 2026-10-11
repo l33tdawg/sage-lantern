@@ -45,7 +45,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '0d153ed60782be5028fe7b75f3345b0441e62ef95b8db629270d5b309fd0e049',
     'c4dac314abe5afac2d14c8f82f08466863bac438c7674864c0864c8eae5e2eb7',
     '617cdde5e1bb0bfb162552861abb6b84e25a389a981d16b5b17e7e5d5daaf10c',
-    '83f56d8609b60532332631f86c3061c6f8b3fefa2ff7517406860e467dd7f2e8')
+    '83f56d8609b60532332631f86c3061c6f8b3fefa2ff7517406860e467dd7f2e8',
+    'eb592d40f359afbc530aa61b4f1feb7d0c4afc74d27b1bbdd73e9ccf0f1faa01')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -57,8 +58,13 @@ MIXED_RECEIVER_RUN = '9dd5b8dd6466600acfdc8f1884db3da8'
 MIXED_RECEIVER_RESULT_SHA = '5f594b1cba94b24883327f2457d1a79541e5cbffbe4fd073fc547ddeaabb08b6'
 MIXED_OBJECT_SHA = 'd61126423d81a20aab75ada153b03c326d60fcc781884bba9f84d3d5821d134d'
 SUCCESS_PAID = '1df30b47fa36b8d47328fb886528a7a9'
+PARTIAL_PAID = 'f153a7a87a2803db85078df81a6a1aaf'
+PARTIAL_RUN = '13ba2dddea2c9aa53e6e806a83c78b66'
+PARTIAL_REFS_SHA = {'unit-a':'022830b83a534b91e5d121b178a8341ed074b48f7d5e6e009c5ea95f1019a78a',
+ 'unit-b':'4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
+ 'unit-c':'884ab23c305bf40fe3be93f7e70d01bb23dad860fde20a94b82537584a294fb4'}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -312,7 +318,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         refs = sorted([dict(controller_allocation_id=c['controller_allocation_id'],child=c['child'])
                        for c in claims],key=lambda c:c['child']['run_id'])
         unstarted = v.get('retired_unstarted',[])
-        need(refs == v['controller_endpoint_refs'], 'old_child_relation_changed')
+        if policy.parent_id==PARTIAL_PAID:
+            qualify_partial_costs(unit,observed,v,refs)
+        else:need(refs == v['controller_endpoint_refs'], 'old_child_relation_changed')
         qualify_history_claims(policy,unit,observed,v['runs'],unstarted)
         for row in unstarted:
             evidence = retired_unstarted(reader,unit,policy,observed,row,clock)
@@ -358,7 +366,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     need(sha(raw) == record['sha256'], 'old_typed_file_changed')
         for name, record in observed['files'].items():
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
-        need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
+        if policy.parent_id!=PARTIAL_PAID:
+            need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
         if index: need(asdict(policy.unit(unit).prior_debt) == old[index-1]['paid_caps'], 'old_paid_debt_chain_changed')
         reports.append(dict(parent_id=policy.parent_id,paid_caps=v['paid_caps'],actual_children=len(v['runs'])))
     names(); reader.check(); guard()
@@ -408,6 +417,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
             'unit-b':{'2900ab6e27f2abca9e7d7a77b5d60c10','3e387ba3fcdabef7a0ac1351655022c9'},
             'unit-c':{'1dc2d03da057186c81d1476aabe611b2','5dc283b3f4af4fea45d83158a6cf8846'}}
         need(ids==expected[unit] and not absent,'successful_mixed_claim_scope_changed')
+    elif policy.parent_id==PARTIAL_PAID:
+        need(not ids and absent==({PARTIAL_RUN} if unit=='unit-c' else set()),'partial_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
@@ -445,12 +456,53 @@ def qualify_mixed_receiver(row,result,raw):
          and result['publisher_verified'] is False and not result.get('cleanup_errors'),
          'mixed_failed_durable_receiver_changed')
 
+def qualify_partial_costs(unit,observed,value,native_refs):
+    """Fixed historical conservative charge; never a grant or native claim."""
+    actual=observed['detail']['prior_plus_prepaid_caps']
+    need(actual==value['actual_native_paid_caps'] and sha(canonical(value['controller_endpoint_refs']))==PARTIAL_REFS_SHA[unit],
+         'partial_actual_or_controller_proof_changed')
+    need(native_refs==(value['controller_endpoint_refs'] if unit=='unit-c' else []), 'partial_native_endpoint_projection_changed')
+    expected=Cost(256,60000000) if unit=='unit-a' else Cost()
+    need(value['conservative_controller_only_caps']==asdict(expected)
+         and value['paid_caps']==asdict(Cost(**actual).plus(expected)), 'partial_conservative_cost_changed')
+
+def retired_partial_radio(reader,unit,policy,observed,row,now):
+    need(unit=='unit-c' and row['run_id']==PARTIAL_RUN and row['transport']=='lora','partial_radio_scope_changed')
+    claim=observed['detail']['claims'][0];target=STATE/'runs'/PARTIAL_RUN
+    need(len(observed['detail']['claims'])==1 and claim['prepared'] is True and claim['started'] is False
+         and claim['start_row_sha256'] is None,'partial_radio_start_present')
+    reader.directory(target);need(set(os.listdir(target))=={'grant.json','active','provision.json','secret.bin','sender.bin'},
+                                'partial_radio_runtime_namespace_changed')
+    raw=reader.read(target/'grant.json',16384);plan=parse(raw)
+    provision_raw=reader.read(target/'provision.json',32768);provision=parse(provision_raw);receipt=provision['parent']
+    identity_raw=reader.read(STATE/'parents'/policy.parent_id/'prepared-identities'/(PARTIAL_RUN+'.json'),4096)
+    identity=parse(identity_raw);sample=now()
+    need(sha(raw)==row['grant_sha256']=='5eccb5834f02ebb8e452fcb7986d4f0a37388febbf999d55abfb2ef094fe6865'
+         and sha(provision_raw)=='d2bdd53798dac8ce8ca8e40f0a8fc42c19789d751472be03efc247d18cec7fcf'
+         and sha(identity_raw)==row['prepared_identity_sha256']=='a4e7600fe7c6fb4f6cfa87bfb8e7f0880376bb959b311b4b8e9533595a17df05'
+         and plan['schema']=='meshticulum.service-run.v1' and plan['unit']==unit and plan['session_id']==PARTIAL_RUN
+         and plan['host_boot_id']==policy.unit(unit).host_boot_id==boot() and plan['expires_epoch_us']<sample[0]
+         and plan['application_deadline_monotonic_us']<sample[1] and plan['service']['format']=='MR1.request'
+         and provision['run_id']==PARTIAL_RUN and provision['unit']==unit and provision['transport']=='lora'
+         and receipt['parent_id']==PARTIAL_PAID and receipt['prepared'] is True and receipt['native_claim_id']==claim['native_claim_id']
+         and sha(canonical(receipt))==claim['prepared_row_sha256'] and sha(canonical(plan))==claim['native_plan_sha256']
+         and identity['directory_identity']==reader.directories[target] and identity['prepared_sha256']==sha(canonical(receipt))
+         and identity['provision_sha256']==sha(provision_raw) and reader.read(target/'active',128,lock=True)==b'retired\n',
+         'partial_radio_provision_or_identity_changed')
+    reader.check();return dict(run_id=PARTIAL_RUN,prepared=True,started=False,retired=True,actual_cost=None,
+        full_prepaid_caps=claim['child']['full_caps'],no_refund=True,separate_debt_sum_permitted=False,
+        physical_quiescence_observed=False,live_terminal_ownership_observed=False,
+        files={str((target/'grant.json').relative_to(STATE)):sha(raw),str((target/'provision.json').relative_to(STATE)):sha(provision_raw),
+        str((STATE/'parents'/policy.parent_id/'prepared-identities'/(PARTIAL_RUN+'.json')).relative_to(STATE)):sha(identity_raw)})
+
+
 def retired_unstarted(reader,unit,policy,observed,row,now):
     """Bind one actual paid/prepared/nonstarted retired TCP endpoint; cost unknown.
 
     No missing file becomes a zero measurement or process-terminal claim.
     The canonical collector must have read the native append-only start table.
     """
+    if policy.parent_id==PARTIAL_PAID:return retired_partial_radio(reader,unit,policy,observed,row,now)
     run=row['run_id'];need(policy.parent_id==LATEST_PAID and unit in ('unit-b','unit-c')
          and run==RETIRED_UNSTARTED,'unexpected_retired_unstarted_scope')
     claims=[c for c in observed['detail']['claims'] if c['child']['run_id']==run]

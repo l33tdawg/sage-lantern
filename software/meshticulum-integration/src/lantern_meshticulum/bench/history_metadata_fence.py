@@ -33,8 +33,10 @@ _MIXED_PAID_DIRECTORY = 'parents/ba4572e95e598ad6c17fc954c3792db7'
 _MIXED_PAID_IDENTITIES = _MIXED_PAID_DIRECTORY+'/prepared-identities'
 _SUCCESS_PAID_DIRECTORY = 'parents/1df30b47fa36b8d47328fb886528a7a9'
 _SUCCESS_PAID_IDENTITIES = _SUCCESS_PAID_DIRECTORY+'/prepared-identities'
+_PARTIAL_PAID_DIRECTORY = 'parents/f153a7a87a2803db85078df81a6a1aaf'
+_PARTIAL_PAID_IDENTITIES = _PARTIAL_PAID_DIRECTORY+'/prepared-identities'
 _IDENTITY_COUNTS = {_PAID_IDENTITIES: 9, _COMPLETE_PAID_IDENTITIES: 10,
-                    _BULK_PAID_IDENTITIES: 4, _MIXED_PAID_IDENTITIES: 4, _SUCCESS_PAID_IDENTITIES: (2,4)}
+                    _BULK_PAID_IDENTITIES: 4, _MIXED_PAID_IDENTITIES: 4, _SUCCESS_PAID_IDENTITIES: (2,4), _PARTIAL_PAID_IDENTITIES: (0,1)}
 _CAPTURE_FILES = frozenset(('capture.json','history-binding.json','history-identity-seal.json','legacy-grant-seal.json'))
 _FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 
@@ -95,7 +97,7 @@ class HistoricalMetadataFence:
                 if path == _CAPTURE_DIRECTORY+'/prepared-identities':
                     _need(not names, 'retained_capture_prepared_namespace_not_empty')
                 if path in _IDENTITY_COUNTS:
-                    allowed=_IDENTITY_COUNTS[path] if path==_SUCCESS_PAID_IDENTITIES else ((_IDENTITY_COUNTS[path],)
+                    allowed=_IDENTITY_COUNTS[path] if path in (_SUCCESS_PAID_IDENTITIES,_PARTIAL_PAID_IDENTITIES) else ((_IDENTITY_COUNTS[path],)
                         if path in (_BULK_PAID_IDENTITIES,_MIXED_PAID_IDENTITIES) else (0,_IDENTITY_COUNTS[path]))
                     _need(len(names) in allowed and all(re.fullmatch(r'[0-9a-f]{32}\.json', n)
                           and int(n[:-5],16) != 0 for n in names),
@@ -117,7 +119,7 @@ class HistoricalMetadataFence:
                 _need(name in _FILES or identity and int(name[:-5],16) != 0, 'prohibited_metadata_file')
                 if path.split('/')[-1] in _CAPTURE_FILES:
                     _need(parent in (_CAPTURE_DIRECTORY, _PAID_PREPARED_DIRECTORY, _COMPLETE_PAID_DIRECTORY,
-                                     _BULK_PAID_DIRECTORY, _MIXED_PAID_DIRECTORY, _SUCCESS_PAID_DIRECTORY),
+                                     _BULK_PAID_DIRECTORY, _MIXED_PAID_DIRECTORY, _SUCCESS_PAID_DIRECTORY, _PARTIAL_PAID_DIRECTORY),
                           'outside_retained_capture_metadata')
                 _need(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest), 'invalid_sha256')
                 _need(parent in self._entries and name in self._entries[parent], 'unscoped_file')
