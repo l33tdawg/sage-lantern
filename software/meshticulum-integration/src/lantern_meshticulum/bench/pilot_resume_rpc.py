@@ -381,6 +381,32 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
         physical_quiescence_observed=False,live_terminal_ownership_observed=False,files=files)
 
 
+def seal_inputs(reader, unit, known, original, newer):
+    """Reobserve complete verified metadata before any own namespace creation."""
+    identities={STATE/'parents'/parent/'prepared-identities' for parent in GUARDED_PAID}
+    paths=[STATE,STATE/'parents',STATE/'runs',*[STATE/'parents'/v for v in HISTORY],
+           *[STATE/v for v in capture_paths(STATE,unit)['directories']],
+           *sorted(identities),*[STATE/'runs'/v for v in sorted(newer)]]
+    files,dirs={},{}
+    for path in paths:
+        reader.directory(path);rel=str(path.relative_to(STATE)) if path!=STATE else ''
+        entries=sorted(os.listdir(path));dirs[rel]=entries
+        if path in identities:
+            expected={key[len(rel)+1:] for key in known if key.startswith(rel+'/')}
+            need(set(entries)==expected and all(re.fullmatch(r'[0-9a-f]{32}\.json',name)
+                 and int(name[:-5],16)!=0 for name in entries),'prepared_identity_namespace_changed_before_seal')
+        for name in entries:
+            if name in _FILES or path in identities:
+                key=(rel+'/' if rel else '')+name;raw=reader.read(path/name,MAX_FILE)
+                files[key]=sha(raw)
+                need(key not in known or files[key]==known[key],'metadata_changed_before_seal')
+    strict_known={key:pin for key,pin in known.items()
+                  if not any(key.startswith('runs/'+run+'/') for run in original)}
+    need(all(files.get(key)==pin for key,pin in strict_known.items()),'known_metadata_unsealed')
+    reader.check()
+    return files,dirs
+
+
 def capture_history(unit, p, runtime):
     parent = p['parent_id']; need(SID.fullmatch(parent) and parent not in HISTORY
                                  and parent != CAPTURE_PARENT, 'invalid_own_parent')
@@ -392,19 +418,7 @@ def capture_history(unit, p, runtime):
         return dict(phase_end_epoch_us=p['phase_end_epoch_us'])
     with Reader() as reader:
         known, original, newer, reports = full_history(reader,unit,p['history'],guard)
-        files, dirs = {}, {}
-        for path in [STATE,STATE/'parents',STATE/'runs',*[STATE/'parents'/v for v in HISTORY],
-                     *[STATE/v for v in capture_paths(STATE,unit)['directories']],
-                     STATE/'parents'/LATEST_PAID/'prepared-identities',
-                     *[STATE/'runs'/v for v in sorted(newer)]]:
-            reader.directory(path); rel = str(path.relative_to(STATE)) if path != STATE else ''
-            entries = sorted(os.listdir(path)); dirs[rel] = entries
-            for name in entries:
-                if name in _FILES or path == STATE/'parents'/LATEST_PAID/'prepared-identities':
-                    key = (rel+'/' if rel else '')+name; raw = reader.read(path/name,MAX_FILE)
-                    files[key] = sha(raw); need(key not in known or files[key] == known[key], 'metadata_changed_before_seal')
-        strict_known = {k:v for k,v in known.items() if not any(k.startswith('runs/'+r+'/') for r in original)}
-        need(all(files.get(k) == v for k,v in strict_known.items()), 'known_metadata_unsealed')
+        files, dirs = seal_inputs(reader,unit,known,original,newer)
         strict_raw, strict_pin = capture(STATE,owner_uid=0,expected_files=files,expected_directories=dirs)
         def exact(strict): strict.check(); reader.check(); guard(); return True
         with SealedHistory(STATE,owner_uid=0,seal_bytes=strict_raw,expected_sha256=strict_pin) as strict:
