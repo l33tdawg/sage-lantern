@@ -60,8 +60,8 @@ def test_exact_capture_retained_without_becoming_a_paid_parent(state):
     assert retained.PAID_HISTORY[5:]==(
         '4034f8979b985660df21859606c4f8a7','ba4572e95e598ad6c17fc954c3792db7',
         '1df30b47fa36b8d47328fb886528a7a9','f153a7a87a2803db85078df81a6a1aaf',
-        '25a990a2d565c50b237ee45812a8c75f')
-    assert len(set(retained.PAID_HISTORY))==10 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
+        '25a990a2d565c50b237ee45812a8c75f','cb5869e6aa8de545a267007b085d4762')
+    assert len(set(retained.PAID_HISTORY))==11 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
     assert guard.HISTORY is retained.PAID_HISTORY
     assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
     assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,)
