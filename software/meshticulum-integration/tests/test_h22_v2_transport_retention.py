@@ -109,8 +109,8 @@ def test_exact_four_canonical_outcomes_are_required(unit):
 
 
 def test_roster_twenty_one_preserves_original_twenty_and_capture_twelve():
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==22
-    assert retained.PAID_HISTORY[-1]==rpc.V2_PARTIAL_BUNDLE_PAID
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==23
+    assert retained.PAID_HISTORY[21]==rpc.V2_PARTIAL_BUNDLE_PAID
     assert len(retained.UNADMITTED_PAID_HISTORY)==12
     assert retained.PAID_HISTORY[19]==rpc.ENROLLED_ZERO_PAID
     assert retained.PAID_HISTORY[20]==rpc.PARTIAL_BUNDLE_PAID
@@ -131,7 +131,7 @@ def policy_body_unchanged_for_old_twenty_one():
     path=Path('/Users/l33tdawg/nodejs-projects/sage-commons/work/meshticulum-native-window-20261011/resume-history-preparation-20/unit-a.json')
     if not path.is_file():return True
     old=json.loads(path.read_bytes())['previous']
-    assert [p['policy']['parent_id'] for p in old]==list(retained.PAID_HISTORY[:-1])
+    assert [p['policy']['parent_id'] for p in old]==list(retained.PAID_HISTORY[:21])
     for row in old:
         policy=ParentPolicy.from_dict(row['policy'])
         assert rpc.canonical(policy.to_dict())==rpc.canonical(row['policy']) and policy.digest==row['policy_digest']

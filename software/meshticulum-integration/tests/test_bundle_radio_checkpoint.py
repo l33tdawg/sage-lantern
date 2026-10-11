@@ -101,7 +101,7 @@ def root_record(data,tmp_path,monkeypatch,root_observation):
         policy.parent_id,policy.digest,module.sha(raw),None,BOOT,130000000),clock=now,boot_reader=lambda:BOOT).to_dict()
     assert observation['status']=='scoped_rows_observed' and observation['detail']['allocation_count']==2
     # Use the actual H19 source whitelist. Peer STATUS/projections are modeled.
-    history=tuple(module.HISTORY);assert len(history)==22
+    history=tuple(module.HISTORY);assert len(history)==23
     natives={};terminal=[]
     for unit in ('unit-a','unit-c'):
         rows=[];claims=[]
@@ -114,7 +114,7 @@ def root_record(data,tmp_path,monkeypatch,root_observation):
             pending_unknown=False,detail=dict(claim_count=2,prepared_count=2,start_count=2,claims=claims),legacy_scoped_rows_complete=True,
             legacy_relation=dict(scoped_linkage_complete=True,native_claims_without_scoped_actuals=[]),legacy_runs=rows)
     authorization=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',producer_sha256='e'*64,
-        primitives_sha256=module.PRIMITIVES_SHA,retained_history_count=22,maximum_checkpoints=4)
+        primitives_sha256=module.PRIMITIVES_SHA,retained_history_count=23,maximum_checkpoints=4)
     proof=dict(schema=module.SCHEMA,producer_sha256='e'*64,parent_id=policy.parent_id,policy_digest=policy.digest,
         bundle_context_sha256=policy.bundle_context_sha256,checkpoint_index=1,next_campaign_id=value['stages'][1]['campaign_id'],
         retained_parent_ids=list(history),original_whole={k:value[k] for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us')},

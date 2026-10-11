@@ -60,7 +60,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '2fd26f804a8d7d8d095e4d90584814a788a70b47ec36962c53b4d5f7239d4b8d',
     '47a8f82ef0b7ba29ba785623b870138487786c9e5a5e9371b00c84544ab5e53b',
     '75629c69abee33dbeb9e7f9f74b62a8af4fd3bdead281089ee5202e345e83464',
-    'd0bd6f2d52ca5aceb8e69c9928b25bd7e3f8ab9db118dba9d4190ad05c01e9ec')
+    'd0bd6f2d52ca5aceb8e69c9928b25bd7e3f8ab9db118dba9d4190ad05c01e9ec',
+    '725159b7a2a9baa0486d462760fc68a1d58065c084a612a9c80b7e2d6838d0fe')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -131,10 +132,20 @@ V2_PARTIAL_BUNDLE_OUTCOMES = {'unit-a':{'f07a9e716fc658c8a4f8dcd10bbd35cd':'7a14
     '7c527791df8400534a83d756cda0fbab':'d07643d57f786e25b2475bebe531d72bf7f8177ead4a03f77f30d9a5d117007f'},'unit-b':{},
     'unit-c':{'f07a9e716fc658c8a4f8dcd10bbd35cd':'406ca28ebdbf3d63749e991b1696657ba3755eec6e00e14bf65bd86434a45593',
     '7c527791df8400534a83d756cda0fbab':'f8e72fe9f0dd8569d803f010781727d931b7f6ea7b32874c68bc2364944e1f60'}}
+V2_FAILED_BUNDLE_PAID = '487ae574816ff5444de03e3daa4401e4'
+V2_FAILED_BUNDLE_RUNS = ('4cc95f0dc6f3a3ff674b06e424475c44','db2eebfaf67757220cc3dfddd6e8adb1')
+V2_FAILED_BUNDLE_DATABASES = {'unit-a':'8e8f3436d3790971ca511ca24a05f2122ec94600a1cbb9b0f10622d0c821a20e',
+    'unit-b':'7e1df3bbdbd3215fc284879ca86d2008368032943a4100b6be32ecb9626eed56',
+    'unit-c':'26de1a3bb2ebe3cf9034daf82e365b17b067e8bdd269671d439077256bac943a'}
+V2_FAILED_BUNDLE_OUTCOMES = {'unit-a':{'4cc95f0dc6f3a3ff674b06e424475c44':'b323be8a45815aae601ab5fbd38789294be6280dcab9697054e7d37879ad975b',
+    'db2eebfaf67757220cc3dfddd6e8adb1':'d8fa47ebba50b974ad26397bc9db12ee0bfcc55621be5b69cf0490b56d19685d'},'unit-b':{},
+    'unit-c':{'4cc95f0dc6f3a3ff674b06e424475c44':'41e0a427d05fc291986b638a7319f291654b5240ed5a4e636fe2de924ef659a7',
+    'db2eebfaf67757220cc3dfddd6e8adb1':'34a087efc4d76baefec15a84fd47c7f334401fe157a8867ed5622a30fbaef58f'}}
 PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDLE_DATABASES,PARTIAL_BUNDLE_OUTCOMES),
-    V2_PARTIAL_BUNDLE_PAID:(21,'c-bundle100k-v2',V2_PARTIAL_BUNDLE_DATABASES,V2_PARTIAL_BUNDLE_OUTCOMES)}
+    V2_PARTIAL_BUNDLE_PAID:(21,'c-bundle100k-v2',V2_PARTIAL_BUNDLE_DATABASES,V2_PARTIAL_BUNDLE_OUTCOMES),
+    V2_FAILED_BUNDLE_PAID:(22,'c-bundle100k-v2',V2_FAILED_BUNDLE_DATABASES,V2_FAILED_BUNDLE_OUTCOMES)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -490,7 +501,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id in PUBLIC32_PARENTS:
             qualify_public32_failure_scope(unit,policy.parent_id,v)
         if policy.parent_id in PARTIAL_BUNDLE_SCOPES:
-            need(v['require_result_complete'] is True and v.get('failed_started_runs')==[],
+            need(v['require_result_complete'] is (policy.parent_id!=V2_FAILED_BUNDLE_PAID)
+                 and v.get('failed_started_runs')==([V2_FAILED_BUNDLE_RUNS[1]] if policy.parent_id==V2_FAILED_BUNDLE_PAID and unit!='unit-b' else []),
                  'partial_bundle_failure_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
@@ -705,10 +717,14 @@ def qualify_partial_bundle_result(unit,run,result,*,parent_id=PARTIAL_BUNDLE_PAI
     need(parent_id in PARTIAL_BUNDLE_SCOPES,'unknown_partial_bundle_result_parent')
     index,_,_,outcomes=PARTIAL_BUNDLE_SCOPES[parent_id]
     need(unit in outcomes and run in outcomes[unit] and sha(canonical(result))==outcomes[unit][run]
-         and result['complete'] is True and result['disarmed_on_exit'] is True
+         and result['complete'] is (parent_id!=V2_FAILED_BUNDLE_PAID or run==V2_FAILED_BUNDLE_RUNS[0]) and result['disarmed_on_exit'] is True
          and result['parent']['started'] is True and result['parent']['parent_id']==parent_id
          and result['parent']['policy_digest']==OLD_DIGESTS[index] and result['parent']['run_id']==run,
          'partial_bundle_retained_result_changed')
+    if parent_id==V2_FAILED_BUNDLE_PAID and run==V2_FAILED_BUNDLE_RUNS[1]:
+        need(result['error']==('HardwareError:radio_authority_expired' if unit=='unit-a' else 'WireError:reliable_flow_startup_grant_absent')
+             and result['attempt_journal']==dict(attempts=0,fenced=False,recovered_unknown=0,reserved_estimated_airtime_us=0)
+             and (unit!='unit-a' or result.get('flow') is None),'failed_bundle_start_shape_changed')
 
 
 def qualify_partial_bundle_costs(unit,policy,observed,value):
@@ -727,7 +743,7 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
          and observed['observation_original_epoch_us']>=policy.expires_epoch_us
          and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
          'partial_bundle_original_clocks_not_expired')
-    if policy.parent_id==V2_PARTIAL_BUNDLE_PAID:
+    if kind=='c-bundle100k-v2':
         owner=value['owner'];phase=owner['native_phase'][unit]
         need(type(owner['phase_end_epoch_us']) is int and type(phase['deadline_monotonic_us']) is int
              and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']
@@ -751,13 +767,21 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
          and len(value['controller_endpoint_refs'])==count
          and {r['child']['run_id'] for r in value['controller_endpoint_refs']}==expected
          and set(value['preparation_sha256'])==expected and value['retired_unstarted']==[]
-         and value['require_result_complete'] is True and value['failed_started_runs']==[],
+         and value['require_result_complete'] is (policy.parent_id!=V2_FAILED_BUNDLE_PAID)
+         and value['failed_started_runs']==([V2_FAILED_BUNDLE_RUNS[1]] if policy.parent_id==V2_FAILED_BUNDLE_PAID and unit!='unit-b' else []),
          'partial_bundle_retention_scope_changed')
     if count:
         need(len(observed['legacy_runs'])==count and observed['legacy_scoped_rows_complete'] is True
              and observed['legacy_relation']['scoped_linkage_complete'] is True
              and not observed['legacy_relation']['native_claims_without_scoped_actuals'],
              'partial_bundle_actual_coverage_missing')
+        if policy.parent_id==V2_FAILED_BUNDLE_PAID:
+            failed=[row for row in observed['legacy_runs'] if row['run_id']==V2_FAILED_BUNDLE_RUNS[1]]
+            need(len(failed)==1 and failed[0]['status']=='scoped_rows_observed' and failed[0]['wire']['retired']==1
+                 and failed[0]['journal']['attempts']==[] and failed[0]['journal']['has_unknown_or_pending'] is False
+                 and failed[0]['journal']['actual_cost']==asdict(Cost()) and failed[0]['actual_cost']==asdict(Cost()),
+                 'failed_bundle_zero_actual_journal_changed')
+
     else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
               and value['legacy_sha256'] is None,'partial_bundle_zero_peer_scope_changed')
 
