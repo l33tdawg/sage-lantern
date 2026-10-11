@@ -98,6 +98,11 @@ def local_scope(monkeypatch,request):
                         claim_count=0,prepared_count=0,start_count=0,claims=[]),local_control_only=True,native_qualification=False)
         return Result()
     monkeypatch.setattr(rpc,'STATE',state); monkeypatch.setattr(rpc,'boot',lambda:BOOT)
+    # The RPC is Linux-only. Model its proc FD inventory with this local
+    # process's real /dev/fd entries; descriptor capacity has separate controls.
+    original_listdir=rpc.os.listdir
+    monkeypatch.setattr(rpc.os,'listdir',lambda path:original_listdir(
+        '/dev/fd' if str(path)=='/proc/self/fd' else path))
     monkeypatch.setattr(rpc,'native_facts',lambda unit:dict(facts)); monkeypatch.setattr(rpc,'full_history',modeled_history)
     monkeypatch.setattr(rpc,'collect',modeled_collect)
     # Deliberately JSON round-trip: actual native RPC receives lists, while

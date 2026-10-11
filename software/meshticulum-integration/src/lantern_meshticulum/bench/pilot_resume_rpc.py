@@ -16,12 +16,14 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import stat
 import time
 
-from .history_identity_seal import _Ancestry, capture, SealedHistory
+from .history_identity_seal import _Ancestry, capture, SealedHistory, MAX_FILES, MAX_DIRS
 from .history_metadata_fence import _FLAGS, _FILES, _stamp, MAX_FILE
 from .legacy_grant_fence import capture as legacy_capture, LegacyGrantFence
+from .legacy_grant_fence import MAX_RUNS, OWNERS
 from .pilot_parent_snapshot import Scope, collect, _child_ref
 from .pilot_debt_snapshot import Scope as DebtScope
 from .pilot_parent_caps import ParentPolicy, Cost, canonical
@@ -59,6 +61,27 @@ def sha(raw): return hashlib.sha256(raw).hexdigest()
 def clock(): return time.time_ns()//1000, time.monotonic_ns()//1000
 def boot(): return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 def stable(value): return {k:value[k] for k in ('unit','host_boot_id','services','service_lifetimes')}
+
+
+def reserve_descriptor_capacity(files, directories, legacy_rows):
+    """Keep every continuity FD; raise only this RPC's soft limit within hard."""
+    need(type(files) is dict and len(files)<=MAX_FILES and type(directories) is dict
+         and len(directories)<=MAX_DIRS and type(legacy_rows) in (dict,list,tuple)
+         and len(legacy_rows)<=MAX_RUNS,'descriptor_scope_exceeds_source_bounds')
+    current=len(os.listdir('/proc/self/fd'))
+    # One retained strict fence plus the nested legacy fence; both may hold
+    # their ancestry(max64 each). Scandir duplicates and systemctl pipes need16.
+    # A reopened guard adds its parent and at most20 prepared run-directory FDs.
+    required=current+len(files)+len(directories)+len(legacy_rows)*(3+len(OWNERS))+128+16+21
+    soft,hard=resource.getrlimit(resource.RLIMIT_NOFILE)
+    need(hard==resource.RLIM_INFINITY or required<=hard,'descriptor_hard_limit_insufficient')
+    changed=soft!=resource.RLIM_INFINITY and soft<required
+    if changed:resource.setrlimit(resource.RLIMIT_NOFILE,(required,hard))
+    actual_soft,actual_hard=resource.getrlimit(resource.RLIMIT_NOFILE)
+    need(actual_hard==hard and (actual_soft==resource.RLIM_INFINITY or actual_soft>=required),
+         'descriptor_capacity_not_established')
+    return dict(current_descriptors=current,required_soft_limit=required,soft_limit=actual_soft,
+                hard_limit=actual_hard,changed=changed,scope='this process only')
 
 
 def endpoint_budget(unit, qualification_kind, radio, tcp):
@@ -419,6 +442,7 @@ def capture_history(unit, p, runtime):
     with Reader() as reader:
         known, original, newer, reports = full_history(reader,unit,p['history'],guard)
         files, dirs = seal_inputs(reader,unit,known,original,newer)
+        reserve_descriptor_capacity(files,dirs,p['history']['legacy_inventory']['rows'])
         strict_raw, strict_pin = capture(STATE,owner_uid=0,expected_files=files,expected_directories=dirs)
         def exact(strict): strict.check(); reader.check(); guard(); return True
         with SealedHistory(STATE,owner_uid=0,seal_bytes=strict_raw,expected_sha256=strict_pin) as strict:
@@ -540,6 +564,9 @@ def enrolled_action(action, unit, p, runtime):
                 return dict(parent_id=policy.parent_id,policy_digest=policy.digest,snapshot=caps.snapshot())
             finally: need(caps.close() is True, 'own_enrollment_close_uncertain')
         records()
+        strict=parse(reader.read(target/'history-identity-seal.json',2000000))
+        legacy=parse(reader.read(target/'legacy-grant-seal.json',2000000))
+        reserve_descriptor_capacity(strict['files'],strict['directories'],legacy['rows'])
         with ResumeParentGuard(STATE,policy,unit,owner_sha256=sha(owner_raw),prior_sha256=sha(prior_raw),
                 binding_sha256=binding,preparation_sha256=p['preparation_sha256'],
                 management_phase='postterminal' if action == 'audit' else 'prelaunch',clock=clock,
