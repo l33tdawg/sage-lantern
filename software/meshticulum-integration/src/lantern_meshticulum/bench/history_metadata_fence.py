@@ -144,7 +144,7 @@ class HistoricalMetadataFence:
                 _need(name in _FILES or identity and int(name[:-5],16) != 0, 'prohibited_metadata_file')
                 if path.split('/')[-1] in _CAPTURE_FILES:
                     _need(parent in (_CAPTURE_DIRECTORY, _UNADMITTED_DIRECTORY, _PAID_PREPARED_DIRECTORY, _COMPLETE_PAID_DIRECTORY,
-                                     _BULK_PAID_DIRECTORY, _MIXED_PAID_DIRECTORY, _SUCCESS_PAID_DIRECTORY, _PARTIAL_PAID_DIRECTORY, _ACCEPTED_BULK_DIRECTORY, _REVERSE_BULK_DIRECTORY, _SMALL_BULK_DIRECTORY, _ZERO_RETRY_BULK_DIRECTORY, _IMMEDIATE_RX_BULK_DIRECTORY, _SF7_REPLICATE_DIRECTORY, _PUBLIC32_DIRECTORY, _PUBLIC32_RETRY_DIRECTORY, _PUBLIC32_SENDER_READY_DIRECTORY, _PUBLIC32_COMPLETE_DIRECTORY),
+                                     _BULK_PAID_DIRECTORY, _MIXED_PAID_DIRECTORY, _SUCCESS_PAID_DIRECTORY, _PARTIAL_PAID_DIRECTORY, _ACCEPTED_BULK_DIRECTORY, _REVERSE_BULK_DIRECTORY, _SMALL_BULK_DIRECTORY, _ZERO_RETRY_BULK_DIRECTORY, _IMMEDIATE_RX_BULK_DIRECTORY, _SF7_REPLICATE_DIRECTORY, _PUBLIC32_DIRECTORY, _PUBLIC32_RETRY_DIRECTORY, _PUBLIC32_SENDER_READY_DIRECTORY, _PUBLIC32_COMPLETE_DIRECTORY, _ENROLLED_ZERO_DIRECTORY),
                           'outside_retained_capture_metadata')
                 _need(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest), 'invalid_sha256')
                 _need(parent in self._entries and name in self._entries[parent], 'unscoped_file')
