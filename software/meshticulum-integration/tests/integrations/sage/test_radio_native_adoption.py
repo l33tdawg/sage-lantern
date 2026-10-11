@@ -53,6 +53,7 @@ def model(tmp_path,*,scopes=SCOPES+(SCOPE,)):
         transport=ExclusiveSerial.__new__(ExclusiveSerial) # Explicit source PTY model, no physical constructor.
         transport.fd,transport.lock_fd=slave,lock
         r.owner,r.op,r.child,r.packet,r.directory,r.transport=owner,op,child,packet,directory,transport
+        r.master=master
         original=Path.read_text
         def kernel_metadata(path,*a,**kw):
             if str(path)!='/proc/locks':return original(path,*a,**kw)

@@ -43,6 +43,7 @@ SOURCE_MODULES = ('meshticulum.bench.serial_port', 'meshticulum.bench.linux_hat'
                   'lantern_meshticulum.sage.forward_operation',
                   'lantern_meshticulum.sage.forward_budget',
                   'lantern_meshticulum.sage.workflow_store',
+                  'lantern_meshticulum.sage.forward_radio',
                   'lantern_meshticulum.sage.radio_native_adoption')
 
 
@@ -176,7 +177,12 @@ class NativeRadioAdoption:
             self.release();raise
 
     def _validate_plan(self,p,secret):
-        c=self.child;o=self.owner;first=o.context.initiator if c.kind%2 else o.context.responder
+        return self.validate_plan(self.owner,self.child,p,secret)
+
+    @staticmethod
+    def validate_plan(o,c,p,secret):
+        require(type(o) is ForwardNativeOwner and type(c) is ChildPlan)
+        first=o.context.initiator if c.kind%2 else o.context.responder
         second=o.context.responder if c.kind%2 else o.context.initiator
         peer=lambda value:PeerID(value.chain_id,value.public_key.hex())
         require(type(p) is dict and set(p)=={'schema','unit','host_boot_id','local_peer','initiator','responder',
