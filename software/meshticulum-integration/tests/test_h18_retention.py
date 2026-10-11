@@ -72,12 +72,12 @@ def test_h17_prefix_and_both_opaque_capture_bodies_stay_source_exact():
                 value[node.targets[0].id]=ast.literal_eval(node.value) if node.targets[0].id=='PAID_HISTORY' else ast.dump(node.value)
         return value
     old=constants(original/'retained_capture.py',{'PAID_HISTORY','CAPTURE_FILES','UNADMITTED'})
-    assert retained_capture.PAID_HISTORY[:-1]==old['PAID_HISTORY']
+    assert retained_capture.PAID_HISTORY[:17]==old['PAID_HISTORY']
     current=constants(Path(retained_capture.__file__),{'CAPTURE_FILES','UNADMITTED'})
     assert current['CAPTURE_FILES']==old['CAPTURE_FILES'] and current['UNADMITTED']==old['UNADMITTED']
     policy=ParentPolicy.from_dict(json.loads((D/'POLICY.json').read_bytes()))
-    assert tuple(rpc.HISTORY)==retained_capture.PAID_HISTORY and rpc.OLD_DIGESTS[-1]==policy.digest
-    assert len(rpc.HISTORY)==18 and rpc.HISTORY[-1]==policy.parent_id
+    assert tuple(rpc.HISTORY)==retained_capture.PAID_HISTORY and rpc.OLD_DIGESTS[17]==policy.digest
+    assert len(rpc.HISTORY)==19 and rpc.HISTORY[17]==policy.parent_id
 
 
 def test_actual_old17_input_cannot_enter_full_native_history_before_any_read(monkeypatch):
