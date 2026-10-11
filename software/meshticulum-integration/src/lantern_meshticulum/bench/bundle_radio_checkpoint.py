@@ -225,15 +225,16 @@ def checkpoint(guard,*,serial_owner,primitives,next_index,handoff_sha256):
             require(proof['runtime_sha256']==protected['runtime_sha256'] and proof['manifest_sha256']==protected['manifest_sha256'],
                 'checkpoint_runtime_changed')
             live()
-            observed=proof['native']['unit-a'];expiry=min(previous['handoff_end_epoch_us'],context.value['expires_epoch_us'])
+            observed=proof['native']['unit-a'];now=live();handoff_epoch,handoff_mono=clock_bounds(now,previous,context.value,anchor)
+            expiry=handoff_epoch;observation_end=min(expiry,now[0]+55000000)
             runs=tuple(debt.RunScope(r['run_id'],r['host_boot_id'],r['transport'],r['files']['grant.json']['sha256'],
                 r['grant']['context_sha256'],r['journal']['owner']['binding']) for r in observed['legacy_runs'])
             scope=parent_snapshot.Scope('meshticulum.public-parent-snapshot-scope.v1','native',0,guard.policy.parent_id,
-                guard.policy.digest,observed['expected_database_sha256'],'unit-a',guard.policy.unit('unit-a').host_boot_id,expiry)
-            legacy=debt.Scope('meshticulum.public-debt-scope.v1','unit-a',scope.current_host_boot_id,proof['runtime_sha256'],proof['manifest_sha256'],expiry,runs)
-            actual=parent_snapshot.collect(guard.state,scope,clock=guard.caps._clock,boot_reader=boot,legacy_scope=legacy).to_dict()
-            keys=('status','scoped_rows_complete','pending_unknown','policy_row_sha256','prior_lineage','detail','files','legacy_runs','legacy_relation')
-            require(canonical({k:actual[k] for k in keys})==canonical({k:observed[k] for k in keys}),'checkpoint_actual_A_ledger_changed')
+                guard.policy.digest,observed['expected_database_sha256'],'unit-a',guard.policy.unit('unit-a').host_boot_id,observation_end)
+            legacy=debt.Scope('meshticulum.public-debt-scope.v1','unit-a',scope.current_host_boot_id,proof['runtime_sha256'],proof['manifest_sha256'],observation_end,runs)
+            from .owned_native_snapshot import collect_owned_native,match_checkpoint_projection
+            actual=collect_owned_native(guard.state,scope,caps=guard.caps,clock=guard.caps._clock,boot_reader=boot,legacy_scope=legacy).to_dict()
+            match_checkpoint_projection(actual,observed,scope=scope,handoff_epoch_us=handoff_epoch,handoff_monotonic_us=handoff_mono)
             for row in runs:
                 status=pilot_job.inspect(guard.state/'runs'/row.run_id,unit='unit-a',run_id=row.run_id,boot=scope.current_host_boot_id)
                 require(status['job_record_found'] is True and status['live'] is False,'checkpoint_actual_A_worker_live')
