@@ -18,7 +18,7 @@ def prepared(monkeypatch):
     for parent in rpc.HISTORY:(state/'parents'/parent).mkdir(mode=0o700)
     known={}
     counts={rpc.LATEST_PAID:9,rpc.COMPLETE_PAID:10,rpc.BULK_PAID:4,rpc.MIXED_PAID:4,
-            rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2}
+            rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2,rpc.IMMEDIATE_RX_BULK_PAID:2}
     assert set(counts)==set(rpc.GUARDED_PAID)
     for parent,count in counts.items():
         directory=state/'parents'/parent/'prepared-identities';directory.mkdir(mode=0o700)
@@ -35,7 +35,7 @@ def prepared(monkeypatch):
     finally:shutil.rmtree(base)
 
 
-def test_complete_H4_through_H13_record_coverage_produces_real_local_strict_seal_inputs(prepared):
+def test_complete_H4_through_H14_record_coverage_produces_real_local_strict_seal_inputs(prepared):
     state,known=prepared
     with rpc.Reader() as reader:
         files,dirs=rpc.seal_inputs(reader,'unit-c',known,{}, {})
@@ -44,7 +44,7 @@ def test_complete_H4_through_H13_record_coverage_produces_real_local_strict_seal
     assert len(dirs['parents/'+rpc.COMPLETE_PAID+'/prepared-identities'])==10
     assert {parent:len(dirs['parents/'+parent+'/prepared-identities']) for parent in rpc.GUARDED_PAID}=={
         rpc.LATEST_PAID:9,rpc.COMPLETE_PAID:10,rpc.BULK_PAID:4,rpc.MIXED_PAID:4,
-        rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2}
+        rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2,rpc.IMMEDIATE_RX_BULK_PAID:2}
     with HistoricalMetadataFence(state,owner_uid=os.geteuid(),expected_files=files,expected_directories=dirs) as fence:
         fence.check()
 
