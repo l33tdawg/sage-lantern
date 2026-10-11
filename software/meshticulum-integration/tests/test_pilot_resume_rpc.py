@@ -109,7 +109,7 @@ def test_runtime_refuses_unpinned_or_foreign_root():
 
 def test_rpc_contract_schema_and_import_scope():
     assert rpc.CONTRACT_SCHEMA == 'meshticulum.private-resume-native-rpc.v1'
-    assert len(rpc.HISTORY) == 14 and len(set(rpc.HISTORY)) == 14
+    assert len(rpc.HISTORY) == 15 and len(set(rpc.HISTORY)) == 15
     assert rpc.HISTORY[:5] == ('28765d19f654ce3162525afe9c3f89c5',
         '5ad7e65b7e50901a6f63629c04a776e2', '4d1b5d6fe8d4b022c5cf1e21cef7f8ca',
         'd60d8308326314a7753e651fa43a99e3', '4559277fa43913ce3935b078d6744a55')
@@ -118,6 +118,7 @@ def test_rpc_contract_schema_and_import_scope():
     assert rpc.HISTORY[11] == rpc.SMALL_BULK_PAID == 'f6e147e70ec7ce07f673ea5e9cd2cdc2'
     assert rpc.HISTORY[12] == rpc.ZERO_RETRY_BULK_PAID == 'b8f9b5d9c5479c8d363c7b7e8014bc3b'
     assert rpc.HISTORY[13] == rpc.IMMEDIATE_RX_BULK_PAID == '806fdca055e79dfc0b86ff8f304bcdf9'
+    assert rpc.HISTORY[14] == rpc.SF7_REPLICATE_PAID == '4ea23c6b8fa83366904ac62ffa98e2bf'
     assert rpc.HEX.fullmatch('a'*64) and rpc.SID.fullmatch('a'*32)
     assert rpc.stable(dict(unit='unit-c',host_boot_id='b',services={},service_lifetimes={},epoch_us=5)) == \
         dict(unit='unit-c',host_boot_id='b',services={},service_lifetimes={})
