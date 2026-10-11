@@ -19,9 +19,10 @@ from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_context import original_context
 from lantern_meshticulum.bench.pilot_provision import identifier
 from meshticulum.bench.wire import require
+from meshticulum.bench.public_block import public32_service
 
 
-def _captured(state, run_id, *, facts, format, clock):
+def _captured(state, run_id, *, facts, format, clock, public32=False):
     directory = Path(state) / 'runs' / identifier(run_id)
     private(directory.lstat(), True)
     result = json.loads(_read(directory / 'result.json', 100000))
@@ -35,11 +36,18 @@ def _captured(state, run_id, *, facts, format, clock):
             and mono < result['original_application_deadline_us'], 'pilot_resource_original_deadline_expired')
     data = _read(directory / 'receiver.bin', 65536)
     require(hashlib.sha256(data).hexdigest() == result['service_object_sha256'], 'pilot_capture_changed')
+    if public32:
+        plan = json.loads(_read(directory/'grant.json',16384))
+        require(public32_service(plan.get('service',{})) and plan['service']['format']==format
+                and plan['object']['bytes']==len(data) and plan['object']['sha256']==hashlib.sha256(data).hexdigest()
+                and result['parent']['native_plan_sha256']==hashlib.sha256(
+                    json.dumps(plan,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+                'public32_capture_grant_rebound')
     return data, result
 
 
 @contextmanager
-def captured(state, run_id, *, facts, format, clock):
+def captured(state, run_id, *, facts, format, clock, public32=False):
     directory = Path(state) / 'runs' / identifier(run_id)
     private(directory.lstat(), True)
     fd = os.open(directory / 'active', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -52,28 +60,31 @@ def captured(state, run_id, *, facts, format, clock):
             require((info.st_dev, info.st_ino) == identity and os.pread(fd, 16, 0) == b'active\n',
                     'pilot_capture_authority_retired_or_changed')
         current()
-        value = _captured(state, run_id, facts=facts, format=format, clock=clock)
+        value = _captured(state, run_id, facts=facts, format=format, clock=clock, public32=public32)
         yield value
         current()
-        require(_captured(state, run_id, facts=facts, format=format, clock=clock) == value,
+        require(_captured(state, run_id, facts=facts, format=format, clock=clock, public32=public32) == value,
                 'pilot_capture_changed_during_use')
     finally:
         os.close(fd)
 
 
-def serve_chunk(state, request_run_id, *, facts, clock, seed, trust, manifest_sha256):
-    with captured(state, request_run_id, facts=facts, format='MR1.request', clock=clock) as (request, receipt):
-        path, _, _ = resource.decode_request(request)
+def serve_chunk(state, request_run_id, *, facts, clock, seed, trust, manifest_sha256, public32=False):
+    require(not public32 or facts['unit']=='unit-c', 'public32_wrong_publisher')
+    with captured(state, request_run_id, facts=facts, format='MR1.request', clock=clock, public32=public32) as (request, receipt):
+        path, offset, size = resource.decode_request(request, public32=public32)
+        require(not public32 or (offset==0 and size==32740), 'public32_piece_not_whole')
         require(path.startswith('/packs/' + manifest_sha256 + '/chunks/'), 'pilot_only_serves_selected_public_chunk')
         cache = ll.VerifiedCache(seed, trust, manifest_sha256)
-        response = resource.BlockServer(cache.read).handle(request)
+        response = resource.BlockServer(cache.read, public32=public32).handle(request)
         _, _, status, _, _ = resource.RESPONSE.unpack(response[:resource.RESPONSE.size])
-        require(status == 0, 'pilot_requested_chunk_unavailable')
+        require(status == 0 and (not public32 or len(response)==32768), 'pilot_requested_chunk_unavailable')
         return response
 
 def verify_chunk(state, response_run_id, *, facts, clock, request, campaign_id,
-                 manifest_sha256, destination, trust, request_deadline_us=None):
-    with captured(state, response_run_id, facts=facts, format='MR1.response', clock=clock) as (response, receipt):
+                 manifest_sha256, destination, trust, request_deadline_us=None, public32=False):
+    require(not public32 or facts['unit']=='unit-a', 'public32_wrong_recipient')
+    with captured(state, response_run_id, facts=facts, format='MR1.response', clock=clock, public32=public32) as (response, receipt):
         context_directory = Path(state) / 'campaigns' / identifier(campaign_id)
         original = original_context(context_directory, unit=facts['unit'], host_boot_id=facts['host_boot_id'],
             resource_sha256=manifest_sha256, expires_epoch_us=receipt['original_application_expires_epoch_us'], clock=clock)
@@ -82,7 +93,8 @@ def verify_chunk(state, response_run_id, *, facts, clock, request, campaign_id,
             require(type(request_deadline_us) is int and 0 < request_deadline_us < 2**63,
                     'invalid_pilot_original_request_deadline')
             deadline = min(deadline, request_deadline_us)
-        path, offset, size = resource.decode_request(request)
+        path, offset, size = resource.decode_request(request, public32=public32)
+        if public32: require(offset==0 and size==32740 and len(response)==32768, 'public32_piece_not_whole')
         require(offset == 0 and path.startswith('/packs/' + manifest_sha256 + '/chunks/')
                 and path.endswith('.json'), 'pilot_verification_requires_whole_selected_chunk')
         magic, binding, status, total, at = resource.RESPONSE.unpack(response[:resource.RESPONSE.size])

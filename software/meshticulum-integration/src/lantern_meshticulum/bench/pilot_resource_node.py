@@ -13,6 +13,7 @@ from lantern_meshticulum.bench.pilot_context import original_context
 from lantern_meshticulum.bench.pilot_provision import identifier
 from lantern_meshticulum.bench.pilot_resources import verify_chunk
 from meshticulum.bench.wire import require
+from meshticulum.bench.public_block import public32_service
 
 STATE = Path('/var/lib/meshticulum-bench')
 
@@ -62,7 +63,8 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
         result = verify_chunk(root, identifier(response_run_id), facts=facts, clock=clock,
             request=request, campaign_id=campaign_id, manifest_sha256=digest,
             destination=public / 'received', trust=trust,
-            request_deadline_us=receipt['original_application_deadline_us'])
+            request_deadline_us=receipt['original_application_deadline_us'],
+            public32=public32_service(plan.get('service',{})))
         current()
         deadline_current()
         require(json.loads(_read(request_directory / 'result.json', 100000)) == receipt

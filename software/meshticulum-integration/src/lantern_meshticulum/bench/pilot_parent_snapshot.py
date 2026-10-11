@@ -363,7 +363,9 @@ _META = {'parent_id', 'policy_digest', 'unit', 'host_boot_id', 'campaign_id', 'r
 def _child(value, policy):
     need(type(value) is dict and set(value) == {'metadata', 'cost', 'digest'}, 'invalid_child')
     m = value['metadata']
-    need(type(m) is dict and set(m) == _META and m['parent_id'] == policy.parent_id
+    public32 = policy.qualification_kind == 'c-bulk32-v1'
+    fields = _META | ({'public_response_max_bytes'} if public32 else set())
+    need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
     unit = policy.unit(m['unit'])
     need(m['host_boot_id'] == unit.host_boot_id and type(m['sends']) is bool
@@ -375,7 +377,14 @@ def _child(value, policy):
         hex_value(m[key], 64)
     obj = m['object']
     need(type(obj) is dict and set(obj) == {'bytes', 'sha256'}, 'invalid_child')
-    integer(obj['bytes'], 1, 16384); hex_value(obj['sha256'], 64)
+    if public32:
+        need(type(m['public_response_max_bytes']) is int and m['public_response_max_bytes']==32768
+             and m['transport']=='lora' and m['format'] in ('MR1.request','MR1.response')
+             and (m['sender'],m['receiver'])==(('unit-a','unit-c') if m['format']=='MR1.request' else ('unit-c','unit-a')),
+             'invalid_public32_child')
+    integer(obj['bytes'], 1, 32768 if public32 and m['format']=='MR1.response' else 16384)
+    need(not public32 or m['format']!='MR1.response' or obj['bytes']==32768, 'invalid_public32_child')
+    hex_value(obj['sha256'], 64)
     expiry = integer(m['application_expires_epoch_us'], 1)
     need(policy.issued_epoch_us < expiry <= policy.expires_epoch_us
          and m['format'] in ('MR1.request', 'MR1.response'), 'invalid_child')
@@ -392,6 +401,11 @@ def _child(value, policy):
     if m['transport'] == 'lora':
         need(set(m['profile']) == set(RadioProfile.__dataclass_fields__), 'invalid_full_caps')
         profile = RadioProfile(**m['profile']); profile.encode(board_id=1)
+        if public32:
+            need((profile.frequency_hz,profile.bandwidth_hz,profile.spreading_factor,profile.coding_rate,
+                  profile.chip_power_dbm,profile.preamble,profile.sync_word)==(921375000,500000,7,5,0,8,0x42)
+                 and profile.max_boot_attempts==256 and profile.max_boot_estimated_airtime_us==60000000,
+                 'invalid_public32_child')
         expected = Cost(profile.max_boot_attempts, profile.max_boot_estimated_airtime_us)
         integer(m['cipher_frame_limit'], 1, 512)
     else:
@@ -413,7 +427,8 @@ def _child_ref(child):
     return {key: m[key] for key in ('unit', 'host_boot_id', 'run_id', 'campaign_id', 'resource_sha256',
         'sends', 'sender', 'receiver', 'transport', 'format', 'application_expires_epoch_us',
         'grant_digest', 'secret_sha256', 'plan_sha256', 'cipher_frame_limit')} | {
-        'child_digest': child['digest'], 'full_caps': child['cost'], 'object': m['object']}
+        'child_digest': child['digest'], 'full_caps': child['cost'], 'object': m['object']} | (
+        {'public_response_max_bytes':m['public_response_max_bytes']} if 'public_response_max_bytes' in m else {})
 
 
 def _policy(raw, scope):

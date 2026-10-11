@@ -14,6 +14,7 @@ import time
 
 from meshticulum.bench.attempts import AttemptJournal
 from .profiles import RADIO_ADMISSION
+from meshticulum.bench.public_block import public32_service, object_limit
 from meshticulum.bench.authority import RunAuthority, _open, _private_info
 from meshticulum.bench.flow_runtime import BenchFlow
 from meshticulum.bench.hat_worker import HATWorker, journal_binding as hat_binding
@@ -123,10 +124,11 @@ def inspect(unit):
     return result
 
 
-def _read_payload(path, descriptor):
+def _read_payload(path, descriptor, *, maximum=16384):
+    require(type(maximum) is int and maximum in (16384,32768), 'invalid_public_object_limit')
     fd = _open(path)
     try:
-        data = os.read(fd, 16385)
+        data = os.read(fd, maximum + 1)
     finally:
         os.close(fd)
     require(len(data) == descriptor['bytes'] and hashlib.sha256(data).hexdigest() == descriptor['sha256'],
@@ -148,9 +150,10 @@ def run_public_service(unit, directory):
     return _run(unit, directory, None, public_service=True)
 
 
-def _quarantine(directory, data):
+def _quarantine(directory, data, *, maximum=16384):
+    require(type(maximum) is int and maximum in (16384,32768), 'invalid_public_object_limit')
     _private_info(directory.lstat(), directory=True)
-    require(type(data) is bytes and 0 < len(data) <= 16384, 'invalid_public_service_capture')
+    require(type(data) is bytes and 0 < len(data) <= maximum, 'invalid_public_service_capture')
     fd = os.open(directory / 'receiver.bin', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
         with os.fdopen(fd, 'wb', closefd=False) as handle:
@@ -228,8 +231,9 @@ def _run(unit, directory, object_directory, *, public_service):
                     'private_service_requires_qualified_native_provider')
             if native_plan.get('sender_unit') == unit:
                 from meshticulum.bench.services import _shape
-                _shape(_read_payload(directory / 'sender.bin', native_plan['object']),
-                       native_plan['service']['format'])
+                _shape(_read_payload(directory / 'sender.bin', native_plan['object'],
+                           maximum=object_limit(native_plan['service'])), native_plan['service']['format'],
+                       public32=public32_service(native_plan['service']))
             fd = _open(directory / 'secret.bin')
             try:
                 secret = os.read(fd, 33)
@@ -268,9 +272,10 @@ def _run(unit, directory, object_directory, *, public_service):
         grant, profile = authority.grant, authority.profile
         result.update(grant_context_sha256=grant.digest.hex(), session_id=grant.session.session_id.hex(),
                       object=authority.plan['object'], sends=authority.sends)
-        payload = _read_payload(directory / 'sender.bin', authority.plan['object']) if authority.sends else None
+        payload = _read_payload(directory / 'sender.bin', authority.plan['object'],
+            maximum=object_limit(authority.plan.get('service',{}))) if authority.sends else None
         if public_service and payload is not None:
-            _shape(payload, authority.service_format)
+            _shape(payload, authority.service_format, public32=authority.public32)
         require(authority.sends or not (directory / 'sender.bin').exists(), 'receiver_has_ip_payload')
         if public_service:
             from lantern_meshticulum.bench.pilot_job import record
@@ -337,7 +342,7 @@ def _run(unit, directory, object_directory, *, public_service):
                     if not authority.sends:
                         if runner is not None:
                             data = runner.public_payload
-                            _quarantine(directory, data)
+                            _quarantine(directory, data, maximum=object_limit(authority.plan['service']))
                             result['service_object_sha256'] = hashlib.sha256(data).hexdigest()
                             result['service_object_durable'] = True
                             result['application_status'] = 'public_block_quarantined'

@@ -143,7 +143,7 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
         if unit=='unit-a':return radio.plus(radio).plus(tcp).plus(tcp)
         if unit=='unit-b':return tcp.plus(tcp)
         return radio.plus(radio)
-    if qualification_kind in ('a-bulk-v1','c-bulk-v1','c-bulk-8k-v1'):
+    if qualification_kind in ('a-bulk-v1','c-bulk-v1','c-bulk-8k-v1','c-bulk32-v1'):
         return Cost() if unit=='unit-b' else radio.plus(radio)
     need(qualification_kind=='mixed-bulk-v1', 'unknown_public_qualification_kind')
     if unit=='unit-c': return radio.plus(radio).plus(radio).plus(radio)
@@ -680,6 +680,8 @@ def enrolled_action(action, unit, p, runtime):
         need(policy.issued_epoch_us == owner['phase_start_epoch_us']
              and policy.expires_epoch_us == owner['phase_end_epoch_us']-5000000,
              'original_parent_window_changed')
+        need((owner.get('qualification_kind') == 'c-bulk32-v1') == (policy.qualification_kind == 'c-bulk32-v1'),
+             'public32_policy_kind_not_owner_bound')
         rf, rp, ip = owner['rf_record'], profile_for('sf7-500'), IpLimits()
         need(owner['rf_record_sha256'] == '40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9'
              and rf['country'] == 'MY' and rf['C_transmission_allowed'] is True

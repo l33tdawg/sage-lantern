@@ -83,6 +83,88 @@ class Preparation:
     def __repr__(self): return '<NativePublicPreparation>'
 
 
+class _Public32Approval:
+    """Held original owner/source records, never an owner supplied in a package."""
+    def __init__(self,directory,policy,unit,facts,clock):
+        from .pilot_resume_rpc import Reader,Runtime,parse,sha,stable,endpoint_budget
+        from .profiles import profile_for
+        self.reader=self.runtime=None;self._closed=False
+        self.policy,self.unit,self.facts,self.clock=policy,unit,facts,clock
+        self._pid,self._thread=os.getpid(),threading.get_ident()
+        try:
+            self.reader=Reader()
+            raw=self.reader.read(directory/'owner.json',200000);owner=parse(raw)
+            require(owner['schema']=='meshticulum.finite-public-resume-owner.v1'
+                    and owner['qualification_kind']=='c-bulk32-v1' and owner['policy_digest']==policy.digest)
+            self.runtime=Runtime(Path(__file__).absolute().parents[2],owner['manifest_sha256'])
+            require(self.runtime.root.name=='runtime-'+owner['runtime_sha256'][:16]);digest(owner['runtime_sha256'])
+            prior_raw=self.reader.read(directory/'prior.json',200000);prior=parse(prior_raw)
+            require(self.reader.read(directory/'policy.json',20000)==canonical(policy.to_dict()))
+            captured_raw=self.reader.read(directory/'capture.json',2000000);captured=parse(captured_raw)
+            binding_raw=self.reader.read(directory/'history-binding.json',16384);binding=parse(binding_raw)
+            require(sha(self.reader.read(directory/'history-identity-seal.json',2000000))==binding['strict_sha256']
+                    and sha(self.reader.read(directory/'legacy-grant-seal.json',2000000))==binding['legacy_sha256'])
+            local=policy.unit(unit);history_pin=sha(binding_raw)
+            require(sha(captured_raw)==owner['capture_record_sha256'] and captured['unit']==unit
+                    and captured['parent_id']==policy.parent_id and captured['actual_history_verified'] is True
+                    and captured['history_binding_sha256']==owner['history_binding_sha256']==prior['history_binding_sha256']==history_pin
+                    and binding['schema']=='meshticulum.private-resume-history-binding.v2'
+                    and binding['parent_id']==policy.parent_id and binding['unit']==unit
+                    and binding['parent_identity']==self.reader.directories[directory]
+                    and captured['review_sha256']==owner['review_sha256']
+                    and captured['facts']==owner['facts'][unit] and captured['native_phase']==owner['native_phase'][unit]
+                    and captured['phase_start_epoch_us']==owner['phase_start_epoch_us']
+                    and captured['phase_end_epoch_us']==owner['phase_end_epoch_us'])
+            require(prior['full_caps']==captured['history']['previous'][-1]['paid_caps']==asdict(local.prior_debt)
+                    and prior['legacy_inventory']==captured['history']['legacy_inventory']
+                    and prior['complete_global_debt'] is False and prior['actual_cost'] is None and prior['refunds']==0
+                    and sha(prior_raw)==local.prior_snapshot_sha256
+                    and owner['prior_registry'][unit]['observation_sha256']==sha(canonical(prior))
+                    and sha(canonical(owner['prior_registry']))==policy.prior_snapshot_sha256)
+            auth=owner['authorization'];rp=profile_for('sf7-500');rf=owner['rf_record']
+            require(auth['human_statement']=='run it bro' and type(auth['count_authorized']) is int and auth['count_authorized']==1
+                    and auth['public_only'] is True and auth['private_production'] is False
+                    and owner['rf_record_sha256']=='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9'
+                    and rf['country']=='MY' and rf['C_transmission_allowed'] is True and rf['A_B_transmission_allowed'] is True
+                    and all(rf['units'][u]['antenna_connected'] is True for u in ('unit-a','unit-b','unit-c'))
+                    and owner['rf_profile']==asdict(rp)
+                    and local.limits==local.prior_debt.plus(endpoint_budget(unit,'c-bulk32-v1',Cost(256,60000000),Cost()))
+                    and policy.issued_epoch_us==owner['phase_start_epoch_us']
+                    and policy.expires_epoch_us==owner['phase_end_epoch_us']-5000000
+                    and stable(facts)==owner['facts'][unit] and facts['host_boot_id']==local.host_boot_id)
+            self._binding=history_pin;self._phase=canonical(captured['native_phase'])
+            self._facts_bytes=canonical(owner['facts'][unit])
+            self._start,self._end=owner['phase_start_epoch_us'],owner['phase_end_epoch_us']
+            self._reader_ref,self._runtime_ref=self.reader,self.runtime
+            self._last=None;self.check()
+        except BaseException:self.close();raise
+    def check(self):
+        require(not self._closed and self._pid==os.getpid() and self._thread==threading.get_ident()
+                and self.reader is self._reader_ref and self.runtime is self._runtime_ref)
+        self.reader.check();self.runtime.check();now=self.clock();phase=json.loads(self._phase)
+        require(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
+                and canonical({k:self.facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')})==self._facts_bytes
+                and self._start<=now[0]<self._end and phase['epoch_us']<=now[0]
+                and phase['monotonic_us']<=now[1]<phase['deadline_monotonic_us']
+                and (self._last is None or all(a>=b for a,b in zip(now,self._last))))
+        self._last=now;return True
+    def __call__(self,raw):
+        from .pilot_resume_rpc import parse
+        self.check();value=parse(raw);e=value['enrollment'];local=self.policy.unit(self.unit)
+        require(value['phase'] in ('enroll','current','prepare','finalize','start') and e['schema']=='meshticulum.native-parent-enrollment.v2'
+                and canonical(e['policy'])==canonical(self.policy.to_dict()) and e['history_binding_sha256']==self._binding
+                and e['unit']==self.unit and e['host_boot_id']==local.host_boot_id
+                and self._start<=e['original_epoch_us']<self.policy.expires_epoch_us
+                and e['deadline_monotonic_us']==e['original_monotonic_us']+self.policy.expires_epoch_us-e['original_epoch_us']
+                and e['deadline_monotonic_us']<json.loads(self._phase)['deadline_monotonic_us'])
+        return self.check()
+    def close(self):
+        if self._closed:return
+        self._closed=True
+        if self.runtime is not None:self.runtime.close()
+        if self.reader is not None:self.reader.close()
+
+
 class NativeCaps:
     @classmethod
     def enroll(cls,path,policy,*,unit,clock,facts,approve,prior_check,history_binding_sha256=None):
@@ -392,7 +474,14 @@ class NativeCaps:
             try:
                 info=os.fstat(fd);require((info.st_dev,info.st_ino)==self._ids[name]);os.close(fd)
             except Exception:valid=False
-        self._fds.clear();self._fd_refs.clear();return valid and not self._uncertain
+        self._fds.clear();self._fd_refs.clear()
+        approval=self._refs[6] if hasattr(self,'_refs') else self._approve
+        if type(approval) is _Public32Approval:approval.close()
+        return valid and not self._uncertain
+
+    def public32_owner_current(self):
+        require(type(self._approve) is _Public32Approval)
+        return self.current()
 
 
 def _open_existing(state,parent_id,facts,clock):
@@ -415,7 +504,13 @@ def _open_existing(state,parent_id,facts,clock):
         # A retained protected enrollment flag supplies current approval; the
         # adapter neither invokes enrollment nor fabricates a prior snapshot.
         def observed():return NativeFacts(facts['unit'],facts['host_boot_id'],unit.peer)
-        return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=lambda _:True)
+        approve=lambda _:True
+        if policy.qualification_kind=='c-bulk32-v1':
+            approve=_Public32Approval(directory,policy,unit.unit,facts,clock)
+        try:return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=approve)
+        except BaseException:
+            if type(approve) is _Public32Approval:approve.close()
+            raise
     except Exception:raise NativeCapsError() from None
 
 

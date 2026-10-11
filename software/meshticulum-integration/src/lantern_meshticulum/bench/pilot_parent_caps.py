@@ -110,7 +110,10 @@ class ParentPolicy:
     units: tuple
     aggregate_limits: Cost
     prior_snapshot_sha256: str
+    qualification_kind: str | None = None
     def __post_init__(self):
+        require(self.qualification_kind is None or (type(self.qualification_kind) is str
+                and self.qualification_kind == 'c-bulk32-v1'))
         identifier(self.parent_id); boot(self.controller_boot_id); digest(self.prior_snapshot_sha256)
         require(all(type(v) is int and 0 < v <= MAX for v in
             (self.issued_epoch_us, self.expires_epoch_us, self.original_monotonic_us, self.deadline_monotonic_us))
@@ -125,15 +128,19 @@ class ParentPolicy:
         prior = Cost()
         for unit in self.units: prior = prior.plus(unit.prior_debt)
         require(prior.within(self.aggregate_limits))
-    def to_dict(self): return asdict(self)
+    def to_dict(self):
+        value = asdict(self)
+        if self.qualification_kind is None: value.pop('qualification_kind')
+        return value
     @classmethod
     def from_dict(cls, value):
         """Strict metadata decoding; this supplies no enrollment approval."""
         try:
-            require(type(value) is dict and set(value) == {
+            require(type(value) is dict and set(value) - {'qualification_kind'} == {
                 'parent_id', 'controller_boot_id', 'issued_epoch_us', 'expires_epoch_us',
                 'original_monotonic_us', 'deadline_monotonic_us', 'units',
                 'aggregate_limits', 'prior_snapshot_sha256'})
+            require('qualification_kind' not in value or value['qualification_kind'] == 'c-bulk32-v1')
             require(type(value['units']) in (list, tuple))
             units = []
             for unit in value['units']:
@@ -148,7 +155,7 @@ class ParentPolicy:
                     and set(value['aggregate_limits']) == set(asdict(Cost())))
             return cls(value['parent_id'], value['controller_boot_id'], value['issued_epoch_us'],
                 value['expires_epoch_us'], value['original_monotonic_us'], value['deadline_monotonic_us'],
-                tuple(units), Cost(**value['aggregate_limits']), value['prior_snapshot_sha256'])
+                tuple(units), Cost(**value['aggregate_limits']), value['prior_snapshot_sha256'], value.get('qualification_kind'))
         except Exception:
             raise ParentCapsError() from None
     @property
@@ -198,7 +205,8 @@ def child_caps(package, policy):
                 'generation','profile','object','sender_unit','country','antenna_confirmed','max_frames',
                 'service','issued_epoch_us','expires_epoch_us'}
             require(package['transport'] == 'lora' and p['schema'] == 'meshticulum.service-run.v1'
-                and set(p) == fields and set(p['service']) == {'kind','format','application_expires_epoch_us'}
+                and set(p) == fields and set(p['service']) in ({'kind','format','application_expires_epoch_us'},
+                    {'kind','format','application_expires_epoch_us','public_response_max_bytes'})
                 and set(p['object']) == {'bytes','sha256','object_id','chunk_index'}
                 and p['object']['object_id'] == p['object']['sha256']
                 and type(p['object']['chunk_index']) is int and p['object']['chunk_index'] == 0
@@ -217,12 +225,22 @@ def child_caps(package, policy):
             obj = dict(bytes=p['object']['bytes'], sha256=p['object']['sha256'])
             cost = Cost(rp.max_boot_attempts, rp.max_boot_estimated_airtime_us)
             profile = asdict(rp); frame_limit = grant.max_frames; expiry = p['service']['application_expires_epoch_us']
+        from meshticulum.bench.public_block import public32_service, object_limit
+        public32 = public32_service(p.get('service',{}))
+        require(public32 == (policy.qualification_kind == 'c-bulk32-v1'))
+        if public32:
+            require(package['transport'] == 'lora' and (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,
+                rp.coding_rate,rp.chip_power_dbm,rp.preamble,rp.sync_word)==(921375000,500000,7,5,0,8,0x42)
+                and rp.max_boot_attempts==256 and rp.max_boot_estimated_airtime_us==60000000)
         identifier(run); digest(obj['sha256'])
-        require(fmt in ('MR1.request','MR1.response') and type(obj['bytes']) is int and 0 < obj['bytes'] <= 16384
+        require(fmt in ('MR1.request','MR1.response') and type(obj['bytes']) is int and 0 < obj['bytes'] <= object_limit(p.get('service',{}))
+                and (not public32 or fmt != 'MR1.response' or obj['bytes'] == 32768)
                 and type(expiry) is int and expiry == package['application_expires_epoch_us']
                 and policy.issued_epoch_us <= p['issued_epoch_us'] < expiry <= p['expires_epoch_us'] <= policy.expires_epoch_us)
         sender, receiver = [next((u.unit for u in policy.units if u.peer == peer), None) for peer in peers]
         require(sender is not None and receiver is not None and sender != receiver)
+        if public32:
+            require((sender,receiver)==(('unit-a','unit-c') if fmt=='MR1.request' else ('unit-c','unit-a')))
         source = package['source_run_id']
         if type(source) is dict:
             require(set(source) == {'kind','request_run_id'} and source['kind'] == 'served_public_chunk'
@@ -238,14 +256,17 @@ def child_caps(package, policy):
             raw = base64.b64decode(payload, validate=True)
             require(base64.b64encode(raw).decode() == payload and len(raw) == obj['bytes']
                     and hashlib.sha256(raw).hexdigest() == obj['sha256'])
-            _shape(raw, fmt)
-            require(decode_request(raw)[0].startswith('/packs/' + package['resource_sha256'] + '/'))
+            _shape(raw, fmt, public32=public32)
+            decoded = decode_request(raw, public32=public32)
+            if public32: require(decoded[1:] == (0,32740) and '/chunks/' in decoded[0])
+            require(decoded[0].startswith('/packs/' + package['resource_sha256'] + '/'))
         metadata = dict(parent_id=policy.parent_id, policy_digest=policy.digest, unit=unit.unit,
             host_boot_id=unit.host_boot_id, campaign_id=package['campaign_id'], resource_sha256=package['resource_sha256'],
             run_id=run, sends=sends, sender=sender, receiver=receiver, transport=package['transport'], format=fmt,
             object=obj, source_run_id=source, application_expires_epoch_us=expiry,
             grant_digest=grant.digest.hex(), profile=profile, cipher_frame_limit=frame_limit,
             secret_sha256=hashlib.sha256(secret).hexdigest(), plan_sha256=hashlib.sha256(canonical(p)).hexdigest())
+        if public32: metadata['public_response_max_bytes'] = 32768
         return ChildCaps(unit.unit, run, sends, canonical(metadata), cost, expiry)
     except Exception:
         raise ParentCapsError() from None

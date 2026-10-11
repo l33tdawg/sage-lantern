@@ -30,16 +30,18 @@ RADIO_SETUP_RESERVE_MS = 15000
 
 def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                   sender, receiver, transport, format, descriptor, source,
-                  request, peers, boots, now_epoch_us, endpoints=None, profile='sf7-500', radio_permission=None):
+                  request, peers, boots, now_epoch_us, endpoints=None, profile='sf7-500', radio_permission=None, public32=False):
     """Fresh independent adjacent-link sessions; receiver never gets a body."""
     identifier(campaign_id)
+    require(type(public32) is bool and (not public32 or transport == 'lora'), 'invalid_public32_pilot')
     require(sender in UNITS and receiver in UNITS and sender != receiver
             and transport in ('lora', 'tcp') and format in ('MR1.request', 'MR1.response'), 'invalid_pilot_pair')
     require(type(application_expires_epoch_us) is int and type(now_epoch_us) is int
             and now_epoch_us < application_expires_epoch_us <= now_epoch_us + 180000000,
             'invalid_pilot_original_expiry')
     require(type(descriptor) is dict and set(descriptor) == {'bytes','sha256'}
-            and type(descriptor['bytes']) is int and 0 < descriptor['bytes'] <= 16384
+            and type(descriptor['bytes']) is int and 0 < descriptor['bytes'] <= (32768 if public32 and format == 'MR1.response' else 16384)
+            and (not public32 or format != 'MR1.response' or descriptor['bytes'] == 32768)
             and len(bytes.fromhex(descriptor['sha256'])) == 32
             and len(bytes.fromhex(resource_sha256)) == 32, 'invalid_pilot_pair_object')
     require((source is None and format == 'MR1.request' and type(request) is bytes
@@ -81,6 +83,7 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                 object=dict(descriptor,object_id=descriptor['sha256'],chunk_index=0),
                 sender_unit=sender,country='MY',antenna_confirmed=True,max_frames=512,
                 service=dict(kind='knowledge',format=format,application_expires_epoch_us=application_expires_epoch_us))
+        if public32: grant['service']['public_response_max_bytes'] = 32768
         values[unit] = dict(schema='meshticulum.public-pilot-package.v1',unit=unit,
             campaign_id=campaign_id,resource_sha256=resource_sha256,
             application_expires_epoch_us=application_expires_epoch_us,transport=transport,grant=grant,
@@ -94,10 +97,13 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
-                 clock=time.monotonic, epoch=None, sleep=time.sleep):
+                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
+        require(type(public32) is bool and public32 == (parent.policy.qualification_kind == 'c-bulk32-v1'),
+                'public32_parent_kind_mismatch')
+        self.public32 = public32
         self.parent = self._parent_ref = parent
         self.epoch=epoch or (lambda:time.time_ns()//1000)
         self.campaign_id=identifier(campaign_id);self.resource_sha256=resource_sha256
@@ -133,7 +139,7 @@ class Controller:
             transport=transport,format=format,descriptor=descriptor,source=source,
             request=payload if source is None else None,peers=self.peers,boots=self.boots,
             now_epoch_us=self.epoch(),endpoints=self.operator.endpoints(sender,receiver) if transport=='tcp' else None,
-            radio_permission=self.radio_permission)
+            radio_permission=self.radio_permission,public32=self.public32)
         require(test_rx_cutoff is None or (transport=='tcp' and format=='MR1.response'
                 and type(test_rx_cutoff) is int and 8<=test_rx_cutoff<len(payload)),
                 'invalid_controller_tcp_loss_control')
@@ -285,6 +291,7 @@ class Controller:
 
     def mixed_piece(self,request,response):
         """Actual C→A RF→B IP request; actual B→A IP→C RF response."""
+        require(not self.public32, 'public32_requires_exact_reverse_whole_piece')
         path,offset,size=resource.decode_request(request)
         require(offset==0 and path.startswith('/packs/'+self.resource_sha256+'/chunks/')
                 and path.endswith('.json'), 'pilot_requires_whole_selected_public_chunk')
@@ -319,7 +326,9 @@ class Controller:
 
     def direct_piece(self,request,response,transport,*,test_rx_cutoff=None,publisher='unit-b',requester='unit-c'):
         """Direct A/B→C piece, or explicit C→A public reverse piece."""
-        path,offset,size=resource.decode_request(request)
+        path,offset,size=resource.decode_request(request, public32=self.public32)
+        require(not self.public32 or (transport=='lora' and publisher=='unit-c' and requester=='unit-a'
+                and size==32740 and len(response)==32768), 'public32_requires_exact_reverse_whole_piece')
         require(offset==0 and path.startswith('/packs/'+self.resource_sha256+'/chunks/')
                 and path.endswith('.json'),'pilot_requires_whole_selected_public_chunk')
         require(type(publisher) is str and type(requester) is str

@@ -20,6 +20,7 @@ from meshticulum.ip.journal import private
 from lantern_meshticulum.ip.node import _read, _write
 from lantern_meshticulum.bench.pilot_context import original_context
 from meshticulum.bench.services import _shape
+from meshticulum.bench.public_block import public32_service, object_limit
 from meshticulum.bench.wire import require
 from meshticulum.resources import resource
 
@@ -115,6 +116,8 @@ def _provision(package, *, state, facts, clock, leases, caps):
     identifier(package['campaign_id'])
     state = Path(state).absolute()
     private(state.lstat(), True)
+    if caps.policy.qualification_kind == 'c-bulk32-v1':
+        require(caps.public32_owner_current() is True, 'public32_owner_not_current')
     # This independently enrolled local owner charges the complete original
     # child before any campaign context or run can be created. Package input
     # cannot enroll a parent or replace its approval/prior-debt observations.
@@ -145,7 +148,8 @@ def _provision(package, *, state, facts, clock, leases, caps):
         require(plan.get('schema') == 'meshticulum.service-run.v1' and plan.get('unit') == facts['unit']
                 and plan.get('country') == 'MY' and plan.get('antenna_confirmed') is True, 'invalid_public_radio_pilot')
         service = plan['service']
-        require(type(service) is dict and set(service) == {'kind', 'format', 'application_expires_epoch_us'}
+        require(type(service) is dict and set(service) in ({'kind', 'format', 'application_expires_epoch_us'},
+                {'kind', 'format', 'application_expires_epoch_us', 'public_response_max_bytes'})
                 and service['kind'] == 'knowledge', 'invalid_public_radio_service')
         format = service['format']
         sends = plan['sender_unit'] == facts['unit']
@@ -159,8 +163,11 @@ def _provision(package, *, state, facts, clock, leases, caps):
             and plan['issued_epoch_us'] <= epoch < expires <= plan['expires_epoch_us']
             and plan['expires_epoch_us'] - plan['issued_epoch_us'] <= 240000000
             and mono < plan['application_deadline_monotonic_us'], 'pilot_grant_not_current')
+    public32 = public32_service(plan.get('service',{}))
+    require(not public32 or (caps.policy.qualification_kind == 'c-bulk32-v1'
+            and package['transport'] == 'lora'), 'public32_parent_kind_mismatch')
     require(type(descriptor) is dict and type(descriptor['bytes']) is int
-            and 1 <= descriptor['bytes'] <= (16384 if package['transport'] == 'lora' else 65536)
+            and 1 <= descriptor['bytes'] <= (object_limit(plan.get('service',{})) if package['transport'] == 'lora' else 65536)
             and re.fullmatch('[0-9a-f]{64}', descriptor['sha256']), 'invalid_pilot_object')
     source_run = package['source_run_id']
     payload = None
@@ -176,12 +183,12 @@ def _provision(package, *, state, facts, clock, leases, caps):
                     'invalid_pilot_native_response_source')
             identifier(source_run['request_run_id'])
             _, receipt = leases.enter_context(captured(state, source_run['request_run_id'],
-                facts=facts, format='MR1.request', clock=clock))
+                facts=facts, format='MR1.request', clock=clock, public32=public32))
             public = state / 'public' / package['resource_sha256']
             private(public.lstat(), True)
             trust = json.loads(_read(public / 'trust.json', 16384))
             payload = serve_chunk(state, source_run['request_run_id'], facts=facts, clock=clock,
-                seed=public / 'pack', trust=trust, manifest_sha256=package['resource_sha256'])
+                seed=public / 'pack', trust=trust, manifest_sha256=package['resource_sha256'], public32=public32)
             source_basis = 'native_verified_public_store_response'
         else:
             identifier(source_run)
@@ -205,9 +212,9 @@ def _provision(package, *, state, facts, clock, leases, caps):
     if payload is not None:
         require(len(payload) == descriptor['bytes'] and hashlib.sha256(payload).hexdigest() == descriptor['sha256'],
                 'pilot_sender_object_mismatch')
-        _shape(payload, format)
+        _shape(payload, format, public32=public32)
         if format == 'MR1.request':
-            path, _, _ = resource.decode_request(payload)
+            path, _, _ = resource.decode_request(payload, public32=public32)
             require(path.startswith('/packs/' + package['resource_sha256'] + '/'),
                     'pilot_request_resource_mismatch')
     require(caps.current() is True, 'pilot_parent_not_current')
@@ -242,6 +249,8 @@ def _provision(package, *, state, facts, clock, leases, caps):
                     == (named.st_dev, named.st_ino, named.st_mode, named.st_uid),
                     'pilot_prepared_directory_rebound')
         unchanged(staging)
+        if caps.policy.qualification_kind == 'c-bulk32-v1':
+            require(caps.public32_owner_current() is True, 'public32_owner_not_current')
         os.rename(staging, target)
         fd = os.open(runs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
