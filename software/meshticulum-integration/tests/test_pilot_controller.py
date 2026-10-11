@@ -34,13 +34,13 @@ def release_model_parents():
         directory.cleanup()
 
 
-def model_parent(clock, *, per_unit_limits=None):
+def model_parent(clock, *, per_unit_limits=None, qualification_kind=None):
     directory=tempfile.TemporaryDirectory();path=Path(directory.name).resolve()
     limits=Cost(4096,960000000,65536,67108864,67108864)
     units=tuple(UnitCaps(unit,BOOTS[unit],PeerID(**PEERS[unit]),(per_unit_limits or {}).get(unit,limits),
         Cost(1,1000,1,128,128),str(index)*64) for index,unit in enumerate(UNITS,1))
     policy=ParentPolicy('1'*32,BOOTS['unit-a'],999000000,1160000000,9000000,170000000,
-        units,limits.plus(limits).plus(limits),'d'*64)
+        units,limits.plus(limits).plus(limits),'d'*64,qualification_kind=qualification_kind)
     parent=ParentCaps.enroll(path/'caps.sqlite',policy,
         clock=lambda:(clock.epoch(),int(clock.mono()*1000000)),boot_reader=lambda:BOOTS['unit-a'])
     MODEL_PARENTS.append((parent,directory));return parent
@@ -83,11 +83,11 @@ class ModelOperator:
     def start(self,unit,pair):
         self.events.append(('start',unit,pair['run_id']))
         run=pair['run_id'];handle=Handle();self.handles[(unit,run)]=handle
-        if unit==pair['sender']:
+        if all((peer,run) in self.handles for peer in (pair['sender'],pair['receiver'])):
             for peer in (pair['sender'],pair['receiver']):
                 self.handles[(peer,run)].code=0
                 self.results[(peer,run)]=dict(complete=True,unit=peer,host_boot_id=BOOTS[peer],session_id=run,
-                    service_format=pair['format'],sends=peer==unit,object=pair['descriptor'],
+                    service_format=pair['format'],sends=peer==pair['sender'],object=pair['descriptor'],
                     original_application_expires_epoch_us=1160000000,
                     original_application_deadline_us=self.claims[(peer,run)]['application_deadline_monotonic_us'],
                     service_object_durable=True,service_object_sha256=pair['descriptor']['sha256'],

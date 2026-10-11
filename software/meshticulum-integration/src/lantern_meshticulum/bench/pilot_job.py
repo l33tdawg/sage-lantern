@@ -108,21 +108,24 @@ def retire(directory, *, unit, run_id, boot):
     return result
 
 
-def ready(directory, identity):
+def ready(directory, identity, *, radio_receive_checked=False):
     """Published by the admitted radio job after ARM and flow start."""
+    require(type(radio_receive_checked) is bool, 'invalid_radio_receive_ready_marker')
+    value = dict(identity, status='radio-flow-ready')
+    if radio_receive_checked: value['radio_receive_checked'] = True
     path = Path(directory) / 'radio-ready.json'
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
         with os.fdopen(fd, 'wb', closefd=False) as stream:
-            stream.write(json.dumps(dict(identity, status='radio-flow-ready'), sort_keys=True).encode() + b'\n')
+            stream.write(json.dumps(value, sort_keys=True).encode() + b'\n')
             stream.flush(); os.fsync(fd)
     finally: os.close(fd)
 
 
-def _ready(directory, value):
+def _ready(directory, value, *, detail=False):
     name = 'radio-ready.json' if value['transport'] == 'lora' else 'socket-ready.json'
     try: fd = _open(Path(directory) / name)
-    except FileNotFoundError: return False
+    except FileNotFoundError: return (False, False) if detail else False
     try: raw = os.read(fd, 4097)
     finally: os.close(fd)
     require(len(raw) <= 4096, 'pilot_job_ready_too_large')
@@ -134,7 +137,10 @@ def _ready(directory, value):
     else:
         require(data['schema'] == 'meshticulum.ip-socket-ready.v1' and data['status'] == 'listening',
                 'pilot_socket_not_ready')
-    return True
+    receive_checked = data.get('radio_receive_checked', False)
+    require(type(receive_checked) is bool and (not receive_checked or value['transport']=='lora'),
+            'invalid_radio_receive_ready_marker')
+    return (True, receive_checked) if detail else True
 
 
 def _handle(value):
@@ -170,27 +176,27 @@ def inspect(directory, *, unit, run_id, boot, stop=False, wait_seconds=5):
         value = _identity(directory, unit, run_id, boot)
     except FileNotFoundError:
         return dict(schema='meshticulum.native-public-job-status.v1',unit=unit,run_id=run_id,
-            host_boot_id=boot,job_record_found=False,kernel_handle_opened=False,live=None,ready=False,
+            host_boot_id=boot,job_record_found=False,kernel_handle_opened=False,live=None,ready=False,radio_receive_checked=False,
             stop_signal_sent=False,disarm_proven=False,safe_handoff_proven=False)
     fd = _handle(value)
     result = dict(schema='meshticulum.native-public-job-status.v1', unit=unit,
         run_id=run_id, host_boot_id=boot, pid=value['pid'], start_ticks=value['start_ticks'],
         transport=value['transport'], grant_context_sha256=value['grant_context_sha256'],
         job_record_found=True,kernel_handle_opened=fd is not None, live=False, stop_signal_sent=False,
-        ready=False, disarm_proven=False, safe_handoff_proven=False)
+        ready=False, radio_receive_checked=False, disarm_proven=False, safe_handoff_proven=False)
     if fd is None: return result
     try:
         import select
         poll = select.poll(); poll.register(fd, select.POLLIN)
         result['live'] = not bool(poll.poll(0))
-        if result['live']: result['ready'] = _ready(directory, value)
+        if result['live']: result['ready'], result['radio_receive_checked'] = _ready(directory, value, detail=True)
         if stop and result['live']:
             # pidfd prevents a later PID reuse from receiving our signal.
             signal.pidfd_send_signal(fd, signal.SIGTERM)
             result['stop_signal_sent'] = True
             poll.poll(int(wait_seconds * 1000))
             result['live'] = not bool(poll.poll(0))
-            if not result['live']: result['ready'] = False
+            if not result['live']: result['ready'] = result['radio_receive_checked'] = False
         return result
     finally:
         os.close(fd)

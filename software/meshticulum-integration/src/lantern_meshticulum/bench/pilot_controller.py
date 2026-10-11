@@ -97,12 +97,15 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
-                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False):
+                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind == 'c-bulk32-v1'),
                 'public32_parent_kind_mismatch')
+        require(type(lora_sender_first) is bool and (not lora_sender_first or public32),
+                'invalid_lora_startup_order')
+        self.lora_sender_first = self._lora_sender_first = lora_sender_first
         self.public32 = public32
         self.parent = self._parent_ref = parent
         self.epoch=epoch or (lambda:time.time_ns()//1000)
@@ -123,6 +126,7 @@ class Controller:
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
+        require(self.lora_sender_first is self._lora_sender_first, 'pilot_startup_order_changed')
         require(self.parent is self._parent_ref and self.parent.current() is True,
                 'pilot_parent_not_current')
         mono,epoch=self.clock(),self.epoch()
@@ -144,6 +148,7 @@ class Controller:
                 and type(test_rx_cutoff) is int and 8<=test_rx_cutoff<len(payload)),
                 'invalid_controller_tcp_loss_control')
         if test_rx_cutoff is not None:pair['test_rx_cutoff']=test_rx_cutoff
+        pair['sender_receive_ready'] = transport=='lora' and self.lora_sender_first
         row={k:v for k,v in pair.items() if k!='packages'}
         row.update(phase='preparing',started_monotonic=self.clock(),outcomes={})
         self.links.append(row);handles={};prepared=[];row['prepared']=prepared
@@ -202,20 +207,31 @@ class Controller:
                 self.current()
                 row['prepared_parent_claims'][unit] = json.loads(canonical(claim))
                 prepared.append(unit)
-            row['phase']='starting_receiver'
-            handles[receiver]=self.operator.start(receiver,pair)
-            setup_deadline=min(self.deadline,self.clock()+10)
+            # A LoRa sender starts at zero peer credit. Prepare its actual
+            # receive path first, then let the receiver spend startup ACKs.
+            # TCP still opens the receiver's listener before its sender.
+            sender_first = transport == 'lora' and self.lora_sender_first
+            first, second = (sender, receiver) if sender_first else (receiver, sender)
+            row['launch_order'] = [first, second]
+            row['phase'] = 'starting_sender' if sender_first else 'starting_receiver'
+            handles[first] = self.operator.start(first, pair)
+            setup_deadline = min(self.deadline, self.clock()+10)
             while True:
                 self.current()
-                require(handles[receiver].poll() is None and self.clock()<setup_deadline,
-                        'pilot_receiver_failed_or_setup_expired')
-                status=self.operator.status(receiver,pair['run_id'])
+                require(handles[first].poll() is None and self.clock()<setup_deadline,
+                        'pilot_first_endpoint_failed_or_setup_expired')
+                status = self.operator.status(first, pair['run_id'])
                 if status.get('kernel_handle_opened') is True and status.get('live') is True and status.get('ready') is True:
-                    require(status['unit']==receiver and status['run_id']==pair['run_id']
-                            and status['host_boot_id']==self.boots[receiver], 'pilot_receiver_identity_changed')
+                    require(status['unit']==first and status['run_id']==pair['run_id']
+                            and status['host_boot_id']==self.boots[first], 'pilot_first_endpoint_identity_changed')
+                    if sender_first:
+                        require(status.get('radio_receive_checked') is True,
+                                'pilot_sender_radio_receive_readiness_missing')
+                    self.current()
+                    require(handles[first].poll() is None, 'pilot_first_endpoint_exited_before_peer_start')
                     break
                 self.sleep(.02)
-            handles[sender]=self.operator.start(sender,pair)
+            handles[second] = self.operator.start(second, pair)
             row['phase']='running'
             while True:
                 # Poll every owned child: poll() also services its one sudo

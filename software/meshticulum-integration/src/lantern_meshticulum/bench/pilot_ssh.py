@@ -344,6 +344,10 @@ class SSHOperator:
         row=self.config['units'][unit];launcher='/opt/meshticulum-bench/runtime-'+self.config['runtime_sha256'][:16]+'/bench_node.py'
         action='service-run' if pair['transport']=='lora' else 'ip-service-run'
         command=[row['python'],'-I','-B','-c',INVOKE,launcher,self.config['manifest_sha256'],action,unit,'--run-id',run]
+        readiness=pair.get('sender_receive_ready',False)
+        require(type(readiness) is bool and (not readiness or pair['transport']=='lora'),
+                'invalid_native_sender_receive_ready_mode')
+        if readiness and unit==pair['sender']:command.append('--sender-receive-ready')
         if unit==pair['receiver'] and pair.get('test_rx_cutoff') is not None:
             command.extend(('--test-rx-cutoff',str(pair['test_rx_cutoff'])))
         job=Job(self._argv(unit,command,root=True),password=self.passwords.get(unit),deadline=self.deadline-10,clock=self.clock)

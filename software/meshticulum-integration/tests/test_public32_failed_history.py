@@ -62,23 +62,21 @@ def test_same_bytes_replacement_remains_an_inode_refusal(tmp_path):
 
 @pytest.mark.parametrize('unit',['unit-a','unit-b','unit-c'])
 @pytest.mark.parametrize('changed',['failed_set','promote_complete'])
-def test_full_history_failed_set_cannot_be_reclassified(unit,changed):
-    tree=ast.parse(inspect.getsource(rpc.full_history))
-    nodes=[n for n in ast.walk(tree) if isinstance(n,ast.If) and any(
-        isinstance(x,ast.Constant) and x.value=='public32_failure_scope_changed' for x in ast.walk(n))]
-    assert len(nodes)==1
-    code=compile(ast.Module(body=nodes,type_ignores=[]),rpc.__file__,'exec')
-    row=dict(failed_started_runs=[] if unit=='unit-b' else [rpc.PUBLIC32_RESPONSE],require_result_complete=False)
-    scope=dict(policy=SimpleNamespace(parent_id=rpc.PUBLIC32_PAID),unit=unit,v=row)
-    exec(code,rpc.__dict__,scope)
-    if changed=='failed_set':row['failed_started_runs']=[rpc.PUBLIC32_REQUEST]
+@pytest.mark.parametrize('parent,response,request_run',[
+    (rpc.PUBLIC32_PAID,rpc.PUBLIC32_RESPONSE,rpc.PUBLIC32_REQUEST),
+    (rpc.PUBLIC32_RETRY_PAID,rpc.PUBLIC32_RETRY_RESPONSE,rpc.PUBLIC32_RETRY_REQUEST)])
+def test_full_history_failed_set_cannot_be_reclassified(unit,changed,parent,response,request_run):
+    row=dict(failed_started_runs=[] if unit=='unit-b' else [response],require_result_complete=False)
+    rpc.qualify_public32_failure_scope(unit,parent,row)
+    if changed=='failed_set':row['failed_started_runs']=[request_run]
     else:row['require_result_complete']=True
-    with pytest.raises(RuntimeError,match='public32_failure_scope_changed'):exec(code,rpc.__dict__,scope)
+    with pytest.raises(RuntimeError,match='public32_failure_scope_changed'):
+        rpc.qualify_public32_failure_scope(unit,parent,row)
 
 
 def test_qualifier_uses_exact_outcome_hash_not_a_caller_complete_boolean(monkeypatch):
     result=dict(complete=False,disarmed_on_exit=True,parent=dict(started=True,parent_id=rpc.PUBLIC32_PAID,
-        policy_digest=rpc.OLD_DIGESTS[-1],run_id=rpc.PUBLIC32_RESPONSE))
+        policy_digest=rpc.OLD_DIGESTS[15],run_id=rpc.PUBLIC32_RESPONSE))
     expected=deepcopy(rpc.PUBLIC32_RESULT_CANONICAL)
     expected['unit-a'][rpc.PUBLIC32_RESPONSE]=rpc.sha(rpc.canonical(result))
     monkeypatch.setattr(rpc,'PUBLIC32_RESULT_CANONICAL',expected)

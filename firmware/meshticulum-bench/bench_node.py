@@ -36,11 +36,14 @@ def main():
     parser.add_argument('--campaign-id')
     parser.add_argument('--request-run-id')
     parser.add_argument('--test-rx-cutoff',type=int)
+    parser.add_argument('--sender-receive-ready',action='store_true')
     parser.add_argument('--scope-file',type=Path)
     parser.add_argument('--scope-sha256')
     parser.add_argument('--expected-boot')
     parser.add_argument('--observation-end-epoch-us',type=int)
     args = parser.parse_args()
+    if args.sender_receive_ready and args.action!='service-run':
+        raise RuntimeError('sender_receive_ready_requires_radio_service')
     if os.geteuid() != 0: raise RuntimeError('requires_root')
     bundle = Path(__file__).resolve().parent
     manifest_bytes = trusted(bundle / 'manifest.json')
@@ -180,7 +183,7 @@ def main():
             elif args.action == 'service-run':
                 if manifest.get('public_service_formats') != ['MR1.request', 'MR1.response']:
                     raise RuntimeError('public_service_runner_not_in_bundle')
-                result = node.run_public_service(args.unit, directory)
+                result = node.run_public_service(args.unit, directory, sender_receive_ready=args.sender_receive_ready)
             else:
                 result = node.run(args.unit, directory, root / 'objects')
     result['runtime_bundle'] = str(bundle)

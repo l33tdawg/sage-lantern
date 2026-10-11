@@ -136,18 +136,49 @@ def _read_payload(path, descriptor, *, maximum=16384):
     return data
 
 
+def _sender_receive_ready(runner, flow, worker, authority, parent_current):
+    """One actual owned receive pass before advertising sender readiness."""
+    require(flow.sends is True and flow.worker is worker and flow.authority is authority
+            and runner.transfer.flow is flow and flow.journal is worker.journal
+            and flow.flow._peer_credit == 0,
+            'pilot_sender_receive_owner_changed')
+    require(parent_current() and authority.live() and not worker.fenced,
+            'pilot_sender_receive_authority_not_live')
+    before = flow.journal.snapshot()['attempts']
+    # The frozen flow begins at zero peer credit. This pass arms/listens through
+    # the real worker and authenticates ingress; it cannot infer peer capacity.
+    complete = runner.step()
+    require(parent_current() and authority.live() and flow.worker is worker
+            and flow.authority is authority and runner.transfer.flow is flow
+            and flow.journal is worker.journal and not worker.fenced,
+            'pilot_sender_receive_owner_or_authority_changed')
+    require(complete is False and flow.journal.snapshot()['attempts']==before
+            and not flow.counts.get('tx_RF_DONE',0) and not flow.counts.get('tx_UNKNOWN',0),
+            'pilot_sender_dispatched_before_receive_readiness')
+    return True
+
+
+def _sender_readiness_pass(enabled, runner, flow, worker, authority, parent_current):
+    """Default callers retain their original loop, including already queued ACKs."""
+    require(type(enabled) is bool, 'invalid_native_sender_receive_ready_mode')
+    if not enabled: return False
+    require(authority.public32 is True and authority.sends is True,
+            'sender_receive_ready_requires_public32_sender')
+    return _sender_receive_ready(runner, flow, worker, authority, parent_current)
+
+
 def run(unit, directory, object_directory):
     return _run(unit, directory, object_directory, public_service=False)
 
 
-def run_public_service(unit, directory):
+def run_public_service(unit, directory, *, sender_receive_ready=False):
     """Finite public MR1 service flow; private native provider stays unwired.
 
     Received bytes are quarantined in the root-only run directory. They are
     not a verified knowledge piece, availability advertisement or public seed.
     No service, listener or autonomous forwarding is commissioned by this run.
     """
-    return _run(unit, directory, None, public_service=True)
+    return _run(unit, directory, None, public_service=True, sender_receive_ready=sender_receive_ready)
 
 
 def _quarantine(directory, data, *, maximum=16384):
@@ -167,7 +198,9 @@ def _quarantine(directory, data, *, maximum=16384):
         os.close(fd)
 
 
-def _run(unit, directory, object_directory, *, public_service):
+def _run(unit, directory, object_directory, *, public_service, sender_receive_ready=False):
+    require(type(sender_receive_ready) is bool and (not sender_receive_ready or public_service),
+            'invalid_native_sender_receive_ready_mode')
     facts_before = None
     if public_service:
         from lantern_meshticulum.ip.node import _facts
@@ -269,6 +302,8 @@ def _run(unit, directory, object_directory, *, public_service):
             # Legacy random bench objects never consume service records.
             require(authority.plan['schema'] == 'meshticulum.bench-run.v1',
                     'service_requires_dedicated_runner')
+        require(not sender_receive_ready or (public_service and authority.public32 is True and authority.sends is True),
+                'sender_receive_ready_requires_public32_sender')
         grant, profile = authority.grant, authority.profile
         result.update(grant_context_sha256=grant.digest.hex(), session_id=grant.session.session_id.hex(),
                       object=authority.plan['object'], sends=authority.sends)
@@ -326,8 +361,10 @@ def _run(unit, directory, object_directory, *, public_service):
             runner = ServiceRunner(ServiceTransfer(flow), payload=payload)
             runner.start()
             from lantern_meshticulum.bench.pilot_job import ready
+            receive_checked = _sender_readiness_pass(sender_receive_ready, runner, flow, worker, authority, parent_current)
             with authority.application_lease():
-                ready(directory, result['native_job'])
+                require(parent_current(), 'pilot_parent_not_current_before_ready')
+                ready(directory, result['native_job'], radio_receive_checked=receive_checked)
         elif payload is not None:
             flow.send(payload)
         complete_at = None
