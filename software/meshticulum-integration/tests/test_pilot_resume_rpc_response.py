@@ -72,3 +72,20 @@ def test_dispatch_uses_checked_composition_at_its_only_final_return():
     assert isinstance(end,ast.Return) and isinstance(end.value,ast.Call)
     assert end.value.func.id=='response_metadata'
     assert [arg.id for arg in end.value.args]==['action','unit','result']
+
+
+def test_new_capture_cannot_adopt_retained_unenrolled_parent():
+    with pytest.raises(RuntimeError,match='invalid_own_parent'):
+        rpc.capture_history('unit-c',dict(parent_id=rpc.CAPTURE_PARENT),None)
+
+
+def test_native_history_namespace_requires_exact_retained_artifact():
+    # Check the explicit native requirement, since optional absence exists only
+    # for reusable local fixtures. This does not run a native history collector.
+    tree=ast.parse(Path(rpc.__file__).read_text())
+    functions={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+    for name in ('full_history','capture_history'):
+        calls=[n for n in ast.walk(functions[name]) if isinstance(n,ast.Call)
+               and isinstance(n.func,ast.Name) and n.func.id=='historical_parent_ids']
+        assert calls and all(any(k.arg=='require_retained' and isinstance(k.value,ast.Constant)
+                                and k.value.value is True for k in call.keywords) for call in calls)

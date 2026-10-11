@@ -32,9 +32,7 @@ from .history_metadata_fence import FenceError, _FLAGS, _need, _stamp
 from .legacy_grant_fence import LegacyGrantFence
 from lantern_meshticulum.bench.pilot_native_caps import NativeCaps, Preparation, hashed
 from lantern_meshticulum.bench.pilot_parent_caps import ParentPolicy, canonical
-
-HISTORY = ('28765d19f654ce3162525afe9c3f89c5', '5ad7e65b7e50901a6f63629c04a776e2',
-           '4d1b5d6fe8d4b022c5cf1e21cef7f8ca')
+from .retained_capture import CAPTURE_PARENT, PAID_HISTORY as HISTORY, historical_parent_ids, current_clock
 HEX = re.compile('[0-9a-f]{64}\\Z')
 SID = re.compile('[0-9a-f]{32}\\Z')
 BINDING = 'meshticulum.private-resume-history-binding.v2'
@@ -87,21 +85,23 @@ def _write(parent, name, raw):
     os.fsync(parent)
 
 
-def install_seals(state, parent_id, unit, strict_raw, legacy_raw):
+def install_seals(state, parent_id, unit, strict_raw, legacy_raw, *, clock=current_clock):
     """O_EXCL installation only; does NOT claim capture provenance or enroll.
 
     The caller must create exactly this own parent after independently checking
     the old namespace and capture both seals BEFORE that namespace grows.
     Returned bytes must be bound into own owner/prior before enrollment.
     """
-    _need(type(parent_id) is str and SID.fullmatch(parent_id) and parent_id not in HISTORY
+    _need(type(parent_id) is str and SID.fullmatch(parent_id) and parent_id not in HISTORY+(CAPTURE_PARENT,)
           and unit in ('unit-a','unit-b','unit-c'), 'invalid_own_identity')
     strict, legacy = _parse(strict_raw), _parse(legacy_raw)
+    expected_history = historical_parent_ids(state,unit,clock,
+        require_retained=CAPTURE_PARENT in strict['directories']['parents']['entries'])
     _need(strict['schema'] == 'meshticulum.private-history-identity-seal.v2'
           and legacy['schema'] == 'meshticulum.private-legacy-grant-fence.v1'
           and type(legacy['rows']) is dict and 0 < len(legacy['rows']) <= 128
           and strict['uid'] == legacy['uid'] == os.geteuid()
-          and sorted(strict['directories']['parents']['entries']) == sorted(HISTORY),
+          and sorted(strict['directories']['parents']['entries']) == sorted(expected_history),
           'wrong_historical_parent_seal')
     _need(type(strict_raw) is bytes and type(legacy_raw) is bytes
           and max(len(strict_raw), len(legacy_raw)) <= MAX_SEAL, 'seal_size_bound')
@@ -214,7 +214,7 @@ class ResumeParentGuard:
                  clock, facts, approve, runtime_check):
         self._stack, self.caps, self._closed, self._failed = ExitStack(), None, False, False
         try:
-            _need(type(policy) is ParentPolicy and policy.parent_id not in HISTORY
+            _need(type(policy) is ParentPolicy and policy.parent_id not in HISTORY+(CAPTURE_PARENT,)
                   and management_phase in ('prelaunch','postterminal')
                   and all(callable(c) for c in (clock, facts, approve, runtime_check)), 'invalid_guard_scope')
             _need(all(type(d) is str and HEX.fullmatch(d)
@@ -247,7 +247,9 @@ class ResumeParentGuard:
             _need(_hash(strict_raw) == binding['strict_sha256']
                   and _hash(legacy_raw) == binding['legacy_sha256'], 'protected_seal_digest_changed')
             strict, legacy = _parse(strict_raw), _parse(legacy_raw)
-            _need(sorted(strict['directories']['parents']['entries']) == sorted(HISTORY)
+            expected_history = historical_parent_ids(self.state,unit,clock,
+                require_retained=CAPTURE_PARENT in strict['directories']['parents']['entries'])
+            _need(sorted(strict['directories']['parents']['entries']) == sorted(expected_history)
                   and _hash(canonical(legacy['rows'])) == binding['legacy_rows_sha256'], 'protected_seal_scope_changed')
             self._identities = self._own_relations()
             self._history = self._stack.enter_context(SealedHistory(self.state, owner_uid=os.geteuid(),
