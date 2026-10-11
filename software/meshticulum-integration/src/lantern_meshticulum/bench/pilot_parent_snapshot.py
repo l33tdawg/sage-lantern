@@ -363,10 +363,13 @@ _META = {'parent_id', 'policy_digest', 'unit', 'host_boot_id', 'campaign_id', 'r
 def _child(value, policy):
     need(type(value) is dict and set(value) == {'metadata', 'cost', 'digest'}, 'invalid_child')
     m = value['metadata']
-    public32 = policy.qualification_kind == 'c-bulk32-v1'
+    public32 = policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')
     fields = _META | ({'public_response_max_bytes'} if public32 else set())
+    if policy.qualification_kind == 'c-bundle100k-v1': fields.add('bundle_context_sha256')
     need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
+    if policy.qualification_kind == 'c-bundle100k-v1':
+        need(m['bundle_context_sha256'] == policy.bundle_context_sha256, 'bundle_child_context_changed')
     unit = policy.unit(m['unit'])
     need(m['host_boot_id'] == unit.host_boot_id and type(m['sends']) is bool
          and m['sender'] in UNITS and m['receiver'] in UNITS and m['sender'] != m['receiver']
@@ -428,7 +431,8 @@ def _child_ref(child):
         'sends', 'sender', 'receiver', 'transport', 'format', 'application_expires_epoch_us',
         'grant_digest', 'secret_sha256', 'plan_sha256', 'cipher_frame_limit')} | {
         'child_digest': child['digest'], 'full_caps': child['cost'], 'object': m['object']} | (
-        {'public_response_max_bytes':m['public_response_max_bytes']} if 'public_response_max_bytes' in m else {})
+        {'public_response_max_bytes':m['public_response_max_bytes']} if 'public_response_max_bytes' in m else {}) | (
+        {'bundle_context_sha256':m['bundle_context_sha256']} if 'bundle_context_sha256' in m else {})
 
 
 def _policy(raw, scope):
@@ -531,14 +535,19 @@ def _native(db, scope, reader):
     resources, resource_rows = {}, []
     for rid, raw in _rows(db, 'resources', ('id', 'body')):
         hex_value(rid, 64); r = _body(raw)
-        need(type(r) is dict and set(r) == _RESOURCE, 'invalid_resource')
+        bundle = policy.qualification_kind == 'c-bundle100k-v1'
+        need(type(r) is dict and set(r) == (_RESOURCE | {'campaign_id','bundle_context_sha256','bundle_original_epoch_us','bundle_original_monotonic_us','bundle_original_deadline_monotonic_us'} if bundle else _RESOURCE), 'invalid_resource')
+        binding=dict(parent_id=policy.parent_id,unit=unit.unit,resource_sha256=r['resource_sha256'])
+        if bundle:
+            identifier(r['campaign_id']); need(r['bundle_context_sha256'] == policy.bundle_context_sha256, 'bundle_resource_context_changed')
+            binding.update(campaign_id=r['campaign_id'],bundle_context_sha256=r['bundle_context_sha256'])
+            need((r['bundle_original_epoch_us'],r['bundle_original_monotonic_us'],r['bundle_original_deadline_monotonic_us'])==(epoch,mono,deadline), 'bundle_original_native_clock_changed')
         hex_value(r['resource_sha256'], 64)
         e = integer(r['application_expires_epoch_us'], 1); re = integer(r['original_epoch_us'], 1)
         rm = integer(r['original_monotonic_us'], 1); rd = integer(r['application_deadline_monotonic_us'], 1)
+        expected_deadline=min(deadline,rm+e-re,mono+e-epoch) if bundle else min(deadline,rm+e-re)
         need(epoch <= re < e <= policy.expires_epoch_us and rm >= mono
-             and rm < rd == min(deadline, rm+e-re)
-             and rid == _native_hash(dict(parent_id=policy.parent_id, unit=unit.unit,
-                                         resource_sha256=r['resource_sha256'])), 'invalid_resource')
+             and rm < rd == expected_deadline and rid == _native_hash(binding),'invalid_resource')
         resources[rid] = r
         resource_rows.append(dict(resource_id=rid, row_sha256=sha(raw), **r))
     claims, claim_rows, paid, additions = {}, [], unit.prior_debt, Cost()
@@ -551,6 +560,8 @@ def _native(db, scope, reader):
              and canonical(resources.get(claim['resource_id'])) == canonical(claim['resource'])
              and m['resource_sha256'] == claim['resource']['resource_sha256']
              and m['application_expires_epoch_us'] == claim['resource']['application_expires_epoch_us'], 'invalid_claim')
+        if policy.qualification_kind == 'c-bundle100k-v1':
+            need(m['campaign_id'] == claim['resource']['campaign_id'] and m['bundle_context_sha256'] == claim['resource']['bundle_context_sha256'], 'bundle_claim_resource_changed')
         paid = paid.plus(cost); additions = additions.plus(cost)
         claims[cid] = claim
         claim_rows.append(dict(native_claim_id=cid, controller_allocation_id=claim['controller_allocation_id'],

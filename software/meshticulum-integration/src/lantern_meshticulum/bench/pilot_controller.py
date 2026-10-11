@@ -97,15 +97,23 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
-                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False):
+                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
-        require(type(public32) is bool and public32 == (parent.policy.qualification_kind == 'c-bulk32-v1'),
+        require(type(public32) is bool and public32 == (parent.policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')),
                 'public32_parent_kind_mismatch')
         require(type(lora_sender_first) is bool and (not lora_sender_first or public32),
                 'invalid_lora_startup_order')
         self.lora_sender_first = self._lora_sender_first = lora_sender_first
+        self.bundle_context = None
+        if parent.policy.qualification_kind == 'c-bundle100k-v1':
+            from .pilot_bundle import BundleContext
+            self.bundle_context = BundleContext(bundle_context,parent.policy)
+            self.bundle_context.stage(campaign_id,expires_epoch_us)
+            require(resource_sha256 == self.bundle_context.value['manifest_sha256'], 'bundle_manifest_changed')
+        else: require(bundle_context is None, 'unexpected_bundle_context')
+        self._bundle_context_ref=self.bundle_context
         self.public32 = public32
         self.parent = self._parent_ref = parent
         self.epoch=epoch or (lambda:time.time_ns()//1000)
@@ -122,11 +130,17 @@ class Controller:
         # Reserve ten seconds for revocation and owned-job cleanup.
         self.deadline=min(now+remaining,handoff_deadline_monotonic-10,
                           parent.policy.deadline_monotonic_us/1000000)
+        if self.bundle_context is not None:
+            stage=self.bundle_context.stage(campaign_id,expires_epoch_us)
+            anchor=dict(original_epoch_us=parent.policy.issued_epoch_us,original_monotonic_us=parent.policy.original_monotonic_us,deadline_monotonic_us=parent.policy.deadline_monotonic_us)
+            _,original_end,_=self.bundle_context.monotonic_bounds(stage,anchor)
+            self.deadline=min(self.deadline,original_end/1000000)
         self.last_clock=(self.epoch(),now)
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
         require(self.lora_sender_first is self._lora_sender_first, 'pilot_startup_order_changed')
+        require(self.bundle_context is self._bundle_context_ref, 'bundle_controller_context_rebound')
         require(self.parent is self._parent_ref and self.parent.current() is True,
                 'pilot_parent_not_current')
         mono,epoch=self.clock(),self.epoch()
@@ -144,6 +158,8 @@ class Controller:
             request=payload if source is None else None,peers=self.peers,boots=self.boots,
             now_epoch_us=self.epoch(),endpoints=self.operator.endpoints(sender,receiver) if transport=='tcp' else None,
             radio_permission=self.radio_permission,public32=self.public32)
+        if self.bundle_context is not None:
+            for package in pair['packages'].values(): self.bundle_context.package(package,self.epoch())
         require(test_rx_cutoff is None or (transport=='tcp' and format=='MR1.response'
                 and type(test_rx_cutoff) is int and 8<=test_rx_cutoff<len(payload)),
                 'invalid_controller_tcp_loss_control')

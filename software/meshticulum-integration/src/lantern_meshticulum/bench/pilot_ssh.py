@@ -360,6 +360,10 @@ class SSHOperator:
     def verify(self,unit,campaign,request,response):
         return self._action(unit,'pilot-verify',response,'--campaign-id',identifier(campaign),'--request-run-id',identifier(request),
                             schema='meshticulum.pilot-verified-piece.v1')
+    def bundle_status(self,unit,parent_id):
+        return self._action(unit,'pilot-bundle-status',None,'--parent-id',identifier(parent_id),schema='meshticulum.native-public100k-bundle-status.v1')
+    def bundle_finish(self,unit,parent_id):
+        return self._action(unit,'pilot-bundle-finish',None,'--parent-id',identifier(parent_id),schema='meshticulum.native-public100k-bundle-finish.v1')
     def facts(self,unit):
         value=self._action(unit,'pilot-facts',schema='meshticulum.native-pilot-facts.v1')
         require(value['unit']==unit and value['host_boot_id']==self.config['units'][unit]['host_boot_id'],'native_host_boot_changed')

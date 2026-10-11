@@ -95,7 +95,7 @@ class _Public32Approval:
             self.reader=Reader()
             raw=self.reader.read(directory/'owner.json',200000);owner=parse(raw)
             require(owner['schema']=='meshticulum.finite-public-resume-owner.v1'
-                    and owner['qualification_kind']=='c-bulk32-v1' and owner['policy_digest']==policy.digest)
+                    and owner['qualification_kind']==policy.qualification_kind and policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1') and owner['policy_digest']==policy.digest)
             self.runtime=Runtime(Path(__file__).absolute().parents[2],owner['manifest_sha256'])
             require(self.runtime.root.name=='runtime-'+owner['runtime_sha256'][:16]);digest(owner['runtime_sha256'])
             prior_raw=self.reader.read(directory/'prior.json',200000);prior=parse(prior_raw)
@@ -128,10 +128,15 @@ class _Public32Approval:
                     and rf['country']=='MY' and rf['C_transmission_allowed'] is True and rf['A_B_transmission_allowed'] is True
                     and all(rf['units'][u]['antenna_connected'] is True for u in ('unit-a','unit-b','unit-c'))
                     and owner['rf_profile']==asdict(rp)
-                    and local.limits==local.prior_debt.plus(endpoint_budget(unit,'c-bulk32-v1',Cost(256,60000000),Cost()))
+                    and local.limits==local.prior_debt.plus(endpoint_budget(unit,policy.qualification_kind,Cost(256,60000000),Cost()))
                     and policy.issued_epoch_us==owner['phase_start_epoch_us']
                     and policy.expires_epoch_us==owner['phase_end_epoch_us']-5000000
                     and stable(facts)==owner['facts'][unit] and facts['host_boot_id']==local.host_boot_id)
+            self.bundle = None
+            if policy.qualification_kind == 'c-bundle100k-v1':
+                from .pilot_bundle import BundleContext
+                self.bundle = BundleContext(owner['bundle_context'],policy)
+            self._bundle_ref=self.bundle
             self._binding=history_pin;self._phase=canonical(captured['native_phase'])
             self._facts_bytes=canonical(owner['facts'][unit])
             self._start,self._end=owner['phase_start_epoch_us'],owner['phase_end_epoch_us']
@@ -142,6 +147,8 @@ class _Public32Approval:
         require(not self._closed and self._pid==os.getpid() and self._thread==threading.get_ident()
                 and self.reader is self._reader_ref and self.runtime is self._runtime_ref)
         self.reader.check();self.runtime.check();now=self.clock();phase=json.loads(self._phase)
+        require(self.bundle is self._bundle_ref)
+        if self.bundle is not None: self.bundle.current(now)
         require(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
                 and canonical({k:self.facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')})==self._facts_bytes
                 and self._start<=now[0]<self._end and phase['epoch_us']<=now[0]
@@ -381,14 +388,33 @@ class NativeCaps:
         input_sha=hashlib.sha256(canonical(package)).hexdigest()
         def prepare(now):
             child,allocation=self._package(package);meta=json.loads(child.metadata)
+            bundle = getattr(self._approve,'bundle',None)
+            if self.policy.qualification_kind == 'c-bundle100k-v1':
+                from .pilot_bundle import BundleContext
+                require(type(self._approve) is _Public32Approval and type(bundle) is BundleContext and bundle is self._approve._bundle_ref)
+                stage=bundle.package(package,now[0])
+                first,stage_deadline,_=bundle.monotonic_bounds(stage,self._enrollment)
+                require(first<=now[1]<stage_deadline)
+                for prior_claim, in self.db.execute('SELECT body FROM claims'):
+                    prior_meta=json.loads(prior_claim)['child']['metadata']
+                    require((prior_meta['campaign_id'],prior_meta['format']) != (meta['campaign_id'],meta['format']))
             require(now[0]<child.expires_epoch_us and package['grant']['issued_epoch_us']<=now[0])
-            resource_id=hashed(dict(parent_id=self.policy.parent_id,unit=self.unit.unit,resource_sha256=meta['resource_sha256']))
+            resource_binding=dict(parent_id=self.policy.parent_id,unit=self.unit.unit,resource_sha256=meta['resource_sha256'])
+            if bundle is not None: resource_binding.update(campaign_id=meta['campaign_id'],bundle_context_sha256=self.policy.bundle_context_sha256)
+            resource_id=hashed(resource_binding)
             row=self.db.execute('SELECT body FROM resources WHERE id=?',(resource_id,)).fetchone()
             if row is None:
                 resource=dict(resource_sha256=meta['resource_sha256'],application_expires_epoch_us=child.expires_epoch_us,
                     original_epoch_us=now[0],original_monotonic_us=now[1],
                     application_deadline_monotonic_us=min(self._enrollment['deadline_monotonic_us'],now[1]+child.expires_epoch_us-now[0]))
             else:resource=json.loads(row[0]);require(canonical(resource)==row[0] and resource['application_expires_epoch_us']==child.expires_epoch_us)
+            if bundle is not None:
+                resource.update(campaign_id=meta['campaign_id'],bundle_context_sha256=self.policy.bundle_context_sha256,
+                    bundle_original_epoch_us=self._enrollment['original_epoch_us'],
+                    bundle_original_monotonic_us=self._enrollment['original_monotonic_us'],
+                    bundle_original_deadline_monotonic_us=self._enrollment['deadline_monotonic_us'])
+                if row is None:resource['application_deadline_monotonic_us']=min(resource['application_deadline_monotonic_us'],stage_deadline)
+                require(resource['application_deadline_monotonic_us']<=stage_deadline)
             limits=(child.expires_epoch_us,resource['application_deadline_monotonic_us']);self._live(now,limits)
             require(now[0]>=resource['original_epoch_us'] and now[1]>=resource['original_monotonic_us'])
             rows,used=self._validate();require(len(rows)<4096 and not any(run==child.run_id for _,_,run in rows))
@@ -505,7 +531,7 @@ def _open_existing(state,parent_id,facts,clock):
         # adapter neither invokes enrollment nor fabricates a prior snapshot.
         def observed():return NativeFacts(facts['unit'],facts['host_boot_id'],unit.peer)
         approve=lambda _:True
-        if policy.qualification_kind=='c-bulk32-v1':
+        if policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1'):
             approve=_Public32Approval(directory,policy,unit.unit,facts,clock)
         try:return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=approve)
         except BaseException:

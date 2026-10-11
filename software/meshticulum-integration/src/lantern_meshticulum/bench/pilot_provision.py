@@ -116,7 +116,7 @@ def _provision(package, *, state, facts, clock, leases, caps):
     identifier(package['campaign_id'])
     state = Path(state).absolute()
     private(state.lstat(), True)
-    if caps.policy.qualification_kind == 'c-bulk32-v1':
+    if caps.policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1'):
         require(caps.public32_owner_current() is True, 'public32_owner_not_current')
     # This independently enrolled local owner charges the complete original
     # child before any campaign context or run can be created. Package input
@@ -164,7 +164,7 @@ def _provision(package, *, state, facts, clock, leases, caps):
             and plan['expires_epoch_us'] - plan['issued_epoch_us'] <= 240000000
             and mono < plan['application_deadline_monotonic_us'], 'pilot_grant_not_current')
     public32 = public32_service(plan.get('service',{}))
-    require(not public32 or (caps.policy.qualification_kind == 'c-bulk32-v1'
+    require(not public32 or (caps.policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1')
             and package['transport'] == 'lora'), 'public32_parent_kind_mismatch')
     require(type(descriptor) is dict and type(descriptor['bytes']) is int
             and 1 <= descriptor['bytes'] <= (object_limit(plan.get('service',{})) if package['transport'] == 'lora' else 65536)
@@ -249,7 +249,7 @@ def _provision(package, *, state, facts, clock, leases, caps):
                     == (named.st_dev, named.st_ino, named.st_mode, named.st_uid),
                     'pilot_prepared_directory_rebound')
         unchanged(staging)
-        if caps.policy.qualification_kind == 'c-bulk32-v1':
+        if caps.policy.qualification_kind in ('c-bulk32-v1','c-bundle100k-v1'):
             require(caps.public32_owner_current() is True, 'public32_owner_not_current')
         os.rename(staging, target)
         fd = os.open(runs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)

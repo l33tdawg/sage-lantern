@@ -44,7 +44,7 @@ def main():
              'meshticulum/resources/__init__.py': (source / 'src/meshticulum/resources/__init__.py').read_bytes(),
              'meshticulum/resources/resource.py': (source / 'src/meshticulum/resources/resource.py').read_bytes(),
              **{('meshticulum/resources/' + name): (source / 'src/meshticulum/resources' / name).read_bytes()
-                for name in ('knowledge_pack.py', 'lamplighter.py', 'swarm.py')}}
+                for name in ('knowledge_pack.py', 'lamplighter.py', 'swarm.py', 'byte_bundle.py')}}
     for package in ('bench', 'contracts', 'scheduler', 'flow', 'ip',
                     'meshticulum_contracts', 'meshticulum_scheduler'):
         for path in sorted((source / 'src/meshticulum' / package).glob('*.py')):

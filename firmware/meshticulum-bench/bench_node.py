@@ -30,10 +30,11 @@ def trusted(path, limit=2000000):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('inspect', 'run', 'service-run', 'ip-service-run', 'pilot-facts', 'pilot-debt-snapshot', 'pilot-parent-snapshot', 'pilot-cache-status', 'pilot-result', 'pilot-status', 'pilot-stop', 'pilot-retire', 'pilot-verify', 'revoke', 'ip-revoke'))
+    parser.add_argument('action', choices=('inspect', 'run', 'service-run', 'ip-service-run', 'pilot-facts', 'pilot-debt-snapshot', 'pilot-parent-snapshot', 'pilot-cache-status', 'pilot-result', 'pilot-status', 'pilot-stop', 'pilot-retire', 'pilot-verify', 'pilot-bundle-status', 'pilot-bundle-finish', 'revoke', 'ip-revoke'))
     parser.add_argument('unit', choices=('unit-a', 'unit-b', 'unit-c'))
     parser.add_argument('--run-id')
     parser.add_argument('--campaign-id')
+    parser.add_argument('--parent-id')
     parser.add_argument('--request-run-id')
     parser.add_argument('--test-rx-cutoff',type=int)
     parser.add_argument('--sender-receive-ready',action='store_true')
@@ -144,6 +145,9 @@ def main():
         result['declared_runtime_archive_sha256'] = wrapper['runtime_sha256']
         result['runtime_archive_sha256_observed'] = False
         result['runtime_manifest_and_payloads_verified'] = True
+    elif args.action in ('pilot-bundle-status','pilot-bundle-finish'):
+        from lantern_meshticulum.bench.pilot_bundle import native_action
+        result=native_action(args.unit,args.parent_id,'status' if args.action=='pilot-bundle-status' else 'finish')
     elif args.action == 'pilot-cache-status':
         from lantern_meshticulum.bench.pilot_manage import cache_status
         result = cache_status(args.unit, args.campaign_id)
