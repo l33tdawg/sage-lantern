@@ -15,7 +15,7 @@
     "src/meshticulum/bench/flash_app.py": "4d4814a975b15b3bda48e9bec3c33ebb17370d714c611994cc573c23d403a0cb",
     "src/meshticulum/bench/flow_runtime.py": "2502a9915b161ff9279189b524a570042b7a094c7e92fe33b7ed44b52242186c",
     "src/meshticulum/bench/hat_probe.py": "6c0656154a6581b34c0d3a0e56315bf8144551d109af0b7cf3631c6b280f21c4",
-    "src/meshticulum/bench/hat_worker.py": "27efca640de04e06b926ecab00903f3f3c0a9da167cccc26b3a5094d582bcb64",
+    "src/meshticulum/bench/hat_worker.py": "89f5f55c9c516633efd7d01867ea10b8546fa108d7dbe1409c79e6d9cfdaab47",
     "src/meshticulum/bench/linux_hat.py": "05b7b2e4f929afa708f29299d334728f156b36a4783a5eceaa13a61e92d14f80",
     "src/meshticulum/bench/objects.py": "3ea78e7be8063f1b6b963e550ac588997a76dae49ede1183cac227a598dba2f0",
     "src/meshticulum/bench/serial_port.py": "d896b3f41d2643eaa5a82a3b66a2ff432593af5b2a880089ec92537dfc0c8f90",
@@ -63,6 +63,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "80a35c5076ca6fe21ae710773180f09e2e90e663",
+  "revision": "e6f6bfa7d3b74860cdfe2f707a692de2b2dd58c7",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }

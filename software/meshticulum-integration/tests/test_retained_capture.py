@@ -60,8 +60,8 @@ def test_exact_capture_retained_without_becoming_a_paid_parent(state):
     assert retained.PAID_HISTORY[5:]==(
         '4034f8979b985660df21859606c4f8a7','ba4572e95e598ad6c17fc954c3792db7',
         '1df30b47fa36b8d47328fb886528a7a9','f153a7a87a2803db85078df81a6a1aaf',
-        '25a990a2d565c50b237ee45812a8c75f','cb5869e6aa8de545a267007b085d4762','f6e147e70ec7ce07f673ea5e9cd2cdc2')
-    assert len(set(retained.PAID_HISTORY))==12 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
+        '25a990a2d565c50b237ee45812a8c75f','cb5869e6aa8de545a267007b085d4762','f6e147e70ec7ce07f673ea5e9cd2cdc2','b8f9b5d9c5479c8d363c7b7e8014bc3b')
+    assert len(set(retained.PAID_HISTORY))==13 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
     assert guard.HISTORY is retained.PAID_HISTORY
     assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
     assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,)
@@ -154,7 +154,7 @@ def unadmitted(state, monkeypatch, request):
         phase_start_epoch_us=retained.UNADMITTED_START,phase_end_epoch_us=retained.UNADMITTED_END,
         native_phase=phase,actual_history_verified=True,global_debt_complete=False,
         original_unknown_actual_cost=None,refunds=0,
-        history=dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY]))
+        history=dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.UNADMITTED_PAID_HISTORY]))
     raws={'capture.json':canonical(record),'history-binding.json':binding,
           'history-identity-seal.json':strict,'legacy-grant-seal.json':legacy}
     for name,raw in raws.items():write(target/name,raw)
@@ -171,7 +171,10 @@ def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admissi
     expected=retained.PAID_HISTORY+((retained.CAPTURE_PARENT,) if unit=='unit-c' else ())+(retained.UNADMITTED_PARENT,)
     assert retained.historical_parent_ids(root,unit,clock,require_retained=True,
                                          require_unadmitted=True)==expected
-    assert len(retained.PAID_HISTORY)==12
+    record=json.loads((target/'capture.json').read_bytes())
+    assert len(record['history']['previous'])==12 and len(retained.PAID_HISTORY)==13
+    assert tuple(v['policy']['parent_id'] for v in record['history']['previous'])==retained.UNADMITTED_PAID_HISTORY
+    assert retained.PAID_HISTORY[-1] not in retained.UNADMITTED_PAID_HISTORY
     assert not set(retained.CAPTURE_ONLY_PARENTS)&set(retained.PAID_HISTORY)
     paths=retained.capture_paths(root,unit)
     assert all('parents/'+retained.UNADMITTED_PARENT+'/'+name in paths['files'] for name in before)

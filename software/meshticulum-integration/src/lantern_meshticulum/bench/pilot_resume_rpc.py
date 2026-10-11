@@ -49,7 +49,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     'eb592d40f359afbc530aa61b4f1feb7d0c4afc74d27b1bbdd73e9ccf0f1faa01',
     '61f1f87bafdf307cd02e51ee5a17cd25d5a3728a80583dc6820dd2d9dbe9e119',
     '595d5864801330aeb4d1eb7d281599c090bbcf428602d6777a300761c442be55',
-    'd9bd3b79c63843d29892d81846d7a5ebf4967eb01a676800d63b15e7d366a0b8')
+    'd9bd3b79c63843d29892d81846d7a5ebf4967eb01a676800d63b15e7d366a0b8',
+    '44425235165ea6d49ce8b46760bdbc4c8519c98ece034c560566ae6dcd57bfb2')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -69,8 +70,9 @@ PARTIAL_REFS_SHA = {'unit-a':'022830b83a534b91e5d121b178a8341ed074b48f7d5e6e009c
 ACCEPTED_BULK_PAID = '25a990a2d565c50b237ee45812a8c75f'
 REVERSE_BULK_PAID = 'cb5869e6aa8de545a267007b085d4762'
 SMALL_BULK_PAID = 'f6e147e70ec7ce07f673ea5e9cd2cdc2'
+ZERO_RETRY_BULK_PAID = 'b8f9b5d9c5479c8d363c7b7e8014bc3b'
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -337,7 +339,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id == MIXED_PAID:
             need(v.get('failed_started_runs',[]) == ([MIXED_RECEIVER_RUN] if unit=='unit-c' else []),
                  'mixed_failed_endpoint_scope_changed')
-        if policy.parent_id in (SUCCESS_PAID,ACCEPTED_BULK_PAID,REVERSE_BULK_PAID):
+        if policy.parent_id in (SUCCESS_PAID,ACCEPTED_BULK_PAID,REVERSE_BULK_PAID,ZERO_RETRY_BULK_PAID):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
@@ -434,6 +436,9 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id==SMALL_BULK_PAID:
         expected=set() if unit=='unit-b' else {'28a613163ef48a171afae569b8a4e5a7','77b646ef8e40d770e08ed0729d48c4b9'}
         need(ids==expected and not absent,'small_bulk_claim_scope_changed')
+    elif policy.parent_id==ZERO_RETRY_BULK_PAID:
+        expected=set() if unit=='unit-b' else {'79d9fe1ec599a095f615d81e76fdfc4c','9b03b50546a1db49d48d0d60453f2b2b'}
+        need(ids==expected and not absent,'zero_retry_bulk_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
