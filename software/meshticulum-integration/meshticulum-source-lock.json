@@ -63,6 +63,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "e6f6bfa7d3b74860cdfe2f707a692de2b2dd58c7",
+  "revision": "6e722812c2efbfcdd18b56e3994588d18f9f7adc",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }
