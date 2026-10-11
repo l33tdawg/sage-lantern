@@ -55,7 +55,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '85501a81327854cfa58ef52e65ab2253f17d18925d74617f7b2bb11644664c39',
     '25e8beb9049826a4dc1a5ddde3fcc239e6e7e67f4b265b85da80f0b9a22b9627',
     '1411f2db5d331a56b3d395e7b8443a516a766d69139275dd3276d7a8bfe19293',
-    '5a837b0e365421ff9b9c5511ec768a16d458b16b3720af8c4aa1e6a085a8c827')
+    '5a837b0e365421ff9b9c5511ec768a16d458b16b3720af8c4aa1e6a085a8c827',
+    '0de0a7d00510c4bdbe3ee6857a5130f1000576e305c8382b84bc27d40418d5d1')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -91,8 +92,16 @@ PUBLIC32_RETRY_PAID = '8dfcfdfe8f8be2c0b326520d70eab7f5'
 PUBLIC32_RETRY_REQUEST = '848e99e224df8139164df9629299d20d'
 PUBLIC32_RETRY_RESPONSE = '4b24f0d33b859635a2736c0b11fb7963'
 PUBLIC32_RETRY_RESULT_CANONICAL = {'unit-a': {'848e99e224df8139164df9629299d20d': '31facf2ac27c9eb8f9c3f6a5d683acfa378a13bf042c6b0154e787d1d986f904', '4b24f0d33b859635a2736c0b11fb7963': 'bb1b0bf523aa2636ca40c704e9164bb901290bb01615760da77e45bfbed1af8e'}, 'unit-b': {}, 'unit-c': {'848e99e224df8139164df9629299d20d': 'cca0a8b85417d2fb8a31b960674389ad4221b3fe54b4884a31b26f6f70e73b89', '4b24f0d33b859635a2736c0b11fb7963': '84310ee546c96558afdb0a2d827f61dd20a2a1a8287a4f65e50c85060c877278'}}
+PUBLIC32_SENDER_READY_PAID = '6f89e2a21919991e15224e393446928c'
+PUBLIC32_SENDER_READY_REQUEST = '480dfacf35d6de374fdf7e62ed016bce'
+PUBLIC32_SENDER_READY_RESPONSE = '89ebb5c7bcb47687835b99ee3b605537'
+PUBLIC32_SENDER_READY_RESULT_CANONICAL = {'unit-a': {'480dfacf35d6de374fdf7e62ed016bce': '3c427ae8be71289a00b8ae006e9bfbe61d73ea460fffa209dab45523046d5137', '89ebb5c7bcb47687835b99ee3b605537': '788d0a0e99c287a1c9ab3670b4c83ee701549273d1f0df2133aedbf56178ebb0'}, 'unit-b': {}, 'unit-c': {'480dfacf35d6de374fdf7e62ed016bce': '3ae3c86f2f3eed05f03195487af9c5e776300f8a7d928e7e183b6be4482fa383', '89ebb5c7bcb47687835b99ee3b605537': '790dfedb8edede2400fcb43f3d2eb16b1d67cc35449aaff5a6dff78eec3ab6ba'}}
+PUBLIC32_PARENTS = (PUBLIC32_PAID,PUBLIC32_RETRY_PAID,PUBLIC32_SENDER_READY_PAID)
+PUBLIC32_OUTCOMES = {PUBLIC32_PAID:(PUBLIC32_REQUEST,PUBLIC32_RESPONSE,PUBLIC32_RESULT_CANONICAL,15),
+    PUBLIC32_RETRY_PAID:(PUBLIC32_RETRY_REQUEST,PUBLIC32_RETRY_RESPONSE,PUBLIC32_RETRY_RESULT_CANONICAL,16),
+    PUBLIC32_SENDER_READY_PAID:(PUBLIC32_SENDER_READY_REQUEST,PUBLIC32_SENDER_READY_RESPONSE,PUBLIC32_SENDER_READY_RESULT_CANONICAL,17)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -434,7 +443,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                  'mixed_failed_endpoint_scope_changed')
         if policy.parent_id in (SUCCESS_PAID,ACCEPTED_BULK_PAID,REVERSE_BULK_PAID,ZERO_RETRY_BULK_PAID,IMMEDIATE_RX_BULK_PAID,SF7_REPLICATE_PAID):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
-        if policy.parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID):
+        if policy.parent_id in PUBLIC32_PARENTS:
             qualify_public32_failure_scope(unit,policy.parent_id,v)
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
@@ -443,7 +452,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(relation is not None and {r['run_id'] for r in omitted} == {r['run_id'] for r in unstarted}
                  and len(relation['links']) == len(v['runs']) and all(r['no_refund'] is True
                  and r['separate_debt_sum_permitted'] is False for r in relation['links']), 'old_actual_coverage_missing')
-            if v['require_result_complete'] or policy.parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID):
+            if v['require_result_complete'] or policy.parent_id in PUBLIC32_PARENTS:
                 need(observed['legacy_scoped_rows_complete'] and relation['scoped_linkage_complete']
                      and all(r['relation'] == 'same_endpoint_allocation' for r in relation['links']), 'old_endpoint_overlap_unqualified')
             for row in observed['legacy_runs']:
@@ -463,7 +472,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     qualify_bulk_receiver(row,result,result_raw)
                 if policy.parent_id == MIXED_PAID and unit=='unit-c' and row['run_id']==MIXED_RECEIVER_RUN:
                     qualify_mixed_receiver(row,result,result_raw)
-                if policy.parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID): qualify_public32_result(unit,row['run_id'],result,parent_id=policy.parent_id)
+                if policy.parent_id in PUBLIC32_PARENTS: qualify_public32_result(unit,row['run_id'],result,parent_id=policy.parent_id)
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -541,26 +550,25 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id==SF7_REPLICATE_PAID:
         expected=set() if unit=='unit-b' else {'ad817046664eef590433541ac976ba34','c64aede596ce549e1af12542affca4cc'}
         need(ids==expected and not absent,'sf7_replicate_claim_scope_changed')
-    elif policy.parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID):
-        expected=PUBLIC32_RESULT_CANONICAL if policy.parent_id==PUBLIC32_PAID else PUBLIC32_RETRY_RESULT_CANONICAL
+    elif policy.parent_id in PUBLIC32_PARENTS:
+        expected=PUBLIC32_OUTCOMES[policy.parent_id][2]
         need(ids==set(expected[unit]) and not absent,'public32_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
 def qualify_public32_failure_scope(unit,parent_id,history):
-    need(parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID) and unit in ('unit-a','unit-b','unit-c'),
+    need(parent_id in PUBLIC32_PARENTS and unit in ('unit-a','unit-b','unit-c'),
          'unknown_public32_paid_parent')
-    failed=PUBLIC32_RESPONSE if parent_id==PUBLIC32_PAID else PUBLIC32_RETRY_RESPONSE
+    failed=PUBLIC32_OUTCOMES[parent_id][1]
     need(history.get('failed_started_runs')==([] if unit=='unit-b' else [failed])
          and history['require_result_complete'] is False,'public32_failure_scope_changed')
 
 
 def qualify_public32_result(unit,run,result,*,parent_id=PUBLIC32_PAID):
     """Exact failed paid outcome; never promote transport or global handoff."""
-    need(parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID),'unknown_public32_paid_parent')
-    hashes=PUBLIC32_RESULT_CANONICAL if parent_id==PUBLIC32_PAID else PUBLIC32_RETRY_RESULT_CANONICAL
-    request=PUBLIC32_REQUEST if parent_id==PUBLIC32_PAID else PUBLIC32_RETRY_REQUEST
-    policy_digest=OLD_DIGESTS[15] if parent_id==PUBLIC32_PAID else OLD_DIGESTS[16]
+    need(parent_id in PUBLIC32_PARENTS,'unknown_public32_paid_parent')
+    request,_,hashes,index=PUBLIC32_OUTCOMES[parent_id]
+    policy_digest=OLD_DIGESTS[index]
     need(unit in hashes and run in hashes[unit]
          and sha(canonical(result))==hashes[unit][run]
          and result['complete'] is (run==request) and result['disarmed_on_exit'] is True
@@ -1055,7 +1063,7 @@ def inspect_paid_parent(unit,p,runtime):
             status=inspect_job(child,unit=unit,run_id=run,boot=boot())
             need(status['job_record_found'] is True and status['live'] is False,'paid_started_job_not_terminal')
             result=parse(reader.read(child/'result.json',300000))
-            if policy.parent_id in (PUBLIC32_PAID,PUBLIC32_RETRY_PAID):qualify_public32_result(unit,run,result,parent_id=policy.parent_id)
+            if policy.parent_id in PUBLIC32_PARENTS:qualify_public32_result(unit,run,result,parent_id=policy.parent_id)
             if meta['transport']=='lora':
                 profile=RadioProfile(**grant['profile'])
                 if unit=='unit-c':binding=sha(b'meshticulum.hat-attempts.v1\0'+bytes.fromhex(context)+boot().encode('ascii')+profile.encode(board_id=2))

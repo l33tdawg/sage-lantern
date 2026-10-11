@@ -79,8 +79,12 @@ def test_qualifier_uses_exact_outcome_hash_not_a_caller_complete_boolean(monkeyp
         policy_digest=rpc.OLD_DIGESTS[15],run_id=rpc.PUBLIC32_RESPONSE))
     expected=deepcopy(rpc.PUBLIC32_RESULT_CANONICAL)
     expected['unit-a'][rpc.PUBLIC32_RESPONSE]=rpc.sha(rpc.canonical(result))
-    monkeypatch.setattr(rpc,'PUBLIC32_RESULT_CANONICAL',expected)
+    request,response,_,index=rpc.PUBLIC32_OUTCOMES[rpc.PUBLIC32_PAID]
+    assert (request,response,index)==(rpc.PUBLIC32_REQUEST,rpc.PUBLIC32_RESPONSE,15)
+    monkeypatch.setitem(rpc.PUBLIC32_OUTCOMES,rpc.PUBLIC32_PAID,(request,response,expected,index))
     rpc.qualify_public32_result('unit-a',rpc.PUBLIC32_RESPONSE,result)
     for key in ('complete','disarmed_on_exit'):
         bad=deepcopy(result);bad[key]=not bad[key]
         with pytest.raises(RuntimeError):rpc.qualify_public32_result('unit-a',rpc.PUBLIC32_RESPONSE,bad)
+    changed_hash=deepcopy(result);changed_hash['unbound_metadata']='changed'
+    with pytest.raises(RuntimeError):rpc.qualify_public32_result('unit-a',rpc.PUBLIC32_RESPONSE,changed_hash)
