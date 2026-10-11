@@ -53,8 +53,9 @@ def state(monkeypatch):
 
 def test_exact_capture_retained_without_becoming_a_paid_parent(state):
     root,target,clock=state; before={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
-    assert retained.PAID_HISTORY[-1]=='d60d8308326314a7753e651fa43a99e3'
-    assert len(retained.PAID_HISTORY)==4 and guard.HISTORY is retained.PAID_HISTORY
+    assert retained.PAID_HISTORY[-2]=='d60d8308326314a7753e651fa43a99e3'
+    assert retained.PAID_HISTORY[-1]=='4559277fa43913ce3935b078d6744a55'
+    assert len(retained.PAID_HISTORY)==5 and guard.HISTORY is retained.PAID_HISTORY
     assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
     assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,)
     assert retained.historical_parent_ids(root,'unit-a',clock)==retained.PAID_HISTORY

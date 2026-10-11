@@ -39,10 +39,14 @@ STATE = Path('/var/lib/meshticulum-bench')
 OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af',
     '6d337c78faf8c2dbea7a0a0d29e82aa8af8d1452f954fb6b664106459c33d256',
     '1ca1774780928427f15befecf723064cd87aff6ad402b6ef94b137f5d45f6d33',
-    '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1')
+    '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1',
+    '0d153ed60782be5028fe7b75f3345b0441e62ef95b8db629270d5b309fd0e049')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
+COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
+GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[-2], COMPLETE_PAID: OLD_DIGESTS[-1]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
+KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
 HEX = re.compile(r'[0-9a-f]{64}\Z')
 SID = re.compile(r'[0-9a-f]{32}\Z')
 
@@ -55,6 +59,18 @@ def sha(raw): return hashlib.sha256(raw).hexdigest()
 def clock(): return time.time_ns()//1000, time.monotonic_ns()//1000
 def boot(): return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 def stable(value): return {k:value[k] for k in ('unit','host_boot_id','services','service_lifetimes')}
+
+
+def endpoint_budget(unit, qualification_kind, radio, tcp):
+    """Exact owner-bound public scope; no caller-selected arbitrary maxima."""
+    need(unit in ('unit-a','unit-b','unit-c'), 'unknown_endpoint_budget_unit')
+    if qualification_kind is None:
+        return Cost() if unit=='unit-a' else radio.plus(radio).plus(
+            Cost(ip_frames=tcp.ip_frames*8,tx_stream_bytes=tcp.tx_stream_bytes*8,
+                 rx_stream_bytes=tcp.rx_stream_bytes*8))
+    need(qualification_kind=='mixed-bulk-v1', 'unknown_public_qualification_kind')
+    if unit=='unit-c': return radio.plus(radio).plus(radio).plus(radio)
+    return radio.plus(radio).plus(tcp).plus(tcp)
 
 
 def parse(raw):
@@ -230,7 +246,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         need(local['prior_snapshot_sha256'] == sha(canonical(prior)) == policy.unit(unit).prior_snapshot_sha256,
              'old_local_lineage_changed')
         claims = observed['detail']['claims']
-        if policy.parent_id == LATEST_PAID:
+        if policy.parent_id in GUARDED_PAID:
             for relative,pin in latest_preparation_files(reader,unit,policy,observed,
                                                        v['preparation_sha256']).items(): known[relative]=pin
         refs = sorted([dict(controller_allocation_id=c['controller_allocation_id'],child=c['child'])
@@ -256,11 +272,11 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                      'old_actual_journal_unsettled')
                 if row['journal']['has_unknown_or_pending']:
                     qualify_known_cut(reader,unit,policy,v['owner'],observed,row,
-                                     KNOWN_CUT_RUN if policy.parent_id==LATEST_PAID else None)
+                                     KNOWN_CUTS.get(policy.parent_id))
                 result_raw = metadata(STATE/'runs'/row['run_id']/'result.json',300000); result = parse(result_raw)
                 need(sha(result_raw) == row['files']['result.json']['sha256']
                      and result['complete'] is (row['run_id'] not in v.get('failed_started_runs',[])
-                          if policy.parent_id == LATEST_PAID else v['require_result_complete'])
+                          if policy.parent_id in GUARDED_PAID else v['require_result_complete'])
                      and (row['transport'] == 'tcp' or result['disarmed_on_exit'] is True)
                      and result['parent']['started'] is True and result['parent']['run_id'] == row['run_id']
                      and result['parent']['parent_id'] == policy.parent_id, 'old_actual_result_rebound')
@@ -299,10 +315,13 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     need(not ids&absent and detail['claim_count']==detail['prepared_count']==len(ids|absent)
          and detail['start_count']==len(ids) and all(c['prepared'] is True for c in claims)
          and actual_started==ids and actual_absent==absent,'old_child_relation_changed')
-    if policy.parent_id != LATEST_PAID: need(not unstarted,'unexpected_old_unstarted_claim')
-    else:
+    if policy.parent_id == LATEST_PAID:
         need((len(ids),absent)==((0,set()) if unit=='unit-a' else (8,{RETIRED_UNSTARTED})),
              'latest_paid_claim_scope_changed')
+    elif policy.parent_id == COMPLETE_PAID:
+        need((len(ids),absent)==((0,set()) if unit=='unit-a' else (10,set())),
+             'complete_paid_claim_scope_changed')
+    else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
 def retired_unstarted(reader,unit,policy,observed,row,now):
@@ -450,12 +469,11 @@ def enrolled_action(action, unit, p, runtime):
              for u in ('unit-a','unit-b','unit-c')) and asdict(rp) == owner['rf_profile']
              and (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,rp.coding_rate,rp.chip_power_dbm,
                   rp.preamble,rp.sync_word) == (921375000,500000,7,5,0,8,0x42), 'owner_RF_basis_changed')
-        extra = Cost(rp.max_boot_attempts,rp.max_boot_estimated_airtime_us).plus(
-            Cost(rp.max_boot_attempts,rp.max_boot_estimated_airtime_us))
-        for _ in range(8):
-            extra = extra.plus(Cost(ip_frames=ip.max_frames,tx_stream_bytes=ip.max_tx_stream_bytes,
-                                   rx_stream_bytes=ip.max_rx_stream_bytes))
-        need(local.limits == local.prior_debt.plus(Cost() if unit == 'unit-a' else extra),
+        radio = Cost(rp.max_boot_attempts,rp.max_boot_estimated_airtime_us)
+        tcp = Cost(ip_frames=ip.max_frames,tx_stream_bytes=ip.max_tx_stream_bytes,
+                   rx_stream_bytes=ip.max_rx_stream_bytes)
+        extra = endpoint_budget(unit,owner.get('qualification_kind'),radio,tcp)
+        need(local.limits == local.prior_debt.plus(extra),
              'resume_endpoint_caps_not_exact')
         owner_raw, prior_raw, policy_raw = canonical(owner), canonical(prior), canonical(policy.to_dict())
         last_clock = [clock()]
@@ -608,9 +626,9 @@ def qualify_known_cut(reader,unit,policy,owner,observed,row,expected_run):
          and row['transport']=='tcp' and row['status']=='scoped_rows_observed'
          and row['wire']['retired']==1,'unexpected_fenced_cut_scope')
     run=row['run_id'];qualify_cut_journal(row['journal'])
-    if policy.parent_id==LATEST_PAID:
+    if policy.parent_id in GUARDED_PAID:
         attempts=row['journal']['attempts']
-        need(run==KNOWN_CUT_RUN and len(attempts)==1 and attempts[0]['reserved_bytes']==74
+        need(run==KNOWN_CUTS[policy.parent_id] and len(attempts)==1 and attempts[0]['reserved_bytes']==74
              and attempts[0]['written_bytes']==74 and row['actual_cost']==dict(radio_attempts=0,
                  estimated_airtime_us=0,ip_frames=1,tx_stream_bytes=74,rx_stream_bytes=512),
              'historical_fenced_cut_cost_changed')
@@ -641,7 +659,7 @@ def qualify_known_cut(reader,unit,policy,owner,observed,row,expected_run):
          and plan['session']['session_id']==run,'fenced_cut_plan_changed')
     from .pilot_ssh import INVOKE
     python=owner.get('native_python',{}).get(unit)
-    if python is None and policy.parent_id==LATEST_PAID and run==KNOWN_CUT_RUN: python='/usr/bin/python3'
+    if python is None and KNOWN_CUTS.get(policy.parent_id)==run: python='/usr/bin/python3'
     need(type(python) is str and python.startswith('/'),'fenced_cut_native_python_unbound')
     argv=[python,'-I','-B','-c',INVOKE,'/opt/meshticulum-bench/runtime-'+owner['runtime_sha256'][:16]+'/bench_node.py',
           owner['manifest_sha256'],'ip-service-run',unit,'--run-id',run,'--test-rx-cutoff','512']
@@ -660,7 +678,7 @@ def inspect_paid_parent(unit,p,runtime):
     Missing unstarted cost stays null and full prepaid debt remains charged.
     """
     policy=ParentPolicy.from_dict(p['policy']);owner=p['owner'];prior=p['prior'];local=policy.unit(unit)
-    need(policy.parent_id==LATEST_PAID and policy.digest==OLD_DIGESTS[-1]
+    need(policy.parent_id in GUARDED_PAID and policy.digest==GUARDED_PAID[policy.parent_id]
          and local.host_boot_id==boot(),'wrong_paid_parent_scope')
     end=clock()[0]+35000000;target=STATE/'parents'/policy.parent_id
     with Reader() as reader:
@@ -714,21 +732,21 @@ def inspect_paid_parent(unit,p,runtime):
         if started:
             relation=actual['legacy_relation']
             qualified=(relation is not None and relation['scoped_linkage_complete'] is True
-                 and len(relation['links'])==8 and {r['run_id'] for r in relation['native_claims_without_scoped_actuals']}
+                 and len(relation['links'])==len(started) and {r['run_id'] for r in relation['native_claims_without_scoped_actuals']}
                      =={r['run_id'] for r in unstarted}
                  and all(r['status']=='scoped_rows_observed' and r['wire']['retired']==1
                          and r['journal']['has_unknown_or_pending'] is False for r in actual['legacy_runs']))
             if not qualified:
                 try:
                     need(relation is not None and relation['scoped_linkage_complete'] is True
-                         and len(relation['links'])==8
+                         and len(relation['links'])==len(started)
                          and {r['run_id'] for r in relation['native_claims_without_scoped_actuals']}
                              =={r['run_id'] for r in unstarted},'paid_started_relation_unqualified')
                     for row in actual['legacy_runs']:
                         need(row['status']=='scoped_rows_observed' and row['wire']['retired']==1,
                              'paid_started_row_unqualified')
                         if row['journal']['has_unknown_or_pending']:
-                            qualify_known_cut(reader,unit,policy,owner,actual,row,KNOWN_CUT_RUN)
+                            qualify_known_cut(reader,unit,policy,owner,actual,row,KNOWN_CUTS[policy.parent_id])
                 except Exception as error: reasons.append(str(error))
         need(stable(native_facts(unit))==before,'paid_parent_inspection_facts_changed');reader.check();runtime.check()
         return dict(parent_id=policy.parent_id,policy_digest=policy.digest,observation=actual,

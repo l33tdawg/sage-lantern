@@ -23,16 +23,19 @@ BOOT='11111111-1111-4111-8111-111111111111'
 
 
 @pytest.fixture
-def actual_rows(monkeypatch):
+def actual_rows(monkeypatch,request):
     base=Path(tempfile.mkdtemp(prefix='rollover-controls-',dir=Path(__file__).parent));base.chmod(0o700)
     state=base/'state';state.mkdir(mode=0o700)
     for name in ('parents','runs'): (state/name).mkdir(mode=0o700)
-    target=state/'parents'/rpc.LATEST_PAID;target.mkdir(mode=0o700)
+    complete=getattr(request,'param',None)=='complete'
+    parent_id=rpc.COMPLETE_PAID if complete else rpc.LATEST_PAID
+    row_count,start_count=(10,10) if complete else (9,8)
+    target=state/'parents'/parent_id;target.mkdir(mode=0o700)
     (target/'prepared-identities').mkdir(mode=0o700)
     limit=Cost(ip_frames=32768,tx_stream_bytes=16777216,rx_stream_bytes=16777216)
     units=tuple(UnitCaps(u,BOOT,PeerID('local-rollover-controls',c*64),limit,Cost(),'a'*64)
                 for u,c in [('unit-b','b'),('unit-c','c')])
-    policy=ParentPolicy(rpc.LATEST_PAID,BOOT,90000000,200000000,40000000,150000000,
+    policy=ParentPolicy(parent_id,BOOT,90000000,200000000,40000000,150000000,
                         units,limit.plus(limit),'d'*64)
     caps=NativeCaps.enroll(target/'native.sqlite',policy,unit='unit-b',clock=lambda:(100000000,800000000),
         facts=lambda:NativeFacts('unit-b',BOOT,units[0].peer),approve=lambda _:True,prior_check=lambda _:True,
@@ -40,7 +43,7 @@ def actual_rows(monkeypatch):
     request=resource.encode_request('/packs/'+'e'*64+'/chunks/'+'f'*64+'.json',0,16356)
     ids=[];pins={};ninth=None
     try:
-        for index in range(9):
+        for index in range(row_count):
             pair=pair_packages(campaign_id=f'{index+1:032x}',resource_sha256='e'*64,
                 application_expires_epoch_us=180000000,sender='unit-c',receiver='unit-b',transport='tcp',
                 format='MR1.request',descriptor=dict(bytes=len(request),sha256=rpc.sha(request)),source=None,
@@ -62,7 +65,7 @@ def actual_rows(monkeypatch):
             staging.rename(state/'runs'/run)
             try: record=record_prepared(state,caps,prep,fd);pins[run]=rpc.sha(canonical(record))
             finally: os.close(fd)
-            if index<8:
+            if index<start_count:
                 caps.consume_start(run,plan,base64.b64decode(package['secret_base64']))
                 assert caps.close()
                 caps=NativeCaps.open(target/'native.sqlite',policy,unit='unit-b',clock=lambda:(100000000,800000000),
@@ -79,7 +82,7 @@ def actual_rows(monkeypatch):
         snapshot._schema(memory,'native');parsed,detail,_=snapshot._native(memory,scope,Reader());memory.close()
         monkeypatch.setattr(rpc,'STATE',state);monkeypatch.setattr(rpc,'boot',lambda:BOOT)
         monkeypatch.setattr(rpc,'RETIRED_UNSTARTED',ids[-1])
-        yield state,parsed,dict(detail=detail),[dict(run_id=r) for r in ids[:8]],[ninth],pins,native_sha
+        yield state,parsed,dict(detail=detail),[dict(run_id=r) for r in ids[:start_count]],([] if complete else [ninth]),pins,native_sha
         assert rpc.sha((target/'native.sqlite').read_bytes())==native_sha
     finally:
         caps.close();shutil.rmtree(base)
@@ -96,6 +99,29 @@ def test_actual_native_writer_flat_projection_and_unknown_retired_claim(actual_r
     assert evidence['actual_cost'] is None and evidence['full_prepaid_caps']['ip_frames']==2048
     assert evidence['no_refund'] is True and evidence['live_terminal_ownership_observed'] is False
     with pytest.raises(RuntimeError): rpc.qualify_terminal(observed,dict(history_binding_sha256='e'*64),pins)
+
+
+@pytest.mark.parametrize('actual_rows',['complete'],indirect=True)
+def test_actual_complete_parent_writer_and_all_ten_pinned_preparations(actual_rows):
+    state,policy,observed,started,unstarted,pins,_=actual_rows
+    detail=observed['detail'];assert (detail['claim_count'],detail['prepared_count'],detail['start_count'])==(10,10,10)
+    rpc.qualify_history_claims(policy,'unit-b',observed,started,unstarted)
+    with rpc.Reader() as reader:
+        assert len(rpc.latest_preparation_files(reader,'unit-b',policy,observed,pins))==10
+    assert detail['prior_plus_prepaid_caps']['ip_frames']==20480
+
+
+@pytest.mark.parametrize('actual_rows',['complete'],indirect=True)
+@pytest.mark.parametrize('attack',['missing_start','omitted_run','identity_change','missing_pin'])
+def test_complete_parent_refuses_partial_or_changed_actual_evidence(actual_rows,attack):
+    state,policy,observed,started,unstarted,pins,_=actual_rows;run=started[-1]['run_id']
+    if attack=='missing_start':observed['detail']['claims'][-1]['started']=False
+    elif attack=='omitted_run':started.pop()
+    elif attack=='identity_change':(state/'parents'/policy.parent_id/'prepared-identities'/(run+'.json')).write_bytes(b'{}')
+    else:pins.pop(run)
+    with rpc.Reader() as reader,pytest.raises(RuntimeError):
+        rpc.qualify_history_claims(policy,'unit-b',observed,started,unstarted)
+        rpc.latest_preparation_files(reader,'unit-b',policy,observed,pins)
 
 
 @pytest.mark.parametrize('attack',['missing_pin','fake_started','grant_change','missing_retirement','identity_change','job_present'])
