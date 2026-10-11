@@ -8,7 +8,7 @@ charged before provision, and a separate append-only start tombstone precedes
 runtime construction. Receipts are inspection, never bearer grants. No socket,
 radio, process, controller or production service is opened by this module.
 """
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 import fcntl
 import hashlib
 import json
@@ -18,8 +18,8 @@ import sqlite3
 import threading
 
 from meshticulum.contracts.identity import PeerID
-from .pilot_parent_caps import (Cost, ParentPolicy, child_caps, canonical,
-                                private, digest, identifier, boot, MAX)
+from .pilot_parent_caps import (Cost, ParentPolicy, UnitCaps, child_caps, canonical,
+                                private, digest, identifier, boot, MAX, DOMAIN as POLICY_DOMAIN)
 
 DOMAIN = b'meshticulum.native-parent-caps.v1\0'
 
@@ -33,6 +33,31 @@ def require(value):
 
 
 def hashed(value): return hashlib.sha256(DOMAIN + canonical(value)).hexdigest()
+
+
+def _state(value):
+    """Capture immutable typed values for fresh live comparisons."""
+    kind = type(value)
+    if kind in (str, int, bool, type(None)):
+        return kind, value
+    if kind in (ParentPolicy, UnitCaps, Cost, PeerID):
+        return kind, tuple((field.name, _state(getattr(value, field.name))) for field in fields(kind))
+    if kind in (tuple, list):
+        return kind, tuple(_state(item) for item in value)
+    require(kind is dict and all(type(key) is str for key in value))
+    return kind, tuple((key, _state(value[key])) for key in sorted(value))
+
+
+def _unchanged(value, state):
+    kind, expected = state
+    if type(value) is not kind:return False
+    if kind in (str, int, bool, type(None)):return value == expected
+    if kind in (ParentPolicy, UnitCaps, Cost, PeerID):
+        return all(_unchanged(getattr(value, name), item) for name, item in expected)
+    if kind in (tuple, list):
+        return len(value)==len(expected) and all(_unchanged(item, old) for item, old in zip(value, expected))
+    return (len(value)==len(expected) and all(type(key) is str for key in value)
+            and all(key in value and _unchanged(value[key], item) for key, item in expected))
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +112,9 @@ class NativeCaps:
         self._closed=self._uncertain=False;self._busy=True;self._preparations={};self._active=self._active_ref=None
         self.pending=Path(str(self.path)+'.pending');self._fds={};self._fd_refs={};self._ids={}
         self.db=self._db_ref=None;self._enrollment=None;self._approval_bytes=None;self._last=None
-        self._policy_bytes=canonical(policy.to_dict());self._pending_written=False
+        self._policy_bytes=canonical(policy.to_dict());self._policy_state=_state(policy)
+        self._policy_digest=hashlib.sha256(POLICY_DOMAIN+self._policy_bytes).hexdigest()
+        self._pending_written=False
         try:
             private(self.path.parent.lstat(),True);require(self.path.parent.resolve()==self.path.parent)
             for name,target in self._names().items():
@@ -101,7 +128,8 @@ class NativeCaps:
             self.db.execute('PRAGMA synchronous=FULL')
             require(self.db.execute('PRAGMA synchronous').fetchone()==(2,))
             self._refs=(self.path,self.pending,policy,self.unit,clock,facts,approve,prior_check,self._fds,self._ids,
-                        tuple(self._fds.items()),tuple(self._ids.items()),self.db)
+                        tuple(self._fds.items()),tuple(self._ids.items()),self.db,
+                        self._policy_bytes,self._policy_state,self._policy_digest)
             if enroll:
                 now=self._sample()
                 require(policy.issued_epoch_us<=now[0]<policy.expires_epoch_us)
@@ -139,6 +167,8 @@ class NativeCaps:
                 self._history_binding()
                 self._approval_bytes=(hashed(self._enrollment)+'\n').encode()
             self._enrollment_bytes=canonical(self._enrollment)
+            self._enrollment_state=_state(self._enrollment)
+            self._refs+=(self._enrollment_bytes,self._enrollment_state)
             self._validate();self._uncertain=self.pending.exists() or self.pending.is_symlink()
         except BaseException as error:
             if self.db is self._db_ref and self.db is not None and self.db.in_transaction:self.db.execute('ROLLBACK')
@@ -168,14 +198,17 @@ class NativeCaps:
                     self._approve,self._prior,self._fds,self._ids),r[:10]))
                 and tuple(self._fds.items())==r[10] and tuple(self._ids.items())==r[11]
                 and self._fds==self._fd_refs and self.db is self._db_ref is r[12]
-                and canonical(self.policy.to_dict())==self._policy_bytes and self._active is self._active_ref)
+                and self._policy_bytes is r[13] and self._policy_state is r[14] and self._policy_digest is r[15]
+                and _unchanged(self.policy,self._policy_state) and self._active is self._active_ref)
         private(self.path.parent.lstat(),True);require(self.path.parent.resolve()==self.path.parent)
         for name,target in self._names().items():
             held,named=os.fstat(self._fds[name]),target.lstat();private(held);private(named)
             require((held.st_dev,held.st_ino)==(named.st_dev,named.st_ino)==self._ids[name])
         if self._approval_bytes is not None:
             require(os.pread(self._fds['approval'],129,0)==self._approval_bytes)
-        if hasattr(self,'_enrollment_bytes'):require(canonical(self._enrollment)==self._enrollment_bytes)
+        if hasattr(self,'_enrollment_bytes'):
+            require(self._enrollment_bytes is r[16] and self._enrollment_state is r[17]
+                    and _unchanged(self._enrollment,self._enrollment_state))
     def _sample(self):
         self._available();facts=self._facts();self._available()
         require(type(facts) is NativeFacts and facts==NativeFacts(self.unit.unit,self.unit.host_boot_id,self.unit.peer))
@@ -212,13 +245,13 @@ class NativeCaps:
     def _validate(self):
         self._available()
         row=self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone()
-        require(row==(canonical(self._enrollment),))
+        require(row==(self._enrollment_bytes,))
         used=self.unit.prior_debt;rows=self.db.execute('SELECT id,body,run_id FROM claims').fetchall();require(len(rows)<=4096)
         for claim_id,raw,run in rows:
             claim=json.loads(raw);require(canonical(claim)==raw and hashed(claim)==claim_id)
             meta=claim['child']['metadata'];cost=Cost(**claim['child']['cost'])
             require(meta['unit']==self.unit.unit and meta['host_boot_id']==self.unit.host_boot_id
-                    and meta['policy_digest']==self.policy.digest and meta['run_id']==run)
+                    and meta['policy_digest']==self._policy_digest and meta['run_id']==run)
             resource=self.db.execute('SELECT body FROM resources WHERE id=?',(claim['resource_id'],)).fetchone()
             require(resource==(canonical(claim['resource']),));used=used.plus(cost)
         require(used.within(self.unit.limits));return rows,used

@@ -46,7 +46,9 @@ class Observers:
         self.calls+=1
         if self.hook:self.hook(self.calls)
         return self.epoch,self.mono
-    def facts(self):return NativeFacts(self.unit,self.boot,self.peer)
+    def facts(self):
+        if hasattr(self,'facts_hook'):self.facts_hook()
+        return NativeFacts(self.unit,self.boot,self.peer)
     def approve(self,binding):
         self.approvals+=1
         if self.approve_hook:self.approve_hook(self.approvals,json.loads(binding))
@@ -284,6 +286,88 @@ def test_revoked_protected_approval_refuses_start_and_never_refunds(state):
     with pytest.raises(NativeCapsError):caps.consume_start(receipt['run_id'],plan,base64.b64decode(package['secret_base64']))
     assert caps.db.execute('SELECT COUNT(*) FROM starts').fetchone()==(0,)
     assert caps.db.execute('SELECT COUNT(*) FROM claims').fetchone()==(1,)
+
+
+@pytest.mark.parametrize('target,field', [
+    ('policy','parent_id'), ('policy','expires_epoch_us'), ('unit','host_boot_id'),
+    ('peer','chain_id'), ('peer','agent_id'),
+] + [(target, field) for target in ('limits','prior','aggregate')
+     for field in asdict(Cost())])
+def test_current_reads_every_nested_frozen_policy_value(state,target,field):
+    caps,obs,p,path,root=state
+    objects={'policy':p,'unit':p.units[0],'peer':p.units[0].peer,
+             'limits':p.units[0].limits,'prior':p.units[0].prior_debt,'aggregate':p.aggregate_limits}
+    value=objects[target];original=getattr(value,field)
+    object.__setattr__(value,field,original+1 if type(original) is int else original+'changed')
+    try:assert not caps.current()
+    finally:object.__setattr__(value,field,original)
+    assert caps.db.execute('SELECT COUNT(*) FROM claims').fetchone()==(0,)
+
+
+@pytest.mark.parametrize('observer,change', [
+    ('facts','policy_cost'), ('clock','enrollment_cost'), ('approval','enrollment_deadline'),
+    ('approval','policy_type'), ('approval','enrollment_type'),
+])
+def test_callback_mutation_cannot_reuse_captured_values_or_refund(state,observer,change):
+    caps,obs,p,path,root=state;package,plan,receipt=prepared(caps,p)
+    caps.consume_start(receipt['run_id'],plan,base64.b64decode(package['secret_base64']))
+    before=caps.snapshot();restore=[]
+    def mutate():
+        if restore:return
+        if change.startswith('policy'):
+            target=p.units[0].limits;name='radio_attempts';original=getattr(target,name)
+            object.__setattr__(target,name,float(original) if change=='policy_type' else original+1)
+            restore.append(lambda:object.__setattr__(target,name,original))
+        else:
+            target=caps._enrollment if change=='enrollment_deadline' else caps._enrollment['policy']['units'][0]['limits']
+            name='deadline_monotonic_us' if change=='enrollment_deadline' else 'radio_attempts'
+            original=target[name];target[name]=float(original) if change=='enrollment_type' else original+1
+            restore.append(lambda:target.__setitem__(name,original))
+    if observer=='facts':
+        # Supply the genuine observer at construction through its retained hook.
+        obs.facts_hook=mutate
+    elif observer=='clock':obs.hook=lambda _:mutate()
+    else:obs.approve_hook=lambda *_:mutate()
+    try:assert not caps.current()
+    finally:
+        for action in restore:action()
+        obs.hook=obs.approve_hook=None
+        if observer=='facts':del obs.facts_hook
+    after=caps.snapshot()
+    assert after['claims']==after['prepared']==after['starts']==1
+    assert after['debt']==before['debt'] and after['uncertain'] and not caps.current()
+
+
+@pytest.mark.parametrize('change', ['extra','missing','container','bool','cached_state','cached_bytes','digest'])
+def test_current_refuses_enrollment_shape_type_and_baseline_replacement(state,change):
+    caps,obs,p,path,root=state;record=caps._enrollment
+    if change=='extra':record['unexpected']=None
+    elif change=='missing':record.pop('unit')
+    elif change=='container':record['policy']['units']=list(record['policy']['units'])
+    elif change=='bool':record['policy']['units'][0]['limits']['radio_attempts']=True
+    elif change=='cached_state':caps._enrollment_state=tuple(list(caps._enrollment_state))
+    elif change=='cached_bytes':caps._enrollment_bytes=bytes(bytearray(caps._enrollment_bytes))
+    else:caps._policy_digest='9'*64
+    assert not caps.current()
+    assert caps.db.execute('SELECT COUNT(*) FROM claims').fetchone()==(0,)
+
+
+@pytest.mark.parametrize('table', ['claims','resources'])
+def test_current_still_reads_all_protected_sql_bodies(state,table):
+    caps,obs,p,path,root=state;caps.prepare_claim(packet(p))
+    caps.db.execute('DROP TRIGGER immutable_'+table+'_UPDATE')
+    caps.db.execute('UPDATE '+table+' SET body=?',(b'{}',))
+    assert not caps.current() and caps._uncertain
+    assert caps.db.execute('SELECT COUNT(*) FROM claims').fetchone()==(1,)
+
+
+def test_current_retains_all_live_observer_and_file_check_boundaries(state,monkeypatch):
+    caps,obs,p,path,root=state;checks=[];available=caps._available
+    def checked():checks.append(True);available()
+    monkeypatch.setattr(caps,'_available',checked)
+    before=obs.calls,obs.approvals
+    assert caps.current()
+    assert len(checks)==9 and (obs.calls-before[0],obs.approvals-before[1])==(2,1)
 
 
 def test_reentry_caught_before_outer_commit_cannot_rollback_or_return_success(state,monkeypatch):
