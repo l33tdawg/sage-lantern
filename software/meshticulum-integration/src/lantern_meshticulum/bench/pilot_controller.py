@@ -156,10 +156,26 @@ class Controller:
                         allocation_id=permit.key, child=proofs[unit]))
                 frozen_packages[unit] = canonical(wrapped)
             row['prepared_parent_claims'] = {}
+            parallel=getattr(self.operator,'parallel_preparation',False)
+            require(type(parallel) is bool,'invalid_parallel_preparation_mode')
+            receipts=None
+            if parallel:
+                require(callable(getattr(self.operator,'prepare_pair',None)),'parallel_preparation_api_missing')
+                self.current()
+                row['attempted'].extend((receiver,sender))
+                packages={unit:json.loads(frozen_packages[unit]) for unit in (receiver,sender)}
+                receipts=self.operator.prepare_pair(packages)
+                require(type(receipts) is dict and set(receipts)=={receiver,sender},'parallel_preparation_receipts_missing')
+                require(all(canonical(packages[unit])==frozen_packages[unit] for unit in (receiver,sender)),
+                        'pilot_prepare_package_mutated')
+                self.current()
             for unit in (receiver,sender):
-                self.current();row['attempted'].append(unit)
+                self.current()
                 package = json.loads(frozen_packages[unit])
-                receipt = self.operator.prepare(package)
+                if receipts is None:
+                    row['attempted'].append(unit)
+                    receipt = self.operator.prepare(package)
+                else:receipt=receipts[unit]
                 require(canonical(package) == frozen_packages[unit], 'pilot_prepare_package_mutated')
                 claim = receipt.get('parent') if type(receipt) is dict else None
                 require(type(receipt) is dict and receipt.get('schema') == 'meshticulum.provisioned-public-pilot.v2'

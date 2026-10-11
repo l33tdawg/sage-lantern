@@ -15,6 +15,8 @@ import select
 import shlex
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 import uuid
 
 from lantern_meshticulum.bench.pilot_provision import identifier
@@ -132,7 +134,10 @@ class Job:
 
 
 class SSHOperator:
-    def __init__(self,config,*,provision_source,runtime_source=None,passwords=None,clock=time.monotonic,epoch=None):
+    def __init__(self,config,*,provision_source,runtime_source=None,passwords=None,clock=time.monotonic,epoch=None,
+                 parallel_preparation=False):
+        require(type(parallel_preparation) is bool,'invalid_parallel_preparation_mode')
+        self.parallel_preparation=parallel_preparation;self._preparation_lock=Lock()
         require(type(config) is dict and set(config)=={'schema','runtime_sha256','manifest_sha256',
             'provision_sha256','runtime_bootstrap_sha256','handoff_end_epoch_us','port_base','units'}
             and config['schema']=='meshticulum.finite-ssh-pilot.v1','invalid_ssh_pilot_config')
@@ -280,6 +285,27 @@ class SSHOperator:
         require(package.get('schema') == 'meshticulum.public-pilot-package.v2',
                 'pilot_parent_package_required')
         return self._package(package,'meshticulum.provisioned-public-pilot.v2')
+
+    def prepare_pair(self,packages):
+        """Explicit two-unit preparation; drain both callbacks before returning.
+
+        Calls the same prepare hook, including its genuine guards and native
+        claim/capture. No launch, controller ledger access or deadline change.
+        """
+        require(self.parallel_preparation is True and type(packages) is dict and len(packages)==2
+                and all(unit in self.config['units'] and type(package) is dict and package.get('unit')==unit
+                        for unit,package in packages.items()),'invalid_parallel_preparation_pair')
+        with self._preparation_lock:
+            require(self.clock()<self.deadline,'ssh_pilot_window_expired')
+            results={};failures=[]
+            with ThreadPoolExecutor(max_workers=2,thread_name_prefix='meshticulum-prepare') as pool:
+                futures={unit:pool.submit(self.prepare,package) for unit,package in packages.items()}
+                for unit,future in futures.items():
+                    try:results[unit]=future.result()
+                    except BaseException as error:failures.append(error)
+            if failures:raise failures[0]
+            require(self.clock()<self.deadline,'ssh_pilot_window_expired')
+            return results
 
     def seed(self,package):
         require(package['host_boot_id']==self.config['units'][package['unit']]['host_boot_id'],'public_seed_wrong_native_boot')
