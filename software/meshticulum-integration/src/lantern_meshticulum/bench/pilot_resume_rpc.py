@@ -48,7 +48,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '83f56d8609b60532332631f86c3061c6f8b3fefa2ff7517406860e467dd7f2e8',
     'eb592d40f359afbc530aa61b4f1feb7d0c4afc74d27b1bbdd73e9ccf0f1faa01',
     '61f1f87bafdf307cd02e51ee5a17cd25d5a3728a80583dc6820dd2d9dbe9e119',
-    '595d5864801330aeb4d1eb7d281599c090bbcf428602d6777a300761c442be55')
+    '595d5864801330aeb4d1eb7d281599c090bbcf428602d6777a300761c442be55',
+    'd9bd3b79c63843d29892d81846d7a5ebf4967eb01a676800d63b15e7d366a0b8')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -67,8 +68,9 @@ PARTIAL_REFS_SHA = {'unit-a':'022830b83a534b91e5d121b178a8341ed074b48f7d5e6e009c
  'unit-c':'884ab23c305bf40fe3be93f7e70d01bb23dad860fde20a94b82537584a294fb4'}
 ACCEPTED_BULK_PAID = '25a990a2d565c50b237ee45812a8c75f'
 REVERSE_BULK_PAID = 'cb5869e6aa8de545a267007b085d4762'
+SMALL_BULK_PAID = 'f6e147e70ec7ce07f673ea5e9cd2cdc2'
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -429,6 +431,9 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id==REVERSE_BULK_PAID:
         expected=set() if unit=='unit-b' else {'dca09df76b8115eef1216b7c29de31b1','b4b2c3afe5c937738bb3a9fd1ece281c'}
         need(ids==expected and not absent,'reverse_bulk_claim_scope_changed')
+    elif policy.parent_id==SMALL_BULK_PAID:
+        expected=set() if unit=='unit-b' else {'28a613163ef48a171afae569b8a4e5a7','77b646ef8e40d770e08ed0729d48c4b9'}
+        need(ids==expected and not absent,'small_bulk_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
