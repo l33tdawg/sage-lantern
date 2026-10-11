@@ -61,7 +61,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '47a8f82ef0b7ba29ba785623b870138487786c9e5a5e9371b00c84544ab5e53b',
     '75629c69abee33dbeb9e7f9f74b62a8af4fd3bdead281089ee5202e345e83464',
     'd0bd6f2d52ca5aceb8e69c9928b25bd7e3f8ab9db118dba9d4190ad05c01e9ec',
-    '725159b7a2a9baa0486d462760fc68a1d58065c084a612a9c80b7e2d6838d0fe')
+    '725159b7a2a9baa0486d462760fc68a1d58065c084a612a9c80b7e2d6838d0fe',
+    'd63ff5d4096f0a68aef37f569dfe837f64d90b820b7290ea450febf901ca3468')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -141,11 +142,17 @@ V2_FAILED_BUNDLE_OUTCOMES = {'unit-a':{'4cc95f0dc6f3a3ff674b06e424475c44':'b323b
     'db2eebfaf67757220cc3dfddd6e8adb1':'d8fa47ebba50b974ad26397bc9db12ee0bfcc55621be5b69cf0490b56d19685d'},'unit-b':{},
     'unit-c':{'4cc95f0dc6f3a3ff674b06e424475c44':'41e0a427d05fc291986b638a7319f291654b5240ed5a4e636fe2de924ef659a7',
     'db2eebfaf67757220cc3dfddd6e8adb1':'34a087efc4d76baefec15a84fd47c7f334401fe157a8867ed5622a30fbaef58f'}}
+V3_PARTIAL_BUNDLE_PAID = 'e01508ddcae7389728add074de4876b7'
+V3_PARTIAL_BUNDLE_RUNS = ('0d41d67c0db96671af2eb64dbbe7179e', '13ab39611582fc5e2037f70c78266fce')
+V3_PARTIAL_BUNDLE_DATABASES = {'unit-a': '4e94b81f2260cf19d80338de283f29adbd623ff16509472249f68caf44ceecfa', 'unit-b': 'a06dd2242066fd3f22ab20fa5ec00c4f5daf2ffedf2e680e5b4d41779efa83d5', 'unit-c': '04fa06af019fa680964faf9c8e40ff45651e98cfbd08ffb2c3a62a40b0ee0181'}
+V3_PARTIAL_BUNDLE_OUTCOMES = {'unit-a': {'0d41d67c0db96671af2eb64dbbe7179e': '8f5bc421a1d91afafb20eccfe96f79482da40a9f54b68c8d2f3c10f837d89cd6', '13ab39611582fc5e2037f70c78266fce': 'f5bab844d3271d75d43a1496eb186f3d1c529c070cecb1295c1d8e1e584a3d7c'}, 'unit-b': {}, 'unit-c': {'0d41d67c0db96671af2eb64dbbe7179e': '201576e41af6bcb4d26eb191835cdb50fd363278101fbebb82b9e0ede99da15a', '13ab39611582fc5e2037f70c78266fce': '1fb96b9b45b60e677c33c8dcd73d30fd7539e4a42ace491031d6592ca02430bd'}}
+V3_ACCEPTED_PART_SHA = '08a433a64af413f3e5ec2944f15c5935f0779d9f38e77e29880de94ecef7e7c4'
 PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDLE_DATABASES,PARTIAL_BUNDLE_OUTCOMES),
     V2_PARTIAL_BUNDLE_PAID:(21,'c-bundle100k-v2',V2_PARTIAL_BUNDLE_DATABASES,V2_PARTIAL_BUNDLE_OUTCOMES),
-    V2_FAILED_BUNDLE_PAID:(22,'c-bundle100k-v2',V2_FAILED_BUNDLE_DATABASES,V2_FAILED_BUNDLE_OUTCOMES)}
+    V2_FAILED_BUNDLE_PAID:(22,'c-bundle100k-v2',V2_FAILED_BUNDLE_DATABASES,V2_FAILED_BUNDLE_OUTCOMES),
+    V3_PARTIAL_BUNDLE_PAID:(23,'c-bundle100k-v3',V3_PARTIAL_BUNDLE_DATABASES,V3_PARTIAL_BUNDLE_OUTCOMES)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -543,6 +550,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             qualify_enrolled_zero_costs(unit,policy,observed,v)
         elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
             qualify_partial_bundle_costs(unit,policy,observed,v)
+            if policy.parent_id==V3_PARTIAL_BUNDLE_PAID:verify_retained_v3_part_files(reader,unit,policy,observed,v)
         elif policy.parent_id!=PARTIAL_PAID:
             need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
         if index: need(asdict(policy.unit(unit).prior_debt) == old[index-1]['paid_caps'], 'old_paid_debt_chain_changed')
@@ -743,7 +751,7 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
          and observed['observation_original_epoch_us']>=policy.expires_epoch_us
          and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
          'partial_bundle_original_clocks_not_expired')
-    if kind=='c-bundle100k-v2':
+    if kind in ('c-bundle100k-v2','c-bundle100k-v3'):
         owner=value['owner'];phase=owner['native_phase'][unit]
         need(type(owner['phase_end_epoch_us']) is int and type(phase['deadline_monotonic_us']) is int
              and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']
@@ -784,6 +792,62 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
 
     else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
               and value['legacy_sha256'] is None,'partial_bundle_zero_peer_scope_changed')
+    if policy.parent_id==V3_PARTIAL_BUNDLE_PAID:
+        qualify_v3_retained_part(unit,policy,observed,value)
+
+
+
+def qualify_v3_retained_part(unit,policy,observed,value):
+    """Fixed accepted first-part comparison; never fresh bundle authority."""
+    receipt=value['accepted_part']
+    need(sha(canonical(receipt))==V3_ACCEPTED_PART_SHA,'retained_v3_part_receipt_changed')
+    from .pilot_bundle import BundleContext
+    context=BundleContext(value['owner']['bundle_context'],policy)
+    part=receipt['bundle_part'];stage=context.value['stages'][0];entry=context.expected['parts'][0]
+    need(receipt['unit']=='unit-a' and receipt['publisher_verified'] is True and receipt['reused'] is False
+         and receipt['manifest_sha256']==context.value['manifest_sha256'] and receipt['chunk_sha256']==entry['chunk_sha256']
+         and receipt['campaign_id']==stage['campaign_id'] and receipt['request_run_id']==V3_PARTIAL_BUNDLE_RUNS[0]
+         and receipt['response_run_id']==V3_PARTIAL_BUNDLE_RUNS[1]
+         and part['bundle_context_sha256']==policy.bundle_context_sha256
+         and part['part_index']==0 and part['useful_decoded_bytes']==entry['raw_bytes']==23900
+         and part['reused_verified_part'] is False and part['whole_bytes']==100000
+         and part['whole_sha256']==context.value['whole_sha256']
+         and part['native_bundle_complete'] is False and part['native_transport_qualified'] is False,
+         'retained_v3_part_binding_changed')
+    resources=observed['detail']['resources']
+    if unit=='unit-b':need(resources==[],'retained_v3_zero_peer_resource_changed')
+    else:
+        need(len(resources)==1 and resources[0]['campaign_id']==receipt['campaign_id']
+             and resources[0]['resource_sha256']==receipt['manifest_sha256']
+             and resources[0]['bundle_context_sha256']==part['bundle_context_sha256']
+             and resources[0]['application_expires_epoch_us']==receipt['original_application_expires_epoch_us']
+             and resources[0]['bundle_original_deadline_monotonic_us']==observed['detail']['enrollment']['deadline_monotonic_us']
+             and (unit!='unit-a' or resources[0]['bundle_original_deadline_monotonic_us']==part['original_whole_deadline_monotonic_us']),
+             'retained_v3_actual_resource_changed')
+
+
+def verify_retained_v3_part_files(reader,unit,policy,observed,value):
+    """Independently retained public first-part bytes; no active resource reopen."""
+    pins=value['accepted_part_metadata_sha256']
+    if unit!='unit-a':
+        need(pins=={},'retained_v3_foreign_part_metadata');return
+    from .pilot_bundle import BundleContext
+    from meshticulum.resources import knowledge_pack as kp,lamplighter as ll,byte_bundle as bundle
+    context=BundleContext(value['owner']['bundle_context'],policy);entry=context.expected['parts'][0]
+    path=STATE/'campaigns'/policy.parent_id/'bundle';reader.directory(path);reader.directory(path/'parts')
+    name=entry['chunk_sha256']+'.json'
+    need(type(pins) is dict and set(pins)=={'context.json','parts/'+name}
+         and all(type(v) is str and HEX.fullmatch(v) for v in pins.values()),'retained_v3_part_metadata_pins_changed')
+    need(set(os.listdir(path))=={'context.json','parts'} and set(os.listdir(path/'parts'))=={name},'retained_v3_part_namespace_changed')
+    raw=reader.read(path/'context.json',2048);saved=parse(raw);r=observed['detail']['resources'][0]
+    expected=dict(schema=bundle.CONTEXT,manifest_sha256=context.value['manifest_sha256'],bundle_sha256=context.value['whole_sha256'],bundle_bytes=100000,host_boot_id=policy.unit(unit).host_boot_id,expires_epoch_us=context.value['expires_epoch_us'],original_epoch_us=r['bundle_original_epoch_us'],original_monotonic_us=r['bundle_original_monotonic_us'],deadline_monotonic_us=r['bundle_original_deadline_monotonic_us'])
+    need(saved==expected and raw==canonical(saved) and sha(raw)==pins['context.json'],'retained_v3_part_original_context_changed')
+    raw=reader.read(path/'parts'/name,32740)
+    need(sha(raw)==pins['parts/'+name],'retained_v3_part_file_changed')
+    record=ll.chunk(raw,context.manifest['chunks'][0]);kp.validate_pack_rules(context.manifest,[record]);part=record['bundle_part'];decoded=kp.decode_bundle_part(part)
+    need(part['index']==0 and part['raw_bytes']==len(decoded)==23900 and kp.sha256_hex(decoded)==entry['raw_sha256']
+         and part['bundle_sha256']==context.value['whole_sha256'] and part['bundle_bytes']==100000,'retained_v3_part_payload_changed')
+    reader.check()
 
 
 def qualify_partial_costs(unit,observed,value,native_refs):

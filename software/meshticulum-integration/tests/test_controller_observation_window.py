@@ -14,18 +14,30 @@ from tests.test_pilot_bundle import data,packet,PEERS,BOOT
 from tests.test_pilot_parent_snapshot import root_observation
 from tests.test_public32_pilot import tmp_path
 
-RESULT=Path('/Users/l33tdawg/nodejs-projects/sage-commons/work/meshticulum-native-window-20261011/bundle100k-public-20261011T223642Z-e01508dd/RESULT.json')
-RESULT_SHA='806b3c3f77cd6f3add9b0933bec48e7f5f063053e7cef03d06581f3bdc75ee40'
+TIMING=Path(__file__).parent/'fixtures/controller_checkpoint_observation_timing.json'
+TIMING_SHA='e12825f8923cac128bbb68a332182f415ec3bb8b80b76586e259008d09eee630'
 
 
 def recorded_remaining():
- raw=RESULT.read_bytes();assert root.sha(raw)==RESULT_SHA
- value=json.loads(raw);first=value['checkpoint_callbacks'];assert len(first)==2
+ raw=TIMING.read_bytes();assert root.sha(raw)==TIMING_SHA
+ value=json.loads(raw);first=value['callbacks'];assert len(first)==2
+ assert value['source_result_sha256']=='806b3c3f77cd6f3add9b0933bec48e7f5f063053e7cef03d06581f3bdc75ee40'
  assert all(v['returncode']==0 and v['callback_completed'] is v['remote_terminal_proven'] is v['local_closed'] is True for v in first)
- end=value['original_whole']['epoch_us']+345000000
+ end=value['first_handoff_end_epoch_us'];assert end-value['original_epoch_us']==345000000
  remaining=end-max(v['finished_epoch_us'] for v in first)
  assert remaining==73270088
  return remaining
+
+
+def test_optional_primary_result_crosscheck():
+ path=os.environ.get('MESHTICULUM_PRIMARY_TIMING_RESULT')
+ if path is None:pytest.skip('optional primary record is not part of the portable control')
+ raw=Path(path).read_bytes();excerpt=json.loads(TIMING.read_bytes())
+ assert root.sha(raw)==excerpt['source_result_sha256'];value=json.loads(raw)
+ assert value['original_whole']['epoch_us']==excerpt['original_epoch_us']
+ assert value['original_whole']['epoch_us']+345000000==excerpt['first_handoff_end_epoch_us']
+ assert [{k:row[k] for k in ('finished_epoch_us','returncode','local_closed','callback_completed','remote_terminal_proven')}
+  for row in value['checkpoint_callbacks']]==excerpt['callbacks']
 
 
 @pytest.fixture
