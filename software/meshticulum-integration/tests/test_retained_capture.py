@@ -133,3 +133,97 @@ def test_nested_scope_is_not_generally_relaxed(state,case):
     else: dirs['parents/'+retained.CAPTURE_PARENT+'/prepared-identities']=['foreign']
     with pytest.raises(FenceError):
         HistoricalMetadataFence(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=dirs)
+
+
+@pytest.fixture(params=['unit-a','unit-b','unit-c'])
+def unadmitted(state, monkeypatch, request):
+    """Real held filesystem; synthetic immutable pins/ownership, never native authority."""
+    root, original, old_clock = state; unit=request.param
+    if unit != 'unit-c': original.rename(root.parent/'original-c-only-fixture')
+    target=root/'parents'/retained.UNADMITTED_PARENT; target.mkdir(mode=0o700)
+    (target/'prepared-identities').mkdir(mode=0o700)
+    strict=canonical(dict(schema='local-synthetic-strict-fixture',unit=unit))
+    legacy=canonical(dict(schema='local-synthetic-legacy-fixture',unit=unit))
+    binding=canonical(dict(schema='meshticulum.private-resume-history-binding.v2',unit=unit,
+        parent_id=retained.UNADMITTED_PARENT,strict_sha256=sha(strict),legacy_sha256=sha(legacy),
+        parent_identity=list(_stamp(target.stat()))[:4]))
+    row=dict(retained.UNADMITTED[unit]); phase=dict(row['phase'])
+    record=dict(schema='meshticulum.private-resume-actual-capture.v1',unit=unit,
+        parent_id=retained.UNADMITTED_PARENT,history_binding_sha256=sha(binding),
+        review_sha256=retained.UNADMITTED_REVIEW,facts=dict(unit=unit,host_boot_id=row['boot']),
+        phase_start_epoch_us=retained.UNADMITTED_START,phase_end_epoch_us=retained.UNADMITTED_END,
+        native_phase=phase,actual_history_verified=True,global_debt_complete=False,
+        original_unknown_actual_cost=None,refunds=0,
+        history=dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY]))
+    raws={'capture.json':canonical(record),'history-binding.json':binding,
+          'history-identity-seal.json':strict,'legacy-grant-seal.json':legacy}
+    for name,raw in raws.items():write(target/name,raw)
+    row['files']={name:sha(raw) for name,raw in raws.items()}
+    monkeypatch.setattr(retained,'UNADMITTED',dict(retained.UNADMITTED,**{unit:row}))
+    monkeypatch.setattr(retained,'current_boot',lambda:row['boot'])
+    clock=lambda:(retained.UNADMITTED_END+1,phase['deadline_monotonic_us']+1)
+    return root,target,unit,clock
+
+
+def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admission(unadmitted):
+    root,target,unit,clock=unadmitted
+    before={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
+    expected=retained.PAID_HISTORY+((retained.CAPTURE_PARENT,) if unit=='unit-c' else ())+(retained.UNADMITTED_PARENT,)
+    assert retained.historical_parent_ids(root,unit,clock,require_retained=True,
+                                         require_unadmitted=True)==expected
+    assert len(retained.PAID_HISTORY)==12
+    assert not set(retained.CAPTURE_ONLY_PARENTS)&set(retained.PAID_HISTORY)
+    paths=retained.capture_paths(root,unit)
+    assert all('parents/'+retained.UNADMITTED_PARENT+'/'+name in paths['files'] for name in before)
+    assert before=={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
+    assert not (target/'native.sqlite').exists() and not list((target/'prepared-identities').iterdir())
+    dirs={'':['parents','runs'],'parents':list(expected),'runs':[]}
+    dirs.update({'parents/'+paid:[] for paid in retained.PAID_HISTORY})
+    for parent in expected[len(retained.PAID_HISTORY):]:
+        prefix='parents/'+parent;dirs[prefix]=list(retained.CAPTURE_FILES)+['prepared-identities']
+        dirs[prefix+'/prepared-identities']=[]
+    raw,_=capture(root,owner_uid=os.geteuid(),expected_files=paths['files'],expected_directories=dirs)
+    new='9'*32;(root/'parents'/new).mkdir(mode=0o700)
+    legacy=canonical(dict(schema='meshticulum.private-legacy-grant-fence.v1',uid=os.geteuid(),rows={'local':{}}))
+    guard.install_seals(root,new,unit,raw,legacy,clock=clock)
+    for retained_id in retained.CAPTURE_ONLY_PARENTS:
+        with pytest.raises(FenceError,match='invalid_own_identity'):
+            guard.install_seals(root,retained_id,unit,raw,legacy,clock=clock)
+
+
+@pytest.mark.parametrize('case',['epoch','monotonic','boot','wrong_hash','prepared_child','owner',
+    'policy','prior','native_sqlite','sidecar','wrong_unit','wrong_phase','wrong_native_phase',
+    'paid_history','refunded','unknown_zero','rebound'])
+def test_unadmitted_capture_refuses_growth_rebinding_or_changed_original_scope(unadmitted,monkeypatch,case):
+    root,target,unit,clock=unadmitted;observed=clock();path=target/'capture.json'
+    if case=='epoch':clock=lambda:(retained.UNADMITTED_END-1,observed[1])
+    elif case=='monotonic':clock=lambda:(observed[0],observed[1]-2)
+    elif case=='boot':monkeypatch.setattr(retained,'current_boot',lambda:'changed-current-boot')
+    elif case=='wrong_hash':path.write_bytes(b'changed')
+    elif case=='prepared_child':write(target/'prepared-identities'/('f'*32+'.json'),b'no-claim')
+    elif case in ('owner','policy','prior','native_sqlite','sidecar'):
+        name={'owner':'owner.json','policy':'policy.json','prior':'prior.json',
+              'native_sqlite':'native.sqlite','sidecar':'native.sqlite-wal'}[case]
+        write(target/name,b'no-enrollment')
+    elif case=='rebound':
+        held=root/'held-unadmitted';target.rename(held);shutil.copytree(held,target)
+    else:
+        value=json.loads(path.read_bytes())
+        if case=='wrong_unit':value['unit']='unit-b' if unit!='unit-b' else 'unit-a'
+        elif case=='wrong_phase':value['phase_end_epoch_us']+=1
+        elif case=='wrong_native_phase':value['native_phase']['monotonic_us']+=1
+        elif case=='paid_history':value['history']['previous'].pop()
+        elif case=='refunded':value['refunds']=1
+        else:value['original_unknown_actual_cost']=0
+        raw=canonical(value);path.write_bytes(raw)
+        row=dict(retained.UNADMITTED[unit]);row['files']=dict(row['files'],**{'capture.json':sha(raw)})
+        monkeypatch.setattr(retained,'UNADMITTED',dict(retained.UNADMITTED,**{unit:row}))
+    with pytest.raises((FenceError,WireError,OSError)):
+        retained.historical_parent_ids(root,unit,clock,require_retained=True,require_unadmitted=True)
+
+
+@pytest.mark.parametrize('unit',['unit-a','unit-b','unit-c'])
+def test_native_requirement_refuses_missing_unadmitted_capture(state,unit):
+    root,target,clock=state
+    with pytest.raises(FenceError,match='missing_retained_capture'):
+        retained.historical_parent_ids(root,unit,clock,require_retained=True,require_unadmitted=True)

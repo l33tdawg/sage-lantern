@@ -30,7 +30,7 @@ from .pilot_parent_caps import ParentPolicy, Cost, canonical
 from .pilot_native_caps import NativeCaps, NativeFacts
 from .pilot_manage import facts as native_facts
 from .resume_parent_guard import HISTORY, ResumeParentGuard, install_seals
-from .retained_capture import historical_parent_ids, capture_paths, CAPTURE_PARENT
+from .retained_capture import historical_parent_ids, capture_paths, CAPTURE_PARENT, CAPTURE_ONLY_PARENTS
 from .profiles import profile_for
 from meshticulum.ip.wire import IpLimits
 from meshticulum.bench.serial_protocol import RadioProfile
@@ -257,8 +257,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
     known, reports = {}, []
     def names():
         reader.directory(STATE); reader.directory(STATE/'parents'); reader.directory(STATE/'runs')
-        retained = historical_parent_ids(STATE,unit,clock,require_retained=True)
-        need(own_parent != CAPTURE_PARENT
+        retained = historical_parent_ids(STATE,unit,clock,require_retained=True,require_unadmitted=True)
+        need(own_parent not in CAPTURE_ONLY_PARENTS
              and sorted(os.listdir(STATE/'parents')) == sorted(retained+((own_parent,) if own_parent else ()))
              and sorted(os.listdir(STATE/'runs')) == sorted(set(original)|set(newer)|set(own_runs)),
              'foreign_or_missing_historical_namespace')
@@ -597,7 +597,7 @@ def seal_inputs(reader, unit, known, original, newer):
 
 def capture_history(unit, p, runtime):
     parent = p['parent_id']; need(SID.fullmatch(parent) and parent not in HISTORY
-                                 and parent != CAPTURE_PARENT, 'invalid_own_parent')
+                                 and parent not in CAPTURE_ONLY_PARENTS, 'invalid_own_parent')
     need(HEX.fullmatch(p['review_sha256']) and p['facts']['unit'] == unit, 'invalid_capture_review')
     first = clock(); phase = dict(epoch_us=first[0],monotonic_us=first[1],
         deadline_monotonic_us=first[1]+p['phase_end_epoch_us']-first[0])
@@ -617,7 +617,7 @@ def capture_history(unit, p, runtime):
         reader.check(); guard()
         with _Ancestry(STATE/'parents',0) as ancestry:
             need(sorted(os.listdir(ancestry.fds[-1])) == sorted(
-                 historical_parent_ids(STATE,unit,clock,require_retained=True)), 'blind_capture_rerun_refused')
+                 historical_parent_ids(STATE,unit,clock,require_retained=True,require_unadmitted=True)), 'blind_capture_rerun_refused')
             os.mkdir(parent,0o700,dir_fd=ancestry.fds[-1]); os.fsync(ancestry.fds[-1]); ancestry.check()
         target = STATE/'parents'/parent
         _, binding_pin = install_seals(STATE,parent,unit,strict_raw,legacy_raw,clock=clock)
@@ -635,7 +635,7 @@ def capture_history(unit, p, runtime):
 def enrolled_action(action, unit, p, runtime):
     policy = ParentPolicy.from_dict(p['policy']); local = policy.unit(unit)
     owner, prior = p['owner'], p['prior']; target = STATE/'parents'/policy.parent_id
-    need(policy.parent_id not in HISTORY and policy.parent_id != CAPTURE_PARENT
+    need(policy.parent_id not in HISTORY and policy.parent_id not in CAPTURE_ONLY_PARENTS
          and owner['schema'] == 'meshticulum.finite-public-resume-owner.v1'
          and owner['policy_digest'] == policy.digest and owner['manifest_sha256'] == sha(
              runtime.reader.read(runtime.root/'manifest.json',65536)), 'wrong_own_parent_scope')

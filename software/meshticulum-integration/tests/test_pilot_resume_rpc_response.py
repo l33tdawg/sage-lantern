@@ -74,9 +74,10 @@ def test_dispatch_uses_checked_composition_at_its_only_final_return():
     assert [arg.id for arg in end.value.args]==['action','unit','result']
 
 
-def test_new_capture_cannot_adopt_retained_unenrolled_parent():
+@pytest.mark.parametrize('parent',rpc.CAPTURE_ONLY_PARENTS)
+def test_new_capture_cannot_adopt_retained_unenrolled_parent(parent):
     with pytest.raises(RuntimeError,match='invalid_own_parent'):
-        rpc.capture_history('unit-c',dict(parent_id=rpc.CAPTURE_PARENT),None)
+        rpc.capture_history('unit-c',dict(parent_id=parent),None)
 
 
 def test_native_history_namespace_requires_exact_retained_artifact():
@@ -89,3 +90,5 @@ def test_native_history_namespace_requires_exact_retained_artifact():
                and isinstance(n.func,ast.Name) and n.func.id=='historical_parent_ids']
         assert calls and all(any(k.arg=='require_retained' and isinstance(k.value,ast.Constant)
                                 and k.value.value is True for k in call.keywords) for call in calls)
+        assert all(any(k.arg=='require_unadmitted' and isinstance(k.value,ast.Constant)
+                       and k.value.value is True for k in call.keywords) for call in calls)

@@ -23,6 +23,9 @@ _FILES = frozenset(('grant.json', 'active', 'provision.json', 'job.json',
     tuple(db + suffix for db in _DBS for suffix in ('.owner', '.approval', '.pending')) +
     ('capture.json', 'history-binding.json', 'history-identity-seal.json', 'legacy-grant-seal.json'))
 _CAPTURE_DIRECTORY = 'parents/d0f37a4030fbe55d2829e8c0cebcee5b'
+_UNADMITTED_DIRECTORY = 'parents/63830cfa1d045680a9e4961d0d6b69c8'
+_CAPTURE_IDENTITY_DIRECTORIES = (_CAPTURE_DIRECTORY+'/prepared-identities',
+                                 _UNADMITTED_DIRECTORY+'/prepared-identities')
 _PAID_PREPARED_DIRECTORY = 'parents/d60d8308326314a7753e651fa43a99e3'
 _PAID_IDENTITIES = _PAID_PREPARED_DIRECTORY+'/prepared-identities'
 _COMPLETE_PAID_DIRECTORY = 'parents/4559277fa43913ce3935b078d6744a55'
@@ -96,11 +99,11 @@ class HistoricalMetadataFence:
             self._entries = {}
             for path, entries in expected_directories.items():
                 path = _relative(path, root=True)
-                _need(path in ('', 'parents', 'runs', _CAPTURE_DIRECTORY+'/prepared-identities', *_IDENTITY_COUNTS)
+                _need(path in ('', 'parents', 'runs', *_CAPTURE_IDENTITY_DIRECTORIES, *_IDENTITY_COUNTS)
                       or re.fullmatch(r'(parents|runs)/[^/]+', path),
                       'outside_historical_metadata_namespace')
                 names = tuple(entries)
-                if path == _CAPTURE_DIRECTORY+'/prepared-identities':
+                if path in _CAPTURE_IDENTITY_DIRECTORIES:
                     _need(not names, 'retained_capture_prepared_namespace_not_empty')
                 if path in _IDENTITY_COUNTS:
                     allowed=_IDENTITY_COUNTS[path] if path in (_SUCCESS_PAID_IDENTITIES,_PARTIAL_PAID_IDENTITIES,_ACCEPTED_BULK_IDENTITIES,_REVERSE_BULK_IDENTITIES,_SMALL_BULK_IDENTITIES) else ((_IDENTITY_COUNTS[path],)
@@ -124,7 +127,7 @@ class HistoricalMetadataFence:
                 identity = parent in _IDENTITY_COUNTS and re.fullmatch(r'[0-9a-f]{32}\.json', name)
                 _need(name in _FILES or identity and int(name[:-5],16) != 0, 'prohibited_metadata_file')
                 if path.split('/')[-1] in _CAPTURE_FILES:
-                    _need(parent in (_CAPTURE_DIRECTORY, _PAID_PREPARED_DIRECTORY, _COMPLETE_PAID_DIRECTORY,
+                    _need(parent in (_CAPTURE_DIRECTORY, _UNADMITTED_DIRECTORY, _PAID_PREPARED_DIRECTORY, _COMPLETE_PAID_DIRECTORY,
                                      _BULK_PAID_DIRECTORY, _MIXED_PAID_DIRECTORY, _SUCCESS_PAID_DIRECTORY, _PARTIAL_PAID_DIRECTORY, _ACCEPTED_BULK_DIRECTORY, _REVERSE_BULK_DIRECTORY, _SMALL_BULK_DIRECTORY),
                           'outside_retained_capture_metadata')
                 _need(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest), 'invalid_sha256')

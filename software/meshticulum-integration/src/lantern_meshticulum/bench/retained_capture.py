@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Exact expired C capture metadata only; no enrollment, claims or debt."""
+"""Exact expired capture-only metadata; no enrollment, claims or debt."""
 import fcntl
 import hashlib
 import json
@@ -27,6 +27,32 @@ CAPTURE_FILES = {
     'legacy-grant-seal.json': '7fa4b98f711e9a045c93ac5a1c864fe726ad414d4d8b502485ef31e8028f9cdc',
 }
 
+UNADMITTED_PARENT = '63830cfa1d045680a9e4961d0d6b69c8'
+CAPTURE_ONLY_PARENTS = (CAPTURE_PARENT, UNADMITTED_PARENT)
+UNADMITTED_START = 1791711235585621
+UNADMITTED_END = 1791711535585621
+UNADMITTED_REVIEW = '0d0bb487bd049804a4889e1f2ad7022a8e19b06c6e3ba499e8eb24d5f551e526'
+UNADMITTED = {
+    'unit-a': dict(boot='34b27358-8e12-44e7-a39f-410af5dbc491', phase={'deadline_monotonic_us': 170888293253, 'epoch_us': 1791711255803225, 'monotonic_us': 170608510857}, files={
+        'capture.json': '51546180c3df786f17e61e60537147ad2012c8c32ccc714941345f0013ae3c50',
+        'history-binding.json': '9ea86df63b1618b923a0ec3acc1a0caf299ce863378be4498ae534faa3954ecb',
+        'history-identity-seal.json': 'a6bf6617626a31311d5309d2f1df7dba05a013a0ae1cf65483a3c955d87d0fa5',
+        'legacy-grant-seal.json': '0dfaff049fb4321872fc68c2b29460673805d72f728c8e3e8b3133e9a3c2082e',
+    }),
+    'unit-b': dict(boot='dfe04f99-f765-45f0-aba7-27b8eaad902b', phase={'deadline_monotonic_us': 170839055770, 'epoch_us': 1791711250366579, 'monotonic_us': 170553836728}, files={
+        'capture.json': 'e7c293cab1f857fcd265602c549fc07aefaf5e8e4efdf1a2df82fedd5585e041',
+        'history-binding.json': '1caebbb6aca0ea73d5ea392125acb2aec77f94627d1f94917436f2684c2d3529',
+        'history-identity-seal.json': '89f19e676cfcb99c8b738028dfb859c2b54f53fcf9e3c8f1689ea438fea6cc96',
+        'legacy-grant-seal.json': '95539e6026afa5b68d01686e15c50661b2d3d1cca5079957d3c682e69f05859a',
+    }),
+    'unit-c': dict(boot='21f9c178-6090-40d9-9359-ecf1c7b950b1', phase={'deadline_monotonic_us': 167828305342, 'epoch_us': 1791711244657041, 'monotonic_us': 167537376762}, files={
+        'capture.json': '6e08e8ba899c42fcd102862f24b32483a368d8123912943323df14163c7900fb',
+        'history-binding.json': '53710d626619f5bf09a89e78500f9300c87c62fde3566de02b1cd16786b9839d',
+        'history-identity-seal.json': '28604bac57bf3c4f7ecda50d6a3c6a11a2c71837a3e972f627bb884da6a27b64',
+        'legacy-grant-seal.json': '7fa4b98f711e9a045c93ac5a1c864fe726ad414d4d8b502485ef31e8028f9cdc',
+    }),
+}
+
 def current_clock(): return time.time_ns()//1000, time.monotonic_ns()//1000
 def current_boot(): return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 def _sha(raw): return hashlib.sha256(raw).hexdigest()
@@ -44,28 +70,30 @@ def _parse(raw):
 def capture_paths(state, unit):
     """Fixed path/hash descriptors, never proof that those paths were observed."""
     _need(unit in ('unit-a','unit-b','unit-c'), 'invalid_retained_capture_unit')
-    parent = 'parents/'+CAPTURE_PARENT
-    return dict(files={} if unit != 'unit-c' else {parent+'/'+n:h for n,h in CAPTURE_FILES.items()},
-                directories=() if unit != 'unit-c' else (parent,parent+'/prepared-identities'))
+    rows = [(CAPTURE_PARENT, CAPTURE_FILES)] if unit == 'unit-c' else []
+    try: (Path(state)/'parents'/UNADMITTED_PARENT).lstat()
+    except FileNotFoundError: pass  # Optional absence is only for old local fixtures.
+    else: rows.append((UNADMITTED_PARENT, UNADMITTED[unit]['files']))
+    return dict(files={'parents/'+parent+'/'+name:pin for parent,pins in rows for name,pin in pins.items()},
+                directories=tuple(path for parent,_ in rows for path in
+                                  ('parents/'+parent, 'parents/'+parent+'/prepared-identities')))
 
-def historical_parent_ids(state, unit, clock=current_clock, *, require_retained=False):
-    """Read exact expired artifact; optional absence retains only paid parents."""
-    _need(unit in ('unit-a','unit-b','unit-c') and callable(clock)
-          and type(require_retained) is bool, 'invalid_retained_capture_scope')
-    if unit != 'unit-c': return PAID_HISTORY
-    target = Path(state).absolute()/'parents'/CAPTURE_PARENT
+
+def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, end, review,
+                      required, expected_phase=None):
+    target = Path(state).absolute()/'parents'/parent_id
     try: target.lstat()
     except FileNotFoundError:
-        _need(not require_retained, 'missing_retained_capture'); return PAID_HISTORY
+        _need(not required, 'missing_retained_capture'); return False
     raw_files, descriptors = {}, []
     try:
         with _Ancestry(target, os.geteuid()) as parent, \
                 _Ancestry(target/'prepared-identities', os.geteuid()) as empty:
-            expected = set(CAPTURE_FILES)|{'prepared-identities'}
+            expected = set(pins)|{'prepared-identities'}
             directory_stamps = _stamp(os.fstat(parent.fds[-1])), _stamp(os.fstat(empty.fds[-1]))
             _need(set(os.listdir(parent.fds[-1])) == expected and not os.listdir(empty.fds[-1]),
                   'retained_capture_namespace_changed')
-            for name, pin in CAPTURE_FILES.items():
+            for name, pin in pins.items():
                 fd = os.open(name, _FLAGS, dir_fd=parent.fds[-1]); descriptors.append(fd)
                 first = os.fstat(fd); private(first)
                 _need(first.st_size <= 2000000, 'retained_capture_size_bound')
@@ -78,28 +106,32 @@ def historical_parent_ids(state, unit, clock=current_clock, *, require_retained=
                 raw_files[name] = (raw, _stamp(first), fd)
             record = _parse(raw_files['capture.json'][0]); binding = _parse(raw_files['history-binding.json'][0])
             _need(record['schema'] == 'meshticulum.private-resume-actual-capture.v1'
-                  and record['unit'] == binding['unit'] == 'unit-c'
-                  and record['parent_id'] == binding['parent_id'] == CAPTURE_PARENT
-                  and record['history_binding_sha256'] == CAPTURE_FILES['history-binding.json']
-                  and record['review_sha256'] == CAPTURE_REVIEW
-                  and record['facts']['unit'] == 'unit-c'
-                  and record['facts']['host_boot_id'] == CAPTURE_BOOT == current_boot()
-                  and record['phase_start_epoch_us'] == CAPTURE_START and record['phase_end_epoch_us'] == CAPTURE_END
+                  and record['unit'] == binding['unit'] == unit
+                  and record['parent_id'] == binding['parent_id'] == parent_id
+                  and record['history_binding_sha256'] == pins['history-binding.json']
+                  and record['review_sha256'] == review
+                  and record['facts']['unit'] == unit
+                  and record['facts']['host_boot_id'] == pinned_boot == current_boot()
+                  and record['phase_start_epoch_us'] == start and record['phase_end_epoch_us'] == end
                   and record['actual_history_verified'] is True and record['global_debt_complete'] is False
                   and record['original_unknown_actual_cost'] is None and type(record['refunds']) is int
                   and record['refunds'] == 0, 'retained_capture_scope_changed')
             _need(binding['schema'] == 'meshticulum.private-resume-history-binding.v2'
-                  and binding['strict_sha256'] == CAPTURE_FILES['history-identity-seal.json']
-                  and binding['legacy_sha256'] == CAPTURE_FILES['legacy-grant-seal.json']
+                  and binding['strict_sha256'] == pins['history-identity-seal.json']
+                  and binding['legacy_sha256'] == pins['legacy-grant-seal.json']
                   and binding['parent_identity'] == list(_stamp(os.fstat(parent.fds[-1]))[:4]),
                   'retained_capture_binding_changed')
             phase = record['native_phase']; now = clock()
+            _need(expected_phase is None or phase == expected_phase, 'retained_capture_native_phase_changed')
+            if parent_id == UNADMITTED_PARENT:
+                _need(tuple(v['policy']['parent_id'] for v in record['history']['previous']) == PAID_HISTORY,
+                      'unadmitted_capture_paid_history_changed')
             _need(type(now) is tuple and len(now) == 2 and all(type(v) is int and v > 0 for v in now)
                   and all(type(phase[k]) is int and phase[k] > 0 for k in
                           ('epoch_us','monotonic_us','deadline_monotonic_us'))
-                  and CAPTURE_START <= phase['epoch_us'] < CAPTURE_END
-                  and phase['deadline_monotonic_us'] == phase['monotonic_us']+CAPTURE_END-phase['epoch_us']
-                  and now[0] >= CAPTURE_END and now[1] >= phase['deadline_monotonic_us'],
+                  and start <= phase['epoch_us'] < end
+                  and phase['deadline_monotonic_us'] == phase['monotonic_us']+end-phase['epoch_us']
+                  and now[0] >= end and now[1] >= phase['deadline_monotonic_us'],
                   'retained_capture_phase_not_expired')
             for name, (raw, stamp, fd) in raw_files.items():
                 _need(_stamp(os.fstat(fd)) == stamp == _stamp(os.stat(name,dir_fd=parent.fds[-1],follow_symlinks=False))
@@ -108,6 +140,23 @@ def historical_parent_ids(state, unit, clock=current_clock, *, require_retained=
             _need(directory_stamps == (_stamp(os.fstat(parent.fds[-1])),_stamp(os.fstat(empty.fds[-1])))
                   and set(os.listdir(parent.fds[-1])) == expected and not os.listdir(empty.fds[-1]),
                   'retained_capture_namespace_changed')
-        return PAID_HISTORY+(CAPTURE_PARENT,)
+        return True
     finally:
         for fd in reversed(descriptors): os.close(fd)
+
+
+def historical_parent_ids(state, unit, clock=current_clock, *, require_retained=False,
+                          require_unadmitted=False):
+    """Read protected artifacts; native RPC explicitly requires both applicable captures."""
+    _need(unit in ('unit-a','unit-b','unit-c') and callable(clock)
+          and type(require_retained) is bool and type(require_unadmitted) is bool,
+          'invalid_retained_capture_scope')
+    retained = ()
+    if unit == 'unit-c' and _artifact_present(state,unit,clock,CAPTURE_PARENT,CAPTURE_FILES,
+            CAPTURE_BOOT,CAPTURE_START,CAPTURE_END,CAPTURE_REVIEW,require_retained):
+        retained += (CAPTURE_PARENT,)
+    row = UNADMITTED[unit]
+    if _artifact_present(state,unit,clock,UNADMITTED_PARENT,row['files'],row['boot'],
+            UNADMITTED_START,UNADMITTED_END,UNADMITTED_REVIEW,require_unadmitted,row['phase']):
+        retained += (UNADMITTED_PARENT,)
+    return PAID_HISTORY+retained
