@@ -223,7 +223,11 @@ class NativeCaps:
         if limits is not None:require(now[0]<limits[0] and now[1]<limits[1])
     def _observe(self,phase,limits=None):
         first=self._sample();self._live(first,limits)
-        binding=canonical(dict(enrollment=self._enrollment,phase=phase))
+        # _sample freshly checks the full typed enrollment against its retained
+        # canonical bytes. Reuse only that encoding, never an approval result.
+        if hasattr(self,'_enrollment_bytes'):
+            binding=b'{"enrollment":'+self._enrollment_bytes+b',"phase":'+canonical(phase)+b'}'
+        else:binding=canonical(dict(enrollment=self._enrollment,phase=phase))
         require(self._approve(binding) is True);self._available();require(not self._uncertain)
         now=self._sample();self._live(now,limits);require(all(a>=b for a,b in zip(now,first)))
         self._last=now;return now
@@ -248,7 +252,8 @@ class NativeCaps:
         require(row==(self._enrollment_bytes,))
         used=self.unit.prior_debt;rows=self.db.execute('SELECT id,body,run_id FROM claims').fetchall();require(len(rows)<=4096)
         for claim_id,raw,run in rows:
-            claim=json.loads(raw);require(canonical(claim)==raw and hashed(claim)==claim_id)
+            claim=json.loads(raw);require(canonical(claim)==raw
+                and hashlib.sha256(DOMAIN+raw).hexdigest()==claim_id)
             meta=claim['child']['metadata'];cost=Cost(**claim['child']['cost'])
             require(meta['unit']==self.unit.unit and meta['host_boot_id']==self.unit.host_boot_id
                     and meta['policy_digest']==self._policy_digest and meta['run_id']==run)

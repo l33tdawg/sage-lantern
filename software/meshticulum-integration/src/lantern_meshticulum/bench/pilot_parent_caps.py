@@ -70,15 +70,19 @@ class Cost:
     tx_stream_bytes: int = 0
     rx_stream_bytes: int = 0
     def __post_init__(self):
-        require(all(type(v) is int and 0 <= v <= MAX for v in asdict(self).values()))
+        require(all(type(v) is int and 0 <= v <= MAX for v in (
+            self.radio_attempts,self.estimated_airtime_us,self.ip_frames,
+            self.tx_stream_bytes,self.rx_stream_bytes)))
     def plus(self, other):
         require(type(other) is Cost)
-        other_values = asdict(other)
-        return Cost(**{k: v + other_values[k] for k, v in asdict(self).items()})
+        return Cost(self.radio_attempts+other.radio_attempts,
+            self.estimated_airtime_us+other.estimated_airtime_us,self.ip_frames+other.ip_frames,
+            self.tx_stream_bytes+other.tx_stream_bytes,self.rx_stream_bytes+other.rx_stream_bytes)
     def within(self, other):
         require(type(other) is Cost)
-        other_values = asdict(other)
-        return all(v <= other_values[k] for k, v in asdict(self).items())
+        return all(a <= b for a,b in zip((self.radio_attempts,self.estimated_airtime_us,
+            self.ip_frames,self.tx_stream_bytes,self.rx_stream_bytes),(other.radio_attempts,
+            other.estimated_airtime_us,other.ip_frames,other.tx_stream_bytes,other.rx_stream_bytes)))
 
 
 @dataclass(frozen=True, slots=True)
