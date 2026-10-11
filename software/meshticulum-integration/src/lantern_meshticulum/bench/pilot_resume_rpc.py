@@ -724,6 +724,12 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
          and observed['observation_original_epoch_us']>=policy.expires_epoch_us
          and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
          'partial_bundle_original_clocks_not_expired')
+    if policy.parent_id==V2_PARTIAL_BUNDLE_PAID:
+        owner=value['owner'];phase=owner['native_phase'][unit]
+        need(type(owner['phase_end_epoch_us']) is int and type(phase['deadline_monotonic_us']) is int
+             and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']
+             and observed['observation_original_monotonic_us']>=phase['deadline_monotonic_us'],
+             'v2_partial_bundle_original_phase_clocks_not_expired')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==(1 if count else 0)
          and len(detail['claims'])==count and len(detail['resources'])==(1 if count else 0)

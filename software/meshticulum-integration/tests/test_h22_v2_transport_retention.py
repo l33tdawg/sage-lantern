@@ -18,6 +18,7 @@ from lantern_meshticulum.bench.pilot_parent_caps import ParentPolicy,Cost
 from lantern_meshticulum.bench.history_metadata_fence import HistoricalMetadataFence,FenceError
 
 DATA=json.loads(Path(__file__).with_name('fixtures').joinpath('h22-v2-transport-metadata.json').read_bytes())
+OWNER_PHASE=json.loads(Path(__file__).with_name('fixtures').joinpath('h22-v2-owner-phase.json').read_bytes())
 
 @pytest.fixture(params=['unit-a','unit-b','unit-c'])
 def typed_rows(tmp_path,request,monkeypatch):
@@ -53,9 +54,10 @@ def typed_rows(tmp_path,request,monkeypatch):
     snap._schema(db,'native');parsed,detail,_=snap._native(db,scope,Reader());db.close()
     assert detail==actual['detail']
     observed=deepcopy(actual);observed.update(detail=detail,policy_expired_at_observation=True,
-        observation_original_epoch_us=policy.expires_epoch_us+1,observation_original_monotonic_us=e['deadline_monotonic_us']+1)
+        observation_original_epoch_us=OWNER_PHASE[unit]['phase_end_epoch_us']+1,
+        observation_original_monotonic_us=OWNER_PHASE[unit]['native_phase'][unit]['deadline_monotonic_us']+1)
     runs=[dict(run_id=run) for run in DATA['outcomes'][unit]]
-    value=dict(owner={'history_binding_sha256':e['history_binding_sha256']},database_sha256=actual['expected_database_sha256'],
+    value=dict(owner=dict(OWNER_PHASE[unit],history_binding_sha256=e['history_binding_sha256']),database_sha256=actual['expected_database_sha256'],
         actual_native_paid_caps=detail['prior_plus_prepaid_caps'],actual_controller_paid_caps=detail['prior_plus_prepaid_caps'],
         conservative_unused_enrollment_caps=asdict(Cost() if unit=='unit-b' else Cost(2048,480000000)),
         paid_caps=asdict(local.limits),runs=runs,retired_unstarted=[],controller_endpoint_refs=[dict(child=dict(run_id=x['run_id'])) for x in runs],
@@ -134,3 +136,14 @@ def policy_body_unchanged_for_old_twenty_one():
         policy=ParentPolicy.from_dict(row['policy'])
         assert rpc.canonical(policy.to_dict())==rpc.canonical(row['policy']) and policy.digest==row['policy_digest']
     return True
+
+
+@pytest.mark.parametrize('clock_gap',['epoch','monotonic'])
+def test_original_v2_whole_expiry_does_not_erase_still_live_five_second_phase(typed_rows,clock_gap):
+    unit,p,o,v=typed_rows;o=deepcopy(o)
+    if clock_gap=='epoch':o['observation_original_epoch_us']=p.expires_epoch_us+4000000
+    else:o['observation_original_monotonic_us']=o['detail']['enrollment']['deadline_monotonic_us']+4000000
+    assert o['observation_original_epoch_us']>=p.expires_epoch_us
+    assert o['observation_original_monotonic_us']>=o['detail']['enrollment']['deadline_monotonic_us']
+    with pytest.raises(RuntimeError,match='v2_partial_bundle_original_phase_clocks_not_expired'):
+        rpc.qualify_partial_bundle_costs(unit,p,o,v)
