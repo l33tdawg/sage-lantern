@@ -25,7 +25,7 @@ def members(data, digest):
             require(entry.isfile() and not path.is_absolute() and '..' not in path.parts
                     and str(path) == entry.name and path.parts and len(entry.name) < 200,
                     'invalid_runtime_archive_member')
-            require(entry.name not in result and len(result) < 80 and 0 <= entry.size <= 500000,
+            require(entry.name not in result and len(result) < 128 and 0 <= entry.size <= 500000,
                     'runtime_archive_member_limit')
             total += entry.size
             require(total <= 2000000, 'runtime_archive_total_limit')
