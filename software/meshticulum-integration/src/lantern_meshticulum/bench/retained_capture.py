@@ -14,7 +14,7 @@ from meshticulum.ip.journal import private
 PAID_HISTORY = ('28765d19f654ce3162525afe9c3f89c5', '5ad7e65b7e50901a6f63629c04a776e2',
                 '4d1b5d6fe8d4b022c5cf1e21cef7f8ca', 'd60d8308326314a7753e651fa43a99e3',
                 '4559277fa43913ce3935b078d6744a55', '4034f8979b985660df21859606c4f8a7',
-                'ba4572e95e598ad6c17fc954c3792db7', '1df30b47fa36b8d47328fb886528a7a9', 'f153a7a87a2803db85078df81a6a1aaf', '25a990a2d565c50b237ee45812a8c75f', 'cb5869e6aa8de545a267007b085d4762', 'f6e147e70ec7ce07f673ea5e9cd2cdc2', 'b8f9b5d9c5479c8d363c7b7e8014bc3b', '806fdca055e79dfc0b86ff8f304bcdf9', '4ea23c6b8fa83366904ac62ffa98e2bf')
+                'ba4572e95e598ad6c17fc954c3792db7', '1df30b47fa36b8d47328fb886528a7a9', 'f153a7a87a2803db85078df81a6a1aaf', '25a990a2d565c50b237ee45812a8c75f', 'cb5869e6aa8de545a267007b085d4762', 'f6e147e70ec7ce07f673ea5e9cd2cdc2', 'b8f9b5d9c5479c8d363c7b7e8014bc3b', '806fdca055e79dfc0b86ff8f304bcdf9', '4ea23c6b8fa83366904ac62ffa98e2bf', 'c26cd03a8fd427daf6b8d894e4b1d04c')
 # Capture638 froze the first twelve paid parents; later completed runs do not alter it.
 UNADMITTED_PAID_HISTORY = PAID_HISTORY[:12]
 CAPTURE_PARENT = 'd0f37a4030fbe55d2829e8c0cebcee5b'

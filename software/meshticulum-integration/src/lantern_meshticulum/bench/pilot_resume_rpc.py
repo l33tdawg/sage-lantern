@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import resource
 import stat
+import threading
 import time
 
 from .history_identity_seal import _Ancestry, capture, SealedHistory, MAX_FILES, MAX_DIRS
@@ -52,7 +53,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     'd9bd3b79c63843d29892d81846d7a5ebf4967eb01a676800d63b15e7d366a0b8',
     '44425235165ea6d49ce8b46760bdbc4c8519c98ece034c560566ae6dcd57bfb2',
     '85501a81327854cfa58ef52e65ab2253f17d18925d74617f7b2bb11644664c39',
-    '25e8beb9049826a4dc1a5ddde3fcc239e6e7e67f4b265b85da80f0b9a22b9627')
+    '25e8beb9049826a4dc1a5ddde3fcc239e6e7e67f4b265b85da80f0b9a22b9627',
+    '1411f2db5d331a56b3d395e7b8443a516a766d69139275dd3276d7a8bfe19293')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -75,8 +77,17 @@ SMALL_BULK_PAID = 'f6e147e70ec7ce07f673ea5e9cd2cdc2'
 ZERO_RETRY_BULK_PAID = 'b8f9b5d9c5479c8d363c7b7e8014bc3b'
 IMMEDIATE_RX_BULK_PAID = '806fdca055e79dfc0b86ff8f304bcdf9'
 SF7_REPLICATE_PAID = '4ea23c6b8fa83366904ac62ffa98e2bf'
+PUBLIC32_PAID = 'c26cd03a8fd427daf6b8d894e4b1d04c'
+PUBLIC32_REQUEST = '0a947ca87b3c1c58eee35c4facdc189f'
+PUBLIC32_RESPONSE = '5224795f932cffcde4580f20683340e2'
+PUBLIC32_RESULT_CANONICAL = {
+    'unit-a': {PUBLIC32_REQUEST:'eaf6fb995f2d7d85ec214ad8d0446275d83cb9a982d7de86e8e397284fb43ec7',
+               PUBLIC32_RESPONSE:'aa3f9443ec397e261a933f9f783d7c46b7023176b4f95be540e47e3fa2864ee6'},
+    'unit-b': {},
+    'unit-c': {PUBLIC32_REQUEST:'52df8064aa3f826d3837c2e6ab1cfe924dcec326e1d8d5dc2735be730ca23c81',
+               PUBLIC32_RESPONSE:'7020e800d9c12344225eba986cadd0cfcce1bf5af661b72757ef6e907f3d4bd7'}}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -161,17 +172,77 @@ def parse(raw):
 
 class Reader:
     """Held protected regular metadata and read locks, with no SQLite path open."""
-    def __init__(self): self.stack, self.held, self.directories = ExitStack(), [], {}
+    def __init__(self):
+        self.stack, self.held, self.directories = ExitStack(), [], {}
+        self._nodes, self._tokens = {}, {}
+        self._node_state = self._held_state = self._directory_state = ()
+        self._token_state = ()
+        self._owner = (os.getpid(), threading.get_ident(), os.geteuid())
+        self._owner_ref = self._owner
+        self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens)
+        self._closed = False
+    def _available(self, *, full=True):
+        need(not self._closed and self._owner is self._owner_ref
+             and self._owner == (os.getpid(), threading.get_ident(), os.geteuid())
+             and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens),self._refs))
+             and len(self._nodes)==len(self._node_state) and len(self.held)==len(self._held_state)
+             and len(self.directories)==len(self._directory_state) and len(self._tokens)==len(self._token_state),
+             'rpc_reader_owner_changed')
+        if full:
+            need(tuple(self._nodes.items())==self._node_state and tuple(self.held)==self._held_state
+                 and tuple((path,tuple(identity)) for path,identity in self.directories.items())==self._directory_state
+                 and tuple(self._tokens.items())==self._token_state, 'rpc_reader_state_changed')
+    @staticmethod
+    def _close_owned(fd, identity, token):
+        try:
+            if tuple(_stamp(os.fstat(fd))[:2]) == identity and os.lseek(fd,0,os.SEEK_CUR) == token:
+                os.close(fd)
+        except OSError: pass
+    def _retain(self, fd):
+        if fd in self._tokens:
+            os.close(fd); need(False,'rpc_descriptor_reused')
+        identity = tuple(_stamp(os.fstat(fd))[:2])
+        token = MAX_FILE + fd + 1
+        try: os.lseek(fd,token,os.SEEK_SET)
+        except BaseException:
+            os.close(fd); raise
+        self.stack.callback(self._close_owned,fd,identity,token)
+        self._tokens[fd] = token; self._token_state = tuple(self._tokens.items())
+        return token
+    def _check_nodes(self):
+        self._available()
+        need(all(os.lseek(fd,0,os.SEEK_CUR)==token for fd,token in self._token_state),
+             'rpc_reader_descriptor_changed')
+        for fd,parent,name,identity,token in self._nodes.values():
+            need(tuple(_stamp(os.fstat(fd))[:4]) == identity
+                 == tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False))[:4])
+                 and os.lseek(fd,0,os.SEEK_CUR) == token, 'rpc_ancestry_changed')
+        self._available()
     def directory(self, path):
-        with _Ancestry(path, os.geteuid()) as chain:
-            chain.check(); identity = list(_stamp(os.fstat(chain.fds[-1]))[:4])
-            need(path not in self.directories or self.directories[path] == identity, 'rpc_directory_rebound')
-            self.directories[path] = identity
+        self._available()
+        absolute = Path(os.path.abspath(path)); names = ('/',*absolute.parts[1:])
+        need(len(names)<=64 and len(str(absolute))<=4096, 'ancestry_too_long')
+        parent = None; ancestor = Path('/')
+        for index,name in enumerate(names):
+            if index: ancestor = ancestor/name
+            if ancestor not in self._nodes:
+                fd = os.open(name,_FLAGS|os.O_DIRECTORY,dir_fd=parent)
+                token = self._retain(fd); info = os.fstat(fd)
+                need(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,os.geteuid())
+                     and not stat.S_IMODE(info.st_mode)&0o022, 'writable_or_foreign_ancestor')
+                self._nodes[ancestor] = (fd,parent,name,tuple(_stamp(info)[:4]),token)
+                self._node_state = tuple(self._nodes.items())
+            parent = self._nodes[ancestor][0]
+        self._check_nodes(); info = os.fstat(parent)
+        need(info.st_uid==os.geteuid() and stat.S_IMODE(info.st_mode)==0o700, 'unsafe_private_leaf')
+        identity = list(_stamp(info)[:4])
+        need(path not in self.directories or self.directories[path]==identity, 'rpc_directory_rebound')
+        self.directories[path] = identity
+        self._directory_state = tuple((path,tuple(value)) for path,value in self.directories.items())
+        return parent
     def read(self, path, maximum, *, lock=False):
-        self.directory(path.parent)
-        with _Ancestry(path.parent, os.geteuid()) as chain:
-            fd = os.open(path.name, _FLAGS, dir_fd=chain.fds[-1]); chain.check()
-        self.stack.callback(os.close, fd)
+        parent = self.directory(path.parent)
+        fd = os.open(path.name,_FLAGS,dir_fd=parent); self._retain(fd); self._check_nodes()
         s = os.fstat(fd)
         need(stat.S_ISREG(s.st_mode) and s.st_uid == os.geteuid()
              and stat.S_IMODE(s.st_mode) == 0o600 and s.st_nlink == 1
@@ -179,18 +250,29 @@ class Reader:
         if lock: fcntl.flock(fd, fcntl.LOCK_SH|fcntl.LOCK_NB)
         raw = os.pread(fd, maximum+1, 0)
         need(len(raw) == s.st_size, 'short_rpc_metadata')
-        identity = _stamp(s)
-        need(_stamp(os.fstat(fd)) == identity == _stamp(path.lstat()), 'rpc_metadata_changed')
-        self.held.append((path, fd, identity, sha(raw))); return raw
+        identity = tuple(_stamp(s))
+        need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat())), 'rpc_metadata_changed')
+        self._check_nodes()
+        need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
+             and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd], 'rpc_metadata_changed_after_check')
+        self._available()
+        self.held.append((path,fd,identity,sha(raw))); self._held_state = tuple(self.held)
+        return raw
     def check(self):
-        for path, identity in self.directories.items():
-            with _Ancestry(path, os.geteuid()) as chain:
-                need(list(_stamp(os.fstat(chain.fds[-1]))[:4]) == identity, 'rpc_directory_rebound')
-        for path, fd, identity, digest in self.held:
-            need(_stamp(os.fstat(fd)) == identity == _stamp(path.lstat())
-                 and sha(os.pread(fd, identity[5]+1, 0)) == digest, 'held_rpc_metadata_changed')
+        self._check_nodes()
+        for path, fd, identity, digest in self._held_state:
+            token=self._tokens[fd]
+            need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
+                 and os.lseek(fd,0,os.SEEK_CUR) == token, 'held_rpc_metadata_changed')
+            raw=os.pread(fd,identity[5]+1,0);self._available(full=False)
+            need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
+                 and os.lseek(fd,0,os.SEEK_CUR) == token
+                 and sha(raw) == digest, 'held_rpc_metadata_changed_after_read')
+        self._check_nodes()
         return True
-    def close(self): self.stack.close()
+    def close(self):
+        if self._closed or self._owner_ref[:2] != (os.getpid(),threading.get_ident()): return
+        self._closed = True; self._refs[0].close()
     def __enter__(self): return self
     def __exit__(self, *_): self.close()
 
@@ -345,6 +427,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                  'mixed_failed_endpoint_scope_changed')
         if policy.parent_id in (SUCCESS_PAID,ACCEPTED_BULK_PAID,REVERSE_BULK_PAID,ZERO_RETRY_BULK_PAID,IMMEDIATE_RX_BULK_PAID,SF7_REPLICATE_PAID):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
+        if policy.parent_id == PUBLIC32_PAID:
+            need(v.get('failed_started_runs')==([] if unit=='unit-b' else [PUBLIC32_RESPONSE])
+                 and v['require_result_complete'] is False,'public32_failure_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
             relation = observed['legacy_relation']
@@ -352,7 +437,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(relation is not None and {r['run_id'] for r in omitted} == {r['run_id'] for r in unstarted}
                  and len(relation['links']) == len(v['runs']) and all(r['no_refund'] is True
                  and r['separate_debt_sum_permitted'] is False for r in relation['links']), 'old_actual_coverage_missing')
-            if v['require_result_complete']:
+            if v['require_result_complete'] or policy.parent_id == PUBLIC32_PAID:
                 need(observed['legacy_scoped_rows_complete'] and relation['scoped_linkage_complete']
                      and all(r['relation'] == 'same_endpoint_allocation' for r in relation['links']), 'old_endpoint_overlap_unqualified')
             for row in observed['legacy_runs']:
@@ -372,6 +457,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     qualify_bulk_receiver(row,result,result_raw)
                 if policy.parent_id == MIXED_PAID and unit=='unit-c' and row['run_id']==MIXED_RECEIVER_RUN:
                     qualify_mixed_receiver(row,result,result_raw)
+                if policy.parent_id == PUBLIC32_PAID: qualify_public32_result(unit,row['run_id'],result)
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -449,7 +535,19 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id==SF7_REPLICATE_PAID:
         expected=set() if unit=='unit-b' else {'ad817046664eef590433541ac976ba34','c64aede596ce549e1af12542affca4cc'}
         need(ids==expected and not absent,'sf7_replicate_claim_scope_changed')
+    elif policy.parent_id==PUBLIC32_PAID:
+        need(ids==set(PUBLIC32_RESULT_CANONICAL[unit]) and not absent,'public32_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
+
+
+def qualify_public32_result(unit,run,result):
+    """Exact failed paid outcome; never promote transport or global handoff."""
+    need(unit in PUBLIC32_RESULT_CANONICAL and run in PUBLIC32_RESULT_CANONICAL[unit]
+         and sha(canonical(result))==PUBLIC32_RESULT_CANONICAL[unit][run]
+         and result['complete'] is (run==PUBLIC32_REQUEST) and result['disarmed_on_exit'] is True
+         and result['parent']['started'] is True and result['parent']['parent_id']==PUBLIC32_PAID
+         and result['parent']['policy_digest']==OLD_DIGESTS[15] and result['parent']['run_id']==run,
+         'public32_retained_result_changed')
 
 
 def qualify_bulk_receiver(row,result,raw):
@@ -934,6 +1032,7 @@ def inspect_paid_parent(unit,p,runtime):
             status=inspect_job(child,unit=unit,run_id=run,boot=boot())
             need(status['job_record_found'] is True and status['live'] is False,'paid_started_job_not_terminal')
             result=parse(reader.read(child/'result.json',300000))
+            if policy.parent_id==PUBLIC32_PAID:qualify_public32_result(unit,run,result)
             if meta['transport']=='lora':
                 profile=RadioProfile(**grant['profile'])
                 if unit=='unit-c':binding=sha(b'meshticulum.hat-attempts.v1\0'+bytes.fromhex(context)+boot().encode('ascii')+profile.encode(board_id=2))

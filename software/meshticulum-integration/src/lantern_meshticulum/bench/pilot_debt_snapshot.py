@@ -21,6 +21,7 @@ import uuid
 
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.bench.serial_protocol import RadioProfile
+from meshticulum.bench.public_block import PUBLIC32_MARKER, public32_service, object_limit
 from meshticulum.ip.wire import IpLimits, address
 from .pilot_parent_caps import Cost
 from .profiles import RADIO_ADMISSION
@@ -222,10 +223,16 @@ def _public_grant(p,scope,run):
         need(local==(a if sends else b));direction=0 if sends else 1
         profile=RadioProfile(**p['profile']);profile.encode(board_id=1)
         RADIO_ADMISSION.check(p['country'],p['antenna_confirmed'],profile)
+        service=p['service'];base_service={'kind','format','application_expires_epoch_us'}
+        need(type(service)is dict and set(service)in(base_service,base_service|{PUBLIC32_MARKER})
+             and service['kind']=='knowledge' and service['format']in FORMATS)
+        public32=public32_service(service)
         obj=p['object'];need(type(obj)is dict and set(obj)=={'bytes','sha256','object_id','chunk_index'})
-        integer(obj['bytes'],1,16384);hex_value(obj['sha256'],64);hex_value(obj['object_id'],64);integer(obj['chunk_index'],0,63)
-        service=p['service'];need(type(service)is dict and set(service)=={'kind','format','application_expires_epoch_us'}
-                                 and service['kind']=='knowledge' and service['format']in FORMATS)
+        integer(obj['bytes'],1,object_limit(service));hex_value(obj['sha256'],64);hex_value(obj['object_id'],64);integer(obj['chunk_index'],0,63)
+        if public32:
+            sender='unit-a' if service['format']=='MR1.request' else 'unit-c'
+            need(p['sender_unit']==sender and scope.unit in ('unit-a','unit-c')
+                 and (service['format']!='MR1.response' or obj['bytes']==32768),'invalid_public32_debt_grant')
         app=integer(service['application_expires_epoch_us'],1);need(issued<app<=expires)
         frames=integer(p['max_frames'],1,512)
         route={k:p[k]for k in('initiator','responder','session_id','generation','profile','object','sender_unit','country','service')}
@@ -257,8 +264,13 @@ def _public_grant(p,scope,run):
     need(session.session_id.hex()==run.run_id)
     context_hash=sha(canonical(context))
     if run.grant_context_sha256 is not None:need(run.grant_context_sha256==context_hash,'grant_context_changed')
-    return dict(context_sha256=context_hash,caps=asdict(caps),direction=direction,format=fmt,
+    output=dict(context_sha256=context_hash,caps=asdict(caps),direction=direction,format=fmt,
                 application_expires_epoch_us=app,application_deadline_monotonic_us=deadline,max_frames=frames)
+    if run.transport=='lora' and public32:
+        # The512-frame cipher budget includes control/retry counters. Core's
+        # inner service Shape separately caps marked responses at256 frames.
+        output.update(public_response_max_bytes=32768,flow_max_frames=256 if fmt=='MR1.response' else 128)
+    return output
 
 
 def _table(db,name,columns):
