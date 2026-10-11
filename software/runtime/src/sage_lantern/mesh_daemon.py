@@ -180,6 +180,7 @@ class HardwareRuntime:
         self._public_contact_check = public_contact_check
         self._initializing = False
         self._forward_children = None
+        self._forward_radio = None
         self._forward_admitted = False
         self._reconciled = None
         self._closing = False
@@ -196,6 +197,14 @@ class HardwareRuntime:
             return self._lock_marker() is True and self._config_reader() == self.config
         except Exception:
             return False
+
+    def adopt_forward_radio(self, adoption):
+        """Explicit provisioned-radio adoption; default runtime opens nothing."""
+        from lantern_meshticulum.sage.radio_native_adoption import NativeRadioAdoption
+        require(type(adoption) is NativeRadioAdoption and adoption.owner.resource is self)
+        require(self._provider is None and self._coordinator is None and not self._initializing
+                and self._radio_observer is None and self._forward_radio is None)
+        return adoption.adopt(self)
 
     def active(self):
         if self._provider is not None and not self._provider._runtime.admission_safe():
@@ -311,6 +320,7 @@ class HardwareRuntime:
                 os.close(descriptor)
 
     def provider(self, guard):
+        require(getattr(self, "_forward_radio", None) is None)
         require(guard() and self.active())
         if self._provider is not None:
             # A retired worker is restarted by the supervisor thread, never
@@ -703,6 +713,8 @@ class HardwareRuntime:
             if (type(forward) is not ForwardChildren or forward.resource is not self
                     or forward.close(max(0, deadline-time.monotonic())) is not True):
                 return False
+        if getattr(self, "_forward_radio", None) is not None:
+            return False
         if not self._mutex.acquire(timeout=max(0, deadline-time.monotonic())):
             return False
         try:
