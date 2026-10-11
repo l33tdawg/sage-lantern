@@ -44,7 +44,8 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1',
     '0d153ed60782be5028fe7b75f3345b0441e62ef95b8db629270d5b309fd0e049',
     'c4dac314abe5afac2d14c8f82f08466863bac438c7674864c0864c8eae5e2eb7',
-    '617cdde5e1bb0bfb162552861abb6b84e25a389a981d16b5b17e7e5d5daaf10c')
+    '617cdde5e1bb0bfb162552861abb6b84e25a389a981d16b5b17e7e5d5daaf10c',
+    '83f56d8609b60532332631f86c3061c6f8b3fefa2ff7517406860e467dd7f2e8')
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -55,8 +56,9 @@ MIXED_PAID = 'ba4572e95e598ad6c17fc954c3792db7'
 MIXED_RECEIVER_RUN = '9dd5b8dd6466600acfdc8f1884db3da8'
 MIXED_RECEIVER_RESULT_SHA = '5f594b1cba94b24883327f2457d1a79541e5cbffbe4fd073fc547ddeaabb08b6'
 MIXED_OBJECT_SHA = 'd61126423d81a20aab75ada153b03c326d60fcc781884bba9f84d3d5821d134d'
+SUCCESS_PAID = '1df30b47fa36b8d47328fb886528a7a9'
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -123,6 +125,8 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
         if unit=='unit-a':return radio.plus(radio).plus(tcp).plus(tcp)
         if unit=='unit-b':return tcp.plus(tcp)
         return radio.plus(radio)
+    if qualification_kind=='a-bulk-v1':
+        return Cost() if unit=='unit-b' else radio.plus(radio)
     need(qualification_kind=='mixed-bulk-v1', 'unknown_public_qualification_kind')
     if unit=='unit-c': return radio.plus(radio).plus(radio).plus(radio)
     return radio.plus(radio).plus(tcp).plus(tcp)
@@ -319,6 +323,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id == MIXED_PAID:
             need(v.get('failed_started_runs',[]) == ([MIXED_RECEIVER_RUN] if unit=='unit-c' else []),
                  'mixed_failed_endpoint_scope_changed')
+        if policy.parent_id == SUCCESS_PAID:
+            need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
         if v['runs']:
             need(sha(canonical(observed['legacy_runs'])) == v['legacy_sha256'], 'old_actual_rows_changed')
             relation = observed['legacy_relation']
@@ -397,6 +403,11 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
             'unit-b':{'76fb18ac4571c12a4c461a9b9c18de43','8c749476914d876554f0052ab841a0d2','9fcc14ee8e50a8f9093e0e1362f34d76','bab9e8237656cf6860cae9e2c0eb9cbe'},
             'unit-c':{'2b12eb6b8edad86af9ef926820bdca34','8c749476914d876554f0052ab841a0d2',MIXED_RECEIVER_RUN,'9fcc14ee8e50a8f9093e0e1362f34d76'}}
         need(ids==expected[unit] and not absent,'mixed_paid_claim_scope_changed')
+    elif policy.parent_id == SUCCESS_PAID:
+        expected={'unit-a':{'1dc2d03da057186c81d1476aabe611b2','2900ab6e27f2abca9e7d7a77b5d60c10','3e387ba3fcdabef7a0ac1351655022c9','5dc283b3f4af4fea45d83158a6cf8846'},
+            'unit-b':{'2900ab6e27f2abca9e7d7a77b5d60c10','3e387ba3fcdabef7a0ac1351655022c9'},
+            'unit-c':{'1dc2d03da057186c81d1476aabe611b2','5dc283b3f4af4fea45d83158a6cf8846'}}
+        need(ids==expected[unit] and not absent,'successful_mixed_claim_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
 
 
