@@ -1114,7 +1114,7 @@ def enrolled_action(action, unit, p, runtime):
              for u in ('unit-a','unit-b','unit-c')) and asdict(rp) == owner['rf_profile']
              and (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,rp.coding_rate,rp.chip_power_dbm,
                   rp.preamble,rp.sync_word) in ((921375000,500000,7,5,0,8,0x42),
-                                               (921375000,500000,5,5,0,8,0x42)), 'owner_RF_basis_changed')
+                                               (921375000,500000,5,5,0,12,0x42)), 'owner_RF_basis_changed')
         radio = Cost(rp.max_boot_attempts,rp.max_boot_estimated_airtime_us)
         tcp = Cost(ip_frames=ip.max_frames,tx_stream_bytes=ip.max_tx_stream_bytes,
                    rx_stream_bytes=ip.max_rx_stream_bytes)

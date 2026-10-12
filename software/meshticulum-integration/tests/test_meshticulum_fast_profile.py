@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Opt-in faster SX1262 test profile; this does not authorize RF use."""
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 
-from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for, LEGACY_SF5_8_PARENT
+from lantern_meshticulum.bench.pilot_parent_caps import child_caps, ParentCapsError
 from lantern_meshticulum.bench.pilot_controller import pair_packages
 from tests.test_pilot_controller import BOOTS, MANIFEST, PEERS, PERMISSION, REQUEST, Clock, ModelOperator, model_parent
 from lantern_meshticulum.bench.pilot_controller import Controller
@@ -19,6 +20,8 @@ def test_sf5_500_profile_is_explicit_and_default_stays_conservative():
     profile = profile_for('sf5-500')
     assert (profile.frequency_hz, profile.bandwidth_hz, profile.spreading_factor,
             profile.coding_rate, profile.chip_power_dbm) == (921375000, 500000, 5, 5, 0)
+    assert profile.preamble == 12
+    assert profile_for('sf7-500').preamble == 8
     RADIO_ADMISSION.check('MY', True, profile)
 
 
@@ -88,3 +91,28 @@ def test_strict_firmware_identity_matches_only_flashed_a_and_baseline_b():
     assert node.FIRMWARE_BY_UNIT == {'unit-a': 'mtb1-5577916527', 'unit-b': 'mtb1-9816f92488'}
     assert node._fast_profile(profile_for('sf5-500'))
     assert not node._fast_profile(profile_for('sf7-500'))
+
+
+def test_short_sf5_preamble_has_no_live_admission_or_sender_readiness():
+    short = replace(profile_for('sf5-500'), preamble=8)
+    with pytest.raises(WireError):
+        RADIO_ADMISSION.check('MY', True, short)
+    assert not node._fast_profile(short)
+
+
+def test_old_paid_sf5_metadata_keeps_its_original_profile_and_digest():
+    clock = Clock()
+    parent = model_parent(clock)
+    old_policy = replace(parent.policy, parent_id=LEGACY_SF5_8_PARENT)
+    pair = pair_packages(campaign_id='d' * 32, resource_sha256=MANIFEST,
+        application_expires_epoch_us=1160000000, sender='unit-a', receiver='unit-c',
+        transport='lora', format='MR1.request',
+        descriptor=dict(bytes=len(REQUEST),sha256=hashlib.sha256(REQUEST).hexdigest()),
+        source=None, request=REQUEST, peers=PEERS, boots=BOOTS,
+        now_epoch_us=clock.epoch(), radio_permission=PERMISSION,profile='sf5-500')
+    package = pair['packages']['unit-a']
+    package['grant']['profile']['preamble'] = 8
+    old = child_caps(package,old_policy)
+    assert old.to_dict()['metadata']['profile']['preamble'] == 8
+    with pytest.raises(ParentCapsError):
+        child_caps(package,parent.policy)

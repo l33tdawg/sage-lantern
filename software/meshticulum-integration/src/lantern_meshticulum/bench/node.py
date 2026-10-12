@@ -171,7 +171,7 @@ def _sender_readiness_pass(enabled, runner, flow, worker, authority, parent_curr
 def _fast_profile(profile):
     return (profile.frequency_hz, profile.bandwidth_hz, profile.spreading_factor,
             profile.coding_rate, profile.chip_power_dbm, profile.preamble,
-            profile.sync_word) == (921375000, 500000, 5, 5, 0, 8, 0x42)
+            profile.sync_word) == (921375000, 500000, 5, 5, 0, 12, 0x42)
 
 
 def run(unit, directory, object_directory):

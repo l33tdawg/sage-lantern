@@ -26,7 +26,7 @@ from meshticulum.bench.services import _shape
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
-from .profiles import RADIO_ADMISSION
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION
 
 BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3'))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
@@ -220,7 +220,9 @@ def child_caps(package, policy):
                 and p['unit'] == unit.unit and p['local_peer'] == asdict(unit.peer)
                 and p['service']['kind'] == 'knowledge')
             rp = RadioProfile(**p['profile']); rp.encode(board_id=1)
-            RADIO_ADMISSION.check(p['country'], p['antenna_confirmed'], rp)
+            admission = (LEGACY_SF5_8_ADMISSION if policy.parent_id == LEGACY_SF5_8_PARENT
+                         else RADIO_ADMISSION)
+            admission.check(p['country'], p['antenna_confirmed'], rp)
             route = {k: p[k] for k in ('initiator','responder','session_id','generation','profile','object','sender_unit','country','service')}
             session = SessionKey(PeerID(**p['initiator']), PeerID(**p['responder']), bytes.fromhex(p['session_id']), bytes.fromhex(p['generation']))
             grant = BenchGrant(session, 'bench_transfer', hashlib.sha256(canonical(route)).digest(),
