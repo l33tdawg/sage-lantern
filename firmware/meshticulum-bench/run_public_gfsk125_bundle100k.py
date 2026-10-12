@@ -35,9 +35,16 @@ def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path);value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
 
 
+def phase_timing_mode(op):
+    value=op.get('native_phase_timing',False)
+    need(type(value) is bool,'invalid_native_phase_timing_mode')
+    return value
+
+
 def review(path,pin):
     raw=read(path,2000000);need(sha(raw)==pin,'operation_pin_changed');op=json.loads(raw)
     need(op['schema']==SCHEMA and op['runner_sha256']==sha(read(Path(__file__),100000)), 'wrong_batch_operation')
+    phase_timing_mode(op)
     need(op['phase_seconds']==1355 and op['whole_seconds']==1350 and op['application_seconds']==180 and op['part_count']==5,'batch_original_limits_changed')
     auth=op['authorization'];need(auth==dict(human_statement='run it bro',count_authorized=1,public_only=True,private_production=False), 'batch_authorization_missing')
     core,lantern=Path(op['core_path']).absolute(),Path(op['lantern_path']).absolute()
@@ -199,7 +206,7 @@ def main():
     epoch,mono=helpers.parent_clock();end=epoch+1355000000;absolute=op['absolute_device_window'];need(absolute['issued_epoch_us']<=epoch and end<=absolute['expires_epoch_us'],'batch_original_absolute_window_unavailable')
     cfg['handoff_end_epoch_us']=end;parent_id=secrets.token_hex(16);out=Path(op['output_directory'])/('gfsk125-bundle100k-'+parent_id);out.mkdir(mode=0o700)
     used=Path(op['output_directory'])/('OPERATION_USED-'+args.operation_sha256+'.json');write(used,dict(parent_id=parent_id,operation_sha256=args.operation_sha256,original_phase_end_epoch_us=end,count_used=1))
-    result=dict(schema='meshticulum.public-gfsk125-bundle100k-result.v1',parent_id=parent_id,complete=False,qualification_complete=False,private_production=False,refunds=0,original_phase_start_epoch_us=epoch,original_phase_end_epoch_us=end,bundle_parts=[],rpc_clients=[],links=[],native_final={},previous_parent_ids=op['history_parent_ids'])
+    result=dict(schema='meshticulum.public-gfsk125-bundle100k-result.v1',parent_id=parent_id,complete=False,qualification_complete=False,private_production=False,refunds=0,original_phase_start_epoch_us=epoch,original_phase_end_epoch_us=end,bundle_parts=[],rpc_clients=[],links=[],native_final={},previous_parent_ids=op['history_parent_ids'],native_phase_timing_enabled=phase_timing_mode(op))
     stages=planned_stages(epoch)
     mraw=read(piece['path']/'pack/manifest.json',65536);sraw=read(piece['path']/'pack/manifest.sig.json',4096)
     chunks={p['chunk_sha256']:piece['cache'].piece(p['chunk_sha256']) for p in piece['whole']['parts']}
@@ -223,7 +230,8 @@ def main():
     def guarded(u,action='guard'):
         return native(u,action,dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u],preparation_sha256=preparations[u],review_sha256=args.operation_sha256,expected_cut_run=None))
     try:
-        operator=SSHOperator(cfg,provision_source=provision,runtime_source=bootstrap,passwords={'unit-a':password,'unit-b':password},parallel_preparation=True);password=None;operator.open_connections()
+        operator=SSHOperator(cfg,provision_source=provision,runtime_source=bootstrap,passwords={'unit-a':password,'unit-b':password},parallel_preparation=True,
+            native_phase_timing=phase_timing_mode(op));password=None;operator.open_connections()
         inspection=operator._action('unit-a','inspect',schema='meshticulum.native-bench-inspection.v1');radio=inspection['radio'];expected=op['radio_status_expected']
         need(radio['disarmed'] is True and radio['firmware']==manifest['firmware_by_unit']['unit-a'] and radio['usb_serial']=='F8:5B:1B:A5:F6:08'
             and all(radio[k]==expected[k] for k in ('mcu_boot','boot_attempts','boot_reserved_estimated_airtime_us'))

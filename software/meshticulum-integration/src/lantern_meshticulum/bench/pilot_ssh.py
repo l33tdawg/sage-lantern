@@ -153,9 +153,11 @@ class Job:
 
 class SSHOperator:
     def __init__(self,config,*,provision_source,runtime_source=None,passwords=None,clock=time.monotonic,epoch=None,
-                 parallel_preparation=False):
+                 parallel_preparation=False,native_phase_timing=False):
         require(type(parallel_preparation) is bool,'invalid_parallel_preparation_mode')
+        require(type(native_phase_timing) is bool,'invalid_native_phase_timing_mode')
         self.parallel_preparation=parallel_preparation;self._preparation_lock=Lock()
+        self.native_phase_timing=native_phase_timing
         require(type(config) is dict,'invalid_ssh_pilot_config')
         from .pilot_bundle import SSH_SCHEMA_V2, SSH_SCHEMA_V3, COMMITTED_CONTRACTS, public_context_commitment
         schemas=tuple(v[5] for v in COMMITTED_CONTRACTS.values())
@@ -388,6 +390,8 @@ class SSHOperator:
 
     def start(self,unit,pair):
         run=identifier(pair['run_id']);require((unit,run) not in self.jobs and self.clock()<self.deadline,'pilot_job_duplicate_or_expired')
+        require(type(self.native_phase_timing) is bool and (not self.native_phase_timing or pair['transport']=='lora'),
+                'native_phase_timing_requires_radio_service')
         row=self.config['units'][unit];launcher='/opt/meshticulum-bench/runtime-'+self.config['runtime_sha256'][:16]+'/bench_node.py'
         action='service-run' if pair['transport']=='lora' else 'ip-service-run'
         command=[row['python'],'-I','-B','-c',INVOKE,launcher,self.config['manifest_sha256'],action,unit,'--run-id',run]
@@ -395,6 +399,7 @@ class SSHOperator:
         require(type(readiness) is bool and (not readiness or pair['transport']=='lora'),
                 'invalid_native_sender_receive_ready_mode')
         if readiness and unit==pair['sender']:command.append('--sender-receive-ready')
+        if self.native_phase_timing:command.append('--native-phase-timing')
         if unit==pair['receiver'] and pair.get('test_rx_cutoff') is not None:
             command.extend(('--test-rx-cutoff',str(pair['test_rx_cutoff'])))
         job=Job(self._argv(unit,command,root=True),password=self.passwords.get(unit),deadline=self.deadline-10,clock=self.clock)

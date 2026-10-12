@@ -259,7 +259,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
               'services_before': before, 'start_epoch_us': clock()[0], 'start_monotonic_us': clock()[1],
               'complete': False, 'measured_energy_joules': None, 'measured_eirp_dbm': None,
               'airtime_basis': 'LoRa source estimate; raw driver completion timings are separate',
-              'application_data_channel': 'exclusive local radio only', 'stop_requested': False}
+              'application_data_channel': 'exclusive local radio only', 'stop_requested': False,
+              'native_phase_timing_requested': native_phase_timing,
+              'native_phase_timing_enabled': False}
     worker = authority = flow = journal = store = channel = None
     caps = phase_profile = None
     authority_ref = grant_ref = profile_ref = authority_lifetime = start_binding = None
@@ -324,6 +326,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             if native_phase_timing:
                 from .phase_timing import enable
                 phase_profile=enable(caps)
+                result['native_phase_timing_enabled']=True
             start_binding=tuple(result['parent'][name] for name in ('native_plan_sha256','grant_context_sha256',
                 'secret_sha256','application_expires_epoch_us','application_deadline_monotonic_us'))
             require(parent_current(), 'pilot_parent_not_current')
