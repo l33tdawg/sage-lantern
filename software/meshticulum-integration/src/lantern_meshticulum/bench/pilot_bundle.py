@@ -126,12 +126,26 @@ class BundleContext:
         self._refs=(policy,self.raw,self.manifest_raw,self.signature_raw)
         self._policy_bytes=canonical(policy.to_dict())
         self._manifest_bytes=canonical(self.manifest);self._expected_bytes=canonical(self.expected)
+        from .pilot_native_caps import _state,_state_comparator
+        self._policy_comparison,self._value_comparison,self._manifest_comparison,self._expected_comparison=(
+            _state_comparator(_state(item)) for item in (policy,self.value,self.manifest,self.expected))
+        self._refs+=(self._policy_comparison,self._value_comparison,
+                     self._manifest_comparison,self._expected_comparison,
+                     self._policy_bytes,self._manifest_bytes,self._expected_bytes)
+        refs=self._refs;self._captured_refs=lambda:refs
         self._last=None
 
     def _check(self):
-        require(all(a is b for a,b in zip((self.policy,self.raw,self.manifest_raw,self.signature_raw),self._refs))
-                and canonical(self.policy.to_dict())==self._policy_bytes and canonical(self.value)==self.raw
-                and canonical(self.manifest)==self._manifest_bytes and canonical(self.expected)==self._expected_bytes,
+        from .pilot_native_caps import _compare_state
+        refs=self._captured_refs()
+        require(self._refs is refs
+                and all(a is b for a,b in zip((self.policy,self.raw,self.manifest_raw,self.signature_raw,
+                    self._policy_comparison,self._value_comparison,self._manifest_comparison,self._expected_comparison,
+                    self._policy_bytes,self._manifest_bytes,self._expected_bytes),refs))
+                and _compare_state(self.policy,self._policy_comparison[0],refs[4])
+                and _compare_state(self.value,self._value_comparison[0],refs[5])
+                and _compare_state(self.manifest,self._manifest_comparison[0],refs[6])
+                and _compare_state(self.expected,self._expected_comparison[0],refs[7]),
                 'bundle_context_mutated')
         require(hashlib.sha256(self.raw).hexdigest()==self.policy.bundle_context_sha256,'bundle_context_policy_changed')
     def current(self, now, *, controller_clock=False):

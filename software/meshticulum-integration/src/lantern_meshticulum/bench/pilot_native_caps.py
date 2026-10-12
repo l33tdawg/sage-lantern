@@ -228,12 +228,15 @@ class _Public32Approval:
             self._reader_ref,self._runtime_ref=self.reader,self.runtime
             self._policy_state=_state(policy)
             self._facts_state=_state({k:facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')})
+            self._policy_comparison=_state_comparator(self._policy_state)
+            self._facts_comparison=_state_comparator(self._facts_state)
             self._phase_bounds=(captured['native_phase']['epoch_us'],captured['native_phase']['monotonic_us'],
                                 captured['native_phase']['deadline_monotonic_us'])
             self._bounds_ref=self._phase_bounds
             refs=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
                   self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
-                  self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle)
+                  self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle,
+                  self._policy_comparison,self._facts_comparison)
             self._state_refs=self._state_refs_ref=refs
             self._captured_refs=lambda:refs
             self._last=None;self.check()
@@ -242,15 +245,17 @@ class _Public32Approval:
         refs=self._captured_refs()
         current=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
                  self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
-                 self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle)
-        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==18
+                 self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle,
+                 self._policy_comparison,self._facts_comparison)
+        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==20
                 and self._state_refs is refs and self._state_refs_ref is refs
                 and len(current)==len(refs) and all(a is b for a,b in zip(current,refs))
                 and self._owner_ref==(os.getpid(),threading.get_ident())
                 and self.reader is self._reader_ref is refs[4] and self.runtime is self._runtime_ref is refs[5]
                 and self._phase_bounds is self._bounds_ref is refs[16] and self._last is last
-                and _unchanged(self.policy,refs[14]) and type(self.facts) is dict
-                and _unchanged({k:self.facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')},refs[15])
+                and _compare_state(self.policy,self._policy_comparison[0],refs[18]) and type(self.facts) is dict
+                and _compare_state({k:self.facts[k] for k in ('unit','host_boot_id','services','service_lifetimes')},
+                    self._facts_comparison[0],refs[19])
                 and self.bundle is self._bundle_ref is refs[17]
                 and (self.policy.qualification_kind=='c-bulk32-v1') is (refs[17] is None))
     def _time(self,last,previous):
