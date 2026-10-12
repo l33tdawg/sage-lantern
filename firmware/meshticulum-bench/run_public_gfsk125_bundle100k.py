@@ -234,7 +234,8 @@ def main():
             trust=base64.b64encode(read(piece['path']/'trust.json',16384)).decode(),
             pins=dict(manifest=f['manifest_sha256'],signature=f['signature_sha256'],trust=f['trust_sha256']),wanted=wanted,recipient='unit-a')
         absent=native('unit-a','observe-cache',public)['observation']
-        need(not absent['verified_present'] and absent['absent']==wanted,'whole_fixture_already_present')
+        result['pre_run_cache_observation']=absent
+        need(not absent['verified_present'] and absent['absent']==sorted(wanted),'whole_fixture_already_present')
         for unit,role in (('unit-c','source'),('unit-a','recipient')):
             operator.seed(helpers.seed_package(cfg,unit,role,piece['path']/'pack',piece['trust'],f['manifest_sha256'],piece['cache'].value))
         facts={u:stable(operator.facts(u)) for u in histories};captures={}
