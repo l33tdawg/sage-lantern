@@ -12,7 +12,7 @@ import shutil
 from source_core import core_source
 
 ROOT = Path(__file__).resolve().parents[2]
-RETAINED = ROOT / 'work/ab-serial-20260927'
+RETAINED = (ROOT / 'work/ab-serial-20260927').resolve()
 SOURCE = RETAINED / 'firmware-source'
 DEST = ROOT / 'work/meshticulum-abc-deployment-20261009/firmware-build'
 HERE = Path(__file__).resolve().parent

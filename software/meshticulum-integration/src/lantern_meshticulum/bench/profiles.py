@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Explicit finite Malaysia bench choices; no automatic channel/rate changes."""
+"""Explicit finite bench choices; sf5-500 is an opt-in, unqualified test profile."""
 from meshticulum.bench.serial_protocol import RadioProfile
 
-MODES = {'baseline': (8, 125000), 'sf7-250': (7, 250000), 'sf7-500': (7, 500000)}
+MODES = {'baseline': (8, 125000), 'sf7-250': (7, 250000), 'sf7-500': (7, 500000),
+         'sf5-500': (5, 500000)}
 
 
 def profile_for(name):
