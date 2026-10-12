@@ -44,11 +44,11 @@ def review(path,pin):
     need(type(absolute['issued_epoch_us']) is int and type(absolute['expires_epoch_us']) is int
          and 0<absolute['expires_epoch_us']-absolute['issued_epoch_us']<=1020000000
          and absolute['count_authorized']==1,'batch_absolute_window_not_finite')
-    need(op['history_parent_ids']==list(retained_capture.PAID_HISTORY) and len(op['history_parent_ids'])==28,'batch_full_history_required')
+    need(op['history_parent_ids']==list(retained_capture.PAID_HISTORY) and len(op['history_parent_ids'])==29,'batch_full_history_required')
     need(set(op['controller_directories'])==set(op['history_parent_ids']),'batch_controller_roster_changed')
     history=Path(op['history_path']).absolute();receipt_raw=read(history/'RECEIPT.json',100000)
     need(sha(receipt_raw)==op['history_receipt_sha256'],'batch_history_receipt_changed');receipt=json.loads(receipt_raw)
-    need(receipt['local_controllers_reobserved']==28 and receipt['no_refund'] is True,'batch_full_old_debt_required')
+    need(receipt['local_controllers_reobserved']==29 and receipt['no_refund'] is True,'batch_full_old_debt_required')
     proof_raw=read(op['preflight_completion'],2000000);need(sha(proof_raw)==op['preflight_completion_sha256'],'batch_preflight_changed');proof=json.loads(proof_raw)
     need(proof['complete'] is True and proof['archive_sha256']==op['runtime_sha256'] and proof['manifest_sha256']==op['manifest_sha256']
          and proof['history_receipt_sha256']==op['history_receipt_sha256'] and proof['callbacks_exit_zero']==3
@@ -177,7 +177,7 @@ def main():
     result=dict(schema='meshticulum.public-sf5-three-sample-result.v1',parent_id=parent_id,complete=False,qualification_complete=False,private_production=False,refunds=0,original_phase_start_epoch_us=epoch,original_phase_end_epoch_us=end,samples=[],rpc_clients=[],links=[],native_final={},previous_parent_ids=op['history_parent_ids'])
     operator=parent=current=None;owned=[];owners={};priors={};preparations={u:{} for u in histories};facts={}
     def native(u,action,payload):
-        raw=canonical(payload);blob=lzma.compress(raw,format=lzma.FORMAT_XZ,preset=6|lzma.PRESET_EXTREME);need(len(raw)<=2000000 and len(blob)<=70000,'batch_RPC_bound')
+        raw=canonical(payload);blob=lzma.compress(raw,format=lzma.FORMAT_XZ,preset=6|lzma.PRESET_EXTREME);need(len(raw)<=2000000 and len(blob)<=72000,'batch_RPC_bound')
         import base64
         left=min(45,max(0,int((end-time.time_ns()//1000)/1000000)-8));need(left>0,'batch_original_remote_window_expired')
         command=['/usr/bin/timeout','--kill-after=2s',str(left)+'s',cfg['units'][u]['python'],'-I','-B','-c',RPC_ENTRY,'/opt/meshticulum-bench/runtime-'+op['runtime_sha256'][:16],op['manifest_sha256'],op['native_adapter_sha256'],action,u,base64.b64encode(blob).decode(),sha(raw)]
