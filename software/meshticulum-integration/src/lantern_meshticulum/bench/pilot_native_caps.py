@@ -9,6 +9,7 @@ runtime construction. Receipts are inspection, never bearer grants. No socket,
 radio, process, controller or production service is opened by this module.
 """
 from dataclasses import dataclass, asdict, fields
+import ast
 import fcntl
 import hashlib
 import json
@@ -16,6 +17,7 @@ import os
 from pathlib import Path
 import sqlite3
 import threading
+from types import FunctionType
 
 from meshticulum.contracts.identity import PeerID
 from .pilot_parent_caps import (BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, UnitCaps, child_caps, canonical,
@@ -58,6 +60,59 @@ def _unchanged(value, state):
         return len(value)==len(expected) and all(_unchanged(item, old) for item, old in zip(value, expected))
     return (len(value)==len(expected) and all(type(key) is str for key in value)
             and all(key in value and _unchanged(value[key], item) for key, item in expected))
+
+
+def _state_comparator(state):
+    """Compile immutable comparison structure, never an authority result.
+
+    The AST only reads/checks actual fields on each invocation. Descriptor
+    values are bound as immutable defaults, never inserted as source text.
+    All types, keys, lengths and leaves checked by _unchanged remain checked.
+    """
+    constants=[];body=[];counter=0
+    def name(value):return ast.Name(id=value,ctx=ast.Load())
+    def constant(value):
+        index=len(constants);constants.append(value)
+        return ast.Subscript(value=name('_constants'),slice=ast.Constant(index),ctx=ast.Load())
+    def refuse(condition):body.append(ast.If(test=condition,body=[ast.Return(ast.Constant(False))],orelse=[]))
+    def compare(left,operator,right):return ast.Compare(left=left,ops=[operator],comparators=[right])
+    def call(function,value):return ast.Call(func=name(function),args=[value],keywords=[])
+    def visit(variable,descriptor):
+        nonlocal counter
+        kind,expected=descriptor;value=name(variable)
+        refuse(compare(call('_type',value),ast.IsNot(),constant(kind)))
+        if kind in (str,int,bool,type(None)):
+            refuse(compare(value,ast.NotEq(),constant(expected)));return
+        if kind in (tuple,list,dict):
+            refuse(compare(call('_len',value),ast.NotEq(),ast.Constant(len(expected))))
+        if kind is dict:
+            keys=ast.GeneratorExp(elt=compare(call('_type',name('_key')),ast.Is(),name('_str')),
+                generators=[ast.comprehension(target=ast.Name(id='_key',ctx=ast.Store()),iter=value,ifs=[],is_async=0)])
+            refuse(ast.UnaryOp(op=ast.Not(),operand=call('_all',keys)))
+        for key,item in (enumerate(expected) if kind in (tuple,list) else expected):
+            counter+=1;child='field_'+str(counter)
+            if kind in (ParentPolicy,UnitCaps,Cost,PeerID):
+                expression=ast.Attribute(value=value,attr=key,ctx=ast.Load())
+            else:
+                if kind is dict:refuse(compare(constant(key),ast.NotIn(),value))
+                expression=ast.Subscript(value=value,slice=constant(key),ctx=ast.Load())
+            body.append(ast.Assign(targets=[ast.Name(id=child,ctx=ast.Store())],value=expression))
+            visit(child,item)
+    visit('value',state);body.append(ast.Return(ast.Constant(True)))
+    arguments=ast.arguments(posonlyargs=[],args=[ast.arg(arg=v) for v in
+        ('value','_constants','_type','_len','_all','_str')],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
+    tree=ast.Module(body=[ast.FunctionDef(name='compare',args=arguments,body=body,decorator_list=[])],type_ignores=[])
+    namespace={'__builtins__':{}}
+    exec(compile(ast.fix_missing_locations(tree),'<native-typed-state-comparison>','exec'),namespace)
+    comparator=namespace['compare'];comparator.__defaults__=(tuple(constants),type,len,all,str)
+    return comparator,comparator.__code__,comparator.__defaults__
+
+
+def _compare_state(value,comparator,pinned):
+    require(type(comparator) is FunctionType and type(pinned) is tuple and len(pinned)==3
+            and comparator is pinned[0] and comparator.__code__ is pinned[1]
+            and comparator.__defaults__ is pinned[2] and comparator.__closure__ is None)
+    return comparator(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +309,8 @@ class NativeCaps:
         self.pending=Path(str(self.path)+'.pending');self._fds={};self._fd_refs={};self._ids={}
         self.db=self._db_ref=None;self._enrollment=None;self._approval_bytes=None;self._last=None
         self._policy_bytes=canonical(policy.to_dict());self._policy_state=_state(policy)
+        self._policy_comparison=_state_comparator(self._policy_state)
+        self._policy_comparator=self._policy_comparison[0]
         self._policy_digest=hashlib.sha256(POLICY_DOMAIN+self._policy_bytes).hexdigest()
         self._pending_written=False
         try:
@@ -270,7 +327,7 @@ class NativeCaps:
             require(self.db.execute('PRAGMA synchronous').fetchone()==(2,))
             self._refs=(self.path,self.pending,policy,self.unit,clock,facts,approve,prior_check,self._fds,self._ids,
                         tuple(self._fds.items()),tuple(self._ids.items()),self.db,
-                        self._policy_bytes,self._policy_state,self._policy_digest)
+                        self._policy_bytes,self._policy_state,self._policy_digest,self._policy_comparison)
             if enroll:
                 now=self._sample()
                 require(policy.issued_epoch_us<=now[0]<policy.expires_epoch_us)
@@ -309,7 +366,9 @@ class NativeCaps:
                 self._approval_bytes=(hashed(self._enrollment)+'\n').encode()
             self._enrollment_bytes=canonical(self._enrollment)
             self._enrollment_state=_state(self._enrollment)
-            self._refs+=(self._enrollment_bytes,self._enrollment_state)
+            self._enrollment_comparison=_state_comparator(self._enrollment_state)
+            self._enrollment_comparator=self._enrollment_comparison[0]
+            self._refs+=(self._enrollment_bytes,self._enrollment_state,self._enrollment_comparison)
             self._validate();self._uncertain=self.pending.exists() or self.pending.is_symlink()
         except BaseException as error:
             if self.db is self._db_ref and self.db is not None and self.db.in_transaction:self.db.execute('ROLLBACK')
@@ -340,7 +399,8 @@ class NativeCaps:
                 and tuple(self._fds.items())==r[10] and tuple(self._ids.items())==r[11]
                 and self._fds==self._fd_refs and self.db is self._db_ref is r[12]
                 and self._policy_bytes is r[13] and self._policy_state is r[14] and self._policy_digest is r[15]
-                and _unchanged(self.policy,self._policy_state) and self._active is self._active_ref)
+                and self._policy_comparison is r[16]
+                and _compare_state(self.policy,self._policy_comparator,r[16]) and self._active is self._active_ref)
         private(self.path.parent.lstat(),True);require(self.path.parent.resolve()==self.path.parent)
         for name,target in self._names().items():
             held,named=os.fstat(self._fds[name]),target.lstat();private(held);private(named)
@@ -348,8 +408,9 @@ class NativeCaps:
         if self._approval_bytes is not None:
             require(os.pread(self._fds['approval'],129,0)==self._approval_bytes)
         if hasattr(self,'_enrollment_bytes'):
-            require(self._enrollment_bytes is r[16] and self._enrollment_state is r[17]
-                    and _unchanged(self._enrollment,self._enrollment_state))
+            require(self._enrollment_bytes is r[17] and self._enrollment_state is r[18]
+                    and self._enrollment_comparison is r[19]
+                    and _compare_state(self._enrollment,self._enrollment_comparator,r[19]))
     def _sample(self):
         self._available();facts=self._facts();self._available()
         require(type(facts) is NativeFacts and facts==NativeFacts(self.unit.unit,self.unit.host_boot_id,self.unit.peer))
