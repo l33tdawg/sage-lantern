@@ -72,7 +72,7 @@ def test_replaced_socket_is_refused_and_cleanup_preserves_the_foreign_inode():
         with pytest.raises(WireError,match='ssh_control_cleanup_unconfirmed'):owned.close()
         assert path.stat().st_ino==inode and owned.jobs['unit-a'].process.poll() is not None
     finally:
-        replacement.close();path.unlink();owned.directory.rmdir()
+        replacement.close();path.unlink();owned.close()
 
 
 def test_failed_second_connection_still_reaps_every_owned_master():

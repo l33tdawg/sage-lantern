@@ -240,8 +240,12 @@ class SSHOperator:
                 connections.open(unit,self._ssh(unit,pty=False,use_connections=False))
             self.events.append(dict(schema='meshticulum.owned-ssh-connections.v1',opened=True,
                 units=list(connections.jobs),outside_handoff=self.clock()>=self.deadline))
-        except BaseException:
+        except BaseException as setup_error:
             try:connections.close()
+            except BaseException as cleanup_error:
+                # Keep the original setup refusal visible even when cleanup
+                # needs another explicit attempt with the retained owner.
+                raise setup_error from cleanup_error
             finally:
                 if connections.closed:self.connections=None
             raise
