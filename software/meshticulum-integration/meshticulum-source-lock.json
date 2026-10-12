@@ -3,7 +3,7 @@
     "LICENSE": "ba61a1c596f3e771e379455f68124f793985196b84be0a6a41d2c489050facef",
     "NOTICE": "387c1c228cbaf7a40b6729ae692603402387ac7308810709524bbde44d86e26c",
     "firmware/meshticulum-bench/check_linux_abi.c": "cc5315446b15c5f19b79516db7436e48466302204cf1adf871a3705c597e732f",
-    "firmware/meshticulum-bench/main.cpp": "2dec0dc9c698b327096391135f60014db3619b4ae6e0b512e9da05295d106612",
+    "firmware/meshticulum-bench/main.cpp": "4cad18c5bbcb3f3c80dc68ada66abd1d6f0ffff251b909f80f2d0c08aec4ac34",
     "firmware/meshticulum-bench/orangepi5plus-sx1262-hat.dts": "51da823fc649872e0061997573329ffcec3b5f9b5a3ff880757da63134335469",
     "firmware/meshticulum-bench/protocol.hpp": "2e2596e8f8968869d1e0d5469ad9bc2b181f2880eee450ed1a72e17367fdf56a",
     "src/meshticulum/__init__.py": "1886490aa55f0eff293810f5f74d735be4b4c9c99d57140cb4984fea216d731c",
@@ -15,7 +15,7 @@
     "src/meshticulum/bench/flash_app.py": "4d4814a975b15b3bda48e9bec3c33ebb17370d714c611994cc573c23d403a0cb",
     "src/meshticulum/bench/flow_runtime.py": "6ea0432d9bbb577f60cec0e88f2d69ba175e1156cea11e789c3c725631f5ecc2",
     "src/meshticulum/bench/hat_probe.py": "6c0656154a6581b34c0d3a0e56315bf8144551d109af0b7cf3631c6b280f21c4",
-    "src/meshticulum/bench/hat_worker.py": "d8eab262f44249c7371b13d4a553fa42e96691e0bcaee515f87c6b60ee1552ed",
+    "src/meshticulum/bench/hat_worker.py": "ecefade896f41f6f70f21fbcc8160b8fe194266c7a8c71dedee219d15dc873bc",
     "src/meshticulum/bench/linux_hat.py": "05b7b2e4f929afa708f29299d334728f156b36a4783a5eceaa13a61e92d14f80",
     "src/meshticulum/bench/objects.py": "3ea78e7be8063f1b6b963e550ac588997a76dae49ede1183cac227a598dba2f0",
     "src/meshticulum/bench/public_block.py": "fff986bf92d130a07cdc1d85fdf40758e2d2ded88617557499fe9326fb871bd7",
@@ -25,7 +25,7 @@
     "src/meshticulum/bench/service_runner.py": "7edd1daf2e10035c348bd796df38b2ac1c0835077c18ae34f889d38181e77dcc",
     "src/meshticulum/bench/services.py": "919e9540fda1bfc74b7fee364c5bafd3a151e07850cc06da8e1a99c3a11354b8",
     "src/meshticulum/bench/state.py": "6a7e7c156cc9f5adf20231587b2c19ebfb74d79cf758a90aa8a67c907e5ef296",
-    "src/meshticulum/bench/sx1262.py": "6ea0063a2c9c3dc930f810b278a07948b7e10eaf9404208c4db584deca28d369",
+    "src/meshticulum/bench/sx1262.py": "7ace78f009fc84be7151cde86708330165d56d039b1b12eb6f94a1871f7bffad",
     "src/meshticulum/bench/wire.py": "84d93e464eb7409a2f589369b1b12e6a7e92322bf2bd3d77b9c098d5e53028f0",
     "src/meshticulum/contracts/SPEC.json": "23f589e149f805089e55014576ecff7c1941db6ea55448bddbb7e70c07847069",
     "src/meshticulum/contracts/__init__.py": "190c2109d675c5391bcfb21a06208c9bf08a7ec70d4d6186605503945ebc5c86",
@@ -65,6 +65,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "ed361a9de040a7c6b5af540990aa22ba074452ba",
+  "revision": "6e55cb11672b6294abdd480554d604ce324b9806",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }

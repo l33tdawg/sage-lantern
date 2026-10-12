@@ -28,7 +28,7 @@ from meshticulum.bench.wire import SessionCipher, require
 from meshticulum.scheduler.budget import BudgetPolicy, Ledger
 
 FIRMWARE = 'mtb1-9816f92488'
-FIRMWARE_BY_UNIT = {'unit-a': 'mtb1-e61c2c8979', 'unit-b': FIRMWARE}
+FIRMWARE_BY_UNIT = {'unit-a': 'mtb1-a359335616', 'unit-b': FIRMWARE}
 USB = {'unit-a': 'F8:5B:1B:A5:F6:08', 'unit-b': '44:1B:F6:62:56:54'}
 PERSONAL = ('sage-lantern-personal-sage.service', 'sage-lantern-voice-loop.service',
             'sage-lantern-llm.service', 'sage-lantern-vlm.service')

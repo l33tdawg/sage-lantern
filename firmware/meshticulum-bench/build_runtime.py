@@ -61,8 +61,8 @@ def main():
     files['provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json'] = (ROOT / 'software/meshticulum-integration/meshticulum-source-lock.json').read_bytes()
     for name, data in files.items():
         if name.endswith('.py'): compile(data, name, 'exec')
-    manifest = {'schema': 'meshticulum.bench-runtime-bundle.v1', 'firmware': 'mtb1-e61c2c8979',
-        'firmware_by_unit': {'unit-a': 'mtb1-e61c2c8979', 'unit-b': 'mtb1-9816f92488'},
+    manifest = {'schema': 'meshticulum.bench-runtime-bundle.v1', 'firmware': 'mtb1-a359335616',
+        'firmware_by_unit': {'unit-a': 'mtb1-a359335616', 'unit-b': 'mtb1-9816f92488'},
         'bootstrap_sha256': hashlib.sha256(bootstrap).hexdigest(),
         'files': {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())},
         'activation': 'Installation only inspects; a separate root-provisioned finite grant is required to arm.',
