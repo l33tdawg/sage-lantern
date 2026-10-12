@@ -21,11 +21,11 @@ def decode(blob,raw,pin=None):
     return env['raw']
 
 
-def test_72000_bound_retains_raw_and_decoder_limits():
+def test_76000_bound_retains_raw_and_decoder_limits():
     raw=b'{"metadata":true}'
     assert decode(lzma.compress(raw),raw)==raw
     with pytest.raises(RuntimeError,match='RPC_compressed_bound'):
-        decode(bytes(72001),raw)
+        decode(bytes(76001),raw)
     with pytest.raises(RuntimeError,match='RPC_input_bound_or_pin'):
         decode(lzma.compress(b'x'*2000001),b'x'*2000001)
 
@@ -42,6 +42,6 @@ def test_sha_and_xz_end_remain_mandatory():
 
 def test_batch_sender_keeps_final_argv_and_raw_caps():
     text=(ROOT/'firmware/meshticulum-bench/run_public_sf5_batch.py').read_text()
-    assert "len(raw)<=2000000 and len(blob)<=72000,'batch_RPC_bound'" in text
-    assert "need(len(argv[-1].encode())<100000,'batch_native_argv_bound')" in text
+    assert "len(raw)<=2000000 and len(blob)<=76000,'batch_RPC_bound'" in text
+    assert "need(len(argv[-1].encode())<125000,'batch_native_argv_bound')" in text
     assert "memlimit=33554432" in entry

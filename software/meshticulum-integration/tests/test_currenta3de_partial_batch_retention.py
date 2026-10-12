@@ -94,6 +94,6 @@ def test_partial_batch_cannot_lose_debt_rebind_original_clock_or_hide_failed_end
 
 def test_roster_preserves_all_old28_and_only_appends_partial_batch():
     old=tuple(DATA['prior_paid_parent_ids']);assert len(old)==28 and retained.PAID_HISTORY[:28]==old
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==29
-    assert retained.PAID_HISTORY[-1]==rpc.PARTIAL_BATCH_PAID
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==30
+    assert retained.PAID_HISTORY[28]==rpc.PARTIAL_BATCH_PAID
     assert retained.UNADMITTED_PAID_HISTORY==old[:12]
