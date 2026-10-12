@@ -84,9 +84,11 @@ def test_new_kind_cannot_relabel_whole_or_renew_clock(gfdata,field,value):
     with pytest.raises(Exception):bundle.BundleContext(v,p)
 
 
-def test_pending_scope_stays_closed_and_fresh_boot_does_not_refund_debt(gfdata):
-    assert mode.GFSK_BUNDLE_SCOPE_SHA256 is None
+def test_pending_scope_stays_closed_and_fresh_boot_does_not_refund_debt(gfdata,monkeypatch):
+    monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256',None)
     with pytest.raises(Exception):mode.require_bundle_bindings()
+    monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256','f'*64)
+    assert mode.require_bundle_bindings()=='f'*64
     status=dict(firmware='mtb1-b433927ba6',usb_serial='F8:5B:1B:A5:F6:08',disarmed=True,
         mcu_boot='000008f6a51b5bf8000000000000002d',boot_attempts=0,boot_reserved_estimated_airtime_us=0)
     assert mode.fresh_boot_status(status)['clean_model_spare_attempts']==31
