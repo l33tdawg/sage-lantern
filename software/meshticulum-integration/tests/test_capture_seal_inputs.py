@@ -11,7 +11,7 @@ from lantern_meshticulum.bench.history_metadata_fence import HistoricalMetadataF
 
 
 @pytest.fixture
-def prepared(monkeypatch):
+def prepared(monkeypatch,synthetic_a658_capture):
     base=Path(tempfile.mkdtemp(prefix='capture-seal-control-',dir=Path(__file__).parent))
     state=base/'state';state.mkdir(mode=0o700)
     for name in ('parents','runs'):(state/name).mkdir(mode=0o700)
@@ -30,6 +30,10 @@ def prepared(monkeypatch):
     for name in ('capture.json','history-binding.json','history-identity-seal.json','legacy-grant-seal.json'):
         path=target/name;path.write_bytes(b'public metadata');path.chmod(0o600)
         known[str(path.relative_to(state))]=rpc.sha(path.read_bytes())
+    from lantern_meshticulum.bench import capture_a658 as a658
+    model_clock=lambda:(a658.END+1,a658.UNITS['unit-c']['phase']['deadline_monotonic_us']+1)
+    extra=synthetic_a658_capture(state,'unit-c',model_clock)
+    known.update({'parents/'+a658.PARENT+'/'+name:pin for name,pin in extra['files'].items()})
     monkeypatch.setattr(rpc,'STATE',state)
     try:yield state,known
     finally:shutil.rmtree(base)

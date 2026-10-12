@@ -8,7 +8,7 @@ import shutil
 import tempfile
 
 import pytest
-from lantern_meshticulum.bench import retained_capture as retained
+from lantern_meshticulum.bench import retained_capture as retained, capture_a658 as a658
 from lantern_meshticulum.bench import resume_parent_guard as guard
 from lantern_meshticulum.bench.history_identity_seal import capture
 from lantern_meshticulum.bench.history_metadata_fence import FenceError, HistoricalMetadataFence, _stamp
@@ -21,7 +21,7 @@ def write(path,raw): path.write_bytes(raw); path.chmod(0o600)
 
 
 @pytest.fixture
-def state(monkeypatch):
+def state(monkeypatch,synthetic_a658_capture):
     base=Path(tempfile.mkdtemp(prefix='.retained-capture-control-',dir=Path(__file__).parent))
     root=base/'state'; root.mkdir(mode=0o700)
     for name in ('parents','runs'): (root/name).mkdir(mode=0o700)
@@ -46,7 +46,8 @@ def state(monkeypatch):
     for name,raw in raws.items(): write(target/name,raw)
     monkeypatch.setattr(retained,'CAPTURE_FILES',{name:sha(raw) for name,raw in raws.items()})
     monkeypatch.setattr(retained,'current_boot',lambda:retained.CAPTURE_BOOT)
-    clock=lambda:(retained.CAPTURE_END+1,phase['deadline_monotonic_us']+1)
+    clock=lambda:(a658.END+1,max(v['phase']['deadline_monotonic_us'] for v in a658.UNITS.values())+1)
+    synthetic_a658_capture(root,'unit-c',clock,boot=retained.CAPTURE_BOOT)
     try: yield root,target,clock
     finally: shutil.rmtree(base)
 
@@ -64,18 +65,16 @@ def test_exact_capture_retained_without_becoming_a_paid_parent(state):
     assert len(set(retained.PAID_HISTORY))==35 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
     assert guard.HISTORY is retained.PAID_HISTORY
     assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
-    assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,)
-    assert retained.historical_parent_ids(root,'unit-a',clock)==retained.PAID_HISTORY
-    assert retained.historical_parent_ids(root,'unit-b',clock)==retained.PAID_HISTORY
+    assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,a658.PARENT)
     paths=retained.capture_paths(root,'unit-c')
-    assert set(paths['files'])=={'parents/'+retained.CAPTURE_PARENT+'/'+name for name in retained.CAPTURE_FILES}
+    assert set(paths['files'])=={'parents/'+parent+'/'+name for parent in (retained.CAPTURE_PARENT,a658.PARENT) for name in retained.CAPTURE_FILES}
     assert paths['directories'][-1].endswith('/prepared-identities')
     assert before=={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
 
 
 def test_missing_optional_fixture_is_distinct_from_required_native_retention(state):
     root,target,clock=state; target.rename(root/'held-artifact')
-    assert retained.historical_parent_ids(root,'unit-c',clock)==retained.PAID_HISTORY
+    assert retained.historical_parent_ids(root,'unit-c',clock)==retained.PAID_HISTORY+(a658.PARENT,)
     with pytest.raises(FenceError,match='missing_retained_capture'):
         retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)
 
@@ -85,7 +84,7 @@ def test_missing_optional_fixture_is_distinct_from_required_native_retention(sta
 def test_retained_artifact_refuses_mutation_or_unexpired_phase(state,monkeypatch,case):
     root,target,clock=state; observed=clock(); path=target/'capture.json'
     if case=='epoch': clock=lambda:(retained.CAPTURE_END-1,observed[1])
-    elif case=='monotonic': clock=lambda:(observed[0],observed[1]-2)
+    elif case=='monotonic': clock=lambda:(observed[0],json.loads(path.read_bytes())['native_phase']['deadline_monotonic_us']-1)
     elif case=='boot': monkeypatch.setattr(retained,'current_boot',lambda:'different-boot')
     elif case=='wrong_hash': path.write_bytes(b'changed')
     elif case=='symlink': path.rename(root/'held-file'); path.symlink_to(root/'held-file')
@@ -109,9 +108,10 @@ def test_retained_artifact_refuses_mutation_or_unexpired_phase(state,monkeypatch
 
 def expectations(root):
     paths=retained.capture_paths(root,'unit-c'); parent='parents/'+retained.CAPTURE_PARENT
-    dirs={'':['parents','runs'],'parents':list(retained.PAID_HISTORY)+[retained.CAPTURE_PARENT],'runs':[]}
+    dirs={'':['parents','runs'],'parents':list(retained.PAID_HISTORY)+[retained.CAPTURE_PARENT,a658.PARENT],'runs':[]}
     dirs.update({'parents/'+old:[] for old in retained.PAID_HISTORY})
-    dirs[parent]=list(retained.CAPTURE_FILES)+['prepared-identities']; dirs[parent+'/prepared-identities']=[]
+    for own in (retained.CAPTURE_PARENT,a658.PARENT):
+        prefix='parents/'+own;dirs[prefix]=list(retained.CAPTURE_FILES)+['prepared-identities'];dirs[prefix+'/prepared-identities']=[]
     return paths['files'],dirs
 
 
@@ -136,9 +136,10 @@ def test_nested_scope_is_not_generally_relaxed(state,case):
 
 
 @pytest.fixture(params=['unit-a','unit-b','unit-c'])
-def unadmitted(state, monkeypatch, request):
+def unadmitted(state, monkeypatch, request,synthetic_a658_capture):
     """Real held filesystem; synthetic immutable pins/ownership, never native authority."""
     root, original, old_clock = state; unit=request.param
+    (root/'parents'/a658.PARENT).rename(root.parent/'original-a658-c-fixture')
     if unit != 'unit-c': original.rename(root.parent/'original-c-only-fixture')
     target=root/'parents'/retained.UNADMITTED_PARENT; target.mkdir(mode=0o700)
     (target/'prepared-identities').mkdir(mode=0o700)
@@ -161,14 +162,16 @@ def unadmitted(state, monkeypatch, request):
     row['files']={name:sha(raw) for name,raw in raws.items()}
     monkeypatch.setattr(retained,'UNADMITTED',dict(retained.UNADMITTED,**{unit:row}))
     monkeypatch.setattr(retained,'current_boot',lambda:row['boot'])
-    clock=lambda:(retained.UNADMITTED_END+1,phase['deadline_monotonic_us']+1)
+    now=(a658.END+1,max(v['phase']['deadline_monotonic_us'] for v in a658.UNITS.values())+1)
+    clock=lambda:now
+    synthetic_a658_capture(root,unit,clock,boot=row['boot'])
     return root,target,unit,clock
 
 
 def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admission(unadmitted):
     root,target,unit,clock=unadmitted
     before={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
-    expected=retained.PAID_HISTORY+((retained.CAPTURE_PARENT,) if unit=='unit-c' else ())+(retained.UNADMITTED_PARENT,)
+    expected=retained.PAID_HISTORY+((retained.CAPTURE_PARENT,) if unit=='unit-c' else ())+(retained.UNADMITTED_PARENT,)+((a658.PARENT,) if unit!='unit-a' else ())
     assert retained.historical_parent_ids(root,unit,clock,require_retained=True,
                                          require_unadmitted=True)==expected
     record=json.loads((target/'capture.json').read_bytes())
@@ -200,7 +203,7 @@ def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admissi
 def test_unadmitted_capture_refuses_growth_rebinding_or_changed_original_scope(unadmitted,monkeypatch,case):
     root,target,unit,clock=unadmitted;observed=clock();path=target/'capture.json'
     if case=='epoch':clock=lambda:(retained.UNADMITTED_END-1,observed[1])
-    elif case=='monotonic':clock=lambda:(observed[0],observed[1]-2)
+    elif case=='monotonic':clock=lambda:(observed[0],json.loads(path.read_bytes())['native_phase']['deadline_monotonic_us']-1)
     elif case=='boot':monkeypatch.setattr(retained,'current_boot',lambda:'changed-current-boot')
     elif case=='wrong_hash':path.write_bytes(b'changed')
     elif case=='prepared_child':write(target/'prepared-identities'/('f'*32+'.json'),b'no-claim')

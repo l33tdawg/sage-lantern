@@ -37,10 +37,11 @@ def tmp_path():
 
 
 @pytest.fixture(autouse=True)
-def protected_source(tmp_path,monkeypatch):
+def protected_source(tmp_path,monkeypatch,synthetic_a658_capture):
     """Only installed location is modeled; the real Runtime checks all files."""
     from lantern_meshticulum.bench import pilot_native_caps as native,pilot_resume_rpc as rpc
     import meshticulum
+    monkeypatch.setitem(globals(),"a658_capture_fixture",synthetic_a658_capture)
     core=Path(meshticulum.__file__).parent;application=Path(native.__file__).parents[1]
     runtime=tmp_path/('runtime-'+'7'*16);runtime.mkdir(mode=0o700)
     sources={}
@@ -89,7 +90,16 @@ def protected_records(root,p,unit):
         independently_verified=True,exact_namespace_gate=lambda:list((root/'runs').iterdir())==[old])
     directories={'':['parents','runs','campaigns'],'parents':list(guard.HISTORY),'runs':['e'*32]}
     directories.update({'parents/'+old:[] for old in guard.HISTORY})
-    strict,_=strict_capture(root,owner_uid=os.geteuid(),expected_files={},expected_directories=directories)
+    extra=a658_capture_fixture(root,unit,clock,boot=BOOT)
+    files={}
+    if extra is not None:
+        from lantern_meshticulum.bench.capture_a658 import PARENT
+        directories['parents'].append(PARENT)
+        prefix='parents/'+PARENT
+        directories[prefix]=list(extra['files'])+['prepared-identities']
+        directories[prefix+'/prepared-identities']=[]
+        files.update({prefix+'/'+name:pin for name,pin in extra['files'].items()})
+    strict,_=strict_capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
     directory=root/'parents'/p.parent_id;directory.mkdir(mode=0o700)
     _,binding=guard.install_seals(root,p.parent_id,unit,strict,legacy,clock=clock)
     prior=dict(history_binding_sha256=binding,full_caps=asdict(p.unit(unit).prior_debt),legacy_inventory=rows,

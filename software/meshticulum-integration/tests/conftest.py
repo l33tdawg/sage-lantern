@@ -15,3 +15,54 @@ fixtures = Path(source).resolve() / 'tests'
 if not (fixtures / 'test_meshticulum_private_carrier.py').is_file():
     raise RuntimeError('Meshticulum source fixture checkout is incomplete.')
 tests.__path__.append(str(fixtures))
+
+
+import pytest
+
+
+@pytest.fixture
+def synthetic_a658_capture(monkeypatch):
+    """Real private files, explicit modeled pins; never native evidence."""
+    from lantern_meshticulum.bench import capture_a658 as model, retained_capture as retained
+    from lantern_meshticulum.bench.history_metadata_fence import _stamp
+    from lantern_meshticulum.bench.pilot_bundle import COMMITTED_CONTRACTS
+    from lantern_meshticulum.bench.profiles import GFSK_MB1_BUNDLE_KIND
+    from lantern_meshticulum.bench.pilot_parent_caps import canonical
+    import hashlib
+
+    def install(state, unit, clock, *, boot=None):
+        now, mono = clock()
+        monkeypatch.setattr(model, 'START', now-1000000)
+        monkeypatch.setattr(model, 'END', now-1)
+        monkeypatch.setattr(model, 'WHOLE_END', now-500000)
+        monkeypatch.setattr(model, 'EXPIRY_COMPLETION_SHA256', 'e'*64)
+        if unit == 'unit-a':
+            return None
+        target = state/'parents'/model.PARENT
+        target.mkdir(mode=0o700)
+        (target/'prepared-identities').mkdir(mode=0o700)
+        phase = dict(epoch_us=now-999999,monotonic_us=mono-999999,deadline_monotonic_us=mono-1)
+        selected_boot = boot or model.UNITS[unit]['boot']
+        strict = canonical(dict(schema='synthetic-held-strict',unit=unit))
+        legacy = canonical(dict(schema='synthetic-held-legacy',unit=unit))
+        sha = lambda raw: hashlib.sha256(raw).hexdigest()
+        binding = canonical(dict(schema='meshticulum.private-resume-history-binding.v2',unit=unit,
+            parent_id=model.PARENT,strict_sha256=sha(strict),legacy_sha256=sha(legacy),
+            parent_identity=list(_stamp(target.stat()))[:4]))
+        history = dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY],
+                       local_synthetic_capture=True)
+        record = dict(schema=COMMITTED_CONTRACTS[GFSK_MB1_BUNDLE_KIND][6],unit=unit,parent_id=model.PARENT,
+            history_binding_sha256=sha(binding),review_sha256=model.REVIEW_SHA256,
+            facts=dict(unit=unit,host_boot_id=selected_boot),phase_start_epoch_us=model.START,
+            phase_end_epoch_us=model.END,native_phase=phase,actual_history_verified=True,
+            global_debt_complete=False,original_unknown_actual_cost=None,refunds=0,history=history)
+        raws = {'capture.json':canonical(record),'history-binding.json':binding,
+                'history-identity-seal.json':strict,'legacy-grant-seal.json':legacy}
+        for name, raw in raws.items():
+            (target/name).write_bytes(raw); (target/name).chmod(0o600)
+        row = dict(files={name:sha(raw) for name,raw in raws.items()},boot=selected_boot,
+                   phase=phase,history_sha256=sha(canonical(history)))
+        monkeypatch.setattr(model,'UNITS',dict(model.UNITS,**{unit:row}))
+        monkeypatch.setattr(retained,'current_boot',lambda:selected_boot)
+        return row
+    return install

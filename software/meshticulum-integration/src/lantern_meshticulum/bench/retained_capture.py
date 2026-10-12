@@ -63,7 +63,16 @@ CAPTURE_FILES = {
 }
 
 UNADMITTED_PARENT = '63830cfa1d045680a9e4961d0d6b69c8'
-CAPTURE_ONLY_PARENTS = (CAPTURE_PARENT, UNADMITTED_PARENT)
+from .capture_a658 import PARENT as A658_PARENT
+CAPTURE_ONLY_PARENTS = (CAPTURE_PARENT, UNADMITTED_PARENT, A658_PARENT)
+
+
+def expected_capture_only_parents(unit):
+    """Exact unit-specific namespace; this is not proof of observed expiry."""
+    _need(unit in ('unit-a','unit-b','unit-c'),'invalid_retained_capture_unit')
+    if unit=='unit-a':return (UNADMITTED_PARENT,)
+    if unit=='unit-b':return (UNADMITTED_PARENT,A658_PARENT)
+    return (CAPTURE_PARENT,UNADMITTED_PARENT,A658_PARENT)
 UNADMITTED_START = 1791711235585621
 UNADMITTED_END = 1791711535585621
 UNADMITTED_REVIEW = '0d0bb487bd049804a4889e1f2ad7022a8e19b06c6e3ba499e8eb24d5f551e526'
@@ -109,13 +118,16 @@ def capture_paths(state, unit):
     try: (Path(state)/'parents'/UNADMITTED_PARENT).lstat()
     except FileNotFoundError: pass  # Optional absence is only for old local fixtures.
     else: rows.append((UNADMITTED_PARENT, UNADMITTED[unit]['files']))
+    from .capture_a658 import row
+    extra=row(unit)
+    if extra is not None:rows.append((A658_PARENT,extra['files']))
     return dict(files={'parents/'+parent+'/'+name:pin for parent,pins in rows for name,pin in pins.items()},
                 directories=tuple(path for parent,_ in rows for path in
                                   ('parents/'+parent, 'parents/'+parent+'/prepared-identities')))
 
 
 def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, end, review,
-                      required, expected_phase=None):
+                      required, expected_phase=None, *, expected_schema='meshticulum.private-resume-actual-capture.v1', expected_history_sha256=None):
     target = Path(state).absolute()/'parents'/parent_id
     try: target.lstat()
     except FileNotFoundError:
@@ -140,7 +152,7 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
                       'retained_capture_file_changed')
                 raw_files[name] = (raw, _stamp(first), fd)
             record = _parse(raw_files['capture.json'][0]); binding = _parse(raw_files['history-binding.json'][0])
-            _need(record['schema'] == 'meshticulum.private-resume-actual-capture.v1'
+            _need(record['schema'] == expected_schema
                   and record['unit'] == binding['unit'] == unit
                   and record['parent_id'] == binding['parent_id'] == parent_id
                   and record['history_binding_sha256'] == pins['history-binding.json']
@@ -156,6 +168,8 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
                   and binding['legacy_sha256'] == pins['legacy-grant-seal.json']
                   and binding['parent_identity'] == list(_stamp(os.fstat(parent.fds[-1]))[:4]),
                   'retained_capture_binding_changed')
+            if expected_history_sha256 is not None:
+                _need(_sha(json.dumps(record['history'],sort_keys=True,separators=(',',':'),allow_nan=False).encode())==expected_history_sha256,'retained_capture_history_bytes_changed')
             phase = record['native_phase']; now = clock()
             _need(expected_phase is None or phase == expected_phase, 'retained_capture_native_phase_changed')
             if parent_id == UNADMITTED_PARENT:
@@ -194,4 +208,15 @@ def historical_parent_ids(state, unit, clock=current_clock, *, require_retained=
     if _artifact_present(state,unit,clock,UNADMITTED_PARENT,row['files'],row['boot'],
             UNADMITTED_START,UNADMITTED_END,UNADMITTED_REVIEW,require_unadmitted,row['phase']):
         retained += (UNADMITTED_PARENT,)
+    from .capture_a658 import row,START,END,REVIEW_SHA256
+    extra=row(unit)
+    if extra is None:
+        try:(Path(state)/'parents'/A658_PARENT).lstat()
+        except FileNotFoundError:pass
+        else:_need(False,'unreached_A_capture_present')
+    else:
+        from .pilot_bundle import COMMITTED_CONTRACTS
+        from .profiles import GFSK_MB1_BUNDLE_KIND
+        if _artifact_present(state,unit,clock,A658_PARENT,extra['files'],extra['boot'],START,END,REVIEW_SHA256,True,extra['phase'],expected_schema=COMMITTED_CONTRACTS[GFSK_MB1_BUNDLE_KIND][6],expected_history_sha256=extra['history_sha256']):
+            retained+=(A658_PARENT,)
     return PAID_HISTORY+retained
