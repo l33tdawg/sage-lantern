@@ -211,14 +211,15 @@ def run(unit, directory, object_directory):
     return _run(unit, directory, object_directory, public_service=False)
 
 
-def run_public_service(unit, directory, *, sender_receive_ready=False):
+def run_public_service(unit, directory, *, sender_receive_ready=False,native_phase_timing=False):
     """Finite public MR1 service flow; private native provider stays unwired.
 
     Received bytes are quarantined in the root-only run directory. They are
     not a verified knowledge piece, availability advertisement or public seed.
     No service, listener or autonomous forwarding is commissioned by this run.
     """
-    return _run(unit, directory, None, public_service=True, sender_receive_ready=sender_receive_ready)
+    return _run(unit, directory, None, public_service=True, sender_receive_ready=sender_receive_ready,
+                native_phase_timing=native_phase_timing)
 
 
 def _quarantine(directory, data, *, maximum=16384):
@@ -238,9 +239,11 @@ def _quarantine(directory, data, *, maximum=16384):
         os.close(fd)
 
 
-def _run(unit, directory, object_directory, *, public_service, sender_receive_ready=False):
+def _run(unit, directory, object_directory, *, public_service, sender_receive_ready=False,native_phase_timing=False):
     require(type(sender_receive_ready) is bool and (not sender_receive_ready or public_service),
             'invalid_native_sender_receive_ready_mode')
+    require(type(native_phase_timing) is bool and (not native_phase_timing or public_service),
+            'invalid_native_phase_timing_mode')
     facts_before = None
     if public_service:
         from lantern_meshticulum.ip.node import _facts
@@ -258,7 +261,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
               'airtime_basis': 'LoRa source estimate; raw driver completion timings are separate',
               'application_data_channel': 'exclusive local radio only', 'stop_requested': False}
     worker = authority = flow = journal = store = channel = None
-    caps = None
+    caps = phase_profile = None
     authority_ref = grant_ref = profile_ref = authority_lifetime = start_binding = None
     runner = None
     saved_handlers = {}
@@ -318,6 +321,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             # core authority creates started, or any job/store/driver opens.
             caps = open_for_run(directory.parent.parent, directory, facts_before, clock)
             result['parent'] = caps.consume_start(native_plan['session_id'], native_plan, secret)
+            if native_phase_timing:
+                from .phase_timing import enable
+                phase_profile=enable(caps)
             start_binding=tuple(result['parent'][name] for name in ('native_plan_sha256','grant_context_sha256',
                 'secret_sha256','application_expires_epoch_us','application_deadline_monotonic_us'))
             require(parent_current(), 'pilot_parent_not_current')
@@ -476,6 +482,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         if caps is not None:
             cleanup('parent_snapshot', lambda: result.update(parent_caps=caps.snapshot()))
             cleanup('parent_close', caps.close)
+        if phase_profile is not None:
+            cleanup('phase_timing',lambda:result.update(native_phase_timing=phase_profile.snapshot()))
         for number, handler in saved_handlers.items(): signal.signal(number, handler)
         result['end_monotonic_us'] = clock()[1]
         usage = resource.getrusage(resource.RUSAGE_SELF)

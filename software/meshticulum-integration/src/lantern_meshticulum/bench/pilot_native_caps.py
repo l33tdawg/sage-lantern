@@ -19,6 +19,7 @@ from pathlib import Path
 import sqlite3
 import threading
 from types import FunctionType
+from .phase_timing import phase,call as timed_call
 
 from meshticulum.contracts.identity import PeerID
 from .pilot_parent_caps import (BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, UnitCaps, child_caps, canonical,
@@ -241,6 +242,7 @@ class _Public32Approval:
             self._captured_refs=lambda:refs
             self._last=None;self.check()
         except BaseException:self.close();raise
+    @phase('approval_bound')
     def _bound(self,last):
         refs=self._captured_refs()
         current=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
@@ -271,8 +273,8 @@ class _Public32Approval:
         # No callback result is cached. Every callback re-reads every held
         # owner/source byte and checks full stamps, names and ancestry, after
         # both external clocks and binding parsing have finished.
-        self._bound(last);self.reader.check();self._bound(last)
-        self.runtime.check();self._bound(last)
+        self._bound(last);timed_call(getattr(self,'_phase_timing',None),'owner_reader',self.reader.check);self._bound(last)
+        timed_call(getattr(self,'_phase_timing',None),'runtime_reader',self.runtime.check);self._bound(last)
         self._last=now;return True
     def check(self):
         last=self._last
@@ -417,6 +419,7 @@ class NativeCaps:
         """Classification comes from the protected, approval-bound enrollment."""
         self._validate();return self._history_binding()
     def _names(self):return {'owner':Path(str(self.path)+'.owner'),'db':self.path,'approval':Path(str(self.path)+'.approval')}
+    @phase('native_available')
     def _available(self):
         require(not self._closed and self._pid==os.getpid() and self._thread==threading.get_ident())
         r=self._refs
@@ -474,6 +477,7 @@ class NativeCaps:
     def _commit(self):self.db.execute('COMMIT')
     def _save_clock(self,now):
         self.db.execute('BEGIN IMMEDIATE');self.db.execute('UPDATE clock SET epoch=?,mono=? WHERE id=1',now);self._commit()
+    @phase('native_validate')
     def _validate(self):
         self._available()
         binding=self._refs[21];validator=binding[1]
@@ -481,16 +485,17 @@ class NativeCaps:
                 and type(self._claim_rows) is binding[0] and self._claim_rows.__wrapped__ is validator
                 and type(validator) is FunctionType and validator.__code__ is binding[2]
                 and validator.__defaults__ is binding[3] and validator.__closure__ is None)
-        row=self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone()
+        profile=getattr(self,'_phase_timing',None)
+        row=timed_call(profile,'sql_enrollment',lambda:self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone())
         require(row==(self._enrollment_bytes,))
-        used=self.unit.prior_debt;rows=self.db.execute('SELECT id,body,run_id FROM claims').fetchall();require(len(rows)<=4096)
+        used=self.unit.prior_debt;rows=timed_call(profile,'sql_claims',lambda:self.db.execute('SELECT id,body,run_id FROM claims').fetchall());require(len(rows)<=4096)
         for claim_id,raw,run in rows:
             # Every call selects complete current rows. Only pure interpretation
             # of an exact immutable row/context key is reused; changed/new rows
             # undergo full validation. Resource bytes and all costs remain live.
             resource_id,resource_bytes,cost=self._claim_rows(claim_id,raw,run,
                 self.unit.unit,self.unit.host_boot_id,self._policy_digest)
-            resource=self.db.execute('SELECT body FROM resources WHERE id=?',(resource_id,)).fetchone()
+            resource=timed_call(profile,'sql_resource',lambda:self.db.execute('SELECT body FROM resources WHERE id=?',(resource_id,)).fetchone())
             require(resource==(resource_bytes,));used=used.plus(Cost(*cost))
         require(used.within(self.unit.limits));return rows,used
     def _run(self,phase,action,verify):
@@ -627,6 +632,7 @@ class NativeCaps:
             self._active=self._active_ref=canonical(receipt)
             return receipt,(receipt['application_expires_epoch_us'],receipt['application_deadline_monotonic_us'])
         return self._run('start',consume,lambda:hashlib.sha256(canonical(native_plan)).hexdigest()==input_sha)
+    @phase('native_current')
     def current(self):
         entered=False
         try:
@@ -634,7 +640,8 @@ class NativeCaps:
             self._busy=entered=True;limits=None
             if self._active is not None:
                 receipt=json.loads(self._active);limits=(receipt['application_expires_epoch_us'],receipt['application_deadline_monotonic_us'])
-                require(self.db.execute('SELECT body FROM starts WHERE id=?',(receipt['native_claim_id'],)).fetchone()==(self._active,))
+                require(timed_call(getattr(self,'_phase_timing',None),'sql_active_start',
+                    lambda:self.db.execute('SELECT body FROM starts WHERE id=?',(receipt['native_claim_id'],)).fetchone())==(self._active,))
             self._observe('current',limits);self._validate();return True
         except Exception:
             if entered or self._busy:self._uncertain=True

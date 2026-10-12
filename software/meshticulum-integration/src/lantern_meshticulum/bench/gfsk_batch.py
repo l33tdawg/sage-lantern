@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import threading
+from .phase_timing import call as timed_call
 
 from meshticulum.bench.wire import require
 from .pilot_parent_caps import ParentPolicy, Cost, canonical
@@ -240,7 +241,7 @@ class BatchApproval:
                 and _compare_state(self.policy,self._policy_comparison[0],self._refs[-2])
                 and _compare_state(stable(self.facts),self._facts_comparison[0],self._refs[-1]),
                 'batch_approval_rebound')
-        self.context.check();self.reader.check();now=self.clock()
+        self.context.check();timed_call(getattr(self,'_phase_timing',None),'owner_reader',self.reader.check);now=self.clock()
         require(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
                 and self._start<=now[0]<self._end and self._phase[0]<=now[0]
                 and self._phase[1]<=now[1]<self._phase[2]

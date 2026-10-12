@@ -20,6 +20,7 @@ from meshticulum.bench.wire import require
 from meshticulum.resources import byte_bundle as bundle, knowledge_pack as kp, lamplighter as ll, resource
 from .pilot_parent_caps import BUNDLE_KINDS, canonical, digest, identifier, Cost
 from .profiles import GFSK_BUNDLE_KIND,GFSK_NAME
+from .phase_timing import phase
 
 KIND = 'c-bundle100k-v1'
 SCHEMA = 'meshticulum.native-public100k-bundle-context.v1'
@@ -135,6 +136,7 @@ class BundleContext:
         refs=self._refs;self._captured_refs=lambda:refs
         self._last=None
 
+    @phase('bundle_context')
     def _check(self):
         from .pilot_native_caps import _compare_state
         refs=self._captured_refs()
