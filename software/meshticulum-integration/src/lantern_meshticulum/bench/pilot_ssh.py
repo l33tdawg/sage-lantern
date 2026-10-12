@@ -158,11 +158,12 @@ class SSHOperator:
         self.parallel_preparation=parallel_preparation;self._preparation_lock=Lock()
         require(type(config) is dict,'invalid_ssh_pilot_config')
         from .pilot_bundle import SSH_SCHEMA_V2, SSH_SCHEMA_V3, COMMITTED_CONTRACTS, public_context_commitment
-        versioned=config.get('schema') in (SSH_SCHEMA_V2,SSH_SCHEMA_V3)
+        schemas=tuple(v[5] for v in COMMITTED_CONTRACTS.values())
+        versioned=config.get('schema') in schemas
         fields={'schema','runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256',
                 'handoff_end_epoch_us','port_base','units'}
         require(set(config)==(fields|{'bundle_parent_id','bundle_context','bundle_capture_commitment'} if versioned else fields)
-            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',SSH_SCHEMA_V2,SSH_SCHEMA_V3),'invalid_ssh_pilot_config')
+            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',*schemas),'invalid_ssh_pilot_config')
         commitment=None
         if versioned:
             commitment=public_context_commitment(config['bundle_context'],parent_id=config['bundle_parent_id'])

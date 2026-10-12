@@ -19,6 +19,7 @@ from types import MappingProxyType
 from meshticulum.bench.wire import require
 from meshticulum.resources import byte_bundle as bundle, knowledge_pack as kp, lamplighter as ll, resource
 from .pilot_parent_caps import BUNDLE_KINDS, canonical, digest, identifier, Cost
+from .profiles import GFSK_BUNDLE_KIND,GFSK_NAME
 
 KIND = 'c-bundle100k-v1'
 SCHEMA = 'meshticulum.native-public100k-bundle-context.v1'
@@ -30,10 +31,12 @@ KIND_V3 = 'c-bundle100k-v3'
 SCHEMA_V3 = 'meshticulum.native-public100k-bundle-context.v3'
 COMMITMENT_SCHEMA_V3 = 'meshticulum.public100k-capture-commitment.v3'
 SSH_SCHEMA_V3 = 'meshticulum.finite-ssh-bundle100k.v3'
+SCHEMA_GFSK='meshticulum.native-public100k-gfsk125-bundle-context.v1'
 # Versioned original scopes; never upgrade or renew an existing context.
 COMMITTED_CONTRACTS = MappingProxyType({
     KIND_V2:(SCHEMA_V2,1200000000,1205000000,150000000,COMMITMENT_SCHEMA,SSH_SCHEMA_V2,'meshticulum.private-resume-actual-capture.v2'),
     KIND_V3:(SCHEMA_V3,1350000000,1355000000,180000000,COMMITMENT_SCHEMA_V3,SSH_SCHEMA_V3,'meshticulum.private-resume-actual-capture.v3'),
+    GFSK_BUNDLE_KIND:(SCHEMA_GFSK,1350000000,1355000000,180000000,'meshticulum.public100k-gfsk125-capture-commitment.v1','meshticulum.finite-ssh-gfsk125-bundle100k.v1','meshticulum.private-resume-actual-gfsk125-capture.v1'),
 })
 
 
@@ -43,8 +46,8 @@ def _context_data(value, *, parent_id=None):
     v=json.loads(raw)
     required={'schema','manifest_base64','signature_base64','trust','manifest_sha256','whole_bytes','whole_sha256',
           'original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us','stages'}
-    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3),'bundle_context_policy_changed')
-    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3}[v['schema']]
+    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3,SCHEMA_GFSK),'bundle_context_policy_changed')
+    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3,SCHEMA_GFSK:GFSK_BUNDLE_KIND}[v['schema']]
     for key in ('manifest_sha256','whole_sha256'):digest(v[key])
     manifest_raw=base64.b64decode(v['manifest_base64'],validate=True)
     signature_raw=base64.b64decode(v['signature_base64'],validate=True)
@@ -557,7 +560,8 @@ class BundleCampaign:
         controller=Controller(self.operator,campaign_id=stage['campaign_id'],resource_sha256=self.context.value['manifest_sha256'],
             expires_epoch_us=stage['expires_epoch_us'],handoff_deadline_monotonic=stage_handoff,peers=self.peers,boots=self.boots,parent=self.parent,
             radio_permission={'country':'MY','antenna_confirmed':True},clock=self.clock,epoch=self.epoch,sleep=self.sleep,
-            public32=True,lora_sender_first=self.lora_sender_first,bundle_context=self.context.value)
+            public32=True,lora_sender_first=self.lora_sender_first,bundle_context=self.context.value,
+            radio_profile=GFSK_NAME if self.parent.policy.qualification_kind==GFSK_BUNDLE_KIND else 'sf7-500')
         self.controllers.append(controller)
         try:
             verified=controller.direct_piece(request,response,'lora',publisher='unit-c',requester='unit-a')
@@ -567,7 +571,16 @@ class BundleCampaign:
             self.current();require(index in self.status()['verified_parts'],'native_bundle_part_missing')
             self.parts.append(verified);return verified
         finally:
-            controller.retire();self.links.extend(controller.links)
+            cleanup=controller.retire();self.links.extend(controller.links)
+            if self.parent.policy.qualification_kind==GFSK_BUNDLE_KIND:
+                require(all('stop_error' not in row and 'retirement_error' not in row for row in cleanup),'gfsk_bundle_retirement_unproved')
+                for link in controller.links:
+                    expected=set(link['attempted'])|set(link['prepared'])
+                    require(set(link['retired'])==expected,'gfsk_bundle_retirement_unproved')
+                    for unit in expected:
+                        matches=[r for r in cleanup if r.get('unit')==unit and r.get('run_id')==link['run_id']]
+                        require(matches and all(r.get('retirement',{}).get('retired') is True for r in matches),
+                                'gfsk_bundle_retirement_unproved')
     def retire(self):
         evidence=[]
         for controller in self.controllers:evidence.extend(controller.retire())

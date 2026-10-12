@@ -26,9 +26,9 @@ from meshticulum.bench.services import _shape
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
-from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,profile_record,profile_from_plan,admission_for,radio_route
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,profile_for,profile_record,profile_from_plan,admission_for,radio_route
 
-BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3'))
+BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3',GFSK_BUNDLE_KIND))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
 BATCH_KIND = 'c-bulk-8k-batch-v1'
 POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND,GFSK_KIND}
@@ -194,7 +194,7 @@ def child_caps(package, policy):
             and set(package) == {'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
                                  'transport','grant','secret_base64','payload_base64','source_run_id'}
             and package['schema'] == 'meshticulum.public-pilot-package.v1')
-        require(policy.qualification_kind!=GFSK_KIND or package['transport']=='lora')
+        require(policy.qualification_kind not in (GFSK_KIND,GFSK_BUNDLE_KIND) or package['transport']=='lora')
         unit = policy.unit(package['unit']); p = package['grant']
         identifier(package['campaign_id']); digest(package['resource_sha256'])
         secret = base64.b64decode(package['secret_base64'], validate=True)
@@ -216,7 +216,7 @@ def child_caps(package, policy):
                 'service','issued_epoch_us','expires_epoch_us'}
             gfsk=p.get('radio_modem')==GFSK_NAME
             if gfsk:fields.add('radio_modem')
-            require(gfsk == (policy.qualification_kind==GFSK_KIND))
+            require(gfsk == (policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND)))
             require(package['transport'] == 'lora' and p['schema'] == 'meshticulum.service-run.v1'
                 and set(p) == fields and set(p['service']) in ({'kind','format','application_expires_epoch_us'},
                     {'kind','format','application_expires_epoch_us','public_response_max_bytes'})
@@ -243,7 +243,11 @@ def child_caps(package, policy):
         from meshticulum.bench.public_block import public32_service, object_limit
         public32 = public32_service(p.get('service',{}))
         require(public32 == (policy.qualification_kind in PUBLIC32_KINDS))
-        if public32:
+        if public32 and policy.qualification_kind==GFSK_BUNDLE_KIND:
+            selected=profile_record(rp);expected=profile_record(profile_for(GFSK_NAME))
+            selected.pop('lease_ms');expected.pop('lease_ms')
+            require(package['transport']=='lora' and gfsk and selected==expected)
+        elif public32:
             require(package['transport'] == 'lora' and (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,
                 rp.coding_rate,rp.chip_power_dbm,rp.preamble,rp.sync_word)==(921375000,500000,7,5,0,8,0x42)
                 and rp.max_boot_attempts==256 and rp.max_boot_estimated_airtime_us==60000000)

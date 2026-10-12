@@ -17,7 +17,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK_KIND,admission_for,profile_record
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,admission_for,profile_record
 from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
@@ -84,7 +84,7 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                 sender_unit=sender,country='MY',antenna_confirmed=True,max_frames=512,
                 service=dict(kind='knowledge',format=format,application_expires_epoch_us=application_expires_epoch_us))
         if transport=='lora' and profile==GFSK_NAME:
-            require(not public32 and {sender,receiver}=={'unit-a','unit-c'},'gfsk_public_adjacent_scope_required')
+            require({sender,receiver}=={'unit-a','unit-c'},'gfsk_public_adjacent_scope_required')
             grant['radio_modem']=GFSK_NAME
         if public32: grant['service']['public_response_max_bytes'] = 32768
         values[unit] = dict(schema='meshticulum.public-pilot-package.v1',unit=unit,
@@ -108,8 +108,8 @@ class Controller:
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
                 'public32_parent_kind_mismatch')
         require(type(radio_profile) is str and radio_profile in PROFILE_NAMES
-                and (not public32 or radio_profile == 'sf7-500'), 'invalid_pilot_radio_profile')
-        require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind==GFSK_KIND),'gfsk_parent_kind_mismatch')
+                and (not public32 or radio_profile == ('gfsk125' if parent.policy.qualification_kind==GFSK_BUNDLE_KIND else 'sf7-500')), 'invalid_pilot_radio_profile')
+        require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
         require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME)),
                 'invalid_lora_startup_order')

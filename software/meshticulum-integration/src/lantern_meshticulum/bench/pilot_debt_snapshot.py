@@ -256,7 +256,7 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
         public32=public32_service(service)
         obj=p['object'];need(type(obj)is dict and set(obj)=={'bytes','sha256','object_id','chunk_index'})
         integer(obj['bytes'],1,object_limit(service));hex_value(obj['sha256'],64);hex_value(obj['object_id'],64);integer(obj['chunk_index'],0,63)
-        if p.get('radio_modem')==GFSK_NAME:need(not public32 and scope.unit in ('unit-a','unit-c') and p['sender_unit'] in ('unit-a','unit-c'),'gfsk_public_debt_scope_changed')
+        if p.get('radio_modem')==GFSK_NAME:need(scope.unit in ('unit-a','unit-c') and p['sender_unit'] in ('unit-a','unit-c'),'gfsk_public_debt_scope_changed')
         if public32:
             sender='unit-a' if service['format']=='MR1.request' else 'unit-c'
             need(p['sender_unit']==sender and scope.unit in ('unit-a','unit-c')

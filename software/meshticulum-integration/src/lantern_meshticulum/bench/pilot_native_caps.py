@@ -155,7 +155,7 @@ class _Public32Approval:
     """Held original owner/source records, never an owner supplied in a package."""
     def __init__(self,directory,policy,unit,facts,clock):
         from .pilot_resume_rpc import Reader,Runtime,parse,sha,stable,endpoint_budget
-        from .profiles import profile_for
+        from .profiles import profile_for,profile_record,GFSK_BUNDLE_KIND,GFSK_NAME
         self.reader=self.runtime=None;self._closed=False
         self.policy,self.unit,self.facts,self.clock=policy,unit,facts,clock
         self._pid,self._thread=os.getpid(),threading.get_ident()
@@ -202,13 +202,17 @@ class _Public32Approval:
                     and sha(prior_raw)==local.prior_snapshot_sha256
                     and owner['prior_registry'][unit]['observation_sha256']==sha(canonical(prior))
                     and sha(canonical(owner['prior_registry']))==policy.prior_snapshot_sha256)
-            auth=owner['authorization'];rp=profile_for('sf7-500');rf=owner['rf_record']
+            auth=owner['authorization'];gfsk=policy.qualification_kind==GFSK_BUNDLE_KIND
+            rp=profile_for(GFSK_NAME if gfsk else 'sf7-500');rf=owner['rf_record']
+            if gfsk:
+                from .gfsk_bundle import require_owner
+                require_owner(owner,policy)
             require(auth['human_statement']=='run it bro' and type(auth['count_authorized']) is int and auth['count_authorized']==1
                     and auth['public_only'] is True and auth['private_production'] is False
                     and owner['rf_record_sha256']=='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9'
                     and rf['country']=='MY' and rf['C_transmission_allowed'] is True and rf['A_B_transmission_allowed'] is True
                     and all(rf['units'][u]['antenna_connected'] is True for u in ('unit-a','unit-b','unit-c'))
-                    and owner['rf_profile']==asdict(rp)
+                    and owner['rf_profile']==(profile_record(rp) if gfsk else asdict(rp))
                     and local.limits==local.prior_debt.plus(endpoint_budget(unit,policy.qualification_kind,Cost(256,60000000),Cost()))
                     and policy.issued_epoch_us==owner['phase_start_epoch_us']
                     and policy.expires_epoch_us==owner['phase_end_epoch_us']-5000000

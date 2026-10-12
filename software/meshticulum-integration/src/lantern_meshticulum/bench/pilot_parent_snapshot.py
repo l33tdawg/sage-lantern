@@ -18,7 +18,7 @@ import threading
 import weakref
 
 from meshticulum.bench.serial_protocol import RadioProfile
-from .profiles import GFSK_NAME,GFSK_KIND,profile_from_plan
+from .profiles import GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,profile_from_plan,profile_for,profile_record
 from meshticulum.ip.wire import IpLimits
 from .pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, DOMAIN as PARENT_DOMAIN
 from . import pilot_debt_snapshot as debt
@@ -367,7 +367,7 @@ def _child(value, policy):
     public32 = policy.qualification_kind in PUBLIC32_KINDS
     fields = _META | ({'public_response_max_bytes'} if public32 else set())
     if policy.qualification_kind in BUNDLE_KINDS: fields.add('bundle_context_sha256')
-    gfsk=policy.qualification_kind==GFSK_KIND
+    gfsk=policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND)
     if gfsk:fields.add('radio_modem')
     need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
@@ -408,7 +408,11 @@ def _child(value, policy):
         if gfsk:need(m['radio_modem']==GFSK_NAME and m['unit'] in ('unit-a','unit-c'),'invalid_gfsk_child_modem')
         else:need(set(m['profile']) == set(RadioProfile.__dataclass_fields__), 'invalid_full_caps')
         profile=profile_from_plan(m,board_id=1)
-        if public32:
+        if policy.qualification_kind==GFSK_BUNDLE_KIND:
+            actual=profile_record(profile);expected_profile=profile_record(profile_for(GFSK_NAME))
+            actual.pop('lease_ms');expected_profile.pop('lease_ms')
+            need(actual==expected_profile,'invalid_public32_gfsk_child')
+        elif public32:
             need((profile.frequency_hz,profile.bandwidth_hz,profile.spreading_factor,profile.coding_rate,
                   profile.chip_power_dbm,profile.preamble,profile.sync_word)==(921375000,500000,7,5,0,8,0x42)
                  and profile.max_boot_attempts==256 and profile.max_boot_estimated_airtime_us==60000000,
