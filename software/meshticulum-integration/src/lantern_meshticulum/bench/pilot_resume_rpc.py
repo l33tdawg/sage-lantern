@@ -250,6 +250,8 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
         return radio.plus(radio)
     if qualification_kind in BUNDLE_KINDS:
         return Cost() if unit == 'unit-b' else Cost(radio.radio_attempts*10,radio.estimated_airtime_us*10)
+    if qualification_kind=='c-bulk-8k-batch-v1':
+        return Cost() if unit=='unit-b' else Cost(radio.radio_attempts*6,radio.estimated_airtime_us*6)
     if qualification_kind in ('a-bulk-v1','c-bulk-v1','c-bulk-8k-v1','c-bulk32-v1'):
         return Cost() if unit=='unit-b' else radio.plus(radio)
     need(qualification_kind=='mixed-bulk-v1', 'unknown_public_qualification_kind')
@@ -261,8 +263,12 @@ def owner_radio_profile(owner, policy):
     """An explicit SF5 choice is confined to the two-link C/A 8 KiB scope."""
     name = owner.get('radio_profile_name', 'sf7-500')
     need(type(name) is str and name in ('sf7-500', 'sf5-500'), 'owner_RF_profile_not_reviewed')
-    need(name != 'sf5-500' or (owner.get('qualification_kind') == 'c-bulk-8k-v1'
-         and policy.qualification_kind is None), 'owner_SF5_scope_not_reviewed')
+    need(name != 'sf5-500' or ((owner.get('qualification_kind')=='c-bulk-8k-v1' and policy.qualification_kind is None)
+         or (owner.get('qualification_kind')=='c-bulk-8k-batch-v1' and policy.qualification_kind=='c-bulk-8k-batch-v1')),
+         'owner_SF5_scope_not_reviewed')
+    if owner.get('qualification_kind')=='c-bulk-8k-batch-v1':
+        from .sf5_batch import BatchContext
+        BatchContext.from_owner(owner,policy)
     selected = profile_for(name)
     need(asdict(selected) == owner['rf_profile'], 'owner_RF_profile_changed')
     return selected

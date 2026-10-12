@@ -98,7 +98,7 @@ class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
                  clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None,
-                 radio_profile='sf7-500'):
+                 radio_profile='sf7-500', batch_context=None):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
@@ -117,6 +117,14 @@ class Controller:
             self.bundle_context.stage(campaign_id,expires_epoch_us)
             require(resource_sha256 == self.bundle_context.value['manifest_sha256'], 'bundle_manifest_changed')
         else: require(bundle_context is None, 'unexpected_bundle_context')
+        from .sf5_batch import KIND as BATCH_KIND,BatchContext
+        if parent.policy.qualification_kind==BATCH_KIND:
+            require(type(batch_context) is BatchContext and batch_context.policy is parent.policy
+                    and batch_context.check() and radio_profile=='sf5-500', 'batch_controller_context_missing')
+            require(any(r['campaign_id']==campaign_id and r['resource_sha256']==resource_sha256
+                        for r in batch_context.descriptor['samples']), 'batch_controller_resource_undeclared')
+        else:require(batch_context is None, 'unexpected_batch_controller_context')
+        self.batch_context=self._batch_context_ref=batch_context
         self._bundle_context_ref=self.bundle_context
         self.public32 = public32
         self.parent = self._parent_ref = parent
@@ -143,6 +151,8 @@ class Controller:
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
+        require(self.batch_context is self._batch_context_ref, 'batch_controller_context_rebound')
+        if self.batch_context is not None:self.batch_context.check()
         require(self.radio_profile == self._radio_profile, 'pilot_radio_profile_changed')
         require(self.lora_sender_first is self._lora_sender_first, 'pilot_startup_order_changed')
         require(self.bundle_context is self._bundle_context_ref, 'bundle_controller_context_rebound')
@@ -165,6 +175,8 @@ class Controller:
             radio_permission=self.radio_permission,public32=self.public32,profile=self.radio_profile)
         if self.bundle_context is not None:
             for package in pair['packages'].values(): self.bundle_context.package(package,self.epoch())
+        if self.batch_context is not None:
+            for package in pair['packages'].values():self.batch_context.package(package)
         require(test_rx_cutoff is None or (transport=='tcp' and format=='MR1.response'
                 and type(test_rx_cutoff) is int and 8<=test_rx_cutoff<len(payload)),
                 'invalid_controller_tcp_loss_control')

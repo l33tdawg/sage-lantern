@@ -30,6 +30,8 @@ from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSI
 
 BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3'))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
+BATCH_KIND = 'c-bulk-8k-batch-v1'
+POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND}
 
 SCHEMA = 'meshticulum.public-parent-caps.v1'
 DOMAIN = b'meshticulum.public-parent-caps.v1\0'
@@ -117,7 +119,7 @@ class ParentPolicy:
     bundle_context_sha256: str | None = None
     def __post_init__(self):
         require(self.qualification_kind is None or (type(self.qualification_kind) is str
-                and self.qualification_kind in PUBLIC32_KINDS))
+                and self.qualification_kind in POLICY_KINDS))
         require((self.qualification_kind in BUNDLE_KINDS) == (self.bundle_context_sha256 is not None))
         if self.bundle_context_sha256 is not None: digest(self.bundle_context_sha256)
         identifier(self.parent_id); boot(self.controller_boot_id); digest(self.prior_snapshot_sha256)
@@ -147,7 +149,7 @@ class ParentPolicy:
                 'parent_id', 'controller_boot_id', 'issued_epoch_us', 'expires_epoch_us',
                 'original_monotonic_us', 'deadline_monotonic_us', 'units',
                 'aggregate_limits', 'prior_snapshot_sha256'})
-            require('qualification_kind' not in value or value['qualification_kind'] in PUBLIC32_KINDS)
+            require('qualification_kind' not in value or value['qualification_kind'] in POLICY_KINDS)
             require(type(value['units']) in (list, tuple))
             units = []
             for unit in value['units']:

@@ -288,14 +288,23 @@ class ResumeParentGuard:
         owner = _parse(self._own_raw['owner'])
         if owner.get('radio_profile_name') == 'sf5-500':
             expected = dict(owner['rf_profile']); expected.pop('lease_ms')
-            _need(owner.get('qualification_kind') == 'c-bulk-8k-v1'
-                  and self.policy.qualification_kind is None, 'own_sf5_scope_changed')
+            _need((owner.get('qualification_kind')=='c-bulk-8k-v1' and self.policy.qualification_kind is None)
+                  or (owner.get('qualification_kind')=='c-bulk-8k-batch-v1' and self.policy.qualification_kind=='c-bulk-8k-batch-v1'),
+                  'own_sf5_scope_changed')
             for receipt in receipts.values():
                 metadata = receipt['child_caps']['metadata']
                 selected = dict(metadata['profile']); lease = selected.pop('lease_ms')
                 _need(metadata['transport'] == 'lora' and selected == expected
                       and type(lease) is int and 10000 <= lease <= 90000,
                       'own_sf5_child_profile_changed')
+        if owner.get('qualification_kind')=='c-bulk-8k-batch-v1':
+            from .sf5_batch import BatchContext
+            context=BatchContext.from_owner(owner,self.policy)
+            seen=set()
+            for receipt in receipts.values():
+                metadata=receipt['child_caps']['metadata'];context.metadata(metadata)
+                key=metadata['campaign_id'],metadata['format']
+                _need(key not in seen,'batch_duplicate_child_receipt');seen.add(key)
         _need(set(receipts) == set(self._prepared_pins), 'missing_or_foreign_preparation_digest')
         path = self.state/'parents'/self.policy.parent_id/'prepared-identities'
         with _Ancestry(path, os.geteuid()) as chain:

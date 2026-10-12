@@ -435,12 +435,21 @@ class NativeCaps:
             and parent['policy_digest']==self.policy.digest and package['unit']==self.unit.unit)
         digest(parent['allocation_id']);base={k:v for k,v in package.items() if k!='parent'};base['schema']='meshticulum.public-pilot-package.v1'
         child=child_caps(base,self.policy);require(child.to_dict()==parent['child'])
+        from .sf5_batch import BatchApproval
+        if self.policy.qualification_kind=='c-bulk-8k-batch-v1':
+            require(type(self._approve) is BatchApproval);self._approve.context.package(package)
         return child,parent['allocation_id']
     def prepare_claim(self,package):
         input_sha=hashlib.sha256(canonical(package)).hexdigest()
         def prepare(now):
             child,allocation=self._package(package);meta=json.loads(child.metadata)
             bundle = getattr(self._approve,'bundle',None)
+            from .sf5_batch import BatchApproval
+            if type(self._approve) is BatchApproval:
+                self._approve.context.metadata(meta)
+                for prior_claim, in self.db.execute('SELECT body FROM claims'):
+                    old=json.loads(prior_claim)['child']['metadata']
+                    require((old['campaign_id'],old['format']) != (meta['campaign_id'],meta['format']))
             if self.policy.qualification_kind in BUNDLE_KINDS:
                 from .pilot_bundle import BundleContext
                 require(type(self._approve) is _Public32Approval and type(bundle) is BundleContext and bundle is self._approve._bundle_ref)
@@ -554,7 +563,8 @@ class NativeCaps:
             except Exception:valid=False
         self._fds.clear();self._fd_refs.clear()
         approval=self._refs[6] if hasattr(self,'_refs') else self._approve
-        if type(approval) is _Public32Approval:approval.close()
+        from .sf5_batch import BatchApproval
+        if type(approval) is _Public32Approval or type(approval) is BatchApproval:approval.close()
         return valid and not self._uncertain
 
     def public32_owner_current(self):
@@ -583,11 +593,14 @@ def _open_existing(state,parent_id,facts,clock):
         # adapter neither invokes enrollment nor fabricates a prior snapshot.
         def observed():return NativeFacts(facts['unit'],facts['host_boot_id'],unit.peer)
         approve=lambda _:True
+        from .sf5_batch import BatchApproval,KIND as BATCH_KIND
+        if policy.qualification_kind==BATCH_KIND:
+            approve=BatchApproval(directory,policy,unit.unit,facts,clock)
         if policy.qualification_kind in PUBLIC32_KINDS:
             approve=_Public32Approval(directory,policy,unit.unit,facts,clock)
         try:return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=approve)
         except BaseException:
-            if type(approve) is _Public32Approval:approve.close()
+            if type(approve) is _Public32Approval or isinstance(approve,BatchApproval):approve.close()
             raise
     except Exception:raise NativeCapsError() from None
 
