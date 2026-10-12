@@ -11,9 +11,9 @@
     "src/meshticulum/bench/__init__.py": "0cce20c9d56fd9d420fd6fd28c5e6e0a807fa0218160b94c5cd0bd85dc622802",
     "src/meshticulum/bench/admission.py": "a2ea01e95609ad5cb072a20d15fc880bf17b1da73bce897e1af7f1a7b7676b8c",
     "src/meshticulum/bench/attempts.py": "be6293b7dd55a8b55056688f7664838a74c714665395c8b91245e5cc534a4680",
-    "src/meshticulum/bench/authority.py": "3011c8786a6e2393dc522561f0b38fd240dfd3edc1b54a6d41929922780c33a7",
+    "src/meshticulum/bench/authority.py": "2972cd7b6c81762a3590d05cdfa3d67937fdac24fc11bd556d220985474f78c3",
     "src/meshticulum/bench/flash_app.py": "4d4814a975b15b3bda48e9bec3c33ebb17370d714c611994cc573c23d403a0cb",
-    "src/meshticulum/bench/flow_runtime.py": "dd967d1e38424db4423f659f20786817cfa945423d9e1efe7799f6832d431984",
+    "src/meshticulum/bench/flow_runtime.py": "6ea0432d9bbb577f60cec0e88f2d69ba175e1156cea11e789c3c725631f5ecc2",
     "src/meshticulum/bench/hat_probe.py": "6c0656154a6581b34c0d3a0e56315bf8144551d109af0b7cf3631c6b280f21c4",
     "src/meshticulum/bench/hat_worker.py": "d8eab262f44249c7371b13d4a553fa42e96691e0bcaee515f87c6b60ee1552ed",
     "src/meshticulum/bench/linux_hat.py": "05b7b2e4f929afa708f29299d334728f156b36a4783a5eceaa13a61e92d14f80",
@@ -25,7 +25,7 @@
     "src/meshticulum/bench/service_runner.py": "7edd1daf2e10035c348bd796df38b2ac1c0835077c18ae34f889d38181e77dcc",
     "src/meshticulum/bench/services.py": "919e9540fda1bfc74b7fee364c5bafd3a151e07850cc06da8e1a99c3a11354b8",
     "src/meshticulum/bench/state.py": "6a7e7c156cc9f5adf20231587b2c19ebfb74d79cf758a90aa8a67c907e5ef296",
-    "src/meshticulum/bench/sx1262.py": "5d4b54d5b972d0d1a988c3aeda55f64509406ba21b157469618082196c00b435",
+    "src/meshticulum/bench/sx1262.py": "6ea0063a2c9c3dc930f810b278a07948b7e10eaf9404208c4db584deca28d369",
     "src/meshticulum/bench/wire.py": "84d93e464eb7409a2f589369b1b12e6a7e92322bf2bd3d77b9c098d5e53028f0",
     "src/meshticulum/contracts/SPEC.json": "23f589e149f805089e55014576ecff7c1941db6ea55448bddbb7e70c07847069",
     "src/meshticulum/contracts/__init__.py": "190c2109d675c5391bcfb21a06208c9bf08a7ec70d4d6186605503945ebc5c86",
@@ -65,6 +65,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "866c74c8ed0266fb6e12caad884b12978aa3d97c",
+  "revision": "ed361a9de040a7c6b5af540990aa22ba074452ba",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }
