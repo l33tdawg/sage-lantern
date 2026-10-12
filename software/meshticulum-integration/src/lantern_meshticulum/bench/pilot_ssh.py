@@ -326,6 +326,39 @@ class SSHOperator:
         require(value['unit']==unit and value['package_sha256']==digest,'wrong_native_provision_receipt')
         return value
 
+    def stage_management_input(self,unit,action,payload,*,parent_id,operation_sha256,nonce,original_end_epoch_us):
+        """Explicit non-PTY binary-file lane; no package, grant or runtime activation."""
+        from .management_input import (STAGE_SOURCE,STAGE_SHA256,SCHEMA,DIRECTORY,encode,parameters)
+        parameters(unit,action,parent_id,operation_sha256,nonce,original_end_epoch_us)
+        require(original_end_epoch_us<=self.config['handoff_end_epoch_us']
+                and self.epoch()<original_end_epoch_us and self.clock()<self.deadline,
+                'management_input_original_window')
+        compressed,csha,rsha=encode(payload)
+        remaining=min(5,self.deadline-self.clock(),(original_end_epoch_us-self.epoch())/1000000)
+        require(remaining>1,'management_input_staging_reserve')
+        # Existing sudo Job behavior is untouched. This channel has no PTY or password.
+        argv=self._argv(unit,['/usr/bin/timeout','--kill-after=1s',str(remaining-1)+'s',
+            'python3','-I','-B','-c',STAGE_SOURCE,unit,action,parent_id,operation_sha256,nonce,csha,rsha,str(original_end_epoch_us)],root=False)
+        result=subprocess.run(argv,input=compressed,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=remaining)
+        require(result.returncode==0 and len(result.stdout)<=1000000 and len(result.stderr)<=1000000,
+                'management_input_staging_failed')
+        value=one_record(result.stdout,SCHEMA);path=Path(value['path'])
+        require(value['unit']==unit and value['action']==action and value['parent_id']==parent_id
+                and value['operation_sha256']==operation_sha256 and value['nonce']==nonce
+                and value['compressed_sha256']==csha and value['raw_sha256']==rsha
+                and value['original_end_epoch_us']==original_end_epoch_us and value['bytes']==len(compressed)
+                and type(value['owner_uid']) is int and value['owner_uid']>=0
+                and path.is_absolute() and len(str(path))<=1024 and '..' not in path.parts
+                and path.parent.name==DIRECTORY and path.name=='rpc-'+nonce+'-'+csha+'.xz'
+                and type(value['file_identity']) is list and len(value['file_identity'])==9
+                and type(value['directory_identity']) is list and len(value['directory_identity'])==5
+                and all(type(x) is int for x in value['file_identity']+value['directory_identity']),
+                'management_input_staged_receipt_changed')
+        require(self.epoch()<original_end_epoch_us and self.clock()<self.deadline,'management_input_window_expired')
+        self.events.append(dict(unit=unit,schema=SCHEMA,stage_source_sha256=STAGE_SHA256,
+            compressed_sha256=csha,raw_sha256=rsha,bytes=len(compressed),nonce=nonce))
+        return value
+
     def prepare(self,package):
         row=self.config['units'][package['unit']]
         require(package['grant']['host_boot_id']==row['host_boot_id']
