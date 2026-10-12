@@ -159,6 +159,14 @@ def cleanup_current(current,result):
         result['complete']=False;result['cleanup_error']='current_controller_cleanup_unproved'
 
 
+def native_callback_seconds(action,phase_end_epoch_us,now_epoch_us):
+    """Setup capture gets room for both seals; the original phase never moves."""
+    cap=120 if action=='capture' else 45
+    left=min(cap,max(0,(phase_end_epoch_us-now_epoch_us)//1000000-8))
+    need(left>0,'batch_original_remote_window_expired')
+    return left
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--operation',type=Path,required=True);parser.add_argument('--operation-sha256',required=True);parser.add_argument('--check',action='store_true');args=parser.parse_args();os.umask(0o077)
     op,core,lantern,manifest,receipt,helpers=review(args.operation,args.operation_sha256);pieces=fixtures(op)
@@ -194,7 +202,7 @@ def main():
     def native(u,action,payload):
         raw=canonical(payload);blob=lzma.compress(raw,format=lzma.FORMAT_XZ,preset=6|lzma.PRESET_EXTREME);need(len(raw)<=2000000 and len(blob)<=82000,'batch_RPC_bound')
         import base64
-        left=min(45,max(0,int((end-time.time_ns()//1000)/1000000)-8));need(left>0,'batch_original_remote_window_expired')
+        left=native_callback_seconds(action,end,time.time_ns()//1000)
         command=['/usr/bin/timeout','--kill-after=2s',str(left)+'s',cfg['units'][u]['python'],'-I','-B','-c',RPC_ENTRY,'/opt/meshticulum-bench/runtime-'+op['runtime_sha256'][:16],op['manifest_sha256'],op['native_adapter_sha256'],action,u,base64.b64encode(blob).decode(),sha(raw)]
         argv=operator._argv(u,command,root=True);need(len(argv[-1].encode())<125000,'batch_native_argv_bound');job=Job(argv,password=operator.passwords.get(u),deadline=min(operator.clock()+left+2,operator.deadline),clock=operator.clock);owned.append(job)
         audit=dict(unit=u,action=action,remote_terminal=False,local_terminal=False);result['rpc_clients'].append(audit)
