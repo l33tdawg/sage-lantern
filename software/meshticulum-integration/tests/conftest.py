@@ -49,7 +49,7 @@ def synthetic_a658_capture(monkeypatch):
         binding = canonical(dict(schema='meshticulum.private-resume-history-binding.v2',unit=unit,
             parent_id=model.PARENT,strict_sha256=sha(strict),legacy_sha256=sha(legacy),
             parent_identity=list(_stamp(target.stat()))[:4]))
-        history = dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY],
+        history = dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY[:35]],
                        local_synthetic_capture=True)
         record = dict(schema=COMMITTED_CONTRACTS[GFSK_MB1_BUNDLE_KIND][6],unit=unit,parent_id=model.PARENT,
             history_binding_sha256=sha(binding),review_sha256=model.REVIEW_SHA256,

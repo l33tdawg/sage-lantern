@@ -42,7 +42,7 @@ def context_for(unit,policy,owner,next_index):
     need(type(authorization) is dict and authorization.get('schema')=='meshticulum.root-public100k-checkpoint-owner.v1'
          and authorization.get('primitives_sha256')==checkpoint_api.PRIMITIVES_SHA
          and type(authorization.get('retained_history_count')) is int
-         and authorization['retained_history_count']==len(checkpoint_api.HISTORY)==35
+         and authorization['retained_history_count']==len(checkpoint_api.HISTORY)==36
          and type(authorization.get('maximum_checkpoints')) is int and authorization['maximum_checkpoints']==4
          and type(authorization.get('producer_sha256')) is str
          and len(authorization['producer_sha256'])==64

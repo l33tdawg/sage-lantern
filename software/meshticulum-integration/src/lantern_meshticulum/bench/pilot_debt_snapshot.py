@@ -21,7 +21,7 @@ import uuid
 
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.bench.serial_protocol import RadioProfile
-from meshticulum.bench.public_block import PUBLIC32_MARKER, public32_service, object_limit
+from meshticulum.bench.public_block import PUBLIC32_MARKER, REPRESENTATION_MARKER, TRANSPORT_DESCRIPTOR_MARKER, public_mb1_service, public32_service, object_limit
 from meshticulum.ip.wire import IpLimits, address
 from .pilot_parent_caps import Cost
 from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,profile_from_plan,admission_for,radio_route
@@ -251,16 +251,16 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
             p,scope,run,historical_parent,observed_epoch_us) else admission_for(profile))
         admission.check(p['country'],p['antenna_confirmed'],profile)
         service=p['service'];base_service={'kind','format','application_expires_epoch_us'}
-        need(type(service)is dict and set(service)in(base_service,base_service|{PUBLIC32_MARKER})
+        need(type(service)is dict and set(service)in(base_service,base_service|{PUBLIC32_MARKER},base_service|{PUBLIC32_MARKER,REPRESENTATION_MARKER,TRANSPORT_DESCRIPTOR_MARKER})
              and service['kind']=='knowledge' and service['format']in FORMATS)
-        public32=public32_service(service)
+        public32=public32_service(service);mb1=public_mb1_service(service)
         obj=p['object'];need(type(obj)is dict and set(obj)=={'bytes','sha256','object_id','chunk_index'})
         integer(obj['bytes'],1,object_limit(service));hex_value(obj['sha256'],64);hex_value(obj['object_id'],64);integer(obj['chunk_index'],0,63)
         if p.get('radio_modem')==GFSK_NAME:need(scope.unit in ('unit-a','unit-c') and p['sender_unit'] in ('unit-a','unit-c'),'gfsk_public_debt_scope_changed')
         if public32:
             sender='unit-a' if service['format']=='MR1.request' else 'unit-c'
             need(p['sender_unit']==sender and scope.unit in ('unit-a','unit-c')
-                 and (service['format']!='MR1.response' or obj['bytes']==32768),'invalid_public32_debt_grant')
+                 and (service['format']!='MR1.response' or mb1 is not None or obj['bytes']==32768),'invalid_public32_debt_grant')
         app=integer(service['application_expires_epoch_us'],1);need(issued<app<=expires)
         frames=integer(p['max_frames'],1,512)
         route=radio_route(p)
@@ -298,6 +298,8 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
         # The512-frame cipher budget includes control/retry counters. Core's
         # inner service Shape separately caps marked responses at256 frames.
         output.update(public_response_max_bytes=32768,flow_max_frames=256 if fmt=='MR1.response' else 128)
+    if run.transport=='lora' and mb1 is not None:
+        output.update(public_resource_representation='MB1',public_transport_descriptor_sha256=mb1)
     return output
 
 

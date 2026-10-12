@@ -662,6 +662,13 @@ def _legacy_relation(policy, parent_rows, legacy_rows, retained):
                 need(plan['sender_unit'] == m['sender'] and plan['object']['object_id'] == m['object']['sha256']
                      and type(plan['object']['chunk_index']) is int and plan['object']['chunk_index'] == 0,
                      'legacy_descriptor_correspondence_mismatch')
+            if policy.qualification_kind==GFSK_MB1_BUNDLE_KIND:
+                need(grant.get('public_resource_representation')=='MB1'
+                     and grant.get('public_transport_descriptor_sha256')==m['public_transport_descriptor_sha256'],
+                     'legacy_mb1_descriptor_commitment_mismatch')
+            else:
+                need(grant.get('public_transport_descriptor_sha256') is None,
+                     'legacy_mb1_descriptor_downgrade')
             normalized = dict(plan)
             if m['transport'] == 'tcp':
                 normalized['application_deadline_monotonic_us'] = None
