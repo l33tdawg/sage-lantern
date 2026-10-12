@@ -100,6 +100,50 @@ def fixtures(op):
     return result
 
 
+def require_retired(links,cleanup,*,completed=False):
+    """Returned cleanup errors remain fatal even if a later retry succeeds."""
+    need(type(cleanup) is list and all(type(row) is dict and 'retirement_error' not in row
+         and 'stop_error' not in row for row in cleanup),'batch_retirement_errors')
+    for link in links:
+        attempted,prepared,retired=link['attempted'],link['prepared'],link['retired']
+        expected=set(attempted)|set(prepared)
+        need(len(attempted)==len(set(attempted)) and len(prepared)==len(set(prepared))
+             and set(prepared)<=set(attempted) and len(retired)==len(set(retired))
+             and set(retired)==expected,'batch_endpoint_retirement_unproved')
+        if completed:
+            need(expected=={'unit-a','unit-c'} and set(prepared)==expected
+                 and link['phase']=='complete','batch_sample_retirement_scope_changed')
+        for unit in expected:
+            matches=[row for row in cleanup if row.get('unit')==unit and row.get('run_id')==link['run_id']]
+            need(matches and all(type(row.get('retirement')) is dict
+                 and row['retirement'].get('retired') is True and row['retirement'].get('unit')==unit
+                 and row['retirement'].get('run_id')==link['run_id'] for row in matches),
+                 'batch_endpoint_retirement_receipt_missing')
+
+
+def finish_sample(operator,current,result,*,index,original_application,verified,metrics):
+    """Return None only after this sample's actual retirement is confirmed."""
+    cleanup=json.loads(canonical(current.retire()))
+    result.setdefault('sample_cleanup',[]).append(dict(index=index,cleanup=cleanup))
+    require_retired(current.links,cleanup,completed=True)
+    statuses=[operator.status(u,link['run_id']) for link in current.links for u in ('unit-a','unit-c')]
+    need(all(v['live'] is False for v in statuses),'batch_sample_child_terminal_unproved')
+    need(all(link['phase']=='complete' and all(v['complete'] is True and v['disarmed_on_exit'] is True
+         and not v.get('cleanup_errors') for v in link['outcomes'].values()) for link in current.links),
+         'batch_sample_cleanup_unproved')
+    result['samples'].append(dict(index=index,original_application=original_application,verified=verified,
+        metrics=metrics,links=current.links,terminal_statuses=statuses,cleanup=cleanup))
+    result['links'].extend(current.links)
+    return None
+
+
+def cleanup_current(current,result):
+    cleanup=json.loads(canonical(current.retire()));result['cleanup']=cleanup
+    try:require_retired(current.links,cleanup)
+    except Exception:
+        result['complete']=False;result['cleanup_error']='current_controller_cleanup_unproved'
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--operation',type=Path,required=True);parser.add_argument('--operation-sha256',required=True);parser.add_argument('--check',action='store_true');args=parser.parse_args();os.umask(0o077)
     op,core,lantern,manifest,receipt,helpers=review(args.operation,args.operation_sha256);pieces=fixtures(op)
@@ -189,10 +233,10 @@ def main():
             # No current Controller or application lease is carried into the next resource.
             issued,issued_mono=helpers.parent_clock();expires=issued+180000000;need(expires<=policy.expires_epoch_us-15000000,'batch_fresh180_window_unavailable')
             current=Controller(operator,campaign_id=piece['sample']['campaign_id'],resource_sha256=piece['sample']['resource_sha256'],expires_epoch_us=expires,handoff_deadline_monotonic=operator.deadline,peers=peers,boots={u:v['host_boot_id'] for u,v in cfg['units'].items()},parent=parent,radio_permission=dict(country='MY',antenna_confirmed=True),radio_profile='sf5-500',lora_sender_first=True,batch_context=context)
-            verified=current.direct_piece(piece['request'],piece['response'],'lora',publisher='unit-c',requester='unit-a');metrics=bulk_metrics(current.links[1],verified,piece['piece']);current.retire()
-            statuses=[operator.status(u,link['run_id']) for link in current.links for u in ('unit-a','unit-c')];need(all(v['live'] is False for v in statuses),'batch_sample_child_terminal_unproved')
-            need(all(link['phase']=='complete' and all(v['complete'] is True and v['disarmed_on_exit'] is True and not v.get('cleanup_errors') for v in link['outcomes'].values()) for link in current.links),'batch_sample_cleanup_unproved')
-            result['samples'].append(dict(index=index,original_application=dict(epoch_us=issued,monotonic_us=issued_mono,expires_epoch_us=expires),verified=verified,metrics=metrics,links=current.links,terminal_statuses=statuses));result['links'].extend(current.links);current=None
+            verified=current.direct_piece(piece['request'],piece['response'],'lora',publisher='unit-c',requester='unit-a');metrics=bulk_metrics(current.links[1],verified,piece['piece'])
+            current=finish_sample(operator,current,result,index=index,
+                original_application=dict(epoch_us=issued,monotonic_us=issued_mono,expires_epoch_us=expires),
+                verified=verified,metrics=metrics)
         for u in ('unit-c','unit-b','unit-a'):
             result['native_final'][u]=guarded(u,'audit');s=result['native_final'][u]['snapshot'];need(s['claims']==s['prepared']==s['starts']==(0 if u=='unit-b' else 6) and s['debt']==asdict(policy.unit(u).limits) and not s['uncertain'],'batch_final_accounting_changed')
         result['complete']=len(result['samples'])==3
@@ -201,7 +245,7 @@ def main():
         password=None
         if current is not None:
             result['links'].extend(current.links)
-            try:result['cleanup']=current.retire()
+            try:cleanup_current(current,result)
             except BaseException:result['complete']=False;result['cleanup_error']='current_controller_cleanup_unproved'
         if operator is not None:
             for (u,run),job in operator.jobs.items():
