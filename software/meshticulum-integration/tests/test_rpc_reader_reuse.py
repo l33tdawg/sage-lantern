@@ -93,7 +93,8 @@ def test_repeated_read_compares_fresh_bytes_even_with_spoofed_original_stamps(tm
     finally:reader.close()
 
 
-@pytest.mark.parametrize('fault',['replace_index','delete_entry','wrong_fd','wrong_bytes','extra_entry'])
+@pytest.mark.parametrize('fault',['replace_index','delete_entry','wrong_fd','wrong_bytes','extra_entry',
+                                  'replace_index_state','replace_index_state_ref','rewrite_index_and_state'])
 @pytest.mark.parametrize('when',['before','during_pread'])
 def test_file_index_is_pinned_to_original_held_records(tmp_path,monkeypatch,fault,when):
     reader,parent,leaf,paths=sample(tmp_path);record=reader.held[0];original=os.pread;armed=[True]
@@ -102,7 +103,12 @@ def test_file_index_is_pinned_to_original_held_records(tmp_path,monkeypatch,faul
         elif fault=='delete_entry':del reader._file_index[paths[0]]
         elif fault=='wrong_fd':reader._file_index[paths[0]]=(record[0],reader.held[1][1],*record[2:])
         elif fault=='wrong_bytes':reader._file_index[paths[0]]=(*record[:3],b'altered')
-        else:reader._file_index[leaf/'extra']=record
+        elif fault=='extra_entry':reader._file_index[leaf/'extra']=record
+        elif fault=='replace_index_state':reader._file_index_state=tuple(list(reader._file_index_state))
+        elif fault=='replace_index_state_ref':reader._file_index_state_ref=tuple(list(reader._file_index_state))
+        else:
+            reader._file_index[paths[0]]=(*record[:3],b'altered')
+            reader._file_index_state=tuple(reader._file_index.items())
     def observed(*args):
         raw=original(*args)
         if armed[0]:armed[0]=False;mutate()

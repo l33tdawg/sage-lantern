@@ -338,26 +338,29 @@ class Reader:
         self._node_state = self._held_state = self._directory_state = ()
         self._token_state = ()
         self._named_state = ()
+        self._file_index_state = ()
+        self._file_index_state_ref = self._file_index_state
         self._owner = (os.getpid(), threading.get_ident(), os.geteuid())
         self._owner_ref = self._owner
         self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens, self._named, self._file_index)
         self._closed = False
     def _available(self, *, full=True):
         need(not self._closed and self._owner is self._owner_ref
+             and self._file_index_state is self._file_index_state_ref
              and self._owner == (os.getpid(), threading.get_ident(), os.geteuid())
              and len(self._refs) == 7
              and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens,self._named,self._file_index),self._refs))
              and len(self._nodes)==len(self._node_state) and len(self.held)==len(self._held_state)
              and len(self.directories)==len(self._directory_state) and len(self._tokens)==len(self._token_state)
              and len(self._named)==len(self._named_state)
-             and len(self._file_index)==len(self._held_state),
+             and len(self._file_index)==len(self._file_index_state)==len(self._held_state),
              'rpc_reader_owner_changed')
         if full:
             need(tuple(self._nodes.items())==self._node_state and tuple(self.held)==self._held_state
                  and tuple((path,tuple(identity)) for path,identity in self.directories.items())==self._directory_state
                  and tuple(self._tokens.items())==self._token_state
                  and tuple(self._named.items())==self._named_state
-                 and tuple(self._file_index.items())==tuple((record[0],record) for record in self._held_state),
+                 and tuple(self._file_index.items())==self._file_index_state,
                  'rpc_reader_state_changed')
     @staticmethod
     def _close_owned(fd, identity, token):
@@ -448,6 +451,8 @@ class Reader:
             record = (path,fd,identity,raw)
             self.held.append(record); self._held_state = tuple(self.held)
             self._file_index[path] = record
+            self._file_index_state = tuple(self._file_index.items())
+            self._file_index_state_ref = self._file_index_state
         return raw
     def check(self):
         self._check_nodes()
