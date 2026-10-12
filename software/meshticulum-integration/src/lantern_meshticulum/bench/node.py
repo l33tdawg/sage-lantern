@@ -28,6 +28,7 @@ from meshticulum.bench.wire import SessionCipher, require
 from meshticulum.scheduler.budget import BudgetPolicy, Ledger
 
 FIRMWARE = 'mtb1-9816f92488'
+FIRMWARE_BY_UNIT = {'unit-a': 'mtb1-5577916527', 'unit-b': FIRMWARE}
 USB = {'unit-a': 'F8:5B:1B:A5:F6:08', 'unit-b': '44:1B:F6:62:56:54'}
 PERSONAL = ('sage-lantern-personal-sage.service', 'sage-lantern-voice-loop.service',
             'sage-lantern-llm.service', 'sage-lantern-vlm.service')
@@ -91,7 +92,7 @@ def _serial(unit):
                               + serial + '-if00', usb_serial=serial)
     try:
         worker = SerialWorker(channel)
-        identity = worker.discover(expected_board_id=1, expected_version=FIRMWARE)
+        identity = worker.discover(expected_board_id=1, expected_version=FIRMWARE_BY_UNIT[unit])
         require(identity.boot[:8] == bytes(2) + bytes.fromhex(serial.replace(':', ''))[::-1],
                 'wrong_radio_efuse_identity')
         request = time.time_ns() // 1000
@@ -162,9 +163,15 @@ def _sender_readiness_pass(enabled, runner, flow, worker, authority, parent_curr
     """Default callers retain their original loop, including already queued ACKs."""
     require(type(enabled) is bool, 'invalid_native_sender_receive_ready_mode')
     if not enabled: return False
-    require(authority.public32 is True and authority.sends is True,
+    require(authority.sends is True and (authority.public32 is True or _fast_profile(authority.profile)),
             'sender_receive_ready_requires_public32_sender')
     return _sender_receive_ready(runner, flow, worker, authority, parent_current)
+
+
+def _fast_profile(profile):
+    return (profile.frequency_hz, profile.bandwidth_hz, profile.spreading_factor,
+            profile.coding_rate, profile.chip_power_dbm, profile.preamble,
+            profile.sync_word) == (921375000, 500000, 5, 5, 0, 8, 0x42)
 
 
 def run(unit, directory, object_directory):
@@ -302,7 +309,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             # Legacy random bench objects never consume service records.
             require(authority.plan['schema'] == 'meshticulum.bench-run.v1',
                     'service_requires_dedicated_runner')
-        require(not sender_receive_ready or (public_service and authority.public32 is True and authority.sends is True),
+        require(not sender_receive_ready or (public_service and authority.sends is True
+                and (authority.public32 is True or _fast_profile(authority.profile))),
                 'sender_receive_ready_requires_public32_sender')
         grant, profile = authority.grant, authority.profile
         result.update(grant_context_sha256=grant.digest.hex(), session_id=grant.session.session_id.hex(),

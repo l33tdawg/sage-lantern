@@ -17,7 +17,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import RADIO_ADMISSION, profile_for
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for
 from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
@@ -97,13 +97,17 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
-                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None):
+                 clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None,
+                 radio_profile='sf7-500'):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
                 'public32_parent_kind_mismatch')
-        require(type(lora_sender_first) is bool and (not lora_sender_first or public32),
+        require(type(radio_profile) is str and radio_profile in MODES
+                and (not public32 or radio_profile == 'sf7-500'), 'invalid_pilot_radio_profile')
+        self.radio_profile = self._radio_profile = radio_profile
+        require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile == 'sf5-500'),
                 'invalid_lora_startup_order')
         self.lora_sender_first = self._lora_sender_first = lora_sender_first
         self.bundle_context = None
@@ -139,6 +143,7 @@ class Controller:
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
+        require(self.radio_profile == self._radio_profile, 'pilot_radio_profile_changed')
         require(self.lora_sender_first is self._lora_sender_first, 'pilot_startup_order_changed')
         require(self.bundle_context is self._bundle_context_ref, 'bundle_controller_context_rebound')
         require(self.parent is self._parent_ref and self.parent.current() is True,
@@ -157,7 +162,7 @@ class Controller:
             transport=transport,format=format,descriptor=descriptor,source=source,
             request=payload if source is None else None,peers=self.peers,boots=self.boots,
             now_epoch_us=self.epoch(),endpoints=self.operator.endpoints(sender,receiver) if transport=='tcp' else None,
-            radio_permission=self.radio_permission,public32=self.public32)
+            radio_permission=self.radio_permission,public32=self.public32,profile=self.radio_profile)
         if self.bundle_context is not None:
             for package in pair['packages'].values(): self.bundle_context.package(package,self.epoch())
         require(test_rx_cutoff is None or (transport=='tcp' and format=='MR1.response'

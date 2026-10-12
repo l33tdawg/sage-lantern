@@ -240,6 +240,17 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
     return radio.plus(radio).plus(tcp).plus(tcp)
 
 
+def owner_radio_profile(owner, policy):
+    """An explicit SF5 choice is confined to the two-link C/A 8 KiB scope."""
+    name = owner.get('radio_profile_name', 'sf7-500')
+    need(type(name) is str and name in ('sf7-500', 'sf5-500'), 'owner_RF_profile_not_reviewed')
+    need(name != 'sf5-500' or (owner.get('qualification_kind') == 'c-bulk-8k-v1'
+         and policy.qualification_kind is None), 'owner_SF5_scope_not_reviewed')
+    selected = profile_for(name)
+    need(asdict(selected) == owner['rf_profile'], 'owner_RF_profile_changed')
+    return selected
+
+
 def parse(raw):
     def unique(pairs):
         value = {}
@@ -1088,13 +1099,14 @@ def enrolled_action(action, unit, p, runtime):
         if policy.qualification_kind in BUNDLE_KINDS:
             from .pilot_bundle import BundleContext
             BundleContext(owner['bundle_context'],policy).current(clock())
-        rf, rp, ip = owner['rf_record'], profile_for('sf7-500'), IpLimits()
+        rf, rp, ip = owner['rf_record'], owner_radio_profile(owner, policy), IpLimits()
         need(owner['rf_record_sha256'] == '40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9'
              and rf['country'] == 'MY' and rf['C_transmission_allowed'] is True
              and rf['A_B_transmission_allowed'] is True and all(rf['units'][u]['antenna_connected'] is True
              for u in ('unit-a','unit-b','unit-c')) and asdict(rp) == owner['rf_profile']
              and (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,rp.coding_rate,rp.chip_power_dbm,
-                  rp.preamble,rp.sync_word) == (921375000,500000,7,5,0,8,0x42), 'owner_RF_basis_changed')
+                  rp.preamble,rp.sync_word) in ((921375000,500000,7,5,0,8,0x42),
+                                               (921375000,500000,5,5,0,8,0x42)), 'owner_RF_basis_changed')
         radio = Cost(rp.max_boot_attempts,rp.max_boot_estimated_airtime_us)
         tcp = Cost(ip_frames=ip.max_frames,tx_stream_bytes=ip.max_tx_stream_bytes,
                    rx_stream_bytes=ip.max_rx_stream_bytes)
