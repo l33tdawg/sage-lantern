@@ -87,8 +87,8 @@ def test_legacy_owner_without_profile_name_keeps_exact_sf7():
         SimpleNamespace(qualification_kind=None)) == profile_for('sf7-500')
 
 
-def test_strict_firmware_identity_matches_only_flashed_a_and_baseline_b():
-    assert node.FIRMWARE_BY_UNIT == {'unit-a': 'mtb1-5577916527', 'unit-b': 'mtb1-9816f92488'}
+def test_strict_firmware_identity_matches_only_proposed_a_and_baseline_b():
+    assert node.FIRMWARE_BY_UNIT == {'unit-a': 'mtb1-e61c2c8979', 'unit-b': 'mtb1-9816f92488'}
     assert node._fast_profile(profile_for('sf5-500'))
     assert not node._fast_profile(profile_for('sf7-500'))
 

@@ -3,7 +3,7 @@
     "LICENSE": "ba61a1c596f3e771e379455f68124f793985196b84be0a6a41d2c489050facef",
     "NOTICE": "387c1c228cbaf7a40b6729ae692603402387ac7308810709524bbde44d86e26c",
     "firmware/meshticulum-bench/check_linux_abi.c": "cc5315446b15c5f19b79516db7436e48466302204cf1adf871a3705c597e732f",
-    "firmware/meshticulum-bench/main.cpp": "2d0e8f00ef813e0d1e1abea88ae2f4d080e4935b2391dee8a63ac7e8be7a3685",
+    "firmware/meshticulum-bench/main.cpp": "2dec0dc9c698b327096391135f60014db3619b4ae6e0b512e9da05295d106612",
     "firmware/meshticulum-bench/orangepi5plus-sx1262-hat.dts": "51da823fc649872e0061997573329ffcec3b5f9b5a3ff880757da63134335469",
     "firmware/meshticulum-bench/protocol.hpp": "2e2596e8f8968869d1e0d5469ad9bc2b181f2880eee450ed1a72e17367fdf56a",
     "src/meshticulum/__init__.py": "1886490aa55f0eff293810f5f74d735be4b4c9c99d57140cb4984fea216d731c",
@@ -15,7 +15,7 @@
     "src/meshticulum/bench/flash_app.py": "4d4814a975b15b3bda48e9bec3c33ebb17370d714c611994cc573c23d403a0cb",
     "src/meshticulum/bench/flow_runtime.py": "dd967d1e38424db4423f659f20786817cfa945423d9e1efe7799f6832d431984",
     "src/meshticulum/bench/hat_probe.py": "6c0656154a6581b34c0d3a0e56315bf8144551d109af0b7cf3631c6b280f21c4",
-    "src/meshticulum/bench/hat_worker.py": "2c2c003af62ac39175d67faa9f11ca499bb50d4498035cf687f5b99a9b5da544",
+    "src/meshticulum/bench/hat_worker.py": "d8eab262f44249c7371b13d4a553fa42e96691e0bcaee515f87c6b60ee1552ed",
     "src/meshticulum/bench/linux_hat.py": "05b7b2e4f929afa708f29299d334728f156b36a4783a5eceaa13a61e92d14f80",
     "src/meshticulum/bench/objects.py": "3ea78e7be8063f1b6b963e550ac588997a76dae49ede1183cac227a598dba2f0",
     "src/meshticulum/bench/public_block.py": "fff986bf92d130a07cdc1d85fdf40758e2d2ded88617557499fe9326fb871bd7",
@@ -65,6 +65,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "ad4f2c1f2fe836b898df0babd3ed61c3a735161f",
+  "revision": "866c74c8ed0266fb6e12caad884b12978aa3d97c",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }
