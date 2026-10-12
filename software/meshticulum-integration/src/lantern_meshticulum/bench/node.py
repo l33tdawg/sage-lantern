@@ -349,7 +349,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                 and (authority.public32 is True or _fast_profile(authority.profile))),
                 'sender_receive_ready_requires_public32_sender')
         grant, profile = authority.grant, authority.profile
-        if type(profile) is GfskProfile:result['radio_modem']=GFSK_NAME
+        if type(profile) is GfskProfile:
+            result['radio_modem']=GFSK_NAME
+            result['airtime_basis']='GFSK source estimate; raw driver completion timings are separate'
         result.update(grant_context_sha256=grant.digest.hex(), session_id=grant.session.session_id.hex(),
                       object=authority.plan['object'], sends=authority.sends)
         payload = _read_payload(directory / 'sender.bin', authority.plan['object'],
