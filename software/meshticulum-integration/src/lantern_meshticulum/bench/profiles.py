@@ -39,7 +39,7 @@ GFSK_ADMISSION=GfskAdmission('MY',(921375000,),(0,),10000,180000,256,60000000)
 # Actual compiled firmware/source and expired H33 evidence are bound below.
 # A fresh native scope still requires its own current capture and owner approval.
 GFSK_FIRMWARE='mtb1-b433927ba6'
-GFSK_CORE_COMMIT='d34ff783c5da21915565dc6fa32bad3a553c3d74'
+GFSK_CORE_COMMIT='aec97045d945535deb95075a303a59bb975d21bd'
 GFSK_HISTORY_RECEIPT_SHA256='c89c1ac89e26de91ebc424640b14a46b28c51109ccef61d5578f86050ede1300'
 GFSK_PRECEDING_PARENT='6be212b13351cb9852ed07ba7998be96'
 
