@@ -99,7 +99,7 @@ def test_whole_file_entry_only_extends_compressed_transport_envelope(operator):
     runner,_=operator
     assert "need(len(blob)<=112000,'RPC_encoded_bound')" in runner.RPC_ENTRY
     assert "need(len(compressed)<=84000,'RPC_compressed_bound')" in runner.RPC_ENTRY
-    assert runner.BUNDLE_RPC_ENTRY.replace('116000','112000').replace('87000','84000')==runner.RPC_ENTRY
+    assert runner.BUNDLE_RPC_ENTRY.replace('121336','112000').replace('91000','84000')==runner.RPC_ENTRY
     assert 'max_length=2000001' in runner.BUNDLE_RPC_ENTRY and 'memlimit=33554432' in runner.BUNDLE_RPC_ENTRY
     compile(runner.BUNDLE_RPC_ENTRY,'bounded-gfsk-bundle-rpc','exec')
 
@@ -107,14 +107,14 @@ def test_whole_file_entry_only_extends_compressed_transport_envelope(operator):
 def test_exact_bundle_decoder_refuses_oversize_wrong_hash_and_trailing_data(operator):
     runner,_=operator
     entry=runner.BUNDLE_RPC_ENTRY
-    decoder=entry[entry.index('need(len(blob)<=116000'):entry.index('sys.path.insert(0,str(root))')]
+    decoder=entry[entry.index('need(len(blob)<=121336'):entry.index('sys.path.insert(0,str(root))')]
     raw=b'{"public_metadata":true}';compressed=lzma.compress(raw)
     def decode(blob,expected=raw,pin=None):
         env=dict(base64=base64,lzma=lzma,hashlib=hashlib,need=runner.need,
             blob=base64.b64encode(blob).decode(),input_sha=pin or runner.sha(expected))
         exec(compile(decoder,runner.__file__,'exec'),env);return env['raw']
     assert decode(compressed)==raw
-    with pytest.raises(RuntimeError,match='RPC_encoded_bound'):decode(bytes(87001))
+    with pytest.raises(RuntimeError,match='RPC_encoded_bound'):decode(bytes(91003))
     with pytest.raises(RuntimeError,match='RPC_input_bound_or_pin'):decode(compressed,pin='f'*64)
     with pytest.raises(RuntimeError,match='RPC_input_bound_or_pin'):decode(compressed+b'\0')
     with pytest.raises(RuntimeError,match='RPC_input_bound_or_pin'):decode(compressed[:-1])
