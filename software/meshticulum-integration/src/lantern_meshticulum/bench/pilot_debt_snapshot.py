@@ -24,7 +24,7 @@ from meshticulum.bench.serial_protocol import RadioProfile
 from meshticulum.bench.public_block import PUBLIC32_MARKER, public32_service, object_limit
 from meshticulum.ip.wire import IpLimits, address
 from .pilot_parent_caps import Cost
-from .profiles import RADIO_ADMISSION
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION
 
 MAX = 2**63-1
 MAX_DB = 16*1024*1024
@@ -207,7 +207,31 @@ class _Reader:
 
 
 def _peer(v):need(type(v)is dict and set(v)=={'chain_id','agent_id'});return PeerID(**v)
-def _public_grant(p,scope,run):
+def _retained573_grant(p,scope,run,parent,observed_epoch_us):
+    """Decode one original expired grant, never select a live RF waveform."""
+    grants = {'unit-a': 'f1e8ca82787828131c8104a3784572c1e54aa80813ab704911b05c5201ad9d1a',
+              'unit-c': '9a0dc6bff76e21a11b3343986cb5a6919c98819f275888dc679753ff3c69a1bc'}
+    plans = {'unit-a': '9c5b224fbb232626eaf53764b9433e1b34d4a8170c6ddb2c0563528ddb26fa09',
+             'unit-c': '3386e5456428f6f2222571f98c9d191dc627e17b1114604d18d71fd137d0a7a7'}
+    bindings = {'unit-a': '305aec7636af4198dd95a60a490a4ba2df6343d2b30df3dedffaac004ae07ccc',
+                'unit-c': '0f7fe6ee5effc940e2796c59f7ebe5e92a830ab00da28773e9d0ba5da6b2401b'}
+    return (type(scope) is Scope and type(run) is RunScope and scope.unit in grants
+        and run.run_id == '3ef93b13ec6966964c2f73d1dbd0a176' and run.transport == 'lora'
+        and run.grant_sha256 == grants[scope.unit] and sha(canonical(p)) == plans[scope.unit]
+        and run.grant_context_sha256 == 'bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5'
+        and run.attempt_binding_sha256 == bindings[scope.unit]
+        and scope.runtime_sha256 == '2d72dbbe1cee7f3e6cb5480ab64977d3a98553feed1850d67c34a90ee38d7514'
+        and scope.manifest_sha256 == '3476737fe14be9b1f34ff6ba938d1fd2db4a489c787a331e05b63d482fbab40e'
+        and type(observed_epoch_us) is int and p['expires_epoch_us'] < observed_epoch_us
+        and type(parent) is dict and parent.get('schema') == 'meshticulum.native-parent-claim.v1'
+        and parent.get('parent_id') == LEGACY_SF5_8_PARENT
+        and parent.get('policy_digest') == 'ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef'
+        and parent.get('unit') == scope.unit and parent.get('run_id') == run.run_id
+        and parent.get('host_boot_id') == run.host_boot_id and parent.get('prepared') is True
+        and parent.get('native_plan_sha256') == plans[scope.unit])
+
+
+def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
     need(type(p)is dict and p['host_boot_id']==run.host_boot_id);boot(p['host_boot_id'])
     deadline=p.get('application_deadline_monotonic_us');integer(deadline,1)
     issued,expires=p['issued_epoch_us'],p['expires_epoch_us'];integer(issued,1);integer(expires,1)
@@ -222,7 +246,9 @@ def _public_grant(p,scope,run):
         need(p['sender_unit']in('unit-a','unit-b','unit-c'));sends=p['sender_unit']==scope.unit
         need(local==(a if sends else b));direction=0 if sends else 1
         profile=RadioProfile(**p['profile']);profile.encode(board_id=1)
-        RADIO_ADMISSION.check(p['country'],p['antenna_confirmed'],profile)
+        admission = (LEGACY_SF5_8_ADMISSION if _retained573_grant(
+            p,scope,run,historical_parent,observed_epoch_us) else RADIO_ADMISSION)
+        admission.check(p['country'],p['antenna_confirmed'],profile)
         service=p['service'];base_service={'kind','format','application_expires_epoch_us'}
         need(type(service)is dict and set(service)in(base_service,base_service|{PUBLIC32_MARKER})
              and service['kind']=='knowledge' and service['format']in FORMATS)
@@ -375,11 +401,19 @@ def _one(state,scope,run,observe,retained):
         reader=_Reader(state,run.run_id,observe)
         retained.append((output,reader))
         raw=reader.read('grant.json',16384);need(sha(raw)==run.grant_sha256,'grant_file_changed')
-        p=public_json(raw);grant=_public_grant(p,scope,run);output['grant']=grant;output['admitted_caps']=grant['caps']
+        p=public_json(raw)
+        # Hold and check the original retired provision before selecting the
+        # narrowly pinned historical decoder. It is validated against the grant
+        # below and against the genuine native parent ledger by its caller.
+        need(reader.read('active',16)==b'retired\n','run_not_retired')
+        provision=public_json(reader.read('provision.json',32768))
+        observed=observe()
+        grant=_public_grant(p,scope,run,historical_parent=provision.get('parent'),
+                            observed_epoch_us=observed[0])
+        output['grant']=grant;output['admitted_caps']=grant['caps']
         output['conservative_unknown_caps']=grant['caps']
         need(run.grant_context_sha256 is not None,'grant_context_unavailable')
-        need(reader.read('active',16)==b'retired\n','run_not_retired')
-        provision=public_json(reader.read('provision.json',32768));job=public_json(reader.read('job.json',4096));result=public_json(reader.read('result.json',300000))
+        job=public_json(reader.read('job.json',4096));result=public_json(reader.read('result.json',300000))
         need(provision['schema']in('meshticulum.provisioned-public-pilot.v1','meshticulum.provisioned-public-pilot.v2')
             and provision['unit']==scope.unit and provision['run_id']==run.run_id and provision['transport']==run.transport)
         need(provision['original_application_expires_epoch_us']==grant['application_expires_epoch_us']
