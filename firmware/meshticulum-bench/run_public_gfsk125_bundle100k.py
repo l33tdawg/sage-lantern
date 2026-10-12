@@ -124,10 +124,13 @@ def fixture(op):
 
 
 def planned_stages(epoch):
-    # Preserve the reviewed v3 timetable, including its scheduling overhead.
-    return [dict(index=i,campaign_id=secrets.token_hex(16),issued_epoch_us=epoch+(105+i*240)*1000000,
-        expires_epoch_us=epoch+(285+i*240)*1000000,
-        handoff_end_epoch_us=epoch+(345+i*240 if i<4 else 1255)*1000000) for i in range(5)]
+    # Fresh plans reserve more first-part setup time. All later parts and the
+    # original whole/phase limits remain fixed; existing contexts are immutable.
+    issued=(150,345,585,825,1065)
+    handoff=(340,585,825,1065,1255)
+    return [dict(index=i,campaign_id=secrets.token_hex(16),issued_epoch_us=epoch+issued[i]*1000000,
+        expires_epoch_us=epoch+(issued[i]+180)*1000000,
+        handoff_end_epoch_us=epoch+handoff[i]*1000000) for i in range(5)]
 
 
 def wait_for_stage(current,issued_epoch_us,epoch,sleep):

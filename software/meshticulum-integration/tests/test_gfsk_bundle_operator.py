@@ -45,8 +45,13 @@ def test_rehashed_fixture_cannot_change_signed_whole_or_publisher_metadata(opera
 
 def test_original_stage_schedule_waits_even_when_previous_part_finishes_early(operator):
     runner,_=operator;epoch=100000000;stages=runner.planned_stages(epoch)
-    assert [v['issued_epoch_us']-epoch for v in stages]==[105000000,345000000,585000000,825000000,1065000000]
+    assert [v['issued_epoch_us']-epoch for v in stages]==[150000000,345000000,585000000,825000000,1065000000]
     assert all(v['expires_epoch_us']-v['issued_epoch_us']==180000000 for v in stages)
+    assert stages[0]['expires_epoch_us']==epoch+330000000
+    assert stages[0]['handoff_end_epoch_us']==epoch+340000000<stages[1]['issued_epoch_us']
+    assert [(v['issued_epoch_us']-epoch,v['expires_epoch_us']-epoch,v['handoff_end_epoch_us']-epoch) for v in stages[1:]]==[
+        (345000000,525000000,585000000),(585000000,765000000,825000000),
+        (825000000,1005000000,1065000000),(1065000000,1245000000,1255000000)]
     assert stages[-1]['handoff_end_epoch_us']==epoch+1255000000
     now=[stages[1]['issued_epoch_us']-250000];checks=[];sleeps=[];before=deepcopy(stages)
     current=SimpleNamespace(current=lambda:checks.append(now[0]))
@@ -61,6 +66,62 @@ def test_original_whole_expiry_aborts_stage_wait_without_new_deadline(operator):
     with pytest.raises(RuntimeError,match='whole_bundle_expired'):
         runner.wait_for_stage(SimpleNamespace(current=expired),200,lambda:100,sleeps.append)
     assert not sleeps
+
+
+def test_first_stage_plan_accepts_signed_context_without_changing_old_context(operator,tmp_path):
+    from lantern_meshticulum.bench.pilot_bundle import context_value,public_context_commitment
+    from lantern_meshticulum.bench.profiles import GFSK_BUNDLE_KIND
+    runner,builder=operator;folder=tmp_path/'schedule';builder.build(folder)
+    value=runner.fixture(dict(fixture=dict(path=str(folder),sha256=runner.sha((folder/'FIXTURE.json').read_bytes()))))
+    epoch,mono=1000000000,2000000000
+    new=context_value((folder/'pack/manifest.json').read_bytes(),(folder/'pack/manifest.sig.json').read_bytes(),
+        value['trust'],value['fixture']['manifest_sha256'],
+        chunks={p['chunk_sha256']:value['cache'].piece(p['chunk_sha256']) for p in value['whole']['parts']},
+        policy_clock=(epoch,mono,epoch+1350000000,mono+1350000000),stages=runner.planned_stages(epoch),qualification_kind=GFSK_BUNDLE_KIND)
+    old=deepcopy(new);old['stages'][0].update(issued_epoch_us=epoch+105000000,
+        expires_epoch_us=epoch+285000000,handoff_end_epoch_us=epoch+345000000)
+    original=runner.canonical(old)
+    fresh=public_context_commitment(new,parent_id='f'*32)
+    previous=public_context_commitment(old,parent_id='e'*32)
+    assert fresh['expires_epoch_us']==previous['expires_epoch_us']==epoch+1350000000
+    assert fresh['phase_end_epoch_us']==previous['phase_end_epoch_us']==epoch+1355000000
+    assert fresh['context_sha256']!=previous['context_sha256'] and runner.canonical(old)==original
+    new['stages'][0]['handoff_end_epoch_us']=epoch+339999999
+    with pytest.raises(Exception):public_context_commitment(new,parent_id='f'*32)
+
+
+@pytest.mark.parametrize('original_first_expiry,expected_lease_ms,grace_fits',[(285,46444,False),(330,90000,True)])
+def test_late_setup_and_real_authority_receiver_grace_budget(operator,tmp_path,original_first_expiry,expected_lease_ms,grace_fits):
+    from lantern_meshticulum.bench.pilot_controller import pair_packages
+    from lantern_meshticulum.bench.profiles import GFSK_ADMISSION
+    from meshticulum.bench.authority import RunAuthority
+    from tests.test_gfsk125_pilot import BOOT,PEERS
+    runner,_=operator;epoch=1000000000
+    # Reproduce the measured setup position and original clipped46,444ms lease.
+    packet=pair_packages(campaign_id='d'*32,resource_sha256='e'*64,
+        application_expires_epoch_us=epoch+original_first_expiry*1000000,
+        sender='unit-c',receiver='unit-a',transport='lora',format='MR1.response',
+        descriptor=dict(bytes=32768,sha256='b'*64),source=dict(kind='served_public_chunk',request_run_id='c'*32),
+        request=None,peers=PEERS,boots={u:BOOT for u in PEERS},now_epoch_us=epoch+223555500,
+        profile='gfsk125',radio_permission=dict(country='MY',antenna_confirmed=True),public32=True)['packages']['unit-a']
+    assert packet['grant']['profile']['lease_ms']==expected_lease_ms
+    folder=tmp_path/'lease';folder.mkdir(mode=0o700)
+    for name,raw in [('grant.json',runner.canonical(packet['grant'])),('secret.bin',base64.b64decode(packet['secret_base64'])),('active',b'active\n')]:
+        path=folder/name;path.write_bytes(raw);path.chmod(0o600)
+    now=[epoch+235750619,2000000000]
+    authority=RunAuthority(folder,expected_unit='unit-a',host_boot_id=BOOT,clock=lambda:tuple(now),
+        owner_probe=lambda:True,radio_admission=GFSK_ADMISSION)
+    try:
+        # The actual receiver needed28.851964s to finish DATA and20s to re-ACK.
+        finish=now[1]/1000000+28.851964+20
+        assert authority.deadlines.application_deadline_monotonic==now[1]/1000000+(expected_lease_ms/1000-3)
+        assert (finish<authority.deadlines.application_deadline_monotonic) is grace_fits
+        assert authority.application_expires_epoch_us==epoch+original_first_expiry*1000000
+        assert authority.deadlines.application_deadline_monotonic<=authority.application_deadline_us/1000000
+        if grace_fits:
+            now[0]+=round((finish-2000)*1000000);now[1]=round(finish*1000000)
+            assert authority.live() is True
+    finally:authority.close()
 
 
 def cleanup_fixture():
