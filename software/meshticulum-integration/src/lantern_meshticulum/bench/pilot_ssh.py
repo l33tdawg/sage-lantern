@@ -194,6 +194,7 @@ class SSHOperator:
         self.passwords=dict(passwords or {})
         self.next_port=config['port_base'];require(type(self.next_port) is int and 1024<=self.next_port<=65400,'invalid_pilot_port_range')
         self.jobs={};self.events=[];self.connections=None
+        self.management_cleanup_jobs=[];self.management_cleanup_audits=[]
         for unit,row in self.config['units'].items():
             require(type(row) is dict and set(row)=={'ssh','python','sudo','host_boot_id','ip_address'},'invalid_pilot_host_config')
             require(type(row['sudo']) is bool and type(row['python']) is str and row['python'].startswith('/'),'invalid_pilot_host_python')
@@ -254,7 +255,7 @@ class SSHOperator:
 
     def close_connections(self):
         if self.connections is None:return
-        require(all(job.process.poll() is not None for job in self.jobs.values()),
+        require(all(job.process.poll() is not None for job in list(self.jobs.values())+self.management_cleanup_jobs),
                 'ssh_control_clients_still_live')
         connections=self.connections
         try:connections.close()
@@ -269,7 +270,19 @@ class SSHOperator:
         if sudo:command=['sudo','-p',PROMPT.decode(),*(['-n'] if self.passwords.get(unit) is None else []),'--',*command]
         return self._ssh(unit,pty=sudo,use_connections=use_connections)+[shlex.join(command)]
 
-    def _command(self,unit,command,schema,*,root=True,cleanup=False):
+    def _command(self,unit,command,schema,*,root=True,cleanup=False,cleanup_transport_headroom=0):
+        require(type(cleanup_transport_headroom) is int and cleanup_transport_headroom in (0,2),
+                'invalid_management_cleanup_headroom')
+        require(not cleanup_transport_headroom or (cleanup and root
+            and schema=='meshticulum.management-input-cleaned.v1' and len(command)>11
+            and command[:3]==['/usr/bin/timeout','--kill-after=2s','5s']
+            and command[11]=='cleanup-management-input'),'management_cleanup_headroom_scope')
+        audit=None
+        if cleanup_transport_headroom:
+            audit=dict(unit=unit,schema=schema,remote_housekeeping_bound_s=5,remote_kill_grace_s=2,
+                transport_headroom_s=2,local_terminal=False,closed=False,success=False,returncode=None,
+                output=None,output_sha256=None,error_type=None)
+            self.management_cleanup_audits.append(audit)
         deadline=min(self.clock()+5,self.deadline)
         require(self.clock()<deadline or cleanup,'ssh_pilot_window_expired')
         if cleanup:deadline=self.clock()+5
@@ -283,13 +296,44 @@ class SSHOperator:
             argv=self._argv(unit,command,root=root,use_connections=False)
             self.events.append(dict(unit=unit,schema='meshticulum.ssh-cleanup-recovery.v1',
                 cleanup=True,outside_handoff=self.clock()>=self.deadline))
-        job=Job(argv,password=self.passwords.get(unit),deadline=deadline,clock=self.clock)
+        if cleanup_transport_headroom:
+            # Argument/connection validation does not consume the remote
+            # housekeeping interval. Five remote seconds + its fixed two-
+            # second kill grace + two seconds for SSH/sudo/result transport.
+            # This branch cannot dispatch or extend an application callback.
+            deadline=self.clock()+5+2+cleanup_transport_headroom
+            audit['local_deadline_monotonic']=deadline
+        job=None
         try:
+            job=Job(argv,password=self.passwords.get(unit),deadline=deadline,clock=self.clock)
+            if audit is not None:self.management_cleanup_jobs.append(job)
             require(job.wait()==0,'native_management_command_failed')
             value=one_record(bytes(job.output),schema)
             self.events.append(dict(unit=unit,schema=schema,cleanup=cleanup,outside_handoff=self.clock()>=self.deadline))
+            if audit is not None:audit['remote_receipt_valid']=True
             return value
-        finally:job.close()
+        except BaseException as error:
+            if audit is not None:
+                audit['error_type']=type(error).__name__
+                reason=str(error);audit['reason']=reason if re.fullmatch('[a-z_]{1,128}',reason) else None
+            raise
+        finally:
+            try:
+                if job is not None:job.close()
+            except BaseException as error:
+                if audit is not None and audit['error_type'] is None:
+                    audit['error_type']=type(error).__name__
+                    reason=str(error);audit['reason']=reason if re.fullmatch('[a-z_]{1,128}',reason) else None
+                raise
+            finally:
+                if audit is not None and job is not None:
+                    output=bytes(job.output)
+                    audit.update(local_terminal=job.process.poll() is not None,closed=job.closed,
+                        returncode=job.process.returncode,output=output.decode('utf-8','replace'),
+                        output_sha256=hashlib.sha256(output).hexdigest(),credentials_cleared=job.password is None)
+                    audit['success']=(audit.get('remote_receipt_valid') is True and audit['error_type'] is None
+                        and audit['local_terminal'] and audit['closed'] and audit['returncode']==0)
+                    self.events.append(dict(audit))
 
     def _action(self,unit,action,run_id=None,*extra,cleanup=False,schema):
         row=self.config['units'][unit]

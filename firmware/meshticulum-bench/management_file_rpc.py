@@ -31,14 +31,14 @@ RPC_FILE_ENTRY=r'''try:
   and len(identities['file'])==9 and len(identities['directory'])==5
   and all(type(x) is int for v in identities.values() for x in v),'management_input_identity_shape')
  sys.path.insert(0,str(root));inputs=importlib.import_module('lantern_meshticulum.bench.management_input')
- module=importlib.import_module('lantern_meshticulum.bench.pilot_resume_rpc')
- need(getattr(module,'CONTRACT_SCHEMA',None)=='meshticulum.private-resume-native-rpc.v1','native_integration_contract_missing')
  if action=='cleanup-management-input':
   absent=inputs.cleanup(path,nonce=nonce,compressed_sha256=csha,expected_stage_uid=int(uid),
    expected_identity=identities['file'],expected_directory_identity=identities['directory'])
   result=dict(schema='meshticulum.management-input-cleaned.v1',unit=unit,nonce=nonce,cleaned=True,already_absent=absent,
    native_dispatch_called=False,radio_opened=False,native_state_writes=False)
  else:
+  module=importlib.import_module('lantern_meshticulum.bench.pilot_resume_rpc')
+  need(getattr(module,'CONTRACT_SCHEMA',None)=='meshticulum.private-resume-native-rpc.v1','native_integration_contract_missing')
   value=inputs.consume(path,unit=unit,action=action,parent_id=parent,operation_sha256=operation,nonce=nonce,
    compressed_sha256=csha,raw_sha256=rsha,original_end_epoch_us=int(end),expected_stage_uid=int(uid),
    expected_identity=identities['file'],expected_directory_identity=identities['directory'])

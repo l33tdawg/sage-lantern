@@ -63,7 +63,9 @@ def test_cleanup_and_remote_timeout_logic_are_identical_to_existing_runner(opera
     assert 'decoded_useful_bytes' in source and 'len(argv[-1].encode())<125000' in source
     old_source=(base/'run_public_gfsk125_bundle100k.py').read_text()
     marker='    finally:\n        password=None\n'
-    assert source[source.rindex(marker):]==old_source[old_source.rindex(marker):]
+    final=source[source.rindex(marker):].replace('+operator.management_cleanup_jobs','')
+    final=final.replace("            result['management_cleanup_commands']=operator.management_cleanup_audits\n",'')
+    assert final==old_source[old_source.rindex(marker):]
 
 
 def file_operator(monkeypatch,runner,payload):
@@ -131,7 +133,7 @@ def test_cleanup_bound_uses_existing_owned_sudo_path_with_no_dispatch(operator,m
     state['epoch']=request.original_end_epoch_us+1
     result=runner.cleanup_rpc_input(owner,cfg,op,request.staged)
     assert result['already_absent'] and calls[0][1][2]=='5s'
-    assert calls[0][3]==dict(root=True,cleanup=True) and 'cleanup-management-input' in calls[0][1]
+    assert calls[0][3]==dict(root=True,cleanup=True,cleanup_transport_headroom=2) and 'cleanup-management-input' in calls[0][1]
 
 
 @pytest.mark.parametrize('failure',['none','native','start','close','cleanup','native_cleanup'])
@@ -152,7 +154,7 @@ def test_actual_native_callback_reaps_then_cleans_file_and_preserves_primary_err
             lifecycle.append(('close',))
             if failure=='close':raise RuntimeError('owned_close_failure')
     def cleanup(unit,command,schema,**kw):
-        lifecycle.append(('cleanup',));assert kw==dict(root=True,cleanup=True)
+        lifecycle.append(('cleanup',));assert kw==dict(root=True,cleanup=True,cleanup_transport_headroom=2)
         if 'cleanup' in failure:raise RuntimeError('cleanup_failed')
         # The exact command passes nonce as an explicit small argument.
         nonce=command[15]

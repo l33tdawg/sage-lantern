@@ -220,7 +220,8 @@ def cleanup_rpc_input(operator,cfg,op,staged):
     from management_file_rpc import command as file_command
     command=file_command('/opt/meshticulum-bench/runtime-'+op['runtime_sha256'][:16],op['manifest_sha256'],
         op['native_adapter_sha256'],staged,cfg['units'][staged['unit']]['python'],5,cleanup=True)
-    value=operator._command(staged['unit'],command,'meshticulum.management-input-cleaned.v1',root=True,cleanup=True)
+    value=operator._command(staged['unit'],command,'meshticulum.management-input-cleaned.v1',root=True,cleanup=True,
+        cleanup_transport_headroom=2)
     need(value['cleaned'] is True and value['unit']==staged['unit'] and value['nonce']==staged['nonce']
         and value['native_dispatch_called'] is False,'batch_management_input_cleanup_unproved')
     return value
@@ -369,11 +370,12 @@ def main():
             for (u,run),job in operator.jobs.items():
                 try:need(operator.status(u,run)['live'] is False,'batch_native_terminal_unproved')
                 except BaseException:result['complete']=False;result.setdefault('terminal_unproved',[]).append(dict(unit=u,run_id=run))
-            for job in list(operator.jobs.values())+owned:
+            for job in list(operator.jobs.values())+owned+operator.management_cleanup_jobs:
                 try:operator.reap(job)
                 except BaseException:result['complete']=False;result.setdefault('cleanup_errors',[]).append('owned_client_reap_failed')
                 finally:job.password=None;job.output.clear()
-            result['owned_local_clients_terminal']=all(job.closed and job.process.poll() is not None for job in list(operator.jobs.values())+owned)
+            result['management_cleanup_commands']=operator.management_cleanup_audits
+            result['owned_local_clients_terminal']=all(job.closed and job.process.poll() is not None for job in list(operator.jobs.values())+owned+operator.management_cleanup_jobs)
             if not result['owned_local_clients_terminal'] or not all(v['remote_terminal'] and v['local_terminal'] for v in result['rpc_clients']):result['complete']=False
             try:operator.close_connections()
             except BaseException:result['complete']=False;result.setdefault('cleanup_errors',[]).append('owned_connection_close_failed')
