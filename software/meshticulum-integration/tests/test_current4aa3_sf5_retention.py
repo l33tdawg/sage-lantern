@@ -88,7 +88,7 @@ def test_complete_sample_claim_coverage_cannot_lose_or_add_paid_endpoint(typed_r
 
 def test_roster_preserves_old27_and_only_adds_successful_sample():
     old=tuple(DATA['prior_paid_parent_ids']);assert len(old)==27 and retained.PAID_HISTORY[:27]==old
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==30
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==31
     assert retained.PAID_HISTORY[27]==rpc.SF5_COMPLETED_PAID
     assert retained.UNADMITTED_PAID_HISTORY==old[:12]
     for unit,rows in DATA['outcomes'].items():

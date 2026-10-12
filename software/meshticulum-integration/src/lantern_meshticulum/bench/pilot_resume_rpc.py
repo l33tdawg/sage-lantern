@@ -70,6 +70,7 @@ OLD_DIGESTS = (
     'ce07d40fc619f16616ed464bd6f756dd137331a564bafbd8978befe676f43ed4',
     '6289467c390f4d4c505b750be783d649e5160f22b677cb20861c48d6781390a1',
     '9e199fe7646f662c10b051cfce3e3cf05278dcfb8a7ed638a5a761943fc0cb17',
+    'a0b235585aed5fcd2c46d8c6399cf68d402ad449a95dc0b65d69d5682a272556',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -179,6 +180,9 @@ PARTIAL_BATCH_OUTCOMES={'unit-a': {'85aa59f981dfb97ff525e0be9bef4a21': '87c9704b
 COMPLETED_BATCH_PAID='76fe38883690e058771940d51d0d57d6'
 COMPLETED_BATCH_DATABASES={'unit-a': '1e3763e45571580a690139ea0e3bc7125986cfc0a541ac30aee3610455532e72', 'unit-b': '464eeb6e64843a027da032d93d399a0409e3ffbeaf473d24fd6fa0e937ce9b5d', 'unit-c': '93730f3807546b1f7f18943d3471b1696b2ac6675e2d46cfc60736566b257232'}
 COMPLETED_BATCH_OUTCOMES={'unit-a': {'17ff6c3215acfbd651a8464509872ddb': 'e068da2efb2a370ce29fc850972313d2d59cc20f629d63ee5d025e72a1099cb4', '44267abc6c6a43cfa5774584cff9f2b6': '40e43da3c66a5670a72192393aa674e21f4025cc94416ff500a48f38a0e865c0', '299ed364c82448815bf33536b87e8117': '8242f05d13abf580c599a0d216f34f4dd023fdaed242a24359378dbfef90a65e', '40f7418d19d2706dfc4f9eef0e36c8f9': '26c430154c34ecd797858a6875a91c6ba0de13ccaaf8e65c911fc82396258763', '1eae08e206a865d7f4e5dc7e8029df05': '531fccd7160cf6ad50f4b02cddcee5ad0036b4a95e45c6ab32962b5adb29928d', 'fb5f692175175fc05d9a8c264e0858b7': '6bd6d6a2ed89e914b2e4b0a5f7a050558629703534afcb8f6baf386fd5aac8f0'}, 'unit-b': {}, 'unit-c': {'17ff6c3215acfbd651a8464509872ddb': '5141af54dee67e04c12dd6e5d30176bf8edbe46d4a2cfa2051830942a6521437', '44267abc6c6a43cfa5774584cff9f2b6': 'eb9a6ac9dc9521a562e7373e034fcf0ca7506eb72a0a53d6ec18c7eb1ad51322', '299ed364c82448815bf33536b87e8117': 'afcbb4fa7aaf57850274d7d0b0f2fdc858b45036e400af3187dd37ac4939028a', '40f7418d19d2706dfc4f9eef0e36c8f9': '9ccfb06bda2410de27fd4bf923a39a7c5d35451de376ddeae552fdd3f2ec83d3', '1eae08e206a865d7f4e5dc7e8029df05': '15740088c9f4d8e8318f898083d8d5b09537286e866cde528d3fe60163aa3655', 'fb5f692175175fc05d9a8c264e0858b7': '7599580ea085fa8ff99cac1cd9c882e42765abce5a092b36bd6ae322d289e65b'}}
+RX_PRIORITY_BATCH_PAID='7630420c0e72181d6e7239c105c165c6'
+RX_PRIORITY_BATCH_DATABASES={'unit-a': 'a5a88c042be185e2741bdbc363276aa5372283d703b301c72205b7eaaf6c01c6', 'unit-b': 'c783615f52177379b7231039ac5dde7e2e9e0cb87747da10df65153ebedaecbb', 'unit-c': '21e3953adb0bc39485570c4b619bb629d0ac50d0a1a3ee918881b4dd533de905'}
+RX_PRIORITY_BATCH_OUTCOMES={'unit-a': {'e85ac2eb60b6a74978463988875d9fe2': 'ea32fb8fe66309c41b2a6753e5bf51785aaa9245d28bc0e848eb5f9d229e7773', 'b125fc2c53c5df0a91ee66512e799179': 'dea960f7366699d5da75a0e1a58ad1cdc8fb5c43fd2cc2b18583576336dabe5b', '224eb352fe615f3dffb04b384e718acc': '4bf10834285fbd9c8702b9aecdaa4ecb3af6b63fe80e25e50d869f611d3633c3', 'ce90e48370a4688288cf5bd0c0e28824': 'bd3dc988d7147ddc602d0c8ec4d9366d66ebefb65612c47730f6e9cd0949451a', 'aa65b1694ffad8cbb4f8d368a69553ca': '8cbf4af04ff23bfd90250797103daa3e412a1e6a58dc1608ab055818178bdb4a', '84028c86276f1db451aedec0ae788fed': '8f6720fff0241682443b32d5180f435bc835ad2220743353e32b0fa491f26d46'}, 'unit-b': {}, 'unit-c': {'e85ac2eb60b6a74978463988875d9fe2': '71f0ecde03658bbae2964ab43caa43f88c93caf1c803b0b7ce244ac79ef90391', 'b125fc2c53c5df0a91ee66512e799179': '8d9ec6dbb7e493fac7d509a1997b2c5bbc692643c2691d3ba5a1dcc824a9f3de', '224eb352fe615f3dffb04b384e718acc': 'd9576b3729cd2e1ec825956306400aae66f0c1b541ad7143297fab10a7c4aaaf', 'ce90e48370a4688288cf5bd0c0e28824': '7cec37bce50494afac92985c0a998627cb311dec2849aded285d802746db896a', 'aa65b1694ffad8cbb4f8d368a69553ca': 'e87921133a8b6f117d0bb7f8a618e3fd3afdee86008511ea1c3b6c4b25e43761', '84028c86276f1db451aedec0ae788fed': '1ea8385f17a65354594d0ebaa1c71bbeb904cfd260cfeb712fa8986377f08f88'}}
 V3_ACCEPTED_PARTS = {V3_PARTIAL_BUNDLE_PAID:(V3_PARTIAL_BUNDLE_RUNS,V3_ACCEPTED_PART_SHA),
     V3_CHECKPOINT_BUNDLE_PAID:(V3_CHECKPOINT_BUNDLE_RUNS,V3_CHECKPOINT_ACCEPTED_PART_SHA),
     V3_VERIFIED_BUNDLE_PAID:(V3_VERIFIED_BUNDLE_RUNS,V3_VERIFIED_ACCEPTED_PART_SHA)}
@@ -189,7 +193,7 @@ PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDL
     V3_CHECKPOINT_BUNDLE_PAID:(24,'c-bundle100k-v3',V3_CHECKPOINT_BUNDLE_DATABASES,V3_CHECKPOINT_BUNDLE_OUTCOMES),
     V3_VERIFIED_BUNDLE_PAID:(25,'c-bundle100k-v3',V3_VERIFIED_BUNDLE_DATABASES,V3_VERIFIED_BUNDLE_OUTCOMES)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -567,7 +571,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
         if policy.parent_id in PUBLIC32_PARENTS:
             qualify_public32_failure_scope(unit,policy.parent_id,v)
-        if policy.parent_id == COMPLETED_BATCH_PAID:
+        if policy.parent_id in (COMPLETED_BATCH_PAID,RX_PRIORITY_BATCH_PAID):
             need(v['require_result_complete'] is True and v.get('failed_started_runs')==[], 'completed_batch_failure_scope_changed')
         if policy.parent_id == PARTIAL_BATCH_PAID:
             need(v['require_result_complete'] is False and v.get('failed_started_runs')==([] if unit=='unit-b' else PARTIAL_BATCH_FAILED),
@@ -609,6 +613,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                 if policy.parent_id in PUBLIC32_PARENTS: qualify_public32_result(unit,row['run_id'],result,parent_id=policy.parent_id)
                 if policy.parent_id in PARTIAL_BUNDLE_SCOPES: qualify_partial_bundle_result(unit,row['run_id'],result,parent_id=policy.parent_id)
                 if policy.parent_id == SF5_STARTUP_PAID: qualify_sf5_startup_result(unit,row['run_id'],result)
+                if policy.parent_id == RX_PRIORITY_BATCH_PAID:
+                    need(sha(canonical(result))==RX_PRIORITY_BATCH_OUTCOMES[unit][row['run_id']] and result['complete'] is True,'rx_priority_batch_outcome_changed')
                 if policy.parent_id == COMPLETED_BATCH_PAID:
                     need(sha(canonical(result))==COMPLETED_BATCH_OUTCOMES[unit][row['run_id']] and result['complete'] is True,'completed_batch_outcome_changed')
                 if policy.parent_id == PARTIAL_BATCH_PAID:
@@ -627,6 +633,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
             qualify_partial_bundle_costs(unit,policy,observed,v)
             if policy.parent_id in V3_ACCEPTED_PARTS:verify_retained_v3_part_files(reader,unit,policy,observed,v)
+        elif policy.parent_id==RX_PRIORITY_BATCH_PAID:
+            qualify_rx_priority_batch_costs(unit,policy,observed,v)
         elif policy.parent_id==COMPLETED_BATCH_PAID:
             qualify_completed_batch_costs(unit,policy,observed,v)
         elif policy.parent_id==PARTIAL_BATCH_PAID:
@@ -707,6 +715,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id in PUBLIC32_PARENTS:
         expected=PUBLIC32_OUTCOMES[policy.parent_id][2]
         need(ids==set(expected[unit]) and not absent,'public32_claim_scope_changed')
+    elif policy.parent_id==RX_PRIORITY_BATCH_PAID:
+        need(ids==set(RX_PRIORITY_BATCH_OUTCOMES[unit]) and not absent,'rx_priority_batch_claim_scope_changed')
     elif policy.parent_id==COMPLETED_BATCH_PAID:
         need(ids==set(COMPLETED_BATCH_OUTCOMES[unit]) and not absent,'completed_batch_claim_scope_changed')
     elif policy.parent_id==PARTIAL_BATCH_PAID:
@@ -900,6 +910,51 @@ def qualify_completed_batch_costs(unit,policy,observed,value):
     else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
               and value['legacy_sha256'] is None,'completed_batch_zero_peer_changed')
     context.check()
+
+def qualify_rx_priority_batch_costs(unit,policy,observed,value):
+    """Retain the completed six-grant batch exactly once, without credit refunds."""
+    from .sf5_batch import BatchContext,KIND
+    need(policy.parent_id==RX_PRIORITY_BATCH_PAID and policy.digest==OLD_DIGESTS[30]
+         and policy.qualification_kind==KIND and unit in RX_PRIORITY_BATCH_DATABASES,'rx_priority_batch_scope_changed')
+    context=BatchContext.from_owner(value['owner'],policy);owner=value['owner'];detail=observed['detail'];local=policy.unit(unit)
+    count=0 if unit=='unit-b' else 6;resources=0 if not count else 3
+    actual_extra=Cost() if not count else Cost(1536,360000000);unused=Cost()
+    need(observed['policy_expired_at_observation'] is True
+         and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
+         and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
+         and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+         'rx_priority_batch_original_clocks_live')
+    need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
+         and type(detail['resource_count']) is int and detail['resource_count']==resources
+         and detail['full_prepaid_caps']==asdict(actual_extra)
+         and detail['approval_bytes_match_enrollment'] is True
+         and detail['enrollment']['history_binding_sha256']==owner['history_binding_sha256']
+         and observed['expected_database_sha256']==value['database_sha256']==RX_PRIORITY_BATCH_DATABASES[unit],
+         'rx_priority_batch_actual_rows_changed')
+    need(detail['prior_plus_prepaid_caps']==value['actual_native_paid_caps']==value['actual_controller_paid_caps']
+         ==asdict(local.prior_debt.plus(actual_extra)) and detail['limit']==asdict(local.limits)
+         and value['paid_caps']==asdict(local.limits) and value['conservative_unused_enrollment_caps']==asdict(unused),
+         'rx_priority_batch_full_bound_changed')
+    expected=set(RX_PRIORITY_BATCH_OUTCOMES[unit])
+    need(len(value['runs'])==len(value['controller_endpoint_refs'])==count
+         and {r['run_id'] for r in value['runs']}==expected
+         and {r['child']['run_id'] for r in value['controller_endpoint_refs']}==expected
+         and set(value['preparation_sha256'])==expected and value['retired_unstarted']==[]
+         and value['require_result_complete'] is True
+         and value['failed_started_runs']==[], 'rx_priority_batch_retention_scope_changed')
+    if count:
+        expected_resources={r['resource_sha256'] for r in context.descriptor['samples']}
+        need({r['resource_sha256'] for r in detail['resources']}==expected_resources
+             and observed['legacy_scoped_rows_complete'] is True and len(observed['legacy_runs'])==count
+             and observed['legacy_relation']['scoped_linkage_complete'] is True
+             and not observed['legacy_relation']['native_claims_without_scoped_actuals']
+             and all(r['wire']['retired']==1 and r['journal']['has_unknown_or_pending'] is False
+                     and r['journal']['owner']['fenced'] is False for r in observed['legacy_runs']),
+             'rx_priority_batch_coverage_unsettled')
+    else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
+              and value['legacy_sha256'] is None,'rx_priority_batch_zero_peer_changed')
+    context.check()
+
 
 
 def qualify_sf5_startup_result(unit,run,result):

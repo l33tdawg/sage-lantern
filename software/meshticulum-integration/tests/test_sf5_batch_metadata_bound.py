@@ -3,6 +3,8 @@ import ast
 import base64
 import hashlib
 import lzma
+import json
+import random
 from pathlib import Path
 import pytest
 
@@ -21,11 +23,11 @@ def decode(blob,raw,pin=None):
     return env['raw']
 
 
-def test_76000_bound_retains_raw_and_decoder_limits():
+def test_78000_bound_retains_raw_and_decoder_limits():
     raw=b'{"metadata":true}'
     assert decode(lzma.compress(raw),raw)==raw
     with pytest.raises(RuntimeError,match='RPC_compressed_bound'):
-        decode(bytes(76001),raw)
+        decode(bytes(78001),raw)
     with pytest.raises(RuntimeError,match='RPC_input_bound_or_pin'):
         decode(lzma.compress(b'x'*2000001),b'x'*2000001)
 
@@ -40,8 +42,19 @@ def test_sha_and_xz_end_remain_mandatory():
         decode(blob[:-1],raw)
 
 
+def test_larger_complete_metadata_fits_new_bound_without_weakening_raw_pin():
+    # Public synthetic bytes exercise the range that actual H31 now needs.
+    value=base64.b64encode(random.Random(7630).randbytes(75000)).decode()
+    raw=json.dumps({'metadata':value},sort_keys=True,separators=(',',':')).encode()
+    blob=lzma.compress(raw,format=lzma.FORMAT_XZ,preset=6|lzma.PRESET_EXTREME)
+    assert 76000<len(blob)<=78000
+    assert decode(blob,raw)==raw
+    with pytest.raises(RuntimeError,match='RPC_input_bound_or_pin'):
+        decode(blob,raw,'f'*64)
+
+
 def test_batch_sender_keeps_final_argv_and_raw_caps():
     text=(ROOT/'firmware/meshticulum-bench/run_public_sf5_batch.py').read_text()
-    assert "len(raw)<=2000000 and len(blob)<=76000,'batch_RPC_bound'" in text
+    assert "len(raw)<=2000000 and len(blob)<=78000,'batch_RPC_bound'" in text
     assert "need(len(argv[-1].encode())<125000,'batch_native_argv_bound')" in text
     assert "memlimit=33554432" in entry
