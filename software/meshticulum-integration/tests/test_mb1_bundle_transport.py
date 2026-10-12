@@ -144,3 +144,36 @@ def test_descriptor_input_pin_and_immutable_internal_bindings_cannot_change(publ
     with pytest.raises(WireError):mb1.MB1Transport(p['raw'],kp.sha256_hex(p['raw']),bytearray(p['mraw']),p['sraw'],p['trust'],p['digest'])
     p['transport']._parts=tuple(reversed(p['transport']._parts))
     with pytest.raises(WireError):p['transport'].request(0)
+
+
+def test_existing_generic_one_million_byte_limit_verifies_shuffled_whole_file(tmp_path):
+    # Generic source capability only; physical native100k policy stays unchanged.
+    assert kp.BUNDLE_BYTES==1000000
+    payload=bytes(range(256))*3906+bytes(range(64));assert len(payload)==1000000
+    key=Ed25519PrivateKey.generate()
+    manifest,records,signature=bb.build(payload,pack_id='mb1-million',created_at='2026-10-13T00:00:00Z',
+        private_key=key,exact32=True)
+    mraw=kp.manifest_bytes(manifest);sraw=kp.canonical_json(signature);digest=kp.sha256_hex(mraw)
+    trust=dict(schema='sage-foundation.knowledge-pack.trust.v1',keys=[dict(key_id=signature['key_id'],
+        public_key_hex=key.public_key().public_bytes(Encoding.Raw,PublicFormat.Raw).hex(),status='active',pack_classes=['reference'])])
+    chunks={name:kp.chunk_bytes(record) for name,record in records.items()}
+    raw=mb1.prepare_descriptor(mraw,sraw,trust,digest,chunks=chunks)
+    transport=mb1.MB1Transport(raw,kp.sha256_hex(raw),mraw,sraw,trust,digest)
+    seed=tmp_path/'million-seed';(seed/'chunks').mkdir(parents=True)
+    (seed/'manifest.json').write_bytes(mraw);(seed/'manifest.sig.json').write_bytes(sraw)
+    for name,chunk in chunks.items():(seed/'chunks'/(name+'.json')).write_bytes(chunk)
+    cache=ll.VerifiedCache(seed,trust,digest)
+    target=tmp_path/'million-receiver';target.mkdir(mode=0o700)
+    assert len(manifest['chunks'])==42
+    order=[(i*13+7)%42 for i in range(42)]
+    assert sorted(order)==list(range(42)) and order!=list(range(42))
+    with bb.Receiver(target,mraw,sraw,trust,digest,expires_epoch_us=10000000,
+        clock=lambda:(1000000,2000000),boot_reader=lambda:'test-boot') as receiver:
+        for index in order:
+            transport.accept_response(receiver,index,transport.request(index),transport.response(index,cache))
+        done=receiver.finish()
+        assert done['publisher_verified'] is True and done['useful_decoded_bytes']==1000000
+        assert done['whole_file_sha256']==kp.sha256_hex(payload)
+        assert done['parts']==42 and done['serialized_chunk_bytes']==42*32740
+        assert (target/'bundle.bin').read_bytes()==payload
+        assert all((target/'parts'/(name+'.json')).read_bytes()==chunk for name,chunk in chunks.items())
