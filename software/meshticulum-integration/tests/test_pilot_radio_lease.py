@@ -3,7 +3,7 @@
 The serial replies and clocks below are modeled. No native owner, port, radio
 or production permission is established by these controls.
 """
-from dataclasses import asdict
+from dataclasses import asdict,replace
 import hashlib
 
 import pytest
@@ -67,11 +67,16 @@ def arm_profile(tmp_path, profile, remaining_ms):
         max_attempts=profile.max_boot_attempts,
         max_airtime_us=profile.max_boot_estimated_airtime_us, create=True)
     try:
+        original_body=profile.encode(board_id=2);original_binding=journal.binding
         worker.arm(journal=journal, profile=profile, context_digest=context,
             authorize=lambda: True, authority_deadline=10.0+remaining_ms/1000)
         assert worker.armed_until < worker.deadline
-        assert journal.snapshot()['attempts'] == 0
-        return channel
+        assert worker.arm_lease_end_upper_bound < worker.deadline
+        assert worker.profile is profile and profile.encode(board_id=2)==original_body
+        assert journal.binding==original_binding and journal.max_attempts==profile.max_boot_attempts
+        assert journal.max_airtime_us==profile.max_boot_estimated_airtime_us
+        assert journal.snapshot()['attempts'] == journal.snapshot()['reserved_estimated_airtime_us'] == 0
+        return worker,channel
     finally:
         journal.close()
 
@@ -86,14 +91,22 @@ def test_fresh_shorter_lease_can_arm_without_extending_the_original_expiry(tmp_p
     assert profile.lease_ms < profile_for('sf7-500').lease_ms
     assert all(g['expires_epoch_us'] == 1000000000+remaining_ms*1000
         and g['service']['application_expires_epoch_us'] == g['expires_epoch_us'] for g in grants)
-    channel = arm_profile(tmp_path, profile, remaining_ms)
+    worker,channel = arm_profile(tmp_path, profile, remaining_ms)
+    assert worker.arm_lease_ms==profile.lease_ms
     assert [frame.type for frame in channel.commands] == [Message.DISARM, Message.ARM]
     assert channel.commands[-1].body == profile.encode(board_id=2)
 
 
-def test_fixed_ninety_second_lease_still_refuses_the_observed_short_window(tmp_path):
-    with pytest.raises(HardwareError, match='radio_authority_expired'):
-        arm_profile(tmp_path, profile_for('sf7-500'), 85000)
+def test_fixed_ninety_second_ceiling_clips_actual_ARM_to_original_short_window(tmp_path):
+    profile=profile_for('sf7-500');worker,channel=arm_profile(tmp_path,profile,85000)
+    assert worker.deadline==95 and 1000<=worker.arm_lease_ms<profile.lease_ms==90000
+    assert [frame.type for frame in channel.commands]==[Message.DISARM,Message.ARM]
+    assert channel.commands[-1].body==replace(profile,lease_ms=worker.arm_lease_ms).encode(board_id=2)
+
+
+def test_original_expiry_already_elapsed_still_refuses_ARM(tmp_path):
+    with pytest.raises(HardwareError,match='radio_authority_expired'):
+        arm_profile(tmp_path,profile_for('sf7-500'),5000)
 
 
 def test_ample_time_keeps_the_existing_profile_and_does_not_increase_radio_limits():

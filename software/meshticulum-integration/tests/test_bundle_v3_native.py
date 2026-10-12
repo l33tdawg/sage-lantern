@@ -183,17 +183,23 @@ class ArmChannel:
     def read(self,timeout):raw=self.inbound;self.inbound=b'';return raw
 
 
-@pytest.mark.parametrize('stage_end,lease_ms,accept',[(255.,89105,False),(285.,90000,True)])
-def test_actual_serial_ARM_guard_reproduces_487_and_fresh_180_stage_headroom(tmp_path,stage_end,lease_ms,accept):
+@pytest.mark.parametrize('stage_end,lease_ms,accept',[(255.,89105,True),(285.,90000,True),(165.7,89105,False)])
+def test_serial_ARM_clips_recorded_setup_preserves_fresh_headroom_and_refuses_expiry(tmp_path,stage_end,lease_ms,accept):
     channel=ArmChannel();worker=SerialWorker(channel);identity=worker.discover(expected_board_id=1,expected_version='mtb1-9816f92488')
     profile=replace(profile_for('sf7-500'),lease_ms=lease_ms);context=b'c'*32
     journal=AttemptJournal(tmp_path/'attempts.sqlite',binding=journal_binding(context,identity,profile),max_attempts=256,max_airtime_us=60000000,create=True,request_clock=lambda:100000000)
+    original_body=profile.encode(board_id=1);original_binding=journal.binding
     try:
         if accept:
             worker.arm(journal=journal,profile=profile,context_digest=context,authorize=lambda:True,authority_deadline=stage_end)
-            assert worker.armed_until<stage_end and Message.ARM in channel.writes
+            assert worker.armed_until<worker.arm_lease_end_upper_bound<stage_end and worker.deadline==stage_end
+            assert Message.ARM in channel.writes and 1000<=worker.arm_lease_ms<=lease_ms
+            assert (worker.arm_lease_ms<lease_ms) is (stage_end==255.)
         else:
             with pytest.raises(HardwareError,match='radio_authority_expired'):worker.arm(journal=journal,profile=profile,context_digest=context,authorize=lambda:True,authority_deadline=stage_end)
             assert Message.ARM not in channel.writes and worker.fenced
         assert Message.TRANSMIT not in channel.writes and journal.snapshot()['attempts']==0
+        assert worker.profile is profile and profile.encode(board_id=1)==original_body and journal.binding==original_binding
+        assert journal.max_attempts==256 and journal.max_airtime_us==60000000
+        assert journal.snapshot()['reserved_estimated_airtime_us']==0
     finally:journal.close()
