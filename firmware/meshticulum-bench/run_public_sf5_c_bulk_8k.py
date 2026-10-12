@@ -135,6 +135,7 @@ def inspect_a_before_seed(operator,review,config,profile):
 
 def bulk_metrics(link, verified, piece):
     """Same-host wall clocks; useful bytes exclude the MR1 response header."""
+    from lantern_meshticulum.bench.profiles import profile_for
     need(link['transport']=='lora' and link['format']=='MR1.response'
          and link['sender']==PUBLISHER and link['receiver']==REQUESTER and link['phase']=='complete',
          'bulk_response_path_rebound')
