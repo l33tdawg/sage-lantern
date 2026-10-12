@@ -334,27 +334,31 @@ class Reader:
     """
     def __init__(self):
         self.stack, self.held, self.directories = ExitStack(), [], {}
-        self._nodes, self._tokens, self._named = {}, {}, {}
+        self._nodes, self._tokens, self._named, self._file_index = {}, {}, {}, {}
         self._node_state = self._held_state = self._directory_state = ()
         self._token_state = ()
         self._named_state = ()
         self._owner = (os.getpid(), threading.get_ident(), os.geteuid())
         self._owner_ref = self._owner
-        self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens, self._named)
+        self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens, self._named, self._file_index)
         self._closed = False
     def _available(self, *, full=True):
         need(not self._closed and self._owner is self._owner_ref
              and self._owner == (os.getpid(), threading.get_ident(), os.geteuid())
-             and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens,self._named),self._refs))
+             and len(self._refs) == 7
+             and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens,self._named,self._file_index),self._refs))
              and len(self._nodes)==len(self._node_state) and len(self.held)==len(self._held_state)
              and len(self.directories)==len(self._directory_state) and len(self._tokens)==len(self._token_state)
-             and len(self._named)==len(self._named_state),
+             and len(self._named)==len(self._named_state)
+             and len(self._file_index)==len(self._held_state),
              'rpc_reader_owner_changed')
         if full:
             need(tuple(self._nodes.items())==self._node_state and tuple(self.held)==self._held_state
                  and tuple((path,tuple(identity)) for path,identity in self.directories.items())==self._directory_state
                  and tuple(self._tokens.items())==self._token_state
-                 and tuple(self._named.items())==self._named_state, 'rpc_reader_state_changed')
+                 and tuple(self._named.items())==self._named_state
+                 and tuple(self._file_index.items())==tuple((record[0],record) for record in self._held_state),
+                 'rpc_reader_state_changed')
     @staticmethod
     def _close_owned(fd, identity, token):
         try:
@@ -405,11 +409,24 @@ class Reader:
         return parent
     def read(self, path, maximum, *, lock=False):
         parent = self.directory(path.parent)
-        fd = os.open(path.name,_FLAGS,dir_fd=parent); self._retain(fd); self._check_nodes()
+        retained = self._file_index.get(path)
+        if retained is None:
+            fd = os.open(path.name,_FLAGS,dir_fd=parent); self._retain(fd)
+        else:
+            fd = retained[1]
+        self._check_nodes()
         s = os.fstat(fd)
         need(stat.S_ISREG(s.st_mode) and s.st_uid == os.geteuid()
              and stat.S_IMODE(s.st_mode) == 0o600 and s.st_nlink == 1
              and 0 <= s.st_size <= maximum, 'unsafe_rpc_metadata')
+        if retained is not None:
+            need(tuple(_stamp(s)) == retained[2]
+                 == tuple(_stamp(os.stat(path.name,dir_fd=parent,follow_symlinks=False))),
+                 'rpc_repeated_metadata_changed')
+        need(fcntl.fcntl(fd,fcntl.F_GETFL)&(os.O_ACCMODE|os.O_NONBLOCK) == os.O_RDONLY|os.O_NONBLOCK
+             and fcntl.fcntl(fd,fcntl.F_GETFD)&fcntl.FD_CLOEXEC, 'rpc_metadata_descriptor_flags_changed')
+        # A repeated locked read still takes/checks the shared lock. Reusing an
+        # open description never reuses a successful lock or byte observation.
         if lock: fcntl.flock(fd, fcntl.LOCK_SH|fcntl.LOCK_NB)
         raw = os.pread(fd, maximum+1, 0)
         need(len(raw) == s.st_size, 'short_rpc_metadata')
@@ -421,12 +438,16 @@ class Reader:
              == tuple(_stamp(os.stat(path.name,dir_fd=parent,follow_symlinks=False)))
              and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd], 'rpc_metadata_changed_after_check')
         self._available()
+        need(retained is None or raw == retained[3], 'rpc_repeated_metadata_bytes_changed')
         # Reuse the already retained parent; full ancestry is still checked
         # before and after every complete byte reread.
         named = (parent,path.name)
         need(path not in self._named or self._named[path]==named, 'rpc_named_parent_rebound')
         self._named[path] = named; self._named_state = tuple(self._named.items())
-        self.held.append((path,fd,identity,raw)); self._held_state = tuple(self.held)
+        if retained is None:
+            record = (path,fd,identity,raw)
+            self.held.append(record); self._held_state = tuple(self.held)
+            self._file_index[path] = record
         return raw
     def check(self):
         self._check_nodes()
