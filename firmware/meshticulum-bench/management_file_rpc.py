@@ -34,9 +34,9 @@ RPC_FILE_ENTRY=r'''try:
  module=importlib.import_module('lantern_meshticulum.bench.pilot_resume_rpc')
  need(getattr(module,'CONTRACT_SCHEMA',None)=='meshticulum.private-resume-native-rpc.v1','native_integration_contract_missing')
  if action=='cleanup-management-input':
-  inputs.cleanup(path,nonce=nonce,compressed_sha256=csha,expected_stage_uid=int(uid),
+  absent=inputs.cleanup(path,nonce=nonce,compressed_sha256=csha,expected_stage_uid=int(uid),
    expected_identity=identities['file'],expected_directory_identity=identities['directory'])
-  result=dict(schema='meshticulum.management-input-cleaned.v1',unit=unit,nonce=nonce,cleaned=True,
+  result=dict(schema='meshticulum.management-input-cleaned.v1',unit=unit,nonce=nonce,cleaned=True,already_absent=absent,
    native_dispatch_called=False,radio_opened=False,native_state_writes=False)
  else:
   value=inputs.consume(path,unit=unit,action=action,parent_id=parent,operation_sha256=operation,nonce=nonce,

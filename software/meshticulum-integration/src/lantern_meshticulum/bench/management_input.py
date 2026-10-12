@@ -191,9 +191,30 @@ def cleanup(path,*,nonce,compressed_sha256,expected_stage_uid,expected_identity,
     sudo_uid=os.environ.get('SUDO_UID','0')
     need(re.fullmatch('[0-9]{1,10}',sudo_uid) and type(expected_stage_uid) is int
          and expected_stage_uid==int(sudo_uid),'management_input_stage_owner_changed')
-    held=PrivateInput(path,owner_uid=expected_stage_uid,nonce=nonce,compressed_sha256=compressed_sha256,
-        expected_identity=expected_identity,expected_directory_identity=expected_directory_identity)
-    try:held.remove()
+    try:
+        held=PrivateInput(path,owner_uid=expected_stage_uid,nonce=nonce,compressed_sha256=compressed_sha256,
+            expected_identity=expected_identity,expected_directory_identity=expected_directory_identity)
+    except FileNotFoundError:
+        target=Path(path).absolute()
+        need(target.parent.name==DIRECTORY and target.name=='rpc-'+nonce+'-'+compressed_sha256+'.xz',
+             'management_input_path')
+        parent=target.parent
+        for ancestor in (parent,*parent.parents):
+            info=ancestor.lstat()
+            need(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,expected_stage_uid)
+                 and not info.st_mode&0o022 and ancestor.resolve()==ancestor,'management_input_ancestry')
+        fd=os.open(parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:
+            info=os.fstat(fd)
+            need((info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid)==tuple(expected_directory_identity)
+                 and stat.S_IMODE(info.st_mode)==0o700 and info.st_uid==expected_stage_uid
+                 and (parent.lstat().st_dev,parent.lstat().st_ino)==(info.st_dev,info.st_ino),
+                 'management_input_staged_directory_changed')
+            try:os.stat(target.name,dir_fd=fd,follow_symlinks=False)
+            except FileNotFoundError:return True
+            raise RuntimeError('management_input_changed')
+        finally:os.close(fd)
+    try:held.remove();return False
     finally:held.close()
 
 

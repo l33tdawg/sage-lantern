@@ -200,6 +200,16 @@ def test_explicit_cleanup_after_expiry_never_dispatches_or_claims_nonce(staged,m
     assert not Path(d['path']).exists() and not records
 
 
+def test_already_consumed_input_cleanup_requires_exact_original_directory(staged,monkeypatch,tmp_path):
+    _,d,_=staged;records=root_receipts(monkeypatch,tmp_path/'receipts',d['owner_uid'])
+    held=open_input(d);held.remove();held.close()
+    kwargs=dict(nonce=d['nonce'],compressed_sha256=d['compressed_sha256'],expected_stage_uid=d['owner_uid'],
+        expected_identity=d['file_identity'],expected_directory_identity=d['directory_identity'])
+    assert inputs.cleanup(d['path'],**kwargs) is True and not records
+    parent=Path(d['path']).parent;parent.rename(parent.with_name('old'));parent.mkdir(mode=0o700)
+    with pytest.raises(RuntimeError,match='management_input_staged_directory_changed'):inputs.cleanup(d['path'],**kwargs)
+
+
 def test_file_callback_budget_uses_remaining_original_time_and_cleanup_is_separate(staged,monkeypatch):
     _,d,_=staged;bench=Path(__file__).resolve().parents[3]/'firmware/meshticulum-bench'
     spec=importlib.util.spec_from_file_location('file_deadline_controls',bench/'management_file_rpc.py')

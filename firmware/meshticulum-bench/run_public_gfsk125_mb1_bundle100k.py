@@ -97,7 +97,8 @@ def review(path,pin):
     need(manifest['files']['lantern_meshticulum/bench/pilot_resume_rpc.py']==op['native_adapter_sha256'],'batch_native_adapter_changed')
     required={'firmware/meshticulum-bench/run_public_pilot.py','firmware/meshticulum-bench/pilot_grant_bootstrap.py',
         'firmware/meshticulum-bench/runtime_bootstrap.py','firmware/meshticulum-bench/run_public_sf5_c_bulk_8k.py',
-        'firmware/meshticulum-bench/pair_launch_guard_sender_first.py'}
+        'firmware/meshticulum-bench/pair_launch_guard_sender_first.py',
+        'firmware/meshticulum-bench/management_file_rpc.py'}
     need(required<=set(op['source_pins']),'batch_support_pins_missing')
     for name,pin in op['source_pins'].items():
         need(not Path(name).is_absolute() and '..' not in Path(name).parts,'batch_support_path_changed')
@@ -190,18 +191,39 @@ def native_callback_seconds(action,phase_end_epoch_us,now_epoch_us):
 
 
 def rpc_command(operator,cfg,op,unit,action,payload,seconds,*,operation_sha256=None):
-    """Separate management transport boundary; no native/whole-flow authority.
+    """Explicit MB1 management-file lane; existing JSON/argv runners stay unchanged."""
+    from management_file_rpc import command as file_command
+    from lantern_meshticulum.bench.management_input import parameters
+    need(type(seconds) is int and 0<seconds<=120,'batch_file_callback_bound')
+    nonce=secrets.token_hex(16);now=time.time_ns()//1000;local_start=operator.clock()
+    end=min(cfg['handoff_end_epoch_us'],now+seconds*1000000)
+    local_deadline=min(operator.deadline,local_start+max(0,(end-now)/1000000))
+    parameters(unit,action,cfg['bundle_parent_id'],operation_sha256,nonce,end)
+    staged=operator.stage_management_input(unit,action,payload,parent_id=cfg['bundle_parent_id'],
+        operation_sha256=operation_sha256,nonce=nonce,original_end_epoch_us=end)
+    try:
+        values=file_command('/opt/meshticulum-bench/runtime-'+op['runtime_sha256'][:16],op['manifest_sha256'],
+            op['native_adapter_sha256'],staged,cfg['units'][unit]['python'],seconds)
+        need(operator.clock()<local_deadline and time.time_ns()//1000<end,'batch_file_original_window_expired')
+    except BaseException:
+        cleanup_rpc_input(operator,cfg,op,staged);raise
+    return FileRPCCommand(values,staged,end,local_deadline)
 
-    The current implementation retains the original inline bounds. A reviewed
-    private-file transport can replace this boundary without changing native
-    descriptor validation, original windows, costs or endpoint cleanup.
-    """
-    raw=canonical(payload);blob=lzma.compress(raw,format=lzma.FORMAT_XZ,preset=6|lzma.PRESET_EXTREME)
-    need(len(raw)<=2000000 and len(blob)<=91000,'batch_RPC_bound')
-    import base64
-    return ['/usr/bin/timeout','--kill-after=2s',str(seconds)+'s',cfg['units'][unit]['python'],'-I','-B','-c',
-        BUNDLE_RPC_ENTRY,'/opt/meshticulum-bench/runtime-'+op['runtime_sha256'][:16],op['manifest_sha256'],
-        op['native_adapter_sha256'],action,unit,base64.b64encode(blob).decode(),sha(raw)]
+
+class FileRPCCommand(list):
+    """Per-call descriptor; no shared mutable input slot across prepare threads."""
+    def __init__(self,values,staged,end,local_deadline):
+        super().__init__(values);self.staged=staged;self.original_end_epoch_us=end;self.local_deadline=local_deadline
+
+
+def cleanup_rpc_input(operator,cfg,op,staged):
+    from management_file_rpc import command as file_command
+    command=file_command('/opt/meshticulum-bench/runtime-'+op['runtime_sha256'][:16],op['manifest_sha256'],
+        op['native_adapter_sha256'],staged,cfg['units'][staged['unit']]['python'],5,cleanup=True)
+    value=operator._command(staged['unit'],command,'meshticulum.management-input-cleaned.v1',root=True,cleanup=True)
+    need(value['cleaned'] is True and value['unit']==staged['unit'] and value['nonce']==staged['nonce']
+        and value['native_dispatch_called'] is False,'batch_management_input_cleanup_unproved')
+    return value
 
 
 def main():
@@ -251,12 +273,25 @@ def main():
     def native(u,action,payload):
         left=native_callback_seconds(action,end,time.time_ns()//1000)
         command=rpc_command(operator,cfg,op,u,action,payload,left,operation_sha256=args.operation_sha256)
-        argv=operator._argv(u,command,root=True);need(len(argv[-1].encode())<125000,'batch_native_argv_bound');job=Job(argv,password=operator.passwords.get(u),deadline=min(operator.clock()+left+2,operator.deadline),clock=operator.clock);owned.append(job)
-        audit=dict(unit=u,action=action,remote_terminal=False,local_terminal=False);result['rpc_clients'].append(audit)
+        job=None;audit=dict(unit=u,action=action,remote_terminal=False,local_terminal=False);result['rpc_clients'].append(audit)
         try:
+            argv=operator._argv(u,command,root=True);need(len(argv[-1].encode())<125000,'batch_native_argv_bound')
+            job=Job(argv,password=operator.passwords.get(u),deadline=min(command.local_deadline,operator.deadline),clock=operator.clock);owned.append(job)
             need(job.wait()==0,'batch_native_RPC_failed');value=one_record(bytes(job.output),'meshticulum.private-resume-native-rpc.v1')
             need(value['unit']==u and value['action']==action and value['radio_opened'] is False and value['private_production'] is False,'batch_native_scope_changed');audit['remote_terminal']=True;return value
-        finally:job.close();audit['local_terminal']=job.process.poll() is not None;audit['returncode']=job.process.returncode
+        finally:
+            try:
+                if job is not None:
+                    job.close();audit['local_terminal']=job.process.poll() is not None;audit['returncode']=job.process.returncode
+            finally:
+                original=sys.exc_info()[1]
+                try:
+                    cleanup=cleanup_rpc_input(operator,cfg,op,command.staged)
+                    audit['management_input_cleanup_confirmed']=True;audit['management_input_already_absent']=cleanup['already_absent']
+                except BaseException:
+                    audit['management_input_cleanup_confirmed']=False
+                    if original is None:raise
+                    original.add_note('batch_management_input_cleanup_unproved')
     def guarded(u,action='guard'):
         return native(u,action,dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u],preparation_sha256=preparations[u],review_sha256=args.operation_sha256,expected_cut_run=None))
     try:
