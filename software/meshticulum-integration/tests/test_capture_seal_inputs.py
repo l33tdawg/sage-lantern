@@ -18,7 +18,7 @@ def prepared(monkeypatch):
     for parent in rpc.HISTORY:(state/'parents'/parent).mkdir(mode=0o700)
     known={}
     counts={rpc.LATEST_PAID:9,rpc.COMPLETE_PAID:10,rpc.BULK_PAID:4,rpc.MIXED_PAID:4,
-            rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2,rpc.IMMEDIATE_RX_BULK_PAID:2,rpc.SF7_REPLICATE_PAID:2,rpc.PUBLIC32_PAID:2,rpc.PUBLIC32_RETRY_PAID:2,rpc.PUBLIC32_SENDER_READY_PAID:2,rpc.PUBLIC32_COMPLETE_PAID:2,rpc.ENROLLED_ZERO_PAID:0,rpc.PARTIAL_BUNDLE_PAID:2,rpc.V2_PARTIAL_BUNDLE_PAID:2,rpc.V2_FAILED_BUNDLE_PAID:2,rpc.V3_PARTIAL_BUNDLE_PAID:2,rpc.V3_CHECKPOINT_BUNDLE_PAID:2,rpc.V3_VERIFIED_BUNDLE_PAID:2,rpc.SF5_STARTUP_PAID:1,rpc.SF5_COMPLETED_PAID:2,rpc.PARTIAL_BATCH_PAID:4,rpc.COMPLETED_BATCH_PAID:6,rpc.RX_PRIORITY_BATCH_PAID:6,rpc.EARLY_RX_PARTIAL_PAID:4}
+            rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2,rpc.IMMEDIATE_RX_BULK_PAID:2,rpc.SF7_REPLICATE_PAID:2,rpc.PUBLIC32_PAID:2,rpc.PUBLIC32_RETRY_PAID:2,rpc.PUBLIC32_SENDER_READY_PAID:2,rpc.PUBLIC32_COMPLETE_PAID:2,rpc.ENROLLED_ZERO_PAID:0,rpc.PARTIAL_BUNDLE_PAID:2,rpc.V2_PARTIAL_BUNDLE_PAID:2,rpc.V2_FAILED_BUNDLE_PAID:2,rpc.V3_PARTIAL_BUNDLE_PAID:2,rpc.V3_CHECKPOINT_BUNDLE_PAID:2,rpc.V3_VERIFIED_BUNDLE_PAID:2,rpc.SF5_STARTUP_PAID:1,rpc.SF5_COMPLETED_PAID:2,rpc.PARTIAL_BATCH_PAID:4,rpc.COMPLETED_BATCH_PAID:6,rpc.RX_PRIORITY_BATCH_PAID:6,rpc.EARLY_RX_PARTIAL_PAID:4,rpc.GFSK_COMPLETE_PAID:6}
     assert set(counts)==set(rpc.GUARDED_PAID)
     for parent,count in counts.items():
         directory=state/'parents'/parent/'prepared-identities';directory.mkdir(mode=0o700)
@@ -44,7 +44,7 @@ def test_complete_H4_through_H19_record_coverage_produces_real_local_strict_seal
     assert len(dirs['parents/'+rpc.COMPLETE_PAID+'/prepared-identities'])==10
     assert {parent:len(dirs['parents/'+parent+'/prepared-identities']) for parent in rpc.GUARDED_PAID}=={
         rpc.LATEST_PAID:9,rpc.COMPLETE_PAID:10,rpc.BULK_PAID:4,rpc.MIXED_PAID:4,
-        rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2,rpc.IMMEDIATE_RX_BULK_PAID:2,rpc.SF7_REPLICATE_PAID:2,rpc.PUBLIC32_PAID:2,rpc.PUBLIC32_RETRY_PAID:2,rpc.PUBLIC32_SENDER_READY_PAID:2,rpc.PUBLIC32_COMPLETE_PAID:2,rpc.ENROLLED_ZERO_PAID:0,rpc.PARTIAL_BUNDLE_PAID:2,rpc.V2_PARTIAL_BUNDLE_PAID:2,rpc.V2_FAILED_BUNDLE_PAID:2,rpc.V3_PARTIAL_BUNDLE_PAID:2,rpc.V3_CHECKPOINT_BUNDLE_PAID:2,rpc.V3_VERIFIED_BUNDLE_PAID:2,rpc.SF5_STARTUP_PAID:1,rpc.SF5_COMPLETED_PAID:2,rpc.PARTIAL_BATCH_PAID:4,rpc.COMPLETED_BATCH_PAID:6,rpc.RX_PRIORITY_BATCH_PAID:6,rpc.EARLY_RX_PARTIAL_PAID:4}
+        rpc.SUCCESS_PAID:2,rpc.PARTIAL_PAID:1,rpc.ACCEPTED_BULK_PAID:2,rpc.REVERSE_BULK_PAID:2,rpc.SMALL_BULK_PAID:2,rpc.ZERO_RETRY_BULK_PAID:2,rpc.IMMEDIATE_RX_BULK_PAID:2,rpc.SF7_REPLICATE_PAID:2,rpc.PUBLIC32_PAID:2,rpc.PUBLIC32_RETRY_PAID:2,rpc.PUBLIC32_SENDER_READY_PAID:2,rpc.PUBLIC32_COMPLETE_PAID:2,rpc.ENROLLED_ZERO_PAID:0,rpc.PARTIAL_BUNDLE_PAID:2,rpc.V2_PARTIAL_BUNDLE_PAID:2,rpc.V2_FAILED_BUNDLE_PAID:2,rpc.V3_PARTIAL_BUNDLE_PAID:2,rpc.V3_CHECKPOINT_BUNDLE_PAID:2,rpc.V3_VERIFIED_BUNDLE_PAID:2,rpc.SF5_STARTUP_PAID:1,rpc.SF5_COMPLETED_PAID:2,rpc.PARTIAL_BATCH_PAID:4,rpc.COMPLETED_BATCH_PAID:6,rpc.RX_PRIORITY_BATCH_PAID:6,rpc.EARLY_RX_PARTIAL_PAID:4,rpc.GFSK_COMPLETE_PAID:6}
     with HistoricalMetadataFence(state,owner_uid=os.geteuid(),expected_files=files,expected_directories=dirs) as fence:
         fence.check()
 
@@ -71,13 +71,14 @@ def test_H5_mutation_or_unverified_entry_refuses_before_namespace_creation(prepa
 
 
 
-def test_actual_H32_capture_metadata_survives_capture_and_SealedHistory(prepared):
+@pytest.mark.parametrize('parent,fixture',[(rpc.EARLY_RX_PARTIAL_PAID,'current4ca8-partial-batch-metadata.json'),(rpc.GFSK_COMPLETE_PAID,'current6be-gfsk-completed-metadata.json')])
+def test_actual_retained_capture_metadata_survives_capture_and_SealedHistory(prepared,parent,fixture):
     import json
     from lantern_meshticulum.bench.history_identity_seal import capture,SealedHistory
     state,known=prepared
-    data=json.loads(Path(__file__).with_name('fixtures').joinpath('current4ca8-partial-batch-metadata.json').read_bytes())
-    assert data['policy']['parent_id']==rpc.EARLY_RX_PARTIAL_PAID
-    target=state/'parents'/rpc.EARLY_RX_PARTIAL_PAID
+    data=json.loads(Path(__file__).with_name('fixtures').joinpath(fixture).read_bytes())
+    assert data['policy']['parent_id']==parent
+    target=state/'parents'/parent
     # This layer checks the actual namespace, hashes and held identities.
     # Grant/capture schemas remain qualified separately by full_history.
     values={'capture.json':data['owners']['unit-c'],
@@ -93,11 +94,12 @@ def test_actual_H32_capture_metadata_survives_capture_and_SealedHistory(prepared
     with SealedHistory(state,owner_uid=os.geteuid(),seal_bytes=seal,expected_sha256=pin) as held:held.check()
 
 
-def test_adjacent_unknown_parent_cannot_import_H32_capture_allowance(prepared):
+@pytest.mark.parametrize('unknown_parent',['4ca8d86644aa24e6fefd06872a9cd132','6be212b13351cb9852ed07ba7998be97'])
+def test_adjacent_unknown_parent_cannot_import_retained_capture_allowance(prepared,unknown_parent):
     from lantern_meshticulum.bench.history_metadata_fence import FenceError
     state,known=prepared
     with rpc.Reader() as reader:files,dirs=rpc.seal_inputs(reader,'unit-c',known,{}, {})
-    unknown=state/'parents'/('4ca8d86644aa24e6fefd06872a9cd132');unknown.mkdir(mode=0o700)
+    unknown=state/'parents'/unknown_parent;unknown.mkdir(mode=0o700)
     path=unknown/'capture.json';path.write_bytes(b'public metadata');path.chmod(0o600)
     relative=str(path.relative_to(state));files[relative]=rpc.sha(path.read_bytes())
     dirs['parents']=tuple(sorted((*dirs['parents'],unknown.name)))

@@ -35,12 +35,12 @@ GFSK_KIND='c-gfsk125-8k-batch-v1'
 PROFILE_NAMES=frozenset(MODES)|{GFSK_NAME}
 GFSK_ADMISSION=GfskAdmission('MY',(921375000,),(0,),10000,180000,256,60000000)
 
-# Root binds actual firmware/source/expired-history evidence before deployment.
-# These values deliberately deny a native GFSK scope in this source candidate.
+# Actual compiled firmware/source and expired H33 evidence are bound below.
+# A fresh native scope still requires its own current capture and owner approval.
 GFSK_FIRMWARE='mtb1-b433927ba6'
 GFSK_CORE_COMMIT='d34ff783c5da21915565dc6fa32bad3a553c3d74'
-GFSK_HISTORY_RECEIPT_SHA256='801b3d7acc1f414251615a60652a09443a50a0b278020a1af599381e5ed5e1e8'
-GFSK_PRECEDING_PARENT='4ca8d86644aa24e6fefd06872a9cd131'
+GFSK_HISTORY_RECEIPT_SHA256='c89c1ac89e26de91ebc424640b14a46b28c51109ccef61d5578f86050ede1300'
+GFSK_PRECEDING_PARENT='6be212b13351cb9852ed07ba7998be96'
 
 
 def require_gfsk_bindings():
@@ -51,7 +51,7 @@ def require_gfsk_bindings():
         and all(c in '0123456789abcdef' for c in GFSK_CORE_COMMIT)
         and type(GFSK_HISTORY_RECEIPT_SHA256) is str and len(GFSK_HISTORY_RECEIPT_SHA256)==64
         and all(c in '0123456789abcdef' for c in GFSK_HISTORY_RECEIPT_SHA256)
-        and len(PAID_HISTORY)==32 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
+        and len(PAID_HISTORY)==33 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
         'pending_gfsk_firmware_source_and_history_bindings')
     return True
 

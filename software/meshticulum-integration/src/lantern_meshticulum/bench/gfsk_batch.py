@@ -96,6 +96,30 @@ class BatchContext:
     @classmethod
     def from_owner(cls, owner, policy):
         require_gfsk_bindings()
+        return cls._decode_owner_record(owner,policy)
+
+    @classmethod
+    def _from_retained_owner(cls,owner,policy,*,unit,observation):
+        """Decode only the proved expired 6be scope; grants no live approval."""
+        retained_parent='6be212b13351cb9852ed07ba7998be96'
+        retained_digest='97e3b2e0b51f7fb1b1d4c21c04d715f9dc630e6702e46eb6fd1d6f7cb6f62bef'
+        require(type(policy) is ParentPolicy and policy.parent_id==retained_parent
+                and policy.digest==retained_digest and unit in ('unit-a','unit-b','unit-c')
+                and type(owner) is dict and owner.get('policy_digest')==retained_digest
+                and type(observation) is dict and observation.get('parent_id')==retained_parent
+                and observation.get('policy_digest')==retained_digest and observation.get('unit')==unit,
+                'retained_gfsk_scope_changed')
+        require(observation.get('policy_expired_at_observation') is True
+                and all(type(observation.get(k)) is int for k in
+                        ('observation_original_epoch_us','observation_original_monotonic_us'))
+                and observation['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
+                and observation['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+                'retained_gfsk_original_clocks_live')
+        return cls._decode_owner_record(owner,policy)
+
+    @classmethod
+    def _decode_owner_record(cls,owner,policy):
+        """Pure shape/budget decoding; supplies no readiness or native authority."""
         require(type(owner) is dict and owner.get('qualification_kind')==KIND
                 and owner.get('radio_profile_name')=='gfsk125' and owner.get('radio_modem')==GFSK_NAME
                 and owner['rf_profile']==profile_record(profile_for('gfsk125')),

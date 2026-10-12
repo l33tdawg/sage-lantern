@@ -273,8 +273,8 @@ for name,h in m['files'].items():
  part=Path(name);need(not part.is_absolute() and '..' not in part.parts,'runtime_member')
  need(hashlib.sha256(read(root/part,500000)).hexdigest()==h,'runtime_member_pin')
 need(m['files'].get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')
-need(len(blob)<=109336,'RPC_encoded_bound')
-compressed=base64.b64decode(blob,validate=True);need(len(compressed)<=82000,'RPC_compressed_bound')
+need(len(blob)<=112000,'RPC_encoded_bound')
+compressed=base64.b64decode(blob,validate=True);need(len(compressed)<=84000,'RPC_compressed_bound')
 d=lzma.LZMADecompressor(format=lzma.FORMAT_XZ,memlimit=33554432);raw=d.decompress(compressed,max_length=2000001)
 need(len(raw)<=2000000 and d.eof and not d.unused_data
  and hashlib.sha256(raw).hexdigest()==input_sha,'RPC_input_bound_or_pin')
