@@ -284,7 +284,13 @@ def parse(raw):
 
 
 class Reader:
-    """Held protected regular metadata and read locks, with no SQLite path open."""
+    """Held protected metadata/locks and immutable bytes, no SQLite path open.
+
+    Each check still re-reads every held file and verifies its complete stamp,
+    ancestry and open-description token. Exact byte comparison to the original
+    verified read avoids hashing the same source/capture bytes on every native
+    permission callback. It caches no permission or current-file observation.
+    """
     def __init__(self):
         self.stack, self.held, self.directories = ExitStack(), [], {}
         self._nodes, self._tokens = {}, {}
@@ -369,18 +375,18 @@ class Reader:
         need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
              and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd], 'rpc_metadata_changed_after_check')
         self._available()
-        self.held.append((path,fd,identity,sha(raw))); self._held_state = tuple(self.held)
+        self.held.append((path,fd,identity,raw)); self._held_state = tuple(self.held)
         return raw
     def check(self):
         self._check_nodes()
-        for path, fd, identity, digest in self._held_state:
+        for path, fd, identity, expected in self._held_state:
             token=self._tokens[fd]
             need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
                  and os.lseek(fd,0,os.SEEK_CUR) == token, 'held_rpc_metadata_changed')
             raw=os.pread(fd,identity[5]+1,0);self._available(full=False)
             need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
                  and os.lseek(fd,0,os.SEEK_CUR) == token
-                 and sha(raw) == digest, 'held_rpc_metadata_changed_after_read')
+                 and raw == expected, 'held_rpc_metadata_changed_after_read')
         self._check_nodes()
         return True
     def close(self):

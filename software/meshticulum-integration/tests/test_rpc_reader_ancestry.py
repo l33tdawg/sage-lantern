@@ -218,7 +218,7 @@ def test_held_file_bytes_stamp_type_and_identity_are_rechecked(tmp_path,fault):
     finally:reader.close()
 
 
-def test_byte_hash_is_checked_even_if_metadata_observation_is_spoofed(tmp_path,monkeypatch):
+def test_byte_content_is_checked_even_if_metadata_observation_is_spoofed(tmp_path,monkeypatch):
     reader,parent,leaf,paths=sample(tmp_path);path,fd,identity,_=reader.held[0];raw=path.read_bytes()
     path.write_bytes(b'x'*len(raw));original=rpc._stamp
     def observed(info):
@@ -227,6 +227,20 @@ def test_byte_hash_is_checked_even_if_metadata_observation_is_spoofed(tmp_path,m
     try:
         monkeypatch.setattr(rpc,'_stamp',observed)
         with pytest.raises(Exception):reader.check()
+    finally:reader.close()
+
+
+def test_every_held_byte_is_reread_without_rehashing_an_unchanged_baseline(tmp_path,monkeypatch):
+    reader,parent,leaf,paths=sample(tmp_path);original=os.pread;reads=[]
+    def observed(fd,maximum,offset):
+        raw=original(fd,maximum,offset);reads.append((fd,raw));return raw
+    try:
+        monkeypatch.setattr(os,'pread',observed)
+        monkeypatch.setattr(rpc,'sha',lambda _:pytest.fail('held-byte comparison unnecessarily hashed its input'))
+        assert reader.check() is True
+        assert {fd:raw for fd,raw in reads}=={fd:os.pread(fd,identity[5]+1,0)
+            for path,fd,identity,_ in reader.held}
+        assert len(reads)==4  # one full check read and one explicit comparison per file
     finally:reader.close()
 
 
