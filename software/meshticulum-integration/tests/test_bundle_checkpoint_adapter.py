@@ -89,13 +89,13 @@ def test_missing_original_optin_refuses_before_loading_source_or_opening_device(
     with pytest.raises(RuntimeError):adapter.open_serial('unit-a',policy,{'bundle_context':context},1)
 
 
-@pytest.mark.parametrize('mutation',('old_count','wrong_hash','wrong_limit','bool_count'))
+@pytest.mark.parametrize('mutation',('old_count','previous_count','wrong_hash','wrong_limit','bool_count'))
 def test_original_owner_checkpoint_descriptor_is_explicit_and_typed(data,mutation):
     _,_,value,policy=data
     owner=dict(bundle_context=value,bundle_radio_checkpoint=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',
-        producer_sha256='a'*64,primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=34,maximum_checkpoints=4))
+        producer_sha256='a'*64,primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=35,maximum_checkpoints=4))
     assert adapter.context_for('unit-a',policy,owner,1)
-    key,new={'old_count':('retained_history_count',22),'wrong_hash':('producer_sha256','not-a-sha'),
+    key,new={'old_count':('retained_history_count',22),'previous_count':('retained_history_count',34),'wrong_hash':('producer_sha256','not-a-sha'),
         'wrong_limit':('maximum_checkpoints',5),'bool_count':('retained_history_count',True)}[mutation]
     owner['bundle_radio_checkpoint'][key]=new
     with pytest.raises(RuntimeError):adapter.context_for('unit-a',policy,owner,1)
@@ -185,7 +185,7 @@ def test_native_clipped_guard_binds_original_phase_and_never_extends_handoff(dat
     _,_,value,policy=data;now=[(101000000,802000000)]
     owner=dict(bundle_context=value,native_phase={'unit-a':dict(epoch_us=100000000,monotonic_us=801000000,deadline_monotonic_us=1101000000)},
         bundle_radio_checkpoint=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',producer_sha256='a'*64,
-            primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=34,maximum_checkpoints=4))
+            primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=35,maximum_checkpoints=4))
     payload=dict(checkpoint_index=1,checkpoint_remote_end_epoch_us=145000000,checkpoint_remote_deadline_monotonic_us=846000000)
     if fault=='extended_epoch':payload['checkpoint_remote_end_epoch_us']+=1
     if fault=='extended_mono':payload['checkpoint_remote_deadline_monotonic_us']+=1

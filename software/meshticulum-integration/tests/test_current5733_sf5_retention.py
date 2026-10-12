@@ -106,7 +106,7 @@ def test_exact_failed_disarmed_outcomes_do_not_become_resource_success(unit):
 
 def test_roster_retains_old_twenty_six_and_new_failed_attempt_once():
     old=tuple(DATA['prior_paid_parent_ids']);assert len(old)==26 and retained.PAID_HISTORY[:26]==old
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==34 and retained.PAID_HISTORY[26]==rpc.SF5_STARTUP_PAID
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==35 and retained.PAID_HISTORY[26]==rpc.SF5_STARTUP_PAID
     assert retained.UNADMITTED_PAID_HISTORY==old[:12]
 
 
