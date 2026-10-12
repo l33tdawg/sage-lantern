@@ -6,9 +6,9 @@ from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK_NAME,profile_for,profile_record
 
 # Root must bind a reviewed future scope, paired source/runtime and actual
 # retained history. A source test or the legacy JSON scope cannot fill these.
-PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256=None,
-    core_commit='002694c3a7ad3b402891029ded0c82fabecde691',
-    history_receipt_sha256=None,
+PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256='539d2ddc872fd6f0567abad76c0d067deea714837e9ebda5c15553a860b04c79',
+    core_commit='15a81deb405463eb8c0e0dbda0f7499ce0864a6c',
+    history_receipt_sha256='11ceb828c787eeed97ec978915b59ff5d34cf0056797035a238673ab407b1249',
     preceding_parent='3195cff3fc8fc8ee0b81694fe8f9e389'))
 
 
