@@ -328,24 +328,27 @@ class Reader:
     """
     def __init__(self):
         self.stack, self.held, self.directories = ExitStack(), [], {}
-        self._nodes, self._tokens = {}, {}
+        self._nodes, self._tokens, self._named = {}, {}, {}
         self._node_state = self._held_state = self._directory_state = ()
         self._token_state = ()
+        self._named_state = ()
         self._owner = (os.getpid(), threading.get_ident(), os.geteuid())
         self._owner_ref = self._owner
-        self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens)
+        self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens, self._named)
         self._closed = False
     def _available(self, *, full=True):
         need(not self._closed and self._owner is self._owner_ref
              and self._owner == (os.getpid(), threading.get_ident(), os.geteuid())
-             and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens),self._refs))
+             and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens,self._named),self._refs))
              and len(self._nodes)==len(self._node_state) and len(self.held)==len(self._held_state)
-             and len(self.directories)==len(self._directory_state) and len(self._tokens)==len(self._token_state),
+             and len(self.directories)==len(self._directory_state) and len(self._tokens)==len(self._token_state)
+             and len(self._named)==len(self._named_state),
              'rpc_reader_owner_changed')
         if full:
             need(tuple(self._nodes.items())==self._node_state and tuple(self.held)==self._held_state
                  and tuple((path,tuple(identity)) for path,identity in self.directories.items())==self._directory_state
-                 and tuple(self._tokens.items())==self._token_state, 'rpc_reader_state_changed')
+                 and tuple(self._tokens.items())==self._token_state
+                 and tuple(self._named.items())==self._named_state, 'rpc_reader_state_changed')
     @staticmethod
     def _close_owned(fd, identity, token):
         try:
@@ -405,21 +408,31 @@ class Reader:
         raw = os.pread(fd, maximum+1, 0)
         need(len(raw) == s.st_size, 'short_rpc_metadata')
         identity = tuple(_stamp(s))
-        need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat())), 'rpc_metadata_changed')
+        need(tuple(_stamp(os.fstat(fd))) == identity
+             == tuple(_stamp(os.stat(path.name,dir_fd=parent,follow_symlinks=False))), 'rpc_metadata_changed')
         self._check_nodes()
-        need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
+        need(tuple(_stamp(os.fstat(fd))) == identity
+             == tuple(_stamp(os.stat(path.name,dir_fd=parent,follow_symlinks=False)))
              and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd], 'rpc_metadata_changed_after_check')
         self._available()
+        # Reuse the already retained parent; full ancestry is still checked
+        # before and after every complete byte reread.
+        named = (parent,path.name)
+        need(path not in self._named or self._named[path]==named, 'rpc_named_parent_rebound')
+        self._named[path] = named; self._named_state = tuple(self._named.items())
         self.held.append((path,fd,identity,raw)); self._held_state = tuple(self.held)
         return raw
     def check(self):
         self._check_nodes()
         for path, fd, identity, expected in self._held_state:
+            parent,name=self._named[path]
             token=self._tokens[fd]
-            need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
+            need(tuple(_stamp(os.fstat(fd))) == identity
+                 == tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)))
                  and os.lseek(fd,0,os.SEEK_CUR) == token, 'held_rpc_metadata_changed')
             raw=os.pread(fd,identity[5]+1,0);self._available(full=False)
-            need(tuple(_stamp(os.fstat(fd))) == identity == tuple(_stamp(path.lstat()))
+            need(tuple(_stamp(os.fstat(fd))) == identity
+                 == tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)))
                  and os.lseek(fd,0,os.SEEK_CUR) == token
                  and raw == expected, 'held_rpc_metadata_changed_after_read')
         self._check_nodes()
