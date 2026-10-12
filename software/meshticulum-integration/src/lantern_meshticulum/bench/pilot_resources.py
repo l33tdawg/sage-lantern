@@ -19,7 +19,7 @@ from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_context import original_context
 from lantern_meshticulum.bench.pilot_provision import identifier
 from meshticulum.bench.wire import require
-from meshticulum.bench.public_block import public32_service
+from meshticulum.bench.public_block import public32_service,public_mb1_service
 
 
 def _captured(state, run_id, *, facts, format, clock, public32=False):
@@ -69,22 +69,66 @@ def captured(state, run_id, *, facts, format, clock, public32=False):
         os.close(fd)
 
 
-def serve_chunk(state, request_run_id, *, facts, clock, seed, trust, manifest_sha256, public32=False):
+def _transport_part(transport,request):
+    from .pilot_bundle_transport import MB1Transport
+    require(type(transport) is MB1Transport,'protected_mb1_transport_required')
+    transport._check()
+    selected=[i for i in range(len(transport._parts)) if transport.request(i)==request]
+    require(len(selected)==1,'mb1_request_not_in_transport_descriptor')
+    return selected[0]
+
+
+def _capture_transport(state,run,expected):
+    plan=json.loads(_read(Path(state)/'runs'/identifier(run)/'grant.json',16384))
+    require(public_mb1_service(plan.get('service',{}))==expected,'native_capture_transport_changed')
+
+
+@contextmanager
+def _native_capture(state,run,*,facts,format,clock,public32,transport,owner):
+    if transport is None:
+        require(owner is None,'unexpected_mb1_native_owner')
+        with captured(state,run,facts=facts,format=format,clock=clock,public32=public32) as value:yield value
+        return
+    from .pilot_bundle import _NativeOwner,_HeldCapture
+    from .profiles import GFSK_MB1_BUNDLE_KIND
+    require(public32 and type(owner) is _NativeOwner and owner.context.transport is transport
+        and owner.caps.policy.qualification_kind==GFSK_MB1_BUNDLE_KIND and owner.clock is clock
+        and owner.state==Path(state).absolute() and owner.caps.unit.unit==facts['unit'],
+        'protected_mb1_native_owner_required')
+    with _HeldCapture(owner,run,sends=False,format=format) as held:
+        stage=owner.stage(held.meta['campaign_id'],held.meta['application_expires_epoch_us'])
+        require(public_mb1_service(held.plan['service'])==owner.context.value['transport_descriptor_sha256'],
+            'native_capture_transport_changed')
+        if format=='MR1.request':require(held.payload==transport.request(stage['index']),'native_mb1_request_changed')
+        else:
+            part=transport.part(stage['index'])
+            require(len(held.payload)==part['response_bytes'] and hashlib.sha256(held.payload).hexdigest()==part['response_sha256'],
+                'native_mb1_response_changed')
+        held.check();yield held.payload,held.result;held.check();owner.check()
+
+
+def serve_chunk(state, request_run_id, *, facts, clock, seed, trust, manifest_sha256, public32=False,mb1_transport=None,mb1_owner=None):
     require(not public32 or facts['unit']=='unit-c', 'public32_wrong_publisher')
-    with captured(state, request_run_id, facts=facts, format='MR1.request', clock=clock, public32=public32) as (request, receipt):
+    with _native_capture(state,request_run_id,facts=facts,format='MR1.request',clock=clock,public32=public32,
+        transport=mb1_transport,owner=mb1_owner) as (request, receipt):
         path, offset, size = resource.decode_request(request, public32=public32)
-        require(not public32 or (offset==0 and size==32740), 'public32_piece_not_whole')
+        _capture_transport(state,request_run_id,mb1_transport._pin if mb1_transport is not None else None) if public32 else None
+        require(not public32 or (offset==0 and (mb1_transport is not None or size==32740)), 'public32_piece_not_whole')
         require(path.startswith('/packs/' + manifest_sha256 + '/chunks/'), 'pilot_only_serves_selected_public_chunk')
         cache = ll.VerifiedCache(seed, trust, manifest_sha256)
-        response = resource.BlockServer(cache.read, public32=public32).handle(request)
+        response = (mb1_transport.response(_transport_part(mb1_transport,request),cache) if mb1_transport is not None
+                    else resource.BlockServer(cache.read, public32=public32).handle(request))
         _, _, status, _, _ = resource.RESPONSE.unpack(response[:resource.RESPONSE.size])
-        require(status == 0 and (not public32 or len(response)==32768), 'pilot_requested_chunk_unavailable')
+        require(status == 0 and (not public32 or mb1_transport is not None or len(response)==32768), 'pilot_requested_chunk_unavailable')
+        if mb1_transport is not None:mb1_transport.decode_response(_transport_part(mb1_transport,request),request,response)
+        if mb1_owner is not None:mb1_owner.check()
         return response
 
 def verify_chunk(state, response_run_id, *, facts, clock, request, campaign_id,
-                 manifest_sha256, destination, trust, request_deadline_us=None, public32=False):
+                 manifest_sha256, destination, trust, request_deadline_us=None, public32=False,mb1_transport=None,mb1_owner=None):
     require(not public32 or facts['unit']=='unit-a', 'public32_wrong_recipient')
-    with captured(state, response_run_id, facts=facts, format='MR1.response', clock=clock, public32=public32) as (response, receipt):
+    with _native_capture(state,response_run_id,facts=facts,format='MR1.response',clock=clock,public32=public32,
+        transport=mb1_transport,owner=mb1_owner) as (response, receipt):
         context_directory = Path(state) / 'campaigns' / identifier(campaign_id)
         original = original_context(context_directory, unit=facts['unit'], host_boot_id=facts['host_boot_id'],
             resource_sha256=manifest_sha256, expires_epoch_us=receipt['original_application_expires_epoch_us'], clock=clock)
@@ -94,7 +138,9 @@ def verify_chunk(state, response_run_id, *, facts, clock, request, campaign_id,
                     'invalid_pilot_original_request_deadline')
             deadline = min(deadline, request_deadline_us)
         path, offset, size = resource.decode_request(request, public32=public32)
-        if public32: require(offset==0 and size==32740 and len(response)==32768, 'public32_piece_not_whole')
+        if public32:
+            _capture_transport(state,response_run_id,mb1_transport._pin if mb1_transport is not None else None)
+            require(offset==0 and (mb1_transport is not None or (size==32740 and len(response)==32768)), 'public32_piece_not_whole')
         require(offset == 0 and path.startswith('/packs/' + manifest_sha256 + '/chunks/')
                 and path.endswith('.json'), 'pilot_verification_requires_whole_selected_chunk')
         magic, binding, status, total, at = resource.RESPONSE.unpack(response[:resource.RESPONSE.size])
@@ -109,12 +155,18 @@ def verify_chunk(state, response_run_id, *, facts, clock, request, campaign_id,
         digest = path.split('/')[-1][:-5]
         entries = [entry for entry in manifest['chunks'] if entry['sha256'] == digest]
         require(len(entries) == 1, 'pilot_chunk_not_in_signed_manifest')
+        if mb1_transport is not None:
+            require(mb1_transport._manifest_raw==_read(destination/'manifest.json',ll.MAX_MANIFEST)
+                and mb1_transport._signature_raw==_read(destination/'manifest.sig.json',4096)
+                and mb1_transport._digest==manifest_sha256,'native_mb1_publisher_metadata_changed')
+            raw=mb1_transport.decode_response(_transport_part(mb1_transport,request),request,response)
         record = ll.chunk(raw, entries[0])
         ll.kp.validate_pack_rules(manifest, [record])
         epoch, mono = clock()
         require(epoch < original['application_expires_epoch_us']
                 and mono < deadline,
                 'pilot_resource_original_deadline_expired')
+        if mb1_owner is not None:mb1_owner.check()
         store = destination / 'chunks'
         store.mkdir(mode=0o700, exist_ok=True)
         private(store.lstat(), True)
@@ -127,9 +179,14 @@ def verify_chunk(state, response_run_id, *, facts, clock, request, campaign_id,
             reused = True
         else:
             _write(target, raw)
-        return dict(schema='meshticulum.pilot-verified-piece.v1', unit=facts['unit'],
+        if mb1_owner is not None:mb1_owner.check()
+        result=dict(schema='meshticulum.pilot-verified-piece.v1', unit=facts['unit'],
             response_run_id=response_run_id, campaign_id=campaign_id, manifest_sha256=manifest_sha256,
             chunk_sha256=digest, useful_verified_bytes=len(raw), publisher_verified=True,
             reused=reused, private_admission=False, sage_imported=False,
             original_application_expires_epoch_us=original['application_expires_epoch_us'],
             original_application_deadline_us=deadline)
+        if mb1_transport is not None:
+            result.update(transport_representation='MB1',transport_descriptor_sha256=mb1_transport._pin,
+                response_wire_bytes=len(response),reconstructed_canonical_bytes=len(raw))
+        return result

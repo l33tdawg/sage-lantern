@@ -33,6 +33,7 @@ from meshticulum.bench.wire import require
 GFSK_NAME='gfsk125'
 GFSK_KIND='c-gfsk125-8k-batch-v1'
 GFSK_BUNDLE_KIND='c-gfsk125-bundle100k-v1'
+GFSK_MB1_BUNDLE_KIND='c-gfsk125-mb1-bundle100k-v1'
 PROFILE_NAMES=frozenset(MODES)|{GFSK_NAME}
 GFSK_ADMISSION=GfskAdmission('MY',(921375000,),(0,),10000,180000,256,60000000)
 

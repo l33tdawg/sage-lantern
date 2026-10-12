@@ -32,7 +32,7 @@ from .pilot_native_caps import NativeCaps, NativeFacts
 from .pilot_manage import facts as native_facts
 from .resume_parent_guard import HISTORY, ResumeParentGuard, install_seals
 from .retained_capture import historical_parent_ids, capture_paths, CAPTURE_PARENT, CAPTURE_ONLY_PARENTS
-from .profiles import profile_for,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,profile_record,profile_from_plan,admission_for
+from .profiles import profile_for,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,profile_record,profile_from_plan,admission_for
 from meshticulum.ip.wire import IpLimits
 from meshticulum.bench.serial_protocol import RadioProfile
 from meshticulum.contracts.identity import PeerID
@@ -287,6 +287,10 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
 def owner_radio_profile(owner, policy):
     """An explicit SF5 choice is confined to the two-link C/A 8 KiB scope."""
     name = owner.get('radio_profile_name', 'sf7-500')
+    if name==GFSK_NAME and policy.qualification_kind==GFSK_MB1_BUNDLE_KIND:
+        from .gfsk_mb1_bundle import require_owner
+        require_owner(owner,policy)
+        return profile_for(GFSK_NAME)
     if name==GFSK_NAME and policy.qualification_kind==GFSK_BUNDLE_KIND:
         from .gfsk_bundle import require_owner
         require_owner(owner,policy)

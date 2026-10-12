@@ -14,7 +14,7 @@ import time
 
 from meshticulum.bench.attempts import AttemptJournal
 from .profiles import RADIO_ADMISSION,GFSK_NAME,profile_from_plan,admission_for,require_gfsk_bindings
-from meshticulum.bench.public_block import public32_service, object_limit
+from meshticulum.bench.public_block import public32_service, public_mb1_service, object_limit
 from meshticulum.bench.authority import RunAuthority, _open, _private_info
 from meshticulum.bench.flow_runtime import BenchFlow
 from meshticulum.bench.hat_worker import HATWorker,GfskHATWorker, journal_binding as hat_binding
@@ -312,7 +312,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                 from meshticulum.bench.services import _shape
                 _shape(_read_payload(directory / 'sender.bin', native_plan['object'],
                            maximum=object_limit(native_plan['service'])), native_plan['service']['format'],
-                       public32=public32_service(native_plan['service']))
+                       public32=public32_service(native_plan['service']),
+                       mb1_descriptor_sha256=public_mb1_service(native_plan['service']))
             fd = _open(directory / 'secret.bin')
             try:
                 secret = os.read(fd, 33)
@@ -366,7 +367,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         payload = _read_payload(directory / 'sender.bin', authority.plan['object'],
             maximum=object_limit(authority.plan.get('service',{}))) if authority.sends else None
         if public_service and payload is not None:
-            _shape(payload, authority.service_format, public32=authority.public32)
+            _shape(payload, authority.service_format, public32=authority.public32,
+                   mb1_descriptor_sha256=public_mb1_service(authority.plan['service']))
         require(authority.sends or not (directory / 'sender.bin').exists(), 'receiver_has_ip_payload')
         if public_service:
             from lantern_meshticulum.bench.pilot_job import record

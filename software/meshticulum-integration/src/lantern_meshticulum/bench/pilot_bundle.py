@@ -19,7 +19,7 @@ from types import MappingProxyType
 from meshticulum.bench.wire import require
 from meshticulum.resources import byte_bundle as bundle, knowledge_pack as kp, lamplighter as ll, resource
 from .pilot_parent_caps import BUNDLE_KINDS, canonical, digest, identifier, Cost
-from .profiles import GFSK_BUNDLE_KIND,GFSK_NAME
+from .profiles import GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK_NAME
 from .phase_timing import phase
 
 KIND = 'c-bundle100k-v1'
@@ -33,12 +33,23 @@ SCHEMA_V3 = 'meshticulum.native-public100k-bundle-context.v3'
 COMMITMENT_SCHEMA_V3 = 'meshticulum.public100k-capture-commitment.v3'
 SSH_SCHEMA_V3 = 'meshticulum.finite-ssh-bundle100k.v3'
 SCHEMA_GFSK='meshticulum.native-public100k-gfsk125-bundle-context.v1'
+SCHEMA_GFSK_MB1='meshticulum.native-public100k-gfsk125-mb1-bundle-context.v1'
 # Versioned original scopes; never upgrade or renew an existing context.
 COMMITTED_CONTRACTS = MappingProxyType({
     KIND_V2:(SCHEMA_V2,1200000000,1205000000,150000000,COMMITMENT_SCHEMA,SSH_SCHEMA_V2,'meshticulum.private-resume-actual-capture.v2'),
     KIND_V3:(SCHEMA_V3,1350000000,1355000000,180000000,COMMITMENT_SCHEMA_V3,SSH_SCHEMA_V3,'meshticulum.private-resume-actual-capture.v3'),
     GFSK_BUNDLE_KIND:(SCHEMA_GFSK,1350000000,1355000000,180000000,'meshticulum.public100k-gfsk125-capture-commitment.v1','meshticulum.finite-ssh-gfsk125-bundle100k.v1','meshticulum.private-resume-actual-gfsk125-capture.v1'),
+    GFSK_MB1_BUNDLE_KIND:(SCHEMA_GFSK_MB1,1350000000,1355000000,180000000,'meshticulum.public100k-gfsk125-mb1-capture-commitment.v1','meshticulum.finite-ssh-gfsk125-mb1-bundle100k.v1','meshticulum.private-resume-actual-gfsk125-mb1-capture.v1'),
 })
+
+
+def _transport(value):
+    if value['schema']!=SCHEMA_GFSK_MB1:return None
+    from .pilot_bundle_transport import MB1Transport
+    raw=base64.b64decode(value['transport_descriptor_base64'],validate=True)
+    require(base64.b64encode(raw).decode()==value['transport_descriptor_base64'],'noncanonical_mb1_transport_descriptor')
+    return MB1Transport(raw,value['transport_descriptor_sha256'],base64.b64decode(value['manifest_base64'],validate=True),
+        base64.b64decode(value['signature_base64'],validate=True),value['trust'],value['manifest_sha256'])
 
 
 def _context_data(value, *, parent_id=None):
@@ -47,8 +58,9 @@ def _context_data(value, *, parent_id=None):
     v=json.loads(raw)
     required={'schema','manifest_base64','signature_base64','trust','manifest_sha256','whole_bytes','whole_sha256',
           'original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us','stages'}
-    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3,SCHEMA_GFSK),'bundle_context_policy_changed')
-    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3,SCHEMA_GFSK:GFSK_BUNDLE_KIND}[v['schema']]
+    if v.get('schema')==SCHEMA_GFSK_MB1:required|={'transport_descriptor_base64','transport_descriptor_sha256'}
+    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3,SCHEMA_GFSK,SCHEMA_GFSK_MB1),'bundle_context_policy_changed')
+    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3,SCHEMA_GFSK:GFSK_BUNDLE_KIND,SCHEMA_GFSK_MB1:GFSK_MB1_BUNDLE_KIND}[v['schema']]
     for key in ('manifest_sha256','whole_sha256'):digest(v[key])
     manifest_raw=base64.b64decode(v['manifest_base64'],validate=True)
     signature_raw=base64.b64decode(v['signature_base64'],validate=True)
@@ -68,11 +80,18 @@ def _context_data(value, *, parent_id=None):
         require(v['expires_epoch_us']-v['original_epoch_us']==whole
                 and v['deadline_monotonic_us']-v['original_monotonic_us']==whole,'v2_original_whole_window_changed')
     require(type(v['stages']) is list and len(v['stages'])==5,'exact_five_bundle_stages_required')
+    transport=_transport(v)
     previous=v['original_epoch_us']; campaigns=set()
     for index,stage in enumerate(v['stages']):
-        require(type(stage) is dict and set(stage)=={'index','campaign_id','issued_epoch_us','expires_epoch_us','handoff_end_epoch_us','response_sha256'}
+        stage_fields={'index','campaign_id','issued_epoch_us','expires_epoch_us','handoff_end_epoch_us','response_sha256'}
+        if transport is not None:stage_fields.add('response_bytes')
+        require(type(stage) is dict and set(stage)==stage_fields
             and type(stage['index']) is int and stage['index']==index,'bundle_part_order_changed')
         digest(stage['response_sha256'])
+        if transport is not None:
+            part=transport.part(index)
+            require(type(stage['response_bytes']) is int and stage['response_bytes']==part['response_bytes']
+                and stage['response_sha256']==part['response_sha256'],'mb1_bundle_stage_descriptor_changed')
         identifier(stage['campaign_id']);require(stage['campaign_id'] != parent_id and stage['campaign_id'] not in campaigns,'bundle_campaign_reused')
         campaigns.add(stage['campaign_id'])
         a,z,h=(stage[k] for k in ('issued_epoch_us','expires_epoch_us','handoff_end_epoch_us'))
@@ -120,6 +139,7 @@ class BundleContext:
         data=_context_data(value,parent_id=policy.parent_id)
         self.raw,self.value,self.manifest_raw,self.signature_raw,self.manifest,self.expected,kind=data
         self.policy=policy
+        self.transport=self._transport_ref=_transport(self.value)
         require(policy.qualification_kind==kind and hashlib.sha256(self.raw).hexdigest()==policy.bundle_context_sha256
                 and tuple(self.value[k] for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us'))
                 ==(policy.issued_epoch_us,policy.original_monotonic_us,policy.expires_epoch_us,policy.deadline_monotonic_us),
@@ -132,7 +152,7 @@ class BundleContext:
             _state_comparator(_state(item)) for item in (policy,self.value,self.manifest,self.expected))
         self._refs+=(self._policy_comparison,self._value_comparison,
                      self._manifest_comparison,self._expected_comparison,
-                     self._policy_bytes,self._manifest_bytes,self._expected_bytes)
+                     self._policy_bytes,self._manifest_bytes,self._expected_bytes,self.transport)
         refs=self._refs;self._captured_refs=lambda:refs
         self._last=None
 
@@ -143,12 +163,14 @@ class BundleContext:
         require(self._refs is refs
                 and all(a is b for a,b in zip((self.policy,self.raw,self.manifest_raw,self.signature_raw,
                     self._policy_comparison,self._value_comparison,self._manifest_comparison,self._expected_comparison,
-                    self._policy_bytes,self._manifest_bytes,self._expected_bytes),refs))
+                    self._policy_bytes,self._manifest_bytes,self._expected_bytes,self.transport),refs))
+                and self.transport is self._transport_ref
                 and _compare_state(self.policy,self._policy_comparison[0],refs[4])
                 and _compare_state(self.value,self._value_comparison[0],refs[5])
                 and _compare_state(self.manifest,self._manifest_comparison[0],refs[6])
                 and _compare_state(self.expected,self._expected_comparison[0],refs[7]),
                 'bundle_context_mutated')
+        if self.transport is not None:self.transport._check()
         require(hashlib.sha256(self.raw).hexdigest()==self.policy.bundle_context_sha256,'bundle_context_policy_changed')
     def current(self, now, *, controller_clock=False):
         self._check()
@@ -177,6 +199,7 @@ class BundleContext:
         self._check()
         require(type(index) is int and 0<=index<5,'unplanned_bundle_part')
         entry=self.expected['parts'][index]
+        if self.transport is not None:return self.transport.request(index),entry
         request=resource.encode_request('/packs/'+self.value['manifest_sha256']+'/chunks/'+entry['chunk_sha256']+'.json',0,32740,public32=True)
         return request,entry
 
@@ -187,7 +210,11 @@ class BundleContext:
         require(stage['issued_epoch_us']<=epoch<stage['expires_epoch_us']
                 and package['resource_sha256']==self.value['manifest_sha256'] and package['transport']=='lora', 'bundle_stage_expired_or_rebound')
         request,entry=self.exchange(stage['index']);plan=package['grant'];fmt=plan['service']['format']
-        expected=(len(request),hashlib.sha256(request).hexdigest()) if fmt=='MR1.request' else (32768,None)
+        response_bytes=stage['response_bytes'] if self.transport is not None else 32768
+        expected=(len(request),hashlib.sha256(request).hexdigest()) if fmt=='MR1.request' else (response_bytes,None)
+        from meshticulum.bench.public_block import public_mb1_service
+        require(public_mb1_service(plan['service'])==(self.value['transport_descriptor_sha256'] if self.transport is not None else None),
+            'bundle_transport_capability_changed')
         if fmt=='MR1.response':
             require(plan['object']['sha256']==stage['response_sha256'],'bundle_response_descriptor_changed')
         require(fmt in ('MR1.request','MR1.response') and package['unit'] in ('unit-a','unit-c')
@@ -440,8 +467,19 @@ def accept_native_part(caps, *, state, facts, campaign_id, request_run_id, respo
                 and captured.meta['application_expires_epoch_us']==stage['expires_epoch_us']
                 and captured.meta['source_run_id'] is None
                 and hashlib.sha256(captured.payload).hexdigest()==stage['response_sha256'],'bundle_native_part_rebound')
-        response=captured.payload;magic,binding,status,total,offset=resource.RESPONSE.unpack(response[:resource.RESPONSE.size])
-        require((magic,binding,status,total,offset)==(resource.MAGIC,hashlib.sha256(request).digest()[:16],0,32740,0),'bundle_capture_request_changed')
+        response=captured.payload
+        if context.transport is not None:
+            from meshticulum.bench.public_block import public_mb1_service
+            require(public_mb1_service(sent.plan['service'])==public_mb1_service(captured.plan['service'])
+                ==context.value['transport_descriptor_sha256']
+                and verified.get('transport_representation')=='MB1'
+                and verified.get('transport_descriptor_sha256')==context.value['transport_descriptor_sha256'],
+                'bundle_native_transport_rebound')
+            canonical_part=context.transport.decode_response(stage['index'],request,response)
+        else:
+            magic,binding,status,total,offset=resource.RESPONSE.unpack(response[:resource.RESPONSE.size])
+            require((magic,binding,status,total,offset)==(resource.MAGIC,hashlib.sha256(request).digest()[:16],0,32740,0),'bundle_capture_request_changed')
+            canonical_part=response[resource.RESPONSE.size:]
         require(verified['schema']=='meshticulum.pilot-verified-piece.v1' and verified['publisher_verified'] is True
                 and verified['campaign_id']==campaign_id and verified['response_run_id']==response_run_id
                 and verified['manifest_sha256']==context.value['manifest_sha256'] and verified['chunk_sha256']==entry['chunk_sha256'],
@@ -450,8 +488,8 @@ def accept_native_part(caps, *, state, facts, campaign_id, request_run_id, respo
         with _receiver(owner,create=True,captures=(sent,captured)) as receiver:
             name=entry['chunk_sha256']+'.json';reused=name in os.listdir(receiver.parts_fd)
             if reused:
-                previous,_=receiver._part(stage['index']);require(previous==response[resource.RESPONSE.size:],'resumed_bundle_part_changed')
-            else:receiver.accept(stage['index'],response[resource.RESPONSE.size:])
+                previous,_=receiver._part(stage['index']);require(previous==canonical_part,'resumed_bundle_part_changed')
+            else:receiver.accept(stage['index'],canonical_part)
             sent.check();captured.check();owner.check()
             return dict(bundle_context_sha256=caps.policy.bundle_context_sha256,part_index=stage['index'],useful_decoded_bytes=entry['raw_bytes'],
                 reused_verified_part=reused,whole_bytes=100000,whole_sha256=context.value['whole_sha256'],
@@ -482,18 +520,28 @@ def context_value(manifest_raw,signature_raw,trust,manifest_sha256,*,chunks,poli
     manifest=ll.manifest(manifest_raw,signature_raw,trust,manifest_sha256);expected=bundle.descriptor(manifest)
     require(expected['bytes']==100000 and len(expected['parts'])==5 and type(stages) is list and len(stages)==5,
             'only100k_native_bundle_prepared')
-    rows=[]
+    rows=[];transport=None;transport_fields={}
+    if qualification_kind==GFSK_MB1_BUNDLE_KIND:
+        from .pilot_bundle_transport import prepare_descriptor,MB1Transport
+        encoded=prepare_descriptor(manifest_raw,signature_raw,trust,manifest_sha256,chunks=chunks)
+        transport_pin=hashlib.sha256(encoded).hexdigest()
+        transport=MB1Transport(encoded,transport_pin,manifest_raw,signature_raw,trust,manifest_sha256)
+        transport_fields=dict(transport_descriptor_base64=base64.b64encode(encoded).decode(),transport_descriptor_sha256=transport_pin)
     for index,stage in enumerate(stages):
         entry=expected['parts'][index];raw=chunks[entry['chunk_sha256']]
         ll.chunk(raw,manifest['chunks'][index]);require(len(raw)==32740,'bundle_requires_exact32_records')
-        request=resource.encode_request('/packs/'+manifest_sha256+'/chunks/'+entry['chunk_sha256']+'.json',0,32740,public32=True)
-        response=resource.RESPONSE.pack(resource.MAGIC,hashlib.sha256(request).digest()[:16],0,len(raw),0)+raw
-        rows.append(dict(stage,index=index,response_sha256=hashlib.sha256(response).hexdigest()))
+        if transport is None:
+            request=resource.encode_request('/packs/'+manifest_sha256+'/chunks/'+entry['chunk_sha256']+'.json',0,32740,public32=True)
+            response=resource.RESPONSE.pack(resource.MAGIC,hashlib.sha256(request).digest()[:16],0,len(raw),0)+raw
+            rows.append(dict(stage,index=index,response_sha256=hashlib.sha256(response).hexdigest()))
+        else:
+            part=transport.part(index)
+            rows.append(dict(stage,index=index,response_sha256=part['response_sha256'],response_bytes=part['response_bytes']))
     issued,mono,expires,deadline=policy_clock
     require(qualification_kind in BUNDLE_KINDS,'unknown_bundle_contract')
     return dict(schema=SCHEMA if qualification_kind==KIND else COMMITTED_CONTRACTS[qualification_kind][0],manifest_base64=base64.b64encode(manifest_raw).decode(),
         signature_base64=base64.b64encode(signature_raw).decode(),trust=trust,manifest_sha256=manifest_sha256,
-        whole_bytes=expected['bytes'],whole_sha256=expected['sha256'],original_epoch_us=issued,
+        **transport_fields,whole_bytes=expected['bytes'],whole_sha256=expected['sha256'],original_epoch_us=issued,
         original_monotonic_us=mono,expires_epoch_us=expires,deadline_monotonic_us=deadline,stages=rows)
 
 
@@ -568,7 +616,9 @@ class BundleCampaign:
         request,entry=self.context.exchange(index);stage=self.context.value['stages'][index]
         if index in status['verified_parts']:return dict(index=index,reused_verified=True,new_credit=False)
         require(self.epoch()>=stage['issued_epoch_us'] and self.epoch()<stage['expires_epoch_us']
-                and len(response)==32768 and hashlib.sha256(response).hexdigest()==stage['response_sha256'], 'bundle_part_stage_not_current')
+                and len(response)==(stage['response_bytes'] if self.context.transport is not None else 32768)
+                and hashlib.sha256(response).hexdigest()==stage['response_sha256'], 'bundle_part_stage_not_current')
+        if self.context.transport is not None:self.context.transport.decode_response(index,request,response)
         anchor=dict(original_epoch_us=self.parent.policy.issued_epoch_us,original_monotonic_us=self.parent.policy.original_monotonic_us,
             deadline_monotonic_us=self.parent.policy.deadline_monotonic_us)
         _,_,original_handoff=self.context.monotonic_bounds(stage,anchor)
@@ -577,7 +627,7 @@ class BundleCampaign:
             expires_epoch_us=stage['expires_epoch_us'],handoff_deadline_monotonic=stage_handoff,peers=self.peers,boots=self.boots,parent=self.parent,
             radio_permission={'country':'MY','antenna_confirmed':True},clock=self.clock,epoch=self.epoch,sleep=self.sleep,
             public32=True,lora_sender_first=self.lora_sender_first,bundle_context=self.context.value,
-            radio_profile=GFSK_NAME if self.parent.policy.qualification_kind==GFSK_BUNDLE_KIND else 'sf7-500')
+            radio_profile=GFSK_NAME if self.parent.policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND) else 'sf7-500')
         self.controllers.append(controller)
         try:
             verified=controller.direct_piece(request,response,'lora',publisher='unit-c',requester='unit-a')
@@ -588,7 +638,7 @@ class BundleCampaign:
             self.parts.append(verified);return verified
         finally:
             cleanup=controller.retire();self.links.extend(controller.links)
-            if self.parent.policy.qualification_kind==GFSK_BUNDLE_KIND:
+            if self.parent.policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND):
                 require(all('stop_error' not in row and 'retirement_error' not in row for row in cleanup),'gfsk_bundle_retirement_unproved')
                 for link in controller.links:
                     expected=set(link['attempted'])|set(link['prepared'])

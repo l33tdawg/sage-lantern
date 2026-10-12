@@ -13,7 +13,7 @@ from lantern_meshticulum.bench.pilot_context import original_context
 from lantern_meshticulum.bench.pilot_provision import identifier
 from lantern_meshticulum.bench.pilot_resources import verify_chunk
 from meshticulum.bench.wire import require
-from meshticulum.bench.public_block import public32_service
+from meshticulum.bench.public_block import public32_service,public_mb1_service
 
 STATE = Path('/var/lib/meshticulum-bench')
 
@@ -33,6 +33,7 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
     request_directory = root / 'runs' / identifier(request_run_id)
     private(request_directory.lstat(), True)
     fd = os.open(request_directory / 'active', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    mb1_caps=mb1_owner=mb1_transport=None
     try:
         private(os.fstat(fd))
         identity = (os.fstat(fd).st_dev, os.fstat(fd).st_ino)
@@ -60,11 +61,24 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
         request = _read(request_directory / 'sender.bin', 1024)
         require(len(request) == plan['object']['bytes'] and hashlib.sha256(request).hexdigest() == plan['object']['sha256'],
                 'native_request_changed')
+        parent_id=receipt.get('parent',{}).get('parent_id')
+        if public_mb1_service(plan.get('service',{})) is not None:
+            require(parent_id is not None,'native_mb1_parent_required')
+            from .pilot_parent_caps import ParentPolicy
+            from .profiles import GFSK_MB1_BUNDLE_KIND
+            saved_policy=ParentPolicy.from_dict(json.loads(_read(root/'parents'/identifier(parent_id)/'policy.json',20000)))
+            require(saved_policy.qualification_kind==GFSK_MB1_BUNDLE_KIND,'native_mb1_parent_kind_changed')
+            from .pilot_native_caps import _open_existing
+            from .pilot_bundle import _NativeOwner
+            mb1_caps=_open_existing(root,parent_id,facts,clock)
+            mb1_owner=_NativeOwner(mb1_caps,clock);mb1_transport=mb1_owner.context.transport
+            stage=mb1_owner.stage(campaign_id,receipt['original_application_expires_epoch_us'])
+            require(request==mb1_transport.request(stage['index']),'native_mb1_original_request_changed')
         result = verify_chunk(root, identifier(response_run_id), facts=facts, clock=clock,
             request=request, campaign_id=campaign_id, manifest_sha256=digest,
             destination=public / 'received', trust=trust,
             request_deadline_us=receipt['original_application_deadline_us'],
-            public32=public32_service(plan.get('service',{})))
+            public32=public32_service(plan.get('service',{})),mb1_transport=mb1_transport,mb1_owner=mb1_owner)
         current()
         deadline_current()
         require(json.loads(_read(request_directory / 'result.json', 100000)) == receipt
@@ -83,14 +97,17 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
             from .pilot_parent_caps import ParentPolicy
             saved_policy=ParentPolicy.from_dict(json.loads(_read(root/'parents'/identifier(parent_id)/'policy.json',20000)))
             if saved_policy.qualification_kind in BUNDLE_KINDS:
-                caps=_open_existing(root,parent_id,facts,clock)
+                caps=mb1_caps if mb1_caps is not None else _open_existing(root,parent_id,facts,clock)
                 try:result['bundle_part']=accept_native_part(caps,state=root,facts=facts,campaign_id=campaign_id,
                     request_run_id=request_run_id,response_run_id=response_run_id,verified=result,clock=clock)
-                finally:require(caps.close(),'bundle_owner_close_unproved')
+                finally:
+                    if mb1_caps is None:require(caps.close(),'bundle_owner_close_unproved')
         _write(root / 'runs' / response_run_id / 'verified-piece.json', json.dumps(result, sort_keys=True).encode() + b'\n')
         return result
     finally:
-        os.close(fd)
+        try:
+            if mb1_caps is not None:require(mb1_caps.close(),'bundle_owner_close_unproved')
+        finally:os.close(fd)
 
 
 def main():

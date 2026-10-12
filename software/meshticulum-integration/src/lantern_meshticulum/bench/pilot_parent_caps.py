@@ -26,9 +26,9 @@ from meshticulum.bench.services import _shape
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
-from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,profile_for,profile_record,profile_from_plan,admission_for,radio_route
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,profile_for,profile_record,profile_from_plan,admission_for,radio_route
 
-BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3',GFSK_BUNDLE_KIND))
+BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3',GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
 BATCH_KIND = 'c-bulk-8k-batch-v1'
 POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND,GFSK_KIND}
@@ -194,7 +194,7 @@ def child_caps(package, policy):
             and set(package) == {'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
                                  'transport','grant','secret_base64','payload_base64','source_run_id'}
             and package['schema'] == 'meshticulum.public-pilot-package.v1')
-        require(policy.qualification_kind not in (GFSK_KIND,GFSK_BUNDLE_KIND) or package['transport']=='lora')
+        require(policy.qualification_kind not in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND) or package['transport']=='lora')
         unit = policy.unit(package['unit']); p = package['grant']
         identifier(package['campaign_id']); digest(package['resource_sha256'])
         secret = base64.b64decode(package['secret_base64'], validate=True)
@@ -216,10 +216,12 @@ def child_caps(package, policy):
                 'service','issued_epoch_us','expires_epoch_us'}
             gfsk=p.get('radio_modem')==GFSK_NAME
             if gfsk:fields.add('radio_modem')
-            require(gfsk == (policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND)))
+            require(gfsk == (policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)))
             require(package['transport'] == 'lora' and p['schema'] == 'meshticulum.service-run.v1'
                 and set(p) == fields and set(p['service']) in ({'kind','format','application_expires_epoch_us'},
-                    {'kind','format','application_expires_epoch_us','public_response_max_bytes'})
+                    {'kind','format','application_expires_epoch_us','public_response_max_bytes'},
+                    {'kind','format','application_expires_epoch_us','public_response_max_bytes',
+                     'public_resource_representation','public_transport_descriptor_sha256'})
                 and set(p['object']) == {'bytes','sha256','object_id','chunk_index'}
                 and p['object']['object_id'] == p['object']['sha256']
                 and type(p['object']['chunk_index']) is int and p['object']['chunk_index'] == 0
@@ -240,10 +242,12 @@ def child_caps(package, policy):
             obj = dict(bytes=p['object']['bytes'], sha256=p['object']['sha256'])
             cost = Cost(rp.max_boot_attempts, rp.max_boot_estimated_airtime_us)
             profile = profile_record(rp); frame_limit = grant.max_frames; expiry = p['service']['application_expires_epoch_us']
-        from meshticulum.bench.public_block import public32_service, object_limit
+        from meshticulum.bench.public_block import public32_service, public_mb1_service, object_limit
         public32 = public32_service(p.get('service',{}))
+        mb1_pin=public_mb1_service(p.get('service',{}))
+        require((mb1_pin is not None)==(policy.qualification_kind==GFSK_MB1_BUNDLE_KIND))
         require(public32 == (policy.qualification_kind in PUBLIC32_KINDS))
-        if public32 and policy.qualification_kind==GFSK_BUNDLE_KIND:
+        if public32 and policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND):
             selected=profile_record(rp);expected=profile_record(profile_for(GFSK_NAME))
             selected.pop('lease_ms');expected.pop('lease_ms')
             require(package['transport']=='lora' and gfsk and selected==expected)
@@ -253,7 +257,7 @@ def child_caps(package, policy):
                 and rp.max_boot_attempts==256 and rp.max_boot_estimated_airtime_us==60000000)
         identifier(run); digest(obj['sha256'])
         require(fmt in ('MR1.request','MR1.response') and type(obj['bytes']) is int and 0 < obj['bytes'] <= object_limit(p.get('service',{}))
-                and (not public32 or fmt != 'MR1.response' or obj['bytes'] == 32768)
+                and (not public32 or fmt != 'MR1.response' or mb1_pin is not None or obj['bytes'] == 32768)
                 and type(expiry) is int and expiry == package['application_expires_epoch_us']
                 and policy.issued_epoch_us <= p['issued_epoch_us'] < expiry <= p['expires_epoch_us'] <= policy.expires_epoch_us)
         sender, receiver = [next((u.unit for u in policy.units if u.peer == peer), None) for peer in peers]
@@ -275,9 +279,9 @@ def child_caps(package, policy):
             raw = base64.b64decode(payload, validate=True)
             require(base64.b64encode(raw).decode() == payload and len(raw) == obj['bytes']
                     and hashlib.sha256(raw).hexdigest() == obj['sha256'])
-            _shape(raw, fmt, public32=public32)
+            _shape(raw, fmt, public32=public32,mb1_descriptor_sha256=mb1_pin)
             decoded = decode_request(raw, public32=public32)
-            if public32: require(decoded[1:] == (0,32740) and '/chunks/' in decoded[0])
+            if public32: require(decoded[1]==0 and (mb1_pin is not None or decoded[2]==32740) and '/chunks/' in decoded[0])
             require(decoded[0].startswith('/packs/' + package['resource_sha256'] + '/'))
         metadata = dict(parent_id=policy.parent_id, policy_digest=policy.digest, unit=unit.unit,
             host_boot_id=unit.host_boot_id, campaign_id=package['campaign_id'], resource_sha256=package['resource_sha256'],
@@ -287,6 +291,7 @@ def child_caps(package, policy):
             secret_sha256=hashlib.sha256(secret).hexdigest(), plan_sha256=hashlib.sha256(canonical(p)).hexdigest())
         if package['transport']=='lora' and p.get('radio_modem')==GFSK_NAME:metadata['radio_modem']=GFSK_NAME
         if public32: metadata['public_response_max_bytes'] = 32768
+        if mb1_pin is not None:metadata['public_transport_descriptor_sha256']=mb1_pin
         if policy.qualification_kind in BUNDLE_KINDS: metadata['bundle_context_sha256'] = policy.bundle_context_sha256
         return ChildCaps(unit.unit, run, sends, canonical(metadata), cost, expiry)
     except Exception:

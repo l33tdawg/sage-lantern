@@ -156,7 +156,7 @@ class _Public32Approval:
     """Held original owner/source records, never an owner supplied in a package."""
     def __init__(self,directory,policy,unit,facts,clock):
         from .pilot_resume_rpc import Reader,Runtime,parse,sha,stable,endpoint_budget
-        from .profiles import profile_for,profile_record,GFSK_BUNDLE_KIND,GFSK_NAME
+        from .profiles import profile_for,profile_record,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK_NAME
         self.reader=self.runtime=None;self._closed=False
         self.policy,self.unit,self.facts,self.clock=policy,unit,facts,clock
         self._pid,self._thread=os.getpid(),threading.get_ident()
@@ -203,10 +203,12 @@ class _Public32Approval:
                     and sha(prior_raw)==local.prior_snapshot_sha256
                     and owner['prior_registry'][unit]['observation_sha256']==sha(canonical(prior))
                     and sha(canonical(owner['prior_registry']))==policy.prior_snapshot_sha256)
-            auth=owner['authorization'];gfsk=policy.qualification_kind==GFSK_BUNDLE_KIND
+            auth=owner['authorization'];gfsk=policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)
             rp=profile_for(GFSK_NAME if gfsk else 'sf7-500');rf=owner['rf_record']
             if gfsk:
-                from .gfsk_bundle import require_owner
+                if policy.qualification_kind==GFSK_MB1_BUNDLE_KIND:
+                    from .gfsk_mb1_bundle import require_owner
+                else:from .gfsk_bundle import require_owner
                 require_owner(owner,policy)
             require(auth['human_statement']=='run it bro' and type(auth['count_authorized']) is int and auth['count_authorized']==1
                     and auth['public_only'] is True and auth['private_production'] is False

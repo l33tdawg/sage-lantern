@@ -17,7 +17,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,admission_for,profile_record
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,admission_for,profile_record
 from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
@@ -30,10 +30,14 @@ RADIO_SETUP_RESERVE_MS = 15000
 
 def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                   sender, receiver, transport, format, descriptor, source,
-                  request, peers, boots, now_epoch_us, endpoints=None, profile='sf7-500', radio_permission=None, public32=False):
+                  request, peers, boots, now_epoch_us, endpoints=None, profile='sf7-500', radio_permission=None, public32=False,
+                  mb1_descriptor_sha256=None):
     """Fresh independent adjacent-link sessions; receiver never gets a body."""
     identifier(campaign_id)
     require(type(public32) is bool and (not public32 or transport == 'lora'), 'invalid_public32_pilot')
+    require(mb1_descriptor_sha256 is None or (public32 and profile==GFSK_NAME
+        and type(mb1_descriptor_sha256) is str and len(mb1_descriptor_sha256)==64
+        and all(c in '0123456789abcdef' for c in mb1_descriptor_sha256)),'invalid_mb1_pilot_descriptor')
     require(sender in UNITS and receiver in UNITS and sender != receiver
             and transport in ('lora', 'tcp') and format in ('MR1.request', 'MR1.response'), 'invalid_pilot_pair')
     require(type(application_expires_epoch_us) is int and type(now_epoch_us) is int
@@ -41,7 +45,7 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
             'invalid_pilot_original_expiry')
     require(type(descriptor) is dict and set(descriptor) == {'bytes','sha256'}
             and type(descriptor['bytes']) is int and 0 < descriptor['bytes'] <= (32768 if public32 and format == 'MR1.response' else 16384)
-            and (not public32 or format != 'MR1.response' or descriptor['bytes'] == 32768)
+            and (not public32 or format != 'MR1.response' or mb1_descriptor_sha256 is not None or descriptor['bytes'] == 32768)
             and len(bytes.fromhex(descriptor['sha256'])) == 32
             and len(bytes.fromhex(resource_sha256)) == 32, 'invalid_pilot_pair_object')
     require((source is None and format == 'MR1.request' and type(request) is bytes
@@ -87,6 +91,9 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
             require({sender,receiver}=={'unit-a','unit-c'},'gfsk_public_adjacent_scope_required')
             grant['radio_modem']=GFSK_NAME
         if public32: grant['service']['public_response_max_bytes'] = 32768
+        if mb1_descriptor_sha256 is not None:
+            from meshticulum.bench.public_block import REPRESENTATION_MARKER,TRANSPORT_DESCRIPTOR_MARKER
+            grant['service'].update({REPRESENTATION_MARKER:'MB1',TRANSPORT_DESCRIPTOR_MARKER:mb1_descriptor_sha256})
         values[unit] = dict(schema='meshticulum.public-pilot-package.v1',unit=unit,
             campaign_id=campaign_id,resource_sha256=resource_sha256,
             application_expires_epoch_us=application_expires_epoch_us,transport=transport,grant=grant,
@@ -108,8 +115,8 @@ class Controller:
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
                 'public32_parent_kind_mismatch')
         require(type(radio_profile) is str and radio_profile in PROFILE_NAMES
-                and (not public32 or radio_profile == ('gfsk125' if parent.policy.qualification_kind==GFSK_BUNDLE_KIND else 'sf7-500')), 'invalid_pilot_radio_profile')
-        require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
+                and (not public32 or radio_profile == ('gfsk125' if parent.policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND) else 'sf7-500')), 'invalid_pilot_radio_profile')
+        require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
         require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME)),
                 'invalid_lora_startup_order')
@@ -182,7 +189,9 @@ class Controller:
             transport=transport,format=format,descriptor=descriptor,source=source,
             request=payload if source is None else None,peers=self.peers,boots=self.boots,
             now_epoch_us=self.epoch(),endpoints=self.operator.endpoints(sender,receiver) if transport=='tcp' else None,
-            radio_permission=self.radio_permission,public32=self.public32,profile=self.radio_profile)
+            radio_permission=self.radio_permission,public32=self.public32,profile=self.radio_profile,
+            mb1_descriptor_sha256=self.bundle_context.value['transport_descriptor_sha256']
+                if self.bundle_context is not None and self.bundle_context.transport is not None else None)
         if self.bundle_context is not None:
             for package in pair['packages'].values(): self.bundle_context.package(package,self.epoch())
         if self.batch_context is not None:
@@ -386,8 +395,12 @@ class Controller:
     def direct_piece(self,request,response,transport,*,test_rx_cutoff=None,publisher='unit-b',requester='unit-c'):
         """Direct A/B→C piece, or explicit C→A public reverse piece."""
         path,offset,size=resource.decode_request(request, public32=self.public32)
+        mb1=self.bundle_context.transport if self.bundle_context is not None else None
         require(not self.public32 or (transport=='lora' and publisher=='unit-c' and requester=='unit-a'
-                and size==32740 and len(response)==32768), 'public32_requires_exact_reverse_whole_piece')
+                and (mb1 is not None or (size==32740 and len(response)==32768))), 'public32_requires_exact_reverse_whole_piece')
+        if mb1 is not None:
+            stage=self.bundle_context.stage(self.campaign_id,self.expires_epoch_us)
+            mb1.decode_response(stage['index'],request,response)
         require(offset==0 and path.startswith('/packs/'+self.resource_sha256+'/chunks/')
                 and path.endswith('.json'),'pilot_requires_whole_selected_public_chunk')
         require(type(publisher) is str and type(requester) is str

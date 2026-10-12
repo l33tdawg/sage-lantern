@@ -18,7 +18,7 @@ import threading
 import weakref
 
 from meshticulum.bench.serial_protocol import RadioProfile
-from .profiles import GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,profile_from_plan,profile_for,profile_record
+from .profiles import GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,profile_from_plan,profile_for,profile_record
 from meshticulum.ip.wire import IpLimits
 from .pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, DOMAIN as PARENT_DOMAIN
 from . import pilot_debt_snapshot as debt
@@ -367,12 +367,15 @@ def _child(value, policy):
     public32 = policy.qualification_kind in PUBLIC32_KINDS
     fields = _META | ({'public_response_max_bytes'} if public32 else set())
     if policy.qualification_kind in BUNDLE_KINDS: fields.add('bundle_context_sha256')
-    gfsk=policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND)
+    mb1=policy.qualification_kind==GFSK_MB1_BUNDLE_KIND
+    if mb1:fields.add('public_transport_descriptor_sha256')
+    gfsk=policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)
     if gfsk:fields.add('radio_modem')
     need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
     if policy.qualification_kind in BUNDLE_KINDS:
         need(m['bundle_context_sha256'] == policy.bundle_context_sha256, 'bundle_child_context_changed')
+    if mb1:hex_value(m['public_transport_descriptor_sha256'],64)
     unit = policy.unit(m['unit'])
     need(m['host_boot_id'] == unit.host_boot_id and type(m['sends']) is bool
          and m['sender'] in UNITS and m['receiver'] in UNITS and m['sender'] != m['receiver']
@@ -389,7 +392,7 @@ def _child(value, policy):
              and (m['sender'],m['receiver'])==(('unit-a','unit-c') if m['format']=='MR1.request' else ('unit-c','unit-a')),
              'invalid_public32_child')
     integer(obj['bytes'], 1, 32768 if public32 and m['format']=='MR1.response' else 16384)
-    need(not public32 or m['format']!='MR1.response' or obj['bytes']==32768, 'invalid_public32_child')
+    need(not public32 or m['format']!='MR1.response' or mb1 or obj['bytes']==32768, 'invalid_public32_child')
     hex_value(obj['sha256'], 64)
     expiry = integer(m['application_expires_epoch_us'], 1)
     need(policy.issued_epoch_us < expiry <= policy.expires_epoch_us
@@ -408,7 +411,7 @@ def _child(value, policy):
         if gfsk:need(m['radio_modem']==GFSK_NAME and m['unit'] in ('unit-a','unit-c'),'invalid_gfsk_child_modem')
         else:need(set(m['profile']) == set(RadioProfile.__dataclass_fields__), 'invalid_full_caps')
         profile=profile_from_plan(m,board_id=1)
-        if policy.qualification_kind==GFSK_BUNDLE_KIND:
+        if policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND):
             actual=profile_record(profile);expected_profile=profile_record(profile_for(GFSK_NAME))
             actual.pop('lease_ms');expected_profile.pop('lease_ms')
             need(actual==expected_profile,'invalid_public32_gfsk_child')
