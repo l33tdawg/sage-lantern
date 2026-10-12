@@ -89,7 +89,11 @@ class _OwnedImage:
             except BlockingIOError:pass
             else:need(False,'owned_snapshot_exclusive_lock_lost')
         finally:os.close(probe)
-        self.observe();c._observe('owned-snapshot');c._validate();c._available()
+        # Revalidate through the existing read/current approval contract. The
+        # genuine RPC approval callback rejects unrecognised phases, including
+        # the former 'owned-snapshot' label. No new authority is needed to read
+        # the already owned connection and its immutable serialized image.
+        self.observe();c._observe('current');c._validate();c._available()
         need((self.dups,self.sidecars,self.absent,self.raw,self.changes,self.versions,self.identity,self.fdstate)==self._held,
             'owned_snapshot_capture_changed')
         need(c.db.total_changes==self.changes and not c.db.in_transaction
