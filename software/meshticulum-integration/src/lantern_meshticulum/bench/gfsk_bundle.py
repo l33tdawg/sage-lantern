@@ -3,7 +3,7 @@ from .profiles import GFSK_BUNDLE_KIND, GFSK_NAME, profile_for, profile_record, 
 from meshticulum.bench.wire import require
 
 # Root binds the reviewed whole-file scope after actual status/readiness proof.
-GFSK_BUNDLE_SCOPE_SHA256 = '4698c7f7f7caa20f7c390e6b9b747cbdd7cb481e2407b066718a52b8814507fc'
+GFSK_BUNDLE_SCOPE_SHA256 = '3e386a2fcd001e1a4faa2ffaabf258398f1d7391130fd742854ed3638ba64227'
 CLEAN_A_TX_MODEL = 225  # Five one-frame requests plus ~44 ACKs per 170-DATA response.
 
 

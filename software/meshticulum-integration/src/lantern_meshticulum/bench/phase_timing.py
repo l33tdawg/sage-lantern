@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Optional aggregate CPU timings; opens no state, authority or transport."""
+"""Optional aggregate elapsed phase timings; opens no state, authority or transport."""
 from functools import wraps
 import os
 import threading
