@@ -7,14 +7,14 @@ from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK_NAME,profile_for,profile_record
 # Root must bind a reviewed future scope, paired source/runtime and actual
 # retained history. A source test or the legacy JSON scope cannot fill these.
 PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256=None,core_commit=None,
-    runtime_sha256=None,manifest_sha256=None,history_receipt_sha256=None,preceding_parent=None))
+    history_receipt_sha256=None,preceding_parent=None))
 
 
 def require_bindings():
     from .retained_capture import PAID_HISTORY
     value=dict(PHYSICAL_BINDINGS)
     require(all(type(value[k]) is str and len(value[k])==64 and all(c in '0123456789abcdef' for c in value[k])
-        for k in ('scope_sha256','runtime_sha256','manifest_sha256','history_receipt_sha256'))
+        for k in ('scope_sha256','history_receipt_sha256'))
         and type(value['core_commit']) is str and len(value['core_commit'])==40
         and all(c in '0123456789abcdef' for c in value['core_commit'])
         and value['preceding_parent']==PAID_HISTORY[-1], 'pending_native_mb1_scope_source_and_history')
@@ -29,8 +29,12 @@ def require_owner(owner,policy):
         and owner.get('radio_profile_name')==owner.get('radio_modem')==GFSK_NAME
         and owner.get('mb1_bundle_scope_sha256')==pins['scope_sha256']
         and owner.get('core_commit')==pins['core_commit']
-        and owner.get('runtime_sha256')==pins['runtime_sha256']
-        and owner.get('manifest_sha256')==pins['manifest_sha256']
+        # Runtime/manifest are caller-supplied immutable owner bytes. The
+        # native Runtime/Reader and the operator's exact archive/manifest
+        # checks authenticate them; source cannot contain its own digest.
+        and all(type(owner.get(k)) is str and len(owner[k])==64
+            and all(c in '0123456789abcdef' for c in owner[k])
+            for k in ('runtime_sha256','manifest_sha256'))
         and owner.get('history_receipt_sha256')==pins['history_receipt_sha256']
         and owner['rf_profile']==profile_record(profile_for(GFSK_NAME)), 'mb1_bundle_owner_changed')
     context=BundleContext(owner['bundle_context'],policy)

@@ -56,8 +56,11 @@ def review(path,pin):
     from lantern_meshticulum.bench.gfsk_mb1_bundle import require_bindings
     from lantern_meshticulum.bench.profiles import GFSK_FIRMWARE
     bindings=require_bindings()
-    need(op['core_commit']==bindings['core_commit'] and op['runtime_sha256']==bindings['runtime_sha256']
-        and op['manifest_sha256']==bindings['manifest_sha256'],'mb1_exact_pair_runtime_required')
+    need(op['core_commit']==bindings['core_commit'],'mb1_exact_core_required')
+    # Exact caller-supplied runtime/manifest pins are authenticated below by
+    # the preflight and archive. They cannot be constants inside that archive.
+    need(all(type(op[k]) is str and len(op[k])==64 and all(c in '0123456789abcdef' for c in op[k])
+        for k in ('runtime_sha256','manifest_sha256')),'mb1_exact_runtime_manifest_required')
     need(op['history_receipt_sha256']==bindings['history_receipt_sha256'],'gfsk_exact_history_receipt_required')
     need(op['mb1_bundle_scope_sha256']==bindings['scope_sha256'],'exact_whole_bundle_scope_required')
     absolute=op['absolute_device_window']

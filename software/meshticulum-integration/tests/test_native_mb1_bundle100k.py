@@ -64,7 +64,6 @@ def protected_units(base,p,value,monkeypatch):
         prior_snapshot_sha256=kp.sha256_hex(canonical(registry)))
     owner0=json.loads((records['unit-a'][0]/'owner.json').read_bytes())
     pins=dict(scope_sha256='f'*64,core_commit='002694c3a7ad3b402891029ded0c82fabecde691',
-        runtime_sha256=owner0['runtime_sha256'],manifest_sha256=owner0['manifest_sha256'],
         history_receipt_sha256='a'*64,preceding_parent=PAID_HISTORY[-1])
     # Model-only source assignment. Default source has every physical pin None.
     monkeypatch.setattr(mode,'PHYSICAL_BINDINGS',MappingProxyType(pins))
@@ -92,8 +91,19 @@ def protected_units(base,p,value,monkeypatch):
 
 
 def test_default_new_physical_scope_remains_explicitly_unbound():
+    assert set(mode.PHYSICAL_BINDINGS)=={'scope_sha256','core_commit','history_receipt_sha256','preceding_parent'}
     assert all(v is None for v in mode.PHYSICAL_BINDINGS.values())
     with pytest.raises(Exception,match='pending_native_mb1_scope'):mode.require_bindings()
+
+
+@pytest.mark.parametrize('field',['runtime_sha256','manifest_sha256'])
+def test_caller_supplied_runtime_or_manifest_must_match_actual_protected_source(mbdata,tmp_path,protected_source,monkeypatch,field):
+    _,_,value,p=mbdata;base=tmp_path/'wrong-source';base.mkdir(mode=0o700)
+    roots,p=protected_units(base,p,value,monkeypatch)
+    directory=roots['unit-a']/'parents'/p.parent_id
+    owner=json.loads((directory/'owner.json').read_bytes());owner[field]='f'*64
+    (directory/'owner.json').write_bytes(canonical(owner))
+    with pytest.raises(Exception):_Public32Approval(directory,p,'unit-a',facts('unit-a'),clock)
 
 
 @pytest.mark.parametrize('fault',['descriptor_pin','stage_length','stage_hash','kind','expiry','one_MB'])
