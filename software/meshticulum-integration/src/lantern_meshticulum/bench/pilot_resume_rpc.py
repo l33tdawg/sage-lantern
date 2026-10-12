@@ -66,6 +66,7 @@ OLD_DIGESTS = (
     'd63ff5d4096f0a68aef37f569dfe837f64d90b820b7290ea450febf901ca3468',
     '4549a36a15cf11fda34441d66dcc1ff9af0083273d5338b74c68701d0e6de572',
     '09eb8ec08d2e4c5e14091f8124fa966dfcf972887a2b62ecca481ec5d1ca5863',
+    'ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -161,6 +162,10 @@ V3_VERIFIED_BUNDLE_RUNS = ('f4f23bd0fdb3a629521e36d37855b169', '29589e7aaf30ced0
 V3_VERIFIED_BUNDLE_DATABASES = {'unit-a': '906ea2e0048a5cefaa1086e6f2abe9ae96254381b09e78b1a9ae029ecba5ad05', 'unit-b': '3347171d54390ab83d451b388ab41a1751e7f918021ca2e775eefd78120adb9a', 'unit-c': 'c946e342e024960874c4838580c919f3c5da85f69a16971833cbb9d6f1f45a73'}
 V3_VERIFIED_BUNDLE_OUTCOMES = {'unit-a': {'f4f23bd0fdb3a629521e36d37855b169': '741b4c2a18ae476fc416cabbf9972fcf9b0457f38b414bc91192bb875a1fa0db', '29589e7aaf30ced0aaaf7354055c2ef1': '24319657843b5051bfabdf49b56d60e3bd48e08383aee0ce0e33ff20a40b4bda'}, 'unit-b': {}, 'unit-c': {'f4f23bd0fdb3a629521e36d37855b169': '07056059d6c61cf184016ee1d69388edd33b34fc18835b79e11e87885ce23d10', '29589e7aaf30ced0aaaf7354055c2ef1': '1b24720eb7f1b15c7d0e03c64d8b1204d3252b1c28cabe781ceba661fd0fad0d'}}
 V3_VERIFIED_ACCEPTED_PART_SHA = '1c9195955f20fa3039bceb02c516a69476798c0c9c0a0e0488b28dd563064992'
+SF5_STARTUP_PAID = '57339cca60ddf62b41eafac60147a252'
+SF5_STARTUP_RUN = '3ef93b13ec6966964c2f73d1dbd0a176'
+SF5_STARTUP_DATABASES = {'unit-a': '488905937419145a0fe89df1e0d601435cbecacb8759d4fc22d128e8c4144424', 'unit-b': '872336ed1ebf330eb309127a9e3f4f11ac601b1e5bff7cb798a70e7d27b68266', 'unit-c': 'd76086b9ab30a64f5910208b8aca1abc490630c416648d76e3f4a0a12d670fd6'}
+SF5_STARTUP_OUTCOMES = {'unit-a': {'3ef93b13ec6966964c2f73d1dbd0a176': '5530c5125906f695df9164e6e8c7411613a7f44d89ca701ac755d8b32860d3e5'}, 'unit-b': {}, 'unit-c': {'3ef93b13ec6966964c2f73d1dbd0a176': '70f95a1d0c3174c0fcb32599466bf96c85180f56b9b0d437fe44c012218cf6d4'}}
 V3_ACCEPTED_PARTS = {V3_PARTIAL_BUNDLE_PAID:(V3_PARTIAL_BUNDLE_RUNS,V3_ACCEPTED_PART_SHA),
     V3_CHECKPOINT_BUNDLE_PAID:(V3_CHECKPOINT_BUNDLE_RUNS,V3_CHECKPOINT_ACCEPTED_PART_SHA),
     V3_VERIFIED_BUNDLE_PAID:(V3_VERIFIED_BUNDLE_RUNS,V3_VERIFIED_ACCEPTED_PART_SHA)}
@@ -171,7 +176,7 @@ PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDL
     V3_CHECKPOINT_BUNDLE_PAID:(24,'c-bundle100k-v3',V3_CHECKPOINT_BUNDLE_DATABASES,V3_CHECKPOINT_BUNDLE_OUTCOMES),
     V3_VERIFIED_BUNDLE_PAID:(25,'c-bundle100k-v3',V3_VERIFIED_BUNDLE_DATABASES,V3_VERIFIED_BUNDLE_OUTCOMES)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -537,6 +542,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
         if policy.parent_id in PUBLIC32_PARENTS:
             qualify_public32_failure_scope(unit,policy.parent_id,v)
+        if policy.parent_id == SF5_STARTUP_PAID:
+            need(v['require_result_complete'] is False and v.get('failed_started_runs')
+                 == ([] if unit=='unit-b' else [SF5_STARTUP_RUN]), 'sf5_startup_failure_scope_changed')
         if policy.parent_id in PARTIAL_BUNDLE_SCOPES:
             need(v['require_result_complete'] is (policy.parent_id!=V2_FAILED_BUNDLE_PAID)
                  and v.get('failed_started_runs')==([V2_FAILED_BUNDLE_RUNS[1]] if policy.parent_id==V2_FAILED_BUNDLE_PAID and unit!='unit-b' else []),
@@ -570,6 +578,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     qualify_mixed_receiver(row,result,result_raw)
                 if policy.parent_id in PUBLIC32_PARENTS: qualify_public32_result(unit,row['run_id'],result,parent_id=policy.parent_id)
                 if policy.parent_id in PARTIAL_BUNDLE_SCOPES: qualify_partial_bundle_result(unit,row['run_id'],result,parent_id=policy.parent_id)
+                if policy.parent_id == SF5_STARTUP_PAID: qualify_sf5_startup_result(unit,row['run_id'],result)
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -581,6 +590,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
             qualify_partial_bundle_costs(unit,policy,observed,v)
             if policy.parent_id in V3_ACCEPTED_PARTS:verify_retained_v3_part_files(reader,unit,policy,observed,v)
+        elif policy.parent_id==SF5_STARTUP_PAID:
+            qualify_sf5_startup_costs(unit,policy,observed,v)
         elif policy.parent_id!=PARTIAL_PAID:
             need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
         if index: need(asdict(policy.unit(unit).prior_debt) == old[index-1]['paid_caps'], 'old_paid_debt_chain_changed')
@@ -655,6 +666,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id in PUBLIC32_PARENTS:
         expected=PUBLIC32_OUTCOMES[policy.parent_id][2]
         need(ids==set(expected[unit]) and not absent,'public32_claim_scope_changed')
+    elif policy.parent_id==SF5_STARTUP_PAID:
+        need(ids==(set() if unit=='unit-b' else {SF5_STARTUP_RUN}) and not absent, 'sf5_startup_claim_scope_changed')
     elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
         need(ids==set(PARTIAL_BUNDLE_SCOPES[policy.parent_id][3][unit]) and not absent,'partial_bundle_claim_scope_changed')
     elif policy.parent_id==ENROLLED_ZERO_PAID:
@@ -748,6 +761,78 @@ def qualify_enrolled_zero_costs(unit,policy,observed,value):
          and value['preparation_sha256']=={} and value['legacy_sha256'] is None
          and value['require_result_complete'] is False and value['failed_started_runs']==[],
          'enrolled_zero_retention_scope_changed')
+
+
+
+def qualify_sf5_startup_result(unit,run,result):
+    """Exact failed first SF5 request; no useful DATA or complete resource."""
+    need(unit in SF5_STARTUP_OUTCOMES and run in SF5_STARTUP_OUTCOMES[unit]
+         and sha(canonical(result))==SF5_STARTUP_OUTCOMES[unit][run]
+         and result['complete'] is False and result['disarmed_on_exit'] is True
+         and result['parent']['started'] is True and result['parent']['parent_id']==SF5_STARTUP_PAID
+         and result['parent']['policy_digest']==OLD_DIGESTS[26] and result['parent']['run_id']==SF5_STARTUP_RUN,
+         'sf5_startup_result_changed')
+    need(result['error']==('WireError:reliable_flow_startup_grant_absent' if unit=='unit-a'
+                           else 'WireError:reliable_flow_startup_grant_unanswered')
+         and result['attempt_journal']==dict(attempts=0 if unit=='unit-a' else 8,fenced=False,recovered_unknown=0,
+             reserved_estimated_airtime_us=0 if unit=='unit-a' else 103888)
+         and result['flow']['complete'] is False and result['flow']['received_bytes']==0
+         and result['flow']['acked_frames']==0, 'sf5_startup_attempts_changed')
+
+
+def qualify_sf5_startup_costs(unit,policy,observed,value):
+    """Keep the full two-link bound once, separate from actual first prepayment."""
+    need(policy.parent_id==SF5_STARTUP_PAID and policy.digest==OLD_DIGESTS[26]
+         and policy.qualification_kind is None and unit in SF5_STARTUP_DATABASES,
+         'sf5_startup_scope_changed')
+    owner=value['owner'];phase=owner['native_phase'][unit];detail=observed['detail'];local=policy.unit(unit)
+    profile=RadioProfile(**owner['rf_profile'])
+    need(owner['qualification_kind']=='c-bulk-8k-v1' and owner['radio_profile_name']=='sf5-500'
+         and asdict(profile)==dict(frequency_hz=921375000,bandwidth_hz=500000,spreading_factor=5,coding_rate=5,
+             chip_power_dbm=0,preamble=8,sync_word=0x42,lease_ms=90000,max_boot_attempts=256,
+             max_boot_estimated_airtime_us=60000000), 'sf5_startup_original_profile_changed')
+    count=0 if unit=='unit-b' else 1;actual_extra=Cost() if not count else Cost(256,60000000)
+    full_extra=Cost() if not count else Cost(512,120000000);unused=actual_extra
+    expected=set(SF5_STARTUP_OUTCOMES[unit])
+    need(observed['policy_expired_at_observation'] is True
+         and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
+         and type(owner['phase_end_epoch_us']) is int and type(phase['deadline_monotonic_us']) is int
+         and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
+         and observed['observation_original_monotonic_us']>=phase['deadline_monotonic_us']
+         >=detail['enrollment']['deadline_monotonic_us'], 'sf5_startup_original_clocks_live')
+    need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count','resource_count'))
+         and len(detail['claims'])==len(detail['resources'])==count
+         and detail['full_prepaid_caps']==asdict(actual_extra)
+         and detail['approval_bytes_match_enrollment'] is True
+         and detail['enrollment']['history_binding_sha256']==owner['history_binding_sha256']
+         and observed['expected_database_sha256']==value['database_sha256']==SF5_STARTUP_DATABASES[unit],
+         'sf5_startup_actual_rows_changed')
+    need(detail['prior_plus_prepaid_caps']==value['actual_native_paid_caps']==value['actual_controller_paid_caps']
+         ==asdict(local.prior_debt.plus(actual_extra)) and detail['limit']==asdict(local.limits)
+         and local.limits==local.prior_debt.plus(full_extra) and value['paid_caps']==asdict(local.limits)
+         and value['conservative_unused_enrollment_caps']==asdict(unused), 'sf5_startup_conservative_bound_changed')
+    need(len(value['runs'])==len(value['controller_endpoint_refs'])==count
+         and {r['run_id'] for r in value['runs']}==expected
+         and {r['child']['run_id'] for r in value['controller_endpoint_refs']}==expected
+         and set(value['preparation_sha256'])==expected and value['retired_unstarted']==[]
+         and value['require_result_complete'] is False
+         and value['failed_started_runs']==([] if not count else [SF5_STARTUP_RUN]), 'sf5_startup_retention_scope_changed')
+    if count:
+        rows=observed['legacy_runs'];relation=observed['legacy_relation']
+        need(len(rows)==count and observed['legacy_scoped_rows_complete'] is True
+             and relation['scoped_linkage_complete'] is True and not relation['native_claims_without_scoped_actuals']
+             and len(relation['links'])==count and all(r['relation']=='same_endpoint_allocation'
+                 and r['no_refund'] is True and r['separate_debt_sum_permitted'] is False for r in relation['links']),
+             'sf5_startup_actual_coverage_missing')
+        need(all(r['status']=='scoped_rows_observed' and r['wire']['retired']==1
+                 and r['journal']['has_unknown_or_pending'] is False and r['journal']['owner']['fenced'] is False
+                 for r in rows), 'sf5_startup_journal_unsettled')
+        actual=Cost() if unit=='unit-a' else Cost(8,103888)
+        need(rows[0]['actual_cost']==rows[0]['journal']['actual_cost']==asdict(actual)
+             and len(rows[0]['journal']['attempts'])==(0 if unit=='unit-a' else 8)
+             and all(a['state']=='RF_DONE' for a in rows[0]['journal']['attempts']), 'sf5_startup_actual_attempts_changed')
+    else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
+              and value['legacy_sha256'] is None, 'sf5_startup_zero_peer_changed')
 
 
 def qualify_partial_bundle_result(unit,run,result,*,parent_id=PARTIAL_BUNDLE_PAID):
