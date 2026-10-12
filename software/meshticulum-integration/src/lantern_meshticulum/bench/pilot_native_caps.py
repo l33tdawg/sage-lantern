@@ -9,6 +9,7 @@ runtime construction. Receipts are inspection, never bearer grants. No socket,
 radio, process, controller or production service is opened by this module.
 """
 from dataclasses import dataclass, asdict, fields
+from functools import lru_cache
 import ast
 import fcntl
 import hashlib
@@ -35,6 +36,18 @@ def require(value):
 
 
 def hashed(value): return hashlib.sha256(DOMAIN + canonical(value)).hexdigest()
+
+
+def _claim_representation(claim_id,raw,run,unit,host_boot_id,policy_digest):
+    """Validate immutable row bytes; never retain permission or a debt total."""
+    claim=json.loads(raw);require(canonical(claim)==raw
+        and hashlib.sha256(DOMAIN+raw).hexdigest()==claim_id)
+    meta=claim['child']['metadata'];cost=Cost(**claim['child']['cost'])
+    require(meta['unit']==unit and meta['host_boot_id']==host_boot_id
+            and meta['policy_digest']==policy_digest and meta['run_id']==run)
+    return (claim['resource_id'],canonical(claim['resource']),
+            (cost.radio_attempts,cost.estimated_airtime_us,cost.ip_frames,
+             cost.tx_stream_bytes,cost.rx_stream_bytes))
 
 
 def _state(value):
@@ -369,6 +382,10 @@ class NativeCaps:
             self._enrollment_comparison=_state_comparator(self._enrollment_state)
             self._enrollment_comparator=self._enrollment_comparison[0]
             self._refs+=(self._enrollment_bytes,self._enrollment_state,self._enrollment_comparison)
+            self._claim_rows=lru_cache(maxsize=4096,typed=True)(_claim_representation)
+            self._claim_rows_binding=(type(self._claim_rows),_claim_representation,
+                                      _claim_representation.__code__,_claim_representation.__defaults__)
+            self._refs+=(self._claim_rows,self._claim_rows_binding)
             self._validate();self._uncertain=self.pending.exists() or self.pending.is_symlink()
         except BaseException as error:
             if self.db is self._db_ref and self.db is not None and self.db.in_transaction:self.db.execute('ROLLBACK')
@@ -450,17 +467,22 @@ class NativeCaps:
         self.db.execute('BEGIN IMMEDIATE');self.db.execute('UPDATE clock SET epoch=?,mono=? WHERE id=1',now);self._commit()
     def _validate(self):
         self._available()
+        binding=self._refs[21];validator=binding[1]
+        require(self._claim_rows is self._refs[20] and self._claim_rows_binding is binding
+                and type(self._claim_rows) is binding[0] and self._claim_rows.__wrapped__ is validator
+                and type(validator) is FunctionType and validator.__code__ is binding[2]
+                and validator.__defaults__ is binding[3] and validator.__closure__ is None)
         row=self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone()
         require(row==(self._enrollment_bytes,))
         used=self.unit.prior_debt;rows=self.db.execute('SELECT id,body,run_id FROM claims').fetchall();require(len(rows)<=4096)
         for claim_id,raw,run in rows:
-            claim=json.loads(raw);require(canonical(claim)==raw
-                and hashlib.sha256(DOMAIN+raw).hexdigest()==claim_id)
-            meta=claim['child']['metadata'];cost=Cost(**claim['child']['cost'])
-            require(meta['unit']==self.unit.unit and meta['host_boot_id']==self.unit.host_boot_id
-                    and meta['policy_digest']==self._policy_digest and meta['run_id']==run)
-            resource=self.db.execute('SELECT body FROM resources WHERE id=?',(claim['resource_id'],)).fetchone()
-            require(resource==(canonical(claim['resource']),));used=used.plus(cost)
+            # Every call selects complete current rows. Only pure interpretation
+            # of an exact immutable row/context key is reused; changed/new rows
+            # undergo full validation. Resource bytes and all costs remain live.
+            resource_id,resource_bytes,cost=self._claim_rows(claim_id,raw,run,
+                self.unit.unit,self.unit.host_boot_id,self._policy_digest)
+            resource=self.db.execute('SELECT body FROM resources WHERE id=?',(resource_id,)).fetchone()
+            require(resource==(resource_bytes,));used=used.plus(Cost(*cost))
         require(used.within(self.unit.limits));return rows,used
     def _run(self,phase,action,verify):
         entered=False
