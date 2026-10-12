@@ -267,3 +267,16 @@ def test_parent_check_timing_counts_and_propagates_original_exception():
     measured,timing=_timed_parent_check(check,monotonic_ns=lambda:next(stamps))
     with pytest.raises(RuntimeError) as caught:measured()
     assert caught.value is error and timing['count']==1 and timing['total_elapsed_us']==4
+
+
+@pytest.mark.parametrize('goodput,passed',[(4999.0,False),(5000.0,True)])
+def test_stretch_goal_uses_primary_sender_to_confirmed_ACK_interval(monkeypatch,goodput,passed):
+    import importlib.util
+    bench=Path(__file__).resolve().parents[3]/'firmware/meshticulum-bench'
+    import sys
+    monkeypatch.syspath_prepend(str(bench))
+    spec=importlib.util.spec_from_file_location('gfsk_metrics_source_control',bench/'run_public_gfsk125_batch.py')
+    runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+    monkeypatch.setattr(runner,'_lora_metrics',lambda *a:dict(stretch_target_met=True,useful_encrypted_rf_goodput_Bps=goodput))
+    row=runner.gfsk_metrics(dict(outcomes={u:dict(radio_modem='gfsk125') for u in ('unit-a','unit-c')}),{}, {})
+    assert row['stretch_target_met'] is passed and row['data_span_stretch_target_met'] is True

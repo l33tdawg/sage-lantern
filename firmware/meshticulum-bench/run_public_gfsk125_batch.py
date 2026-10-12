@@ -110,6 +110,8 @@ def gfsk_metrics(link,verified,piece):
     metrics=_lora_metrics(link,verified,piece)
     metrics['radio_profile']=profile_record(profile_for(GFSK_NAME))
     metrics['radio_modem']=GFSK_NAME
+    metrics['data_span_stretch_target_met']=metrics['stretch_target_met']
+    metrics['stretch_target_met']=metrics['useful_encrypted_rf_goodput_Bps']>=5000
     return metrics
 
 
