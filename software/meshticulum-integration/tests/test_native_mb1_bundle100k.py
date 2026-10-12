@@ -90,9 +90,9 @@ def protected_units(base,p,value,monkeypatch):
     return roots,p
 
 
-def test_default_new_physical_scope_remains_explicitly_unbound():
+def test_missing_new_physical_scope_fails_closed(monkeypatch):
     assert set(mode.PHYSICAL_BINDINGS)=={'scope_sha256','core_commit','history_receipt_sha256','preceding_parent'}
-    assert all(v is None for v in mode.PHYSICAL_BINDINGS.values())
+    monkeypatch.setattr(mode,'PHYSICAL_BINDINGS',MappingProxyType({k:None for k in mode.PHYSICAL_BINDINGS}))
     with pytest.raises(Exception,match='pending_native_mb1_scope'):mode.require_bindings()
 
 

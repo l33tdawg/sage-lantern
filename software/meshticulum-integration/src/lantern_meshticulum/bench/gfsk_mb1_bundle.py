@@ -1,4 +1,4 @@
-"""Separate pending native100k MB1 scope; no device or issuance entry."""
+"""Separate finite native100k MB1 scope; no device or issuance entry."""
 from types import MappingProxyType
 
 from meshticulum.bench.wire import require
@@ -6,8 +6,10 @@ from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK_NAME,profile_for,profile_record
 
 # Root must bind a reviewed future scope, paired source/runtime and actual
 # retained history. A source test or the legacy JSON scope cannot fill these.
-PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256=None,core_commit=None,
-    history_receipt_sha256=None,preceding_parent=None))
+PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256='b71f247250d23411a5ccd4e9a6dbc37620e740aef4ecb3f60198d7c0c8b0f511',
+    core_commit='002694c3a7ad3b402891029ded0c82fabecde691',
+    history_receipt_sha256='37d961c7e5078fb98a5c4e3e4b31b7aac51d0afa1433966a56b47c00d2de36ca',
+    preceding_parent='73c1cda8c02939409d0b1e7e2a39be67'))
 
 
 def require_bindings():
