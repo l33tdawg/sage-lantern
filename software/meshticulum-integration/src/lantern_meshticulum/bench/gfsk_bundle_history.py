@@ -101,6 +101,6 @@ def require_final_bindings():
 
 def pending_next_roster():
     require_final_bindings()
-    require(len(PAID_HISTORY)==34 and PAID_HISTORY[:33]==H33_PREFIX and PAID_HISTORY[-1]==PARENT,
+    require(len(PAID_HISTORY)>=34 and PAID_HISTORY[:33]==H33_PREFIX and PAID_HISTORY[33]==PARENT,
         'e8aa_H33_prefix_changed')
     return PAID_HISTORY

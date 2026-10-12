@@ -47,11 +47,11 @@ def review(path,pin):
     need(type(absolute['issued_epoch_us']) is int and type(absolute['expires_epoch_us']) is int
          and 0<absolute['expires_epoch_us']-absolute['issued_epoch_us']<=1020000000
          and absolute['count_authorized']==1,'batch_absolute_window_not_finite')
-    need(op['history_parent_ids']==list(retained_capture.PAID_HISTORY) and len(op['history_parent_ids'])==34,'batch_full_history_required')
+    need(op['history_parent_ids']==list(retained_capture.PAID_HISTORY) and len(op['history_parent_ids'])==35,'batch_full_history_required')
     need(set(op['controller_directories'])==set(op['history_parent_ids']),'batch_controller_roster_changed')
     history=Path(op['history_path']).absolute();receipt_raw=read(history/'RECEIPT.json',100000)
     need(sha(receipt_raw)==op['history_receipt_sha256'],'batch_history_receipt_changed');receipt=json.loads(receipt_raw)
-    need(receipt['local_controllers_reobserved']==34 and receipt['no_refund'] is True,'batch_full_old_debt_required')
+    need(receipt['local_controllers_reobserved']==35 and receipt['no_refund'] is True,'batch_full_old_debt_required')
     proof_raw=read(op['preflight_completion'],2000000);need(sha(proof_raw)==op['preflight_completion_sha256'],'batch_preflight_changed');proof=json.loads(proof_raw)
     need(proof['complete'] is True and proof['archive_sha256']==op['runtime_sha256'] and proof['manifest_sha256']==op['manifest_sha256']
          and proof['history_receipt_sha256']==op['history_receipt_sha256'] and proof['callbacks_exit_zero']==3

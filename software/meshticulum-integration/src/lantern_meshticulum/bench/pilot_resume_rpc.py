@@ -74,6 +74,7 @@ OLD_DIGESTS = (
     'e98e810d8ec1c8d007547310090867725bcc60bf282b3aa48e84d8b319820890',
     '97e3b2e0b51f7fb1b1d4c21c04d715f9dc630e6702e46eb6fd1d6f7cb6f62bef',
     'b86dde057f19d8d38f62743cb56b2d9109a5be4f90fc8d93e2ab2c6381d744eb',
+    '5ca7ccb7c509daeebe6c05ab4c1024bb94df8593a4ad5d1b8f5f5637e4549617',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -204,8 +205,9 @@ PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDL
     V3_VERIFIED_BUNDLE_PAID:(25,'c-bundle100k-v3',V3_VERIFIED_BUNDLE_DATABASES,V3_VERIFIED_BUNDLE_OUTCOMES)}
 
 from .gfsk_bundle_history import PARENT as GFSK_BUNDLE_PAID, NATIVE_OUTCOME_SHA256 as GFSK_BUNDLE_OUTCOMES, NATIVE_DATABASE_SHA256 as GFSK_BUNDLE_DATABASES
+from .gfsk_bundle_partial_history import PARENT as GFSK_PARTIAL_BUNDLE_PAID, NATIVE_OUTCOME_SHA256 as GFSK_PARTIAL_BUNDLE_OUTCOMES, NATIVE_DATABASE_SHA256 as GFSK_PARTIAL_BUNDLE_DATABASES, FAILED_STARTED_RUNS as GFSK_PARTIAL_BUNDLE_FAILED
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -612,6 +614,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             qualify_public32_failure_scope(unit,policy.parent_id,v)
         if policy.parent_id in (COMPLETED_BATCH_PAID,RX_PRIORITY_BATCH_PAID,GFSK_COMPLETE_PAID,GFSK_BUNDLE_PAID):
             need(v['require_result_complete'] is True and v.get('failed_started_runs')==[], 'completed_batch_failure_scope_changed')
+        if policy.parent_id == GFSK_PARTIAL_BUNDLE_PAID:
+            need(v['require_result_complete'] is False and v.get('failed_started_runs')==GFSK_PARTIAL_BUNDLE_FAILED[unit],'partial_gfsk_bundle_failure_scope_changed')
         if policy.parent_id == EARLY_RX_PARTIAL_PAID:
             need(v['require_result_complete'] is False and v.get('failed_started_runs')==([] if unit=='unit-b' else EARLY_RX_PARTIAL_FAILED),'early_rx_partial_failure_scope_changed')
         if policy.parent_id == PARTIAL_BATCH_PAID:
@@ -631,7 +635,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(relation is not None and {r['run_id'] for r in omitted} == {r['run_id'] for r in unstarted}
                  and len(relation['links']) == len(v['runs']) and all(r['no_refund'] is True
                  and r['separate_debt_sum_permitted'] is False for r in relation['links']), 'old_actual_coverage_missing')
-            if v['require_result_complete'] or policy.parent_id in PUBLIC32_PARENTS:
+            if v['require_result_complete'] or policy.parent_id in PUBLIC32_PARENTS or policy.parent_id==GFSK_PARTIAL_BUNDLE_PAID:
                 need(observed['legacy_scoped_rows_complete'] and relation['scoped_linkage_complete']
                      and all(r['relation'] == 'same_endpoint_allocation' for r in relation['links']), 'old_endpoint_overlap_unqualified')
             for row in observed['legacy_runs']:
@@ -660,6 +664,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     need(sha(canonical(result))==COMPLETED_BATCH_OUTCOMES[unit][row['run_id']] and result['complete'] is True,'completed_batch_outcome_changed')
                 if policy.parent_id == GFSK_BUNDLE_PAID:
                     need(sha(canonical(result))==GFSK_BUNDLE_OUTCOMES[unit][row['run_id']] and result['complete'] is True and result.get('radio_modem')==GFSK_NAME,'completed_gfsk_bundle_outcome_changed')
+                if policy.parent_id == GFSK_PARTIAL_BUNDLE_PAID:
+                    need(sha(canonical(result))==GFSK_PARTIAL_BUNDLE_OUTCOMES[unit][row['run_id']] and result.get('radio_modem')==GFSK_NAME,'partial_gfsk_bundle_outcome_changed')
                 if policy.parent_id == GFSK_COMPLETE_PAID:
                     need(sha(canonical(result))==GFSK_COMPLETE_OUTCOMES[unit][row['run_id']] and result['complete'] is True and result.get('radio_modem')==GFSK_NAME,'completed_gfsk_outcome_changed')
                 if policy.parent_id == EARLY_RX_PARTIAL_PAID:
@@ -686,6 +692,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             qualify_completed_batch_costs(unit,policy,observed,v)
         elif policy.parent_id==GFSK_BUNDLE_PAID:
             qualify_gfsk_bundle_costs(unit,policy,observed,v)
+        elif policy.parent_id==GFSK_PARTIAL_BUNDLE_PAID:
+            qualify_gfsk_partial_bundle_costs(unit,policy,observed,v)
         elif policy.parent_id==GFSK_COMPLETE_PAID:
             qualify_gfsk_complete_costs(unit,policy,observed,v)
         elif policy.parent_id==EARLY_RX_PARTIAL_PAID:
@@ -774,6 +782,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
         need(ids==set(COMPLETED_BATCH_OUTCOMES[unit]) and not absent,'completed_batch_claim_scope_changed')
     elif policy.parent_id==GFSK_BUNDLE_PAID:
         need(ids==set(GFSK_BUNDLE_OUTCOMES[unit]) and not absent,'completed_gfsk_bundle_claim_scope_changed')
+    elif policy.parent_id==GFSK_PARTIAL_BUNDLE_PAID:
+        need(ids==set(GFSK_PARTIAL_BUNDLE_OUTCOMES[unit]) and not absent,'partial_gfsk_bundle_claim_scope_changed')
     elif policy.parent_id==GFSK_COMPLETE_PAID:
         need(ids==set(GFSK_COMPLETE_OUTCOMES[unit]) and not absent,'completed_gfsk_claim_scope_changed')
     elif policy.parent_id==EARLY_RX_PARTIAL_PAID:
@@ -1122,6 +1132,56 @@ def qualify_gfsk_bundle_costs(unit,policy,observed,value):
              'completed_gfsk_bundle_coverage_unsettled')
     else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None and value['legacy_sha256'] is None,
               'completed_gfsk_bundle_zero_peer_changed')
+    context._check()
+
+
+def qualify_gfsk_partial_bundle_costs(unit,policy,observed,value):
+    """Exact failed 73c1 scope: two grants; full ten-grant enrollment retained."""
+    from .gfsk_bundle_partial_history import retained_context,require_final_bindings
+    require_final_bindings()
+    need(policy.parent_id==GFSK_PARTIAL_BUNDLE_PAID and policy.digest==OLD_DIGESTS[34]
+         and policy.qualification_kind==GFSK_BUNDLE_KIND,'partial_gfsk_bundle_scope_changed')
+    context=retained_context(value['owner'],policy,unit=unit,observation=observed)
+    detail=observed['detail'];local=policy.unit(unit);count=0 if unit=='unit-b' else 2
+    allocated=Cost() if not count else Cost(512,120000000)
+    full=Cost() if not count else Cost(2560,600000000)
+    unused=Cost() if not count else Cost(2048,480000000)
+    need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
+         and type(detail['resource_count']) is int and detail['resource_count']==(1 if count else 0)
+         and detail['full_prepaid_caps']==asdict(allocated) and detail['approval_bytes_match_enrollment'] is True
+         and detail['enrollment']['history_binding_sha256']==value['owner']['history_binding_sha256']
+         and observed['expected_database_sha256']==value['database_sha256']==GFSK_PARTIAL_BUNDLE_DATABASES[unit],
+         'partial_gfsk_bundle_actual_rows_changed')
+    need(detail['prior_plus_prepaid_caps']==value['actual_native_paid_caps']==value['actual_controller_paid_caps']
+         ==asdict(local.prior_debt.plus(allocated))
+         and value['paid_caps']==detail['limit']==asdict(local.limits)
+         and local.limits==local.prior_debt.plus(full)
+         and value['conservative_unused_enrollment_caps']==asdict(unused),'partial_gfsk_bundle_caps_changed')
+    expected=set(GFSK_PARTIAL_BUNDLE_OUTCOMES[unit])
+    need(len(value['runs'])==len(value['controller_endpoint_refs'])==count
+         and {r['run_id'] for r in value['runs']}==expected
+         and {r['child']['run_id'] for r in value['controller_endpoint_refs']}==expected
+         and set(value['preparation_sha256'])==expected and value['retired_unstarted']==[]
+         and value['require_result_complete'] is False and value['failed_started_runs']==GFSK_PARTIAL_BUNDLE_FAILED[unit],
+         'partial_gfsk_bundle_endpoint_scope_changed')
+    if count:
+        stage=context.value['stages'][0];manifest=context.value['manifest_sha256']
+        resources={(r['campaign_id'],r['resource_sha256']):r for r in detail['resources']}
+        need(len(resources)==1 and set(resources)=={(stage['campaign_id'],manifest)},
+             'partial_gfsk_bundle_resources_changed')
+        row=resources[stage['campaign_id'],manifest]
+        need(row['application_expires_epoch_us']==stage['expires_epoch_us']
+             and row['bundle_context_sha256']==policy.bundle_context_sha256,
+             'partial_gfsk_bundle_original_resource_changed')
+        need(observed['legacy_scoped_rows_complete'] is True and len(observed['legacy_runs'])==count
+             and observed['legacy_relation']['scoped_linkage_complete'] is True
+             and not observed['legacy_relation']['native_claims_without_scoped_actuals']
+             and all(row['wire']['retired']==1 and row['journal']['has_unknown_or_pending'] is False
+                     and row['journal']['owner']['fenced'] is False for row in observed['legacy_runs'])
+             and value['legacy_sha256']==sha(canonical(observed['legacy_runs'])),
+             'partial_gfsk_bundle_coverage_unsettled')
+    else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None and value['legacy_sha256'] is None,
+              'partial_gfsk_bundle_zero_peer_changed')
     context._check()
 
 
