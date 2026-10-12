@@ -68,3 +68,39 @@ def test_H5_mutation_or_unverified_entry_refuses_before_namespace_creation(prepa
         rpc.capture_history('unit-c',dict(parent_id='a'*32,review_sha256='b'*64,facts={'unit':'unit-c'},
             phase_start_epoch_us=1,phase_end_epoch_us=2,history={}),type('RuntimeModel',(),{'check':lambda _:True})())
     if attack in ('unverified','secret'):assert path not in opened
+
+
+
+def test_actual_H32_capture_metadata_survives_capture_and_SealedHistory(prepared):
+    import json
+    from lantern_meshticulum.bench.history_identity_seal import capture,SealedHistory
+    state,known=prepared
+    data=json.loads(Path(__file__).with_name('fixtures').joinpath('current4ca8-partial-batch-metadata.json').read_bytes())
+    assert data['policy']['parent_id']==rpc.EARLY_RX_PARTIAL_PAID
+    target=state/'parents'/rpc.EARLY_RX_PARTIAL_PAID
+    # This layer checks the actual namespace, hashes and held identities.
+    # Grant/capture schemas remain qualified separately by full_history.
+    values={'capture.json':data['owners']['unit-c'],
+        'history-binding.json':data['native']['unit-c']['prior_lineage'],
+        'history-identity-seal.json':data['native']['unit-c']['files'],
+        'legacy-grant-seal.json':data['native']['unit-c']['legacy_runs']}
+    for name,value in values.items():
+        raw=rpc.canonical(value);path=target/name;path.write_bytes(raw);path.chmod(0o600)
+        known[str(path.relative_to(state))]=rpc.sha(raw)
+    with rpc.Reader() as reader:files,dirs=rpc.seal_inputs(reader,'unit-c',known,{}, {})
+    assert set(values)<={Path(p).name for p in files if str(target.relative_to(state))+'/' in p}
+    seal,pin=capture(state,owner_uid=os.geteuid(),expected_files=files,expected_directories=dirs)
+    with SealedHistory(state,owner_uid=os.geteuid(),seal_bytes=seal,expected_sha256=pin) as held:held.check()
+
+
+def test_adjacent_unknown_parent_cannot_import_H32_capture_allowance(prepared):
+    from lantern_meshticulum.bench.history_metadata_fence import FenceError
+    state,known=prepared
+    with rpc.Reader() as reader:files,dirs=rpc.seal_inputs(reader,'unit-c',known,{}, {})
+    unknown=state/'parents'/('4ca8d86644aa24e6fefd06872a9cd132');unknown.mkdir(mode=0o700)
+    path=unknown/'capture.json';path.write_bytes(b'public metadata');path.chmod(0o600)
+    relative=str(path.relative_to(state));files[relative]=rpc.sha(path.read_bytes())
+    dirs['parents']=tuple(sorted((*dirs['parents'],unknown.name)))
+    dirs[str(unknown.relative_to(state))]=('capture.json',)
+    with pytest.raises(FenceError,match='outside_retained_capture_metadata'):
+        HistoricalMetadataFence(state,owner_uid=os.geteuid(),expected_files=files,expected_directories=dirs)
