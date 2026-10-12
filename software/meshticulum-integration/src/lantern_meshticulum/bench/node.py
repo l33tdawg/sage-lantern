@@ -401,6 +401,12 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         if unit in USB:
             worker.arm(journal=journal, profile=profile, context_digest=grant.digest,
                        authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline)
+            if getattr(worker, 'arm_lease_ms', None) is not None:
+                result['radio_arm'] = dict(clock_basis='host_monotonic',
+                    admitted_lease_ms=profile.lease_ms, actual_lease_ms=worker.arm_lease_ms,
+                    confirmed_monotonic=worker.arm_confirmed_monotonic,
+                    firmware_lease_end_upper_bound=worker.arm_lease_end_upper_bound,
+                    host_lease_end=worker.armed_until, original_authority_deadline=deadline)
         else:
             worker = (GfskHATWorker if type(profile) is GfskProfile else HATWorker)(channel, journal=journal, profile=profile, context_digest=grant.digest,
                 authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline,
