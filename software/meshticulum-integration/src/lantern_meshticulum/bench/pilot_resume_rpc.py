@@ -67,6 +67,7 @@ OLD_DIGESTS = (
     '4549a36a15cf11fda34441d66dcc1ff9af0083273d5338b74c68701d0e6de572',
     '09eb8ec08d2e4c5e14091f8124fa966dfcf972887a2b62ecca481ec5d1ca5863',
     'ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef',
+    'ce07d40fc619f16616ed464bd6f756dd137331a564bafbd8978befe676f43ed4',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -166,6 +167,9 @@ SF5_STARTUP_PAID = '57339cca60ddf62b41eafac60147a252'
 SF5_STARTUP_RUN = '3ef93b13ec6966964c2f73d1dbd0a176'
 SF5_STARTUP_DATABASES = {'unit-a': '488905937419145a0fe89df1e0d601435cbecacb8759d4fc22d128e8c4144424', 'unit-b': '872336ed1ebf330eb309127a9e3f4f11ac601b1e5bff7cb798a70e7d27b68266', 'unit-c': 'd76086b9ab30a64f5910208b8aca1abc490630c416648d76e3f4a0a12d670fd6'}
 SF5_STARTUP_OUTCOMES = {'unit-a': {'3ef93b13ec6966964c2f73d1dbd0a176': '5530c5125906f695df9164e6e8c7411613a7f44d89ca701ac755d8b32860d3e5'}, 'unit-b': {}, 'unit-c': {'3ef93b13ec6966964c2f73d1dbd0a176': '70f95a1d0c3174c0fcb32599466bf96c85180f56b9b0d437fe44c012218cf6d4'}}
+SF5_COMPLETED_PAID = '4aa3ad2bc1346cae82bc90d8abd6dcd4'
+SF5_COMPLETED_RUNS = ('bf0f8bf4bee09cfe456167a777354bba', '958625a64fa91fd76c913851080f997e')
+SF5_COMPLETED_OUTCOMES = {'unit-a': {'bf0f8bf4bee09cfe456167a777354bba': '01b60943e8b197b212f29f5e75675c2e8e50c7af0b8633b569d38542cbb379e1', '958625a64fa91fd76c913851080f997e': '7555ef494f3b04a2a2aac4d2bde5449d774c3f8c2d829e5b11726f537c64652b'}, 'unit-b': {}, 'unit-c': {'bf0f8bf4bee09cfe456167a777354bba': '450c07dff679c6fb14d0530edd2f22d554e454299214e7e378e9437002a873cc', '958625a64fa91fd76c913851080f997e': '68b0ab29f465fdfc26df10004314c08353a39a8da279a29d1d53d5bb6356d7b9'}}
 V3_ACCEPTED_PARTS = {V3_PARTIAL_BUNDLE_PAID:(V3_PARTIAL_BUNDLE_RUNS,V3_ACCEPTED_PART_SHA),
     V3_CHECKPOINT_BUNDLE_PAID:(V3_CHECKPOINT_BUNDLE_RUNS,V3_CHECKPOINT_ACCEPTED_PART_SHA),
     V3_VERIFIED_BUNDLE_PAID:(V3_VERIFIED_BUNDLE_RUNS,V3_VERIFIED_ACCEPTED_PART_SHA)}
@@ -176,7 +180,7 @@ PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDL
     V3_CHECKPOINT_BUNDLE_PAID:(24,'c-bundle100k-v3',V3_CHECKPOINT_BUNDLE_DATABASES,V3_CHECKPOINT_BUNDLE_OUTCOMES),
     V3_VERIFIED_BUNDLE_PAID:(25,'c-bundle100k-v3',V3_VERIFIED_BUNDLE_DATABASES,V3_VERIFIED_BUNDLE_OUTCOMES)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -538,7 +542,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id == MIXED_PAID:
             need(v.get('failed_started_runs',[]) == ([MIXED_RECEIVER_RUN] if unit=='unit-c' else []),
                  'mixed_failed_endpoint_scope_changed')
-        if policy.parent_id in (SUCCESS_PAID,ACCEPTED_BULK_PAID,REVERSE_BULK_PAID,ZERO_RETRY_BULK_PAID,IMMEDIATE_RX_BULK_PAID,SF7_REPLICATE_PAID):
+        if policy.parent_id in (SUCCESS_PAID,ACCEPTED_BULK_PAID,REVERSE_BULK_PAID,ZERO_RETRY_BULK_PAID,IMMEDIATE_RX_BULK_PAID,SF7_REPLICATE_PAID,SF5_COMPLETED_PAID):
             need(v.get('failed_started_runs',[])==[], 'successful_mixed_failure_scope_changed')
         if policy.parent_id in PUBLIC32_PARENTS:
             qualify_public32_failure_scope(unit,policy.parent_id,v)
@@ -579,6 +583,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                 if policy.parent_id in PUBLIC32_PARENTS: qualify_public32_result(unit,row['run_id'],result,parent_id=policy.parent_id)
                 if policy.parent_id in PARTIAL_BUNDLE_SCOPES: qualify_partial_bundle_result(unit,row['run_id'],result,parent_id=policy.parent_id)
                 if policy.parent_id == SF5_STARTUP_PAID: qualify_sf5_startup_result(unit,row['run_id'],result)
+                if policy.parent_id == SF5_COMPLETED_PAID:
+                    need(sha(canonical(result))==SF5_COMPLETED_OUTCOMES[unit][row['run_id']] and result['complete'] is True,
+                         'completed_sf5_outcome_changed')
                 for name, record in row['files'].items():
                     need(name in _FILES, 'unallowlisted_old_metadata')
                     raw = metadata(STATE/'runs'/row['run_id']/name)
@@ -666,6 +673,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id in PUBLIC32_PARENTS:
         expected=PUBLIC32_OUTCOMES[policy.parent_id][2]
         need(ids==set(expected[unit]) and not absent,'public32_claim_scope_changed')
+    elif policy.parent_id==SF5_COMPLETED_PAID:
+        need(ids==set(SF5_COMPLETED_OUTCOMES[unit]) and not absent, 'completed_sf5_claim_scope_changed')
     elif policy.parent_id==SF5_STARTUP_PAID:
         need(ids==(set() if unit=='unit-b' else {SF5_STARTUP_RUN}) and not absent, 'sf5_startup_claim_scope_changed')
     elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
