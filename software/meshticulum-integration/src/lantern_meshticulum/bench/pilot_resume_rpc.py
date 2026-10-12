@@ -39,7 +39,8 @@ from meshticulum.contracts.identity import PeerID
 
 CONTRACT_SCHEMA = 'meshticulum.private-resume-native-rpc.v1'
 STATE = Path('/var/lib/meshticulum-bench')
-OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af',
+OLD_DIGESTS = (
+    '86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af',
     '6d337c78faf8c2dbea7a0a0d29e82aa8af8d1452f954fb6b664106459c33d256',
     '1ca1774780928427f15befecf723064cd87aff6ad402b6ef94b137f5d45f6d33',
     '290fdcc66fb9696dd584e146f7c4e0ed271039fb51f75f430abf8bb0b9b5fdf1',
@@ -62,7 +63,9 @@ OLD_DIGESTS = ('86975afb2e94de9ae55c86269409f4d8456475499fc20995cd2bab6a4f4ed0af
     '75629c69abee33dbeb9e7f9f74b62a8af4fd3bdead281089ee5202e345e83464',
     'd0bd6f2d52ca5aceb8e69c9928b25bd7e3f8ab9db118dba9d4190ad05c01e9ec',
     '725159b7a2a9baa0486d462760fc68a1d58065c084a612a9c80b7e2d6838d0fe',
-    'd63ff5d4096f0a68aef37f569dfe837f64d90b820b7290ea450febf901ca3468')
+    'd63ff5d4096f0a68aef37f569dfe837f64d90b820b7290ea450febf901ca3468',
+    '4549a36a15cf11fda34441d66dcc1ff9af0083273d5338b74c68701d0e6de572',
+)
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
 BULK_PAID = '4034f8979b985660df21859606c4f8a7'
@@ -147,12 +150,20 @@ V3_PARTIAL_BUNDLE_RUNS = ('0d41d67c0db96671af2eb64dbbe7179e', '13ab39611582fc5e2
 V3_PARTIAL_BUNDLE_DATABASES = {'unit-a': '4e94b81f2260cf19d80338de283f29adbd623ff16509472249f68caf44ceecfa', 'unit-b': 'a06dd2242066fd3f22ab20fa5ec00c4f5daf2ffedf2e680e5b4d41779efa83d5', 'unit-c': '04fa06af019fa680964faf9c8e40ff45651e98cfbd08ffb2c3a62a40b0ee0181'}
 V3_PARTIAL_BUNDLE_OUTCOMES = {'unit-a': {'0d41d67c0db96671af2eb64dbbe7179e': '8f5bc421a1d91afafb20eccfe96f79482da40a9f54b68c8d2f3c10f837d89cd6', '13ab39611582fc5e2037f70c78266fce': 'f5bab844d3271d75d43a1496eb186f3d1c529c070cecb1295c1d8e1e584a3d7c'}, 'unit-b': {}, 'unit-c': {'0d41d67c0db96671af2eb64dbbe7179e': '201576e41af6bcb4d26eb191835cdb50fd363278101fbebb82b9e0ede99da15a', '13ab39611582fc5e2037f70c78266fce': '1fb96b9b45b60e677c33c8dcd73d30fd7539e4a42ace491031d6592ca02430bd'}}
 V3_ACCEPTED_PART_SHA = '08a433a64af413f3e5ec2944f15c5935f0779d9f38e77e29880de94ecef7e7c4'
+V3_CHECKPOINT_BUNDLE_PAID = '2429969fcbb0f57b3deaeda7187036c2'
+V3_CHECKPOINT_BUNDLE_RUNS = ('a7d2d5714770380d75fd833ca0fce1f2', 'd257a430665407fb424fbdb11cb27847')
+V3_CHECKPOINT_BUNDLE_DATABASES = {'unit-a': '8d0bdf05bc5f5a9117feabfba1120973a5f516e0881de6c4f20dc9d8086e30b4', 'unit-b': '0f40850d15cb8505202fcb88c79647de08c47761cde4ba515095aedc9b26175c', 'unit-c': 'c933380b524fdbe2c6161d859f95bd281d1eaa74535d336dc0446dc6006fcb2e'}
+V3_CHECKPOINT_BUNDLE_OUTCOMES = {'unit-a': {'a7d2d5714770380d75fd833ca0fce1f2': 'c72032defd46d75b8f053ec14a50910716533e56720d05120dda961578f3b8dd', 'd257a430665407fb424fbdb11cb27847': 'c44130eb0910f14679cca63d12e479be0e289f91e6117f83fa91e6625385e2e8'}, 'unit-b': {}, 'unit-c': {'a7d2d5714770380d75fd833ca0fce1f2': '208dd578c7249819e52a72cb08452694d94111322e7a0905af49b66eed6d03e9', 'd257a430665407fb424fbdb11cb27847': '688c3154e759d0a360868b60bb616e972a8e4663b43fc4f264cab6095255237d'}}
+V3_CHECKPOINT_ACCEPTED_PART_SHA = '6adfa44268ab3d49072d6793a55e457a69a22411a94632de2929f62ea5ff0cc9'
+V3_ACCEPTED_PARTS = {V3_PARTIAL_BUNDLE_PAID:(V3_PARTIAL_BUNDLE_RUNS,V3_ACCEPTED_PART_SHA),
+    V3_CHECKPOINT_BUNDLE_PAID:(V3_CHECKPOINT_BUNDLE_RUNS,V3_CHECKPOINT_ACCEPTED_PART_SHA)}
 PARTIAL_BUNDLE_SCOPES = {PARTIAL_BUNDLE_PAID:(20,'c-bundle100k-v1',PARTIAL_BUNDLE_DATABASES,PARTIAL_BUNDLE_OUTCOMES),
     V2_PARTIAL_BUNDLE_PAID:(21,'c-bundle100k-v2',V2_PARTIAL_BUNDLE_DATABASES,V2_PARTIAL_BUNDLE_OUTCOMES),
     V2_FAILED_BUNDLE_PAID:(22,'c-bundle100k-v2',V2_FAILED_BUNDLE_DATABASES,V2_FAILED_BUNDLE_OUTCOMES),
-    V3_PARTIAL_BUNDLE_PAID:(23,'c-bundle100k-v3',V3_PARTIAL_BUNDLE_DATABASES,V3_PARTIAL_BUNDLE_OUTCOMES)}
+    V3_PARTIAL_BUNDLE_PAID:(23,'c-bundle100k-v3',V3_PARTIAL_BUNDLE_DATABASES,V3_PARTIAL_BUNDLE_OUTCOMES),
+    V3_CHECKPOINT_BUNDLE_PAID:(24,'c-bundle100k-v3',V3_CHECKPOINT_BUNDLE_DATABASES,V3_CHECKPOINT_BUNDLE_OUTCOMES)}
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -550,7 +561,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             qualify_enrolled_zero_costs(unit,policy,observed,v)
         elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
             qualify_partial_bundle_costs(unit,policy,observed,v)
-            if policy.parent_id==V3_PARTIAL_BUNDLE_PAID:verify_retained_v3_part_files(reader,unit,policy,observed,v)
+            if policy.parent_id in V3_ACCEPTED_PARTS:verify_retained_v3_part_files(reader,unit,policy,observed,v)
         elif policy.parent_id!=PARTIAL_PAID:
             need(observed['detail']['prior_plus_prepaid_caps'] == v['paid_caps'], 'old_paid_caps_changed')
         if index: need(asdict(policy.unit(unit).prior_debt) == old[index-1]['paid_caps'], 'old_paid_debt_chain_changed')
@@ -792,22 +803,22 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
 
     else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None
               and value['legacy_sha256'] is None,'partial_bundle_zero_peer_scope_changed')
-    if policy.parent_id==V3_PARTIAL_BUNDLE_PAID:
+    if policy.parent_id in V3_ACCEPTED_PARTS:
         qualify_v3_retained_part(unit,policy,observed,value)
 
 
 
 def qualify_v3_retained_part(unit,policy,observed,value):
     """Fixed accepted first-part comparison; never fresh bundle authority."""
-    receipt=value['accepted_part']
-    need(sha(canonical(receipt))==V3_ACCEPTED_PART_SHA,'retained_v3_part_receipt_changed')
+    receipt=value['accepted_part'];runs,receipt_sha=V3_ACCEPTED_PARTS[policy.parent_id]
+    need(sha(canonical(receipt))==receipt_sha,'retained_v3_part_receipt_changed')
     from .pilot_bundle import BundleContext
     context=BundleContext(value['owner']['bundle_context'],policy)
     part=receipt['bundle_part'];stage=context.value['stages'][0];entry=context.expected['parts'][0]
     need(receipt['unit']=='unit-a' and receipt['publisher_verified'] is True and receipt['reused'] is False
          and receipt['manifest_sha256']==context.value['manifest_sha256'] and receipt['chunk_sha256']==entry['chunk_sha256']
-         and receipt['campaign_id']==stage['campaign_id'] and receipt['request_run_id']==V3_PARTIAL_BUNDLE_RUNS[0]
-         and receipt['response_run_id']==V3_PARTIAL_BUNDLE_RUNS[1]
+         and receipt['campaign_id']==stage['campaign_id'] and receipt['request_run_id']==runs[0]
+         and receipt['response_run_id']==runs[1]
          and part['bundle_context_sha256']==policy.bundle_context_sha256
          and part['part_index']==0 and part['useful_decoded_bytes']==entry['raw_bytes']==23900
          and part['reused_verified_part'] is False and part['whole_bytes']==100000

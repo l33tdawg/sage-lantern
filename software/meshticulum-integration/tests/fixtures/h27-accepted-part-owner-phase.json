@@ -1,0 +1,908 @@
+{
+  "unit-a": {
+    "actual_cost": null,
+    "authorization": {
+      "approved_by_human": true,
+      "confirmation_trace": {
+        "current_scope_confirmed": true,
+        "earlier_user_quote": "run it bro",
+        "latest_user_confirmation": "approved bro - do what you need to"
+      },
+      "count_authorized": 1,
+      "human_statement": "run it bro",
+      "private_production": false,
+      "public_only": true
+    },
+    "bundle_capture_commitment": {
+      "context_schema": "meshticulum.native-public100k-bundle-context.v3",
+      "context_sha256": "b8536810230ef12f1432ce7a11f3bae3e391b80ddce51c9dd975c0365f264b63",
+      "deadline_monotonic_us": 850169060116,
+      "expires_epoch_us": 1791762073524315,
+      "original_epoch_us": 1791760723524315,
+      "original_monotonic_us": 848819060116,
+      "parent_id": "2429969fcbb0f57b3deaeda7187036c2",
+      "phase_end_epoch_us": 1791762078524315,
+      "phase_start_epoch_us": 1791760723524315,
+      "qualification_kind": "c-bundle100k-v3",
+      "schema": "meshticulum.public100k-capture-commitment.v3"
+    },
+    "bundle_context": {
+      "deadline_monotonic_us": 850169060116,
+      "expires_epoch_us": 1791762073524315,
+      "manifest_base64": "eyJjaHVua3MiOlt7ImJ5dGVzIjozMjc0MCwiaWQiOiJwYXJ0LTAwMDAwMCIsInNoYTI1NiI6IjdhMzA5MTY1YzFhYTdlODM1MWU1NWRkOTRhOWQ2ODU5ZjExNTZkM2I0YjYxNDc2YzE3OTk4YTYwZTRhZjEyYTAiLCJ0YWdzIjpbXSwidGl0bGUiOiJQdWJsaWMgZmlsZSBwYXJ0In0seyJieXRlcyI6MzI3NDAsImlkIjoicGFydC0wMDAwMDEiLCJzaGEyNTYiOiJlMGUzNDE1NTU0MzVkZTFmN2JiYTJkZDRhNTdkMDQ1OWQ5MmQxOTg1MDUyOTk0ODMzZTgyYzcyZGUyNWIwNDMzIiwidGFncyI6W10sInRpdGxlIjoiUHVibGljIGZpbGUgcGFydCJ9LHsiYnl0ZXMiOjMyNzQwLCJpZCI6InBhcnQtMDAwMDAyIiwic2hhMjU2IjoiMWQ1OTQwNDIxOTExZTkwNDcwNGJmOTEwZTc0Nzg0MzUxN2E0NGNhYzhjYjFiMWQ3Nzk4NjU2YzA2MGQ5YjliNSIsInRhZ3MiOltdLCJ0aXRsZSI6IlB1YmxpYyBmaWxlIHBhcnQifSx7ImJ5dGVzIjozMjc0MCwiaWQiOiJwYXJ0LTAwMDAwMyIsInNoYTI1NiI6IjBhNzU2NzhmZTdiOTBkYzU0ZDJjMWE2ZjQ3MzhkNWM1ZmI3OTM2NTU0MzhhNjM1NTFmOWM0ZmEyYTdiYTE0MGUiLCJ0YWdzIjpbXSwidGl0bGUiOiJQdWJsaWMgZmlsZSBwYXJ0In0seyJieXRlcyI6MzI3NDAsImlkIjoicGFydC0wMDAwMDQiLCJzaGEyNTYiOiI1NjAwYWVmMmRiMmI0MzViNWMwMWI0MzM1ODc3ZDZlNjI1YjlhYmU3ODgxMmMzNDhjYzQ2YzU4NDU2ZDUxZTYzIiwidGFncyI6W10sInRpdGxlIjoiUHVibGljIGZpbGUgcGFydCJ9XSwiZW1iZWRkaW5nIjp7ImRpbWVuc2lvbiI6MSwiZW1iZWRkZWRfY2h1bmtzIjowLCJtb2RlbCI6Im5vbmUiLCJub3JtYWxpemVkIjp0cnVlfSwicGFjayI6eyJjbGFzcyI6InJlZmVyZW5jZSIsImNyZWF0ZWRfYXQiOiIyMDI2LTEwLTEyVDAwOjAwOjAwWiIsImlkIjoicHVibGljLWJ1bmRsZS0xMDAwMDAtdjQiLCJsaWNlbmNlIjoiQ0MwLTEuMCIsInByb3ZlbmFuY2UiOnsibm90ZSI6IntcImJ5dGVzXCI6MTAwMDAwLFwicGFydF9ieXRlc1wiOjIzOTAwLFwicGFydHNcIjpbe1wiY2h1bmtfc2hhMjU2XCI6XCI3YTMwOTE2NWMxYWE3ZTgzNTFlNTVkZDk0YTlkNjg1OWYxMTU2ZDNiNGI2MTQ3NmMxNzk5OGE2MGU0YWYxMmEwXCIsXCJpbmRleFwiOjAsXCJvZmZzZXRcIjowLFwicmF3X2J5dGVzXCI6MjM5MDAsXCJyYXdfc2hhMjU2XCI6XCJmYWU1M2VjMWU1ODJmNTljOGYxNTAzNTc3NGViZmRiMzUyZDEzZDVlN2ZiOGJjNGM3N2NiNmQ3ZGRhYjcxMmQ4XCJ9LHtcImNodW5rX3NoYTI1NlwiOlwiZTBlMzQxNTU1NDM1ZGUxZjdiYmEyZGQ0YTU3ZDA0NTlkOTJkMTk4NTA1Mjk5NDgzM2U4MmM3MmRlMjViMDQzM1wiLFwiaW5kZXhcIjoxLFwib2Zmc2V0XCI6MjM5MDAsXCJyYXdfYnl0ZXNcIjoyMzkwMCxcInJhd19zaGEyNTZcIjpcIjA0YzcyYTgxMTc0M2RlYzQzNzIxNDliOGU0YTUwOTU2OGVmNmYyMjY4MzM4MzQ5MWY4YTNhZTI5Nzg1ZTgxYmVcIn0se1wiY2h1bmtfc2hhMjU2XCI6XCIxZDU5NDA0MjE5MTFlOTA0NzA0YmY5MTBlNzQ3ODQzNTE3YTQ0Y2FjOGNiMWIxZDc3OTg2NTZjMDYwZDliOWI1XCIsXCJpbmRleFwiOjIsXCJvZmZzZXRcIjo0NzgwMCxcInJhd19ieXRlc1wiOjIzOTAwLFwicmF3X3NoYTI1NlwiOlwiMGJkYzliZmM5MGZhODhiOGU3ZTkyNDFkYzk1YTMzZTA2YWU5OTUwNzY2Mjg2YjZhMWQ3Y2FmOWY0YTY1ZGZmZFwifSx7XCJjaHVua19zaGEyNTZcIjpcIjBhNzU2NzhmZTdiOTBkYzU0ZDJjMWE2ZjQ3MzhkNWM1ZmI3OTM2NTU0MzhhNjM1NTFmOWM0ZmEyYTdiYTE0MGVcIixcImluZGV4XCI6MyxcIm9mZnNldFwiOjcxNzAwLFwicmF3X2J5dGVzXCI6MjM5MDAsXCJyYXdfc2hhMjU2XCI6XCJmMzYyMDU3MDg1YjA0MjZhOTljNDVlOWYwOGZjNmRiN2MzOWZjNjkyYzYyOWNiODAyZWNmMzE4NmE4NmUzNmU2XCJ9LHtcImNodW5rX3NoYTI1NlwiOlwiNTYwMGFlZjJkYjJiNDM1YjVjMDFiNDMzNTg3N2Q2ZTYyNWI5YWJlNzg4MTJjMzQ4Y2M0NmM1ODQ1NmQ1MWU2M1wiLFwiaW5kZXhcIjo0LFwib2Zmc2V0XCI6OTU2MDAsXCJyYXdfYnl0ZXNcIjo0NDAwLFwicmF3X3NoYTI1NlwiOlwiYWUyY2ZjYTU4OWY5NjU4YmQ0OGIxYzQ4NDZjYjlhNjI3ZDU0MWZiZTE1NmJkOTdjMTk2YzEyNzg4MWYwZjM3OVwifV0sXCJzY2hlbWFcIjpcIm1lc2h0aWN1bHVtLnB1YmxpYy1ieXRlLWJ1bmRsZS52MVwiLFwic2hhMjU2XCI6XCJjNjRmNGEyOWY0MjMwOWYyNjlkNWM2M2ZhZmY5NTBlNzJjMWRiMWJjYzUyMjUzN2QzMTA3Zjk0ZmI5NjkwYWRmXCJ9Iiwic291cmNlIjoiU0FHRSBGb3VuZGF0aW9uIHB1YmxpYyB0ZXN0IGRhdGEifSwidGl0bGUiOiJQdWJsaWMgYnl0ZSBidW5kbGUiLCJ2ZXJzaW9uIjoxfSwicGFyZW50IjpudWxsLCJzY2hlbWEiOiJzYWdlLmtub3dsZWRnZS1wYWNrLm1hbmlmZXN0LnYyIiwidG90YWxzIjp7ImNodW5rX2J5dGVzIjoxNjM3MDAsImNodW5rcyI6NSwiZW1iZWRkZWRfY2h1bmtzIjowLCJ0ZXh0X2J5dGVzIjo5MH19Cg==",
+      "manifest_sha256": "8c720f2843cc97d6f7b735623c352a8421718af77750fa7c7a738e4ce8d78550",
+      "original_epoch_us": 1791760723524315,
+      "original_monotonic_us": 848819060116,
+      "schema": "meshticulum.native-public100k-bundle-context.v3",
+      "signature_base64": "eyJhbGdvcml0aG0iOiJlZDI1NTE5Iiwia2V5X2lkIjoicGstYmI1ZjdhNzQzZjE4MjU1YyIsIm1hbmlmZXN0X3NoYTI1NiI6IjhjNzIwZjI4NDNjYzk3ZDZmN2I3MzU2MjNjMzUyYTg0MjE3MThhZjc3NzUwZmE3YzdhNzM4ZTRjZThkNzg1NTAiLCJwdWJsaWNfa2V5X2hleCI6IjI2ZGQ0MWRiYjc1YzI4NzAzYWMzZjMwMThlNDE3N2JkZjYyMmI3NmU1ZmFhMTdiYzAwZWFkZDg4MWI4YzI3YTYiLCJzY2hlbWEiOiJzYWdlLmtub3dsZWRnZS1wYWNrLnNpZ25hdHVyZS52MSIsInNpZ25hdHVyZV9iYXNlNjQiOiIvNG1NLzJRNTgrY3hIYmtKeWRsV0Q4cEhiakZpNENESEhJdG01dVlkRlFEOUpvclFuS2d0M3ppRUxQYW4rTE1WMnlXK2p6OHRURU56MXZTQXdXaGVEQT09In0K",
+      "stages": [
+        {
+          "campaign_id": "5849987483ddc84b1045f5b36e6687fc",
+          "expires_epoch_us": 1791761008524315,
+          "handoff_end_epoch_us": 1791761068524315,
+          "index": 0,
+          "issued_epoch_us": 1791760828524315,
+          "response_sha256": "bce417b4882736b1ea2ee3b132ba960355c4abb687980f7e4e202c42af80ace1"
+        },
+        {
+          "campaign_id": "5d3ad2c81e0d07f34ed51dd3f1fb0dfa",
+          "expires_epoch_us": 1791761248524315,
+          "handoff_end_epoch_us": 1791761308524315,
+          "index": 1,
+          "issued_epoch_us": 1791761068524315,
+          "response_sha256": "da3e762d10d726e55035527dd6fca68db4c4f6bba36b4713930594b281eed70e"
+        },
+        {
+          "campaign_id": "ab62316a6f5eebba1d8f4d9f0ba35d65",
+          "expires_epoch_us": 1791761488524315,
+          "handoff_end_epoch_us": 1791761548524315,
+          "index": 2,
+          "issued_epoch_us": 1791761308524315,
+          "response_sha256": "b0468eba388e0d75ca60eb848157eb6dce9c68531a19dac5906399d43428c23e"
+        },
+        {
+          "campaign_id": "e572753866eaf28184d18939674e2a04",
+          "expires_epoch_us": 1791761728524315,
+          "handoff_end_epoch_us": 1791761788524315,
+          "index": 3,
+          "issued_epoch_us": 1791761548524315,
+          "response_sha256": "c08a864f9f4806505533a81f0fcca3bb588b23c9cda19dd6c33f8f907b6ecca1"
+        },
+        {
+          "campaign_id": "c8dd03161208c75dff8298fa0df419a3",
+          "expires_epoch_us": 1791761968524315,
+          "handoff_end_epoch_us": 1791761978524315,
+          "index": 4,
+          "issued_epoch_us": 1791761788524315,
+          "response_sha256": "ef8672149998c7f93e933aadbade8c0564ed8b3da4fc51b2520ca8d3ee9a2931"
+        }
+      ],
+      "trust": {
+        "keys": [
+          {
+            "algorithm": "ed25519",
+            "created_at": "2026-10-12T00:00:00Z",
+            "key_id": "pk-bb5f7a743f18255c",
+            "public_key_hex": "26dd41dbb75c28703ac3f3018e4177bdf622b76e5faa17bc00eadd881b8c27a6",
+            "status": "active"
+          }
+        ],
+        "schema": "sage.knowledge-pack.trust-root.v1"
+      },
+      "whole_bytes": 100000,
+      "whole_sha256": "c64f4a29f42309f269d5c63faff950e72c1db1bcc522537d3107f94fb9690adf"
+    },
+    "bundle_radio_checkpoint": {
+      "maximum_checkpoints": 4,
+      "primitives_sha256": "151856e1a8565a055c5cfdb848fb00cc490f2e3559bc1354c95985dc3ade96ea",
+      "producer_sha256": "b591c0ee44946e6bef65dd8b38a7d6a0a98849c6ae6e5fa2a2a07391522a3fd1",
+      "retained_history_count": 24,
+      "schema": "meshticulum.root-public100k-checkpoint-owner.v1"
+    },
+    "capture_record_sha256": "e6a942f8dc39f911548caa9d856d8e1db5296ba5f3f8a0b58e754efae42d66c6",
+    "complete_global_debt": false,
+    "facts": {
+      "unit-a": {
+        "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-mesh-runtime.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "unit": "unit-a"
+      },
+      "unit-b": {
+        "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-mesh-runtime.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "unit": "unit-b"
+      },
+      "unit-c": {
+        "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "9492195",
+            "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+            "MainPID": "833"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "11578324",
+            "InvocationID": "34edf2382564498ab081451564db093e",
+            "MainPID": "1347"
+          },
+          "sage-lantern-vlm.service": {
+            "ExecMainStartTimestampMonotonic": "9507094",
+            "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+            "MainPID": "841"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "170825468927",
+            "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+            "MainPID": "910093"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "active",
+          "sage-lantern-personal-sage.service": "active",
+          "sage-lantern-vlm.service": "active",
+          "sage-lantern-voice-loop.service": "active"
+        },
+        "unit": "unit-c"
+      }
+    },
+    "history_binding_sha256": "9613f1129f10401fc05ecf2c1e6f980b826ad31eff00737528243f77b30035c2",
+    "manifest_sha256": "d51632e31308e8f5084db22bf7498ef7073475b99ea52d7f9873e635519227ed",
+    "native_phase": {
+      "unit-a": {
+        "deadline_monotonic_us": 221431231945,
+        "epoch_us": 1791760780857987,
+        "monotonic_us": 220133565617
+      },
+      "unit-b": {
+        "deadline_monotonic_us": 221381994463,
+        "epoch_us": 1791760765597149,
+        "monotonic_us": 220069067297
+      },
+      "unit-c": {
+        "deadline_monotonic_us": 218371244036,
+        "epoch_us": 1791760740412236,
+        "monotonic_us": 217033131957
+      }
+    },
+    "native_python": {
+      "unit-a": "/root/esp-venv-r3/bin/python",
+      "unit-b": "/root/esp-venv-r3/bin/python",
+      "unit-c": "/usr/bin/python3"
+    },
+    "phase_end_epoch_us": 1791762078524315,
+    "phase_start_epoch_us": 1791760723524315,
+    "policy_digest": "4549a36a15cf11fda34441d66dcc1ff9af0083273d5338b74c68701d0e6de572",
+    "prior_registry": {
+      "unit-a": {
+        "full_caps": {
+          "estimated_airtime_us": 7140000000,
+          "ip_frames": 20480,
+          "radio_attempts": 30464,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "history_binding_sha256": "9613f1129f10401fc05ecf2c1e6f980b826ad31eff00737528243f77b30035c2",
+        "observation_sha256": "51afd11445e051a1e6d0ba11b038396df4ff07f71c7ac47cd993c246954b0e40"
+      },
+      "unit-b": {
+        "full_caps": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "history_binding_sha256": "19b772747768592ddbc53194bfc3dc70cb2d7353baade8ffa9da5a97c3c54095",
+        "observation_sha256": "c2b92c129f852ecdeb81edf0270d66098167656cd1689a0859e2746fe1a74990"
+      },
+      "unit-c": {
+        "full_caps": {
+          "estimated_airtime_us": 7980000000,
+          "ip_frames": 71680,
+          "radio_attempts": 34048,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "history_binding_sha256": "777a72be9899a2a6674c972e5b453f0f978b79d3e52c0b34376ab334ff40d3d1",
+        "observation_sha256": "c0db35b2cefa571579b4a20cebe4f29332757e241cd9ab5bc4247ebf3c07ecf7"
+      }
+    },
+    "qualification_kind": "c-bundle100k-v3",
+    "review_sha256": "8a68789760b014a2cbd921c35ba7101cbe7242d5b5cbcd266235390f82626528",
+    "rf_profile": {
+      "bandwidth_hz": 500000,
+      "chip_power_dbm": 0,
+      "coding_rate": 5,
+      "frequency_hz": 921375000,
+      "lease_ms": 90000,
+      "max_boot_attempts": 256,
+      "max_boot_estimated_airtime_us": 60000000,
+      "preamble": 8,
+      "spreading_factor": 7,
+      "sync_word": 66
+    },
+    "rf_record": {
+      "A_B_transmission_allowed": true,
+      "C_transmission_allowed": true,
+      "country": "MY",
+      "country_basis": "Owner answered yes to the question whether all three units are in Malaysia.",
+      "recorded_at": "2026-10-09T13:17:51.007046+00:00",
+      "schema": "meshticulum.owner-rf-physical-confirmation.v1",
+      "units": {
+        "unit-a": {
+          "antenna_connected": true,
+          "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+        },
+        "unit-b": {
+          "antenna_connected": true,
+          "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+        },
+        "unit-c": {
+          "antenna_connected": true,
+          "confirmation": "Owner followed up that C antenna is connected now (small antenna), in the context of the lower LoRa socket request."
+        }
+      }
+    },
+    "rf_record_sha256": "40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9",
+    "runtime_sha256": "9ade4747e44c2571a3be595c9500120fca2f0a6144c466a56260a2455421028f",
+    "schema": "meshticulum.finite-public-resume-owner.v1"
+  },
+  "unit-b": {
+    "actual_cost": null,
+    "authorization": {
+      "approved_by_human": true,
+      "confirmation_trace": {
+        "current_scope_confirmed": true,
+        "earlier_user_quote": "run it bro",
+        "latest_user_confirmation": "approved bro - do what you need to"
+      },
+      "count_authorized": 1,
+      "human_statement": "run it bro",
+      "private_production": false,
+      "public_only": true
+    },
+    "bundle_capture_commitment": {
+      "context_schema": "meshticulum.native-public100k-bundle-context.v3",
+      "context_sha256": "b8536810230ef12f1432ce7a11f3bae3e391b80ddce51c9dd975c0365f264b63",
+      "deadline_monotonic_us": 850169060116,
+      "expires_epoch_us": 1791762073524315,
+      "original_epoch_us": 1791760723524315,
+      "original_monotonic_us": 848819060116,
+      "parent_id": "2429969fcbb0f57b3deaeda7187036c2",
+      "phase_end_epoch_us": 1791762078524315,
+      "phase_start_epoch_us": 1791760723524315,
+      "qualification_kind": "c-bundle100k-v3",
+      "schema": "meshticulum.public100k-capture-commitment.v3"
+    },
+    "bundle_context": {
+      "deadline_monotonic_us": 850169060116,
+      "expires_epoch_us": 1791762073524315,
+      "manifest_base64": "eyJjaHVua3MiOlt7ImJ5dGVzIjozMjc0MCwiaWQiOiJwYXJ0LTAwMDAwMCIsInNoYTI1NiI6IjdhMzA5MTY1YzFhYTdlODM1MWU1NWRkOTRhOWQ2ODU5ZjExNTZkM2I0YjYxNDc2YzE3OTk4YTYwZTRhZjEyYTAiLCJ0YWdzIjpbXSwidGl0bGUiOiJQdWJsaWMgZmlsZSBwYXJ0In0seyJieXRlcyI6MzI3NDAsImlkIjoicGFydC0wMDAwMDEiLCJzaGEyNTYiOiJlMGUzNDE1NTU0MzVkZTFmN2JiYTJkZDRhNTdkMDQ1OWQ5MmQxOTg1MDUyOTk0ODMzZTgyYzcyZGUyNWIwNDMzIiwidGFncyI6W10sInRpdGxlIjoiUHVibGljIGZpbGUgcGFydCJ9LHsiYnl0ZXMiOjMyNzQwLCJpZCI6InBhcnQtMDAwMDAyIiwic2hhMjU2IjoiMWQ1OTQwNDIxOTExZTkwNDcwNGJmOTEwZTc0Nzg0MzUxN2E0NGNhYzhjYjFiMWQ3Nzk4NjU2YzA2MGQ5YjliNSIsInRhZ3MiOltdLCJ0aXRsZSI6IlB1YmxpYyBmaWxlIHBhcnQifSx7ImJ5dGVzIjozMjc0MCwiaWQiOiJwYXJ0LTAwMDAwMyIsInNoYTI1NiI6IjBhNzU2NzhmZTdiOTBkYzU0ZDJjMWE2ZjQ3MzhkNWM1ZmI3OTM2NTU0MzhhNjM1NTFmOWM0ZmEyYTdiYTE0MGUiLCJ0YWdzIjpbXSwidGl0bGUiOiJQdWJsaWMgZmlsZSBwYXJ0In0seyJieXRlcyI6MzI3NDAsImlkIjoicGFydC0wMDAwMDQiLCJzaGEyNTYiOiI1NjAwYWVmMmRiMmI0MzViNWMwMWI0MzM1ODc3ZDZlNjI1YjlhYmU3ODgxMmMzNDhjYzQ2YzU4NDU2ZDUxZTYzIiwidGFncyI6W10sInRpdGxlIjoiUHVibGljIGZpbGUgcGFydCJ9XSwiZW1iZWRkaW5nIjp7ImRpbWVuc2lvbiI6MSwiZW1iZWRkZWRfY2h1bmtzIjowLCJtb2RlbCI6Im5vbmUiLCJub3JtYWxpemVkIjp0cnVlfSwicGFjayI6eyJjbGFzcyI6InJlZmVyZW5jZSIsImNyZWF0ZWRfYXQiOiIyMDI2LTEwLTEyVDAwOjAwOjAwWiIsImlkIjoicHVibGljLWJ1bmRsZS0xMDAwMDAtdjQiLCJsaWNlbmNlIjoiQ0MwLTEuMCIsInByb3ZlbmFuY2UiOnsibm90ZSI6IntcImJ5dGVzXCI6MTAwMDAwLFwicGFydF9ieXRlc1wiOjIzOTAwLFwicGFydHNcIjpbe1wiY2h1bmtfc2hhMjU2XCI6XCI3YTMwOTE2NWMxYWE3ZTgzNTFlNTVkZDk0YTlkNjg1OWYxMTU2ZDNiNGI2MTQ3NmMxNzk5OGE2MGU0YWYxMmEwXCIsXCJpbmRleFwiOjAsXCJvZmZzZXRcIjowLFwicmF3X2J5dGVzXCI6MjM5MDAsXCJyYXdfc2hhMjU2XCI6XCJmYWU1M2VjMWU1ODJmNTljOGYxNTAzNTc3NGViZmRiMzUyZDEzZDVlN2ZiOGJjNGM3N2NiNmQ3ZGRhYjcxMmQ4XCJ9LHtcImNodW5rX3NoYTI1NlwiOlwiZTBlMzQxNTU1NDM1ZGUxZjdiYmEyZGQ0YTU3ZDA0NTlkOTJkMTk4NTA1Mjk5NDgzM2U4MmM3MmRlMjViMDQzM1wiLFwiaW5kZXhcIjoxLFwib2Zmc2V0XCI6MjM5MDAsXCJyYXdfYnl0ZXNcIjoyMzkwMCxcInJhd19zaGEyNTZcIjpcIjA0YzcyYTgxMTc0M2RlYzQzNzIxNDliOGU0YTUwOTU2OGVmNmYyMjY4MzM4MzQ5MWY4YTNhZTI5Nzg1ZTgxYmVcIn0se1wiY2h1bmtfc2hhMjU2XCI6XCIxZDU5NDA0MjE5MTFlOTA0NzA0YmY5MTBlNzQ3ODQzNTE3YTQ0Y2FjOGNiMWIxZDc3OTg2NTZjMDYwZDliOWI1XCIsXCJpbmRleFwiOjIsXCJvZmZzZXRcIjo0NzgwMCxcInJhd19ieXRlc1wiOjIzOTAwLFwicmF3X3NoYTI1NlwiOlwiMGJkYzliZmM5MGZhODhiOGU3ZTkyNDFkYzk1YTMzZTA2YWU5OTUwNzY2Mjg2YjZhMWQ3Y2FmOWY0YTY1ZGZmZFwifSx7XCJjaHVua19zaGEyNTZcIjpcIjBhNzU2NzhmZTdiOTBkYzU0ZDJjMWE2ZjQ3MzhkNWM1ZmI3OTM2NTU0MzhhNjM1NTFmOWM0ZmEyYTdiYTE0MGVcIixcImluZGV4XCI6MyxcIm9mZnNldFwiOjcxNzAwLFwicmF3X2J5dGVzXCI6MjM5MDAsXCJyYXdfc2hhMjU2XCI6XCJmMzYyMDU3MDg1YjA0MjZhOTljNDVlOWYwOGZjNmRiN2MzOWZjNjkyYzYyOWNiODAyZWNmMzE4NmE4NmUzNmU2XCJ9LHtcImNodW5rX3NoYTI1NlwiOlwiNTYwMGFlZjJkYjJiNDM1YjVjMDFiNDMzNTg3N2Q2ZTYyNWI5YWJlNzg4MTJjMzQ4Y2M0NmM1ODQ1NmQ1MWU2M1wiLFwiaW5kZXhcIjo0LFwib2Zmc2V0XCI6OTU2MDAsXCJyYXdfYnl0ZXNcIjo0NDAwLFwicmF3X3NoYTI1NlwiOlwiYWUyY2ZjYTU4OWY5NjU4YmQ0OGIxYzQ4NDZjYjlhNjI3ZDU0MWZiZTE1NmJkOTdjMTk2YzEyNzg4MWYwZjM3OVwifV0sXCJzY2hlbWFcIjpcIm1lc2h0aWN1bHVtLnB1YmxpYy1ieXRlLWJ1bmRsZS52MVwiLFwic2hhMjU2XCI6XCJjNjRmNGEyOWY0MjMwOWYyNjlkNWM2M2ZhZmY5NTBlNzJjMWRiMWJjYzUyMjUzN2QzMTA3Zjk0ZmI5NjkwYWRmXCJ9Iiwic291cmNlIjoiU0FHRSBGb3VuZGF0aW9uIHB1YmxpYyB0ZXN0IGRhdGEifSwidGl0bGUiOiJQdWJsaWMgYnl0ZSBidW5kbGUiLCJ2ZXJzaW9uIjoxfSwicGFyZW50IjpudWxsLCJzY2hlbWEiOiJzYWdlLmtub3dsZWRnZS1wYWNrLm1hbmlmZXN0LnYyIiwidG90YWxzIjp7ImNodW5rX2J5dGVzIjoxNjM3MDAsImNodW5rcyI6NSwiZW1iZWRkZWRfY2h1bmtzIjowLCJ0ZXh0X2J5dGVzIjo5MH19Cg==",
+      "manifest_sha256": "8c720f2843cc97d6f7b735623c352a8421718af77750fa7c7a738e4ce8d78550",
+      "original_epoch_us": 1791760723524315,
+      "original_monotonic_us": 848819060116,
+      "schema": "meshticulum.native-public100k-bundle-context.v3",
+      "signature_base64": "eyJhbGdvcml0aG0iOiJlZDI1NTE5Iiwia2V5X2lkIjoicGstYmI1ZjdhNzQzZjE4MjU1YyIsIm1hbmlmZXN0X3NoYTI1NiI6IjhjNzIwZjI4NDNjYzk3ZDZmN2I3MzU2MjNjMzUyYTg0MjE3MThhZjc3NzUwZmE3YzdhNzM4ZTRjZThkNzg1NTAiLCJwdWJsaWNfa2V5X2hleCI6IjI2ZGQ0MWRiYjc1YzI4NzAzYWMzZjMwMThlNDE3N2JkZjYyMmI3NmU1ZmFhMTdiYzAwZWFkZDg4MWI4YzI3YTYiLCJzY2hlbWEiOiJzYWdlLmtub3dsZWRnZS1wYWNrLnNpZ25hdHVyZS52MSIsInNpZ25hdHVyZV9iYXNlNjQiOiIvNG1NLzJRNTgrY3hIYmtKeWRsV0Q4cEhiakZpNENESEhJdG01dVlkRlFEOUpvclFuS2d0M3ppRUxQYW4rTE1WMnlXK2p6OHRURU56MXZTQXdXaGVEQT09In0K",
+      "stages": [
+        {
+          "campaign_id": "5849987483ddc84b1045f5b36e6687fc",
+          "expires_epoch_us": 1791761008524315,
+          "handoff_end_epoch_us": 1791761068524315,
+          "index": 0,
+          "issued_epoch_us": 1791760828524315,
+          "response_sha256": "bce417b4882736b1ea2ee3b132ba960355c4abb687980f7e4e202c42af80ace1"
+        },
+        {
+          "campaign_id": "5d3ad2c81e0d07f34ed51dd3f1fb0dfa",
+          "expires_epoch_us": 1791761248524315,
+          "handoff_end_epoch_us": 1791761308524315,
+          "index": 1,
+          "issued_epoch_us": 1791761068524315,
+          "response_sha256": "da3e762d10d726e55035527dd6fca68db4c4f6bba36b4713930594b281eed70e"
+        },
+        {
+          "campaign_id": "ab62316a6f5eebba1d8f4d9f0ba35d65",
+          "expires_epoch_us": 1791761488524315,
+          "handoff_end_epoch_us": 1791761548524315,
+          "index": 2,
+          "issued_epoch_us": 1791761308524315,
+          "response_sha256": "b0468eba388e0d75ca60eb848157eb6dce9c68531a19dac5906399d43428c23e"
+        },
+        {
+          "campaign_id": "e572753866eaf28184d18939674e2a04",
+          "expires_epoch_us": 1791761728524315,
+          "handoff_end_epoch_us": 1791761788524315,
+          "index": 3,
+          "issued_epoch_us": 1791761548524315,
+          "response_sha256": "c08a864f9f4806505533a81f0fcca3bb588b23c9cda19dd6c33f8f907b6ecca1"
+        },
+        {
+          "campaign_id": "c8dd03161208c75dff8298fa0df419a3",
+          "expires_epoch_us": 1791761968524315,
+          "handoff_end_epoch_us": 1791761978524315,
+          "index": 4,
+          "issued_epoch_us": 1791761788524315,
+          "response_sha256": "ef8672149998c7f93e933aadbade8c0564ed8b3da4fc51b2520ca8d3ee9a2931"
+        }
+      ],
+      "trust": {
+        "keys": [
+          {
+            "algorithm": "ed25519",
+            "created_at": "2026-10-12T00:00:00Z",
+            "key_id": "pk-bb5f7a743f18255c",
+            "public_key_hex": "26dd41dbb75c28703ac3f3018e4177bdf622b76e5faa17bc00eadd881b8c27a6",
+            "status": "active"
+          }
+        ],
+        "schema": "sage.knowledge-pack.trust-root.v1"
+      },
+      "whole_bytes": 100000,
+      "whole_sha256": "c64f4a29f42309f269d5c63faff950e72c1db1bcc522537d3107f94fb9690adf"
+    },
+    "bundle_radio_checkpoint": {
+      "maximum_checkpoints": 4,
+      "primitives_sha256": "151856e1a8565a055c5cfdb848fb00cc490f2e3559bc1354c95985dc3ade96ea",
+      "producer_sha256": "b591c0ee44946e6bef65dd8b38a7d6a0a98849c6ae6e5fa2a2a07391522a3fd1",
+      "retained_history_count": 24,
+      "schema": "meshticulum.root-public100k-checkpoint-owner.v1"
+    },
+    "capture_record_sha256": "3ead6411f539fd0a1ee4a0603ed379292ff9efdc7e83e044f83119b198d904fb",
+    "complete_global_debt": false,
+    "facts": {
+      "unit-a": {
+        "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-mesh-runtime.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "unit": "unit-a"
+      },
+      "unit-b": {
+        "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-mesh-runtime.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "unit": "unit-b"
+      },
+      "unit-c": {
+        "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "9492195",
+            "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+            "MainPID": "833"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "11578324",
+            "InvocationID": "34edf2382564498ab081451564db093e",
+            "MainPID": "1347"
+          },
+          "sage-lantern-vlm.service": {
+            "ExecMainStartTimestampMonotonic": "9507094",
+            "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+            "MainPID": "841"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "170825468927",
+            "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+            "MainPID": "910093"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "active",
+          "sage-lantern-personal-sage.service": "active",
+          "sage-lantern-vlm.service": "active",
+          "sage-lantern-voice-loop.service": "active"
+        },
+        "unit": "unit-c"
+      }
+    },
+    "history_binding_sha256": "19b772747768592ddbc53194bfc3dc70cb2d7353baade8ffa9da5a97c3c54095",
+    "manifest_sha256": "d51632e31308e8f5084db22bf7498ef7073475b99ea52d7f9873e635519227ed",
+    "native_phase": {
+      "unit-a": {
+        "deadline_monotonic_us": 221431231945,
+        "epoch_us": 1791760780857987,
+        "monotonic_us": 220133565617
+      },
+      "unit-b": {
+        "deadline_monotonic_us": 221381994463,
+        "epoch_us": 1791760765597149,
+        "monotonic_us": 220069067297
+      },
+      "unit-c": {
+        "deadline_monotonic_us": 218371244036,
+        "epoch_us": 1791760740412236,
+        "monotonic_us": 217033131957
+      }
+    },
+    "native_python": {
+      "unit-a": "/root/esp-venv-r3/bin/python",
+      "unit-b": "/root/esp-venv-r3/bin/python",
+      "unit-c": "/usr/bin/python3"
+    },
+    "phase_end_epoch_us": 1791762078524315,
+    "phase_start_epoch_us": 1791760723524315,
+    "policy_digest": "4549a36a15cf11fda34441d66dcc1ff9af0083273d5338b74c68701d0e6de572",
+    "prior_registry": {
+      "unit-a": {
+        "full_caps": {
+          "estimated_airtime_us": 7140000000,
+          "ip_frames": 20480,
+          "radio_attempts": 30464,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "history_binding_sha256": "9613f1129f10401fc05ecf2c1e6f980b826ad31eff00737528243f77b30035c2",
+        "observation_sha256": "51afd11445e051a1e6d0ba11b038396df4ff07f71c7ac47cd993c246954b0e40"
+      },
+      "unit-b": {
+        "full_caps": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "history_binding_sha256": "19b772747768592ddbc53194bfc3dc70cb2d7353baade8ffa9da5a97c3c54095",
+        "observation_sha256": "c2b92c129f852ecdeb81edf0270d66098167656cd1689a0859e2746fe1a74990"
+      },
+      "unit-c": {
+        "full_caps": {
+          "estimated_airtime_us": 7980000000,
+          "ip_frames": 71680,
+          "radio_attempts": 34048,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "history_binding_sha256": "777a72be9899a2a6674c972e5b453f0f978b79d3e52c0b34376ab334ff40d3d1",
+        "observation_sha256": "c0db35b2cefa571579b4a20cebe4f29332757e241cd9ab5bc4247ebf3c07ecf7"
+      }
+    },
+    "qualification_kind": "c-bundle100k-v3",
+    "review_sha256": "8a68789760b014a2cbd921c35ba7101cbe7242d5b5cbcd266235390f82626528",
+    "rf_profile": {
+      "bandwidth_hz": 500000,
+      "chip_power_dbm": 0,
+      "coding_rate": 5,
+      "frequency_hz": 921375000,
+      "lease_ms": 90000,
+      "max_boot_attempts": 256,
+      "max_boot_estimated_airtime_us": 60000000,
+      "preamble": 8,
+      "spreading_factor": 7,
+      "sync_word": 66
+    },
+    "rf_record": {
+      "A_B_transmission_allowed": true,
+      "C_transmission_allowed": true,
+      "country": "MY",
+      "country_basis": "Owner answered yes to the question whether all three units are in Malaysia.",
+      "recorded_at": "2026-10-09T13:17:51.007046+00:00",
+      "schema": "meshticulum.owner-rf-physical-confirmation.v1",
+      "units": {
+        "unit-a": {
+          "antenna_connected": true,
+          "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+        },
+        "unit-b": {
+          "antenna_connected": true,
+          "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+        },
+        "unit-c": {
+          "antenna_connected": true,
+          "confirmation": "Owner followed up that C antenna is connected now (small antenna), in the context of the lower LoRa socket request."
+        }
+      }
+    },
+    "rf_record_sha256": "40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9",
+    "runtime_sha256": "9ade4747e44c2571a3be595c9500120fca2f0a6144c466a56260a2455421028f",
+    "schema": "meshticulum.finite-public-resume-owner.v1"
+  },
+  "unit-c": {
+    "actual_cost": null,
+    "authorization": {
+      "approved_by_human": true,
+      "confirmation_trace": {
+        "current_scope_confirmed": true,
+        "earlier_user_quote": "run it bro",
+        "latest_user_confirmation": "approved bro - do what you need to"
+      },
+      "count_authorized": 1,
+      "human_statement": "run it bro",
+      "private_production": false,
+      "public_only": true
+    },
+    "bundle_capture_commitment": {
+      "context_schema": "meshticulum.native-public100k-bundle-context.v3",
+      "context_sha256": "b8536810230ef12f1432ce7a11f3bae3e391b80ddce51c9dd975c0365f264b63",
+      "deadline_monotonic_us": 850169060116,
+      "expires_epoch_us": 1791762073524315,
+      "original_epoch_us": 1791760723524315,
+      "original_monotonic_us": 848819060116,
+      "parent_id": "2429969fcbb0f57b3deaeda7187036c2",
+      "phase_end_epoch_us": 1791762078524315,
+      "phase_start_epoch_us": 1791760723524315,
+      "qualification_kind": "c-bundle100k-v3",
+      "schema": "meshticulum.public100k-capture-commitment.v3"
+    },
+    "bundle_context": {
+      "deadline_monotonic_us": 850169060116,
+      "expires_epoch_us": 1791762073524315,
+      "manifest_base64": "eyJjaHVua3MiOlt7ImJ5dGVzIjozMjc0MCwiaWQiOiJwYXJ0LTAwMDAwMCIsInNoYTI1NiI6IjdhMzA5MTY1YzFhYTdlODM1MWU1NWRkOTRhOWQ2ODU5ZjExNTZkM2I0YjYxNDc2YzE3OTk4YTYwZTRhZjEyYTAiLCJ0YWdzIjpbXSwidGl0bGUiOiJQdWJsaWMgZmlsZSBwYXJ0In0seyJieXRlcyI6MzI3NDAsImlkIjoicGFydC0wMDAwMDEiLCJzaGEyNTYiOiJlMGUzNDE1NTU0MzVkZTFmN2JiYTJkZDRhNTdkMDQ1OWQ5MmQxOTg1MDUyOTk0ODMzZTgyYzcyZGUyNWIwNDMzIiwidGFncyI6W10sInRpdGxlIjoiUHVibGljIGZpbGUgcGFydCJ9LHsiYnl0ZXMiOjMyNzQwLCJpZCI6InBhcnQtMDAwMDAyIiwic2hhMjU2IjoiMWQ1OTQwNDIxOTExZTkwNDcwNGJmOTEwZTc0Nzg0MzUxN2E0NGNhYzhjYjFiMWQ3Nzk4NjU2YzA2MGQ5YjliNSIsInRhZ3MiOltdLCJ0aXRsZSI6IlB1YmxpYyBmaWxlIHBhcnQifSx7ImJ5dGVzIjozMjc0MCwiaWQiOiJwYXJ0LTAwMDAwMyIsInNoYTI1NiI6IjBhNzU2NzhmZTdiOTBkYzU0ZDJjMWE2ZjQ3MzhkNWM1ZmI3OTM2NTU0MzhhNjM1NTFmOWM0ZmEyYTdiYTE0MGUiLCJ0YWdzIjpbXSwidGl0bGUiOiJQdWJsaWMgZmlsZSBwYXJ0In0seyJieXRlcyI6MzI3NDAsImlkIjoicGFydC0wMDAwMDQiLCJzaGEyNTYiOiI1NjAwYWVmMmRiMmI0MzViNWMwMWI0MzM1ODc3ZDZlNjI1YjlhYmU3ODgxMmMzNDhjYzQ2YzU4NDU2ZDUxZTYzIiwidGFncyI6W10sInRpdGxlIjoiUHVibGljIGZpbGUgcGFydCJ9XSwiZW1iZWRkaW5nIjp7ImRpbWVuc2lvbiI6MSwiZW1iZWRkZWRfY2h1bmtzIjowLCJtb2RlbCI6Im5vbmUiLCJub3JtYWxpemVkIjp0cnVlfSwicGFjayI6eyJjbGFzcyI6InJlZmVyZW5jZSIsImNyZWF0ZWRfYXQiOiIyMDI2LTEwLTEyVDAwOjAwOjAwWiIsImlkIjoicHVibGljLWJ1bmRsZS0xMDAwMDAtdjQiLCJsaWNlbmNlIjoiQ0MwLTEuMCIsInByb3ZlbmFuY2UiOnsibm90ZSI6IntcImJ5dGVzXCI6MTAwMDAwLFwicGFydF9ieXRlc1wiOjIzOTAwLFwicGFydHNcIjpbe1wiY2h1bmtfc2hhMjU2XCI6XCI3YTMwOTE2NWMxYWE3ZTgzNTFlNTVkZDk0YTlkNjg1OWYxMTU2ZDNiNGI2MTQ3NmMxNzk5OGE2MGU0YWYxMmEwXCIsXCJpbmRleFwiOjAsXCJvZmZzZXRcIjowLFwicmF3X2J5dGVzXCI6MjM5MDAsXCJyYXdfc2hhMjU2XCI6XCJmYWU1M2VjMWU1ODJmNTljOGYxNTAzNTc3NGViZmRiMzUyZDEzZDVlN2ZiOGJjNGM3N2NiNmQ3ZGRhYjcxMmQ4XCJ9LHtcImNodW5rX3NoYTI1NlwiOlwiZTBlMzQxNTU1NDM1ZGUxZjdiYmEyZGQ0YTU3ZDA0NTlkOTJkMTk4NTA1Mjk5NDgzM2U4MmM3MmRlMjViMDQzM1wiLFwiaW5kZXhcIjoxLFwib2Zmc2V0XCI6MjM5MDAsXCJyYXdfYnl0ZXNcIjoyMzkwMCxcInJhd19zaGEyNTZcIjpcIjA0YzcyYTgxMTc0M2RlYzQzNzIxNDliOGU0YTUwOTU2OGVmNmYyMjY4MzM4MzQ5MWY4YTNhZTI5Nzg1ZTgxYmVcIn0se1wiY2h1bmtfc2hhMjU2XCI6XCIxZDU5NDA0MjE5MTFlOTA0NzA0YmY5MTBlNzQ3ODQzNTE3YTQ0Y2FjOGNiMWIxZDc3OTg2NTZjMDYwZDliOWI1XCIsXCJpbmRleFwiOjIsXCJvZmZzZXRcIjo0NzgwMCxcInJhd19ieXRlc1wiOjIzOTAwLFwicmF3X3NoYTI1NlwiOlwiMGJkYzliZmM5MGZhODhiOGU3ZTkyNDFkYzk1YTMzZTA2YWU5OTUwNzY2Mjg2YjZhMWQ3Y2FmOWY0YTY1ZGZmZFwifSx7XCJjaHVua19zaGEyNTZcIjpcIjBhNzU2NzhmZTdiOTBkYzU0ZDJjMWE2ZjQ3MzhkNWM1ZmI3OTM2NTU0MzhhNjM1NTFmOWM0ZmEyYTdiYTE0MGVcIixcImluZGV4XCI6MyxcIm9mZnNldFwiOjcxNzAwLFwicmF3X2J5dGVzXCI6MjM5MDAsXCJyYXdfc2hhMjU2XCI6XCJmMzYyMDU3MDg1YjA0MjZhOTljNDVlOWYwOGZjNmRiN2MzOWZjNjkyYzYyOWNiODAyZWNmMzE4NmE4NmUzNmU2XCJ9LHtcImNodW5rX3NoYTI1NlwiOlwiNTYwMGFlZjJkYjJiNDM1YjVjMDFiNDMzNTg3N2Q2ZTYyNWI5YWJlNzg4MTJjMzQ4Y2M0NmM1ODQ1NmQ1MWU2M1wiLFwiaW5kZXhcIjo0LFwib2Zmc2V0XCI6OTU2MDAsXCJyYXdfYnl0ZXNcIjo0NDAwLFwicmF3X3NoYTI1NlwiOlwiYWUyY2ZjYTU4OWY5NjU4YmQ0OGIxYzQ4NDZjYjlhNjI3ZDU0MWZiZTE1NmJkOTdjMTk2YzEyNzg4MWYwZjM3OVwifV0sXCJzY2hlbWFcIjpcIm1lc2h0aWN1bHVtLnB1YmxpYy1ieXRlLWJ1bmRsZS52MVwiLFwic2hhMjU2XCI6XCJjNjRmNGEyOWY0MjMwOWYyNjlkNWM2M2ZhZmY5NTBlNzJjMWRiMWJjYzUyMjUzN2QzMTA3Zjk0ZmI5NjkwYWRmXCJ9Iiwic291cmNlIjoiU0FHRSBGb3VuZGF0aW9uIHB1YmxpYyB0ZXN0IGRhdGEifSwidGl0bGUiOiJQdWJsaWMgYnl0ZSBidW5kbGUiLCJ2ZXJzaW9uIjoxfSwicGFyZW50IjpudWxsLCJzY2hlbWEiOiJzYWdlLmtub3dsZWRnZS1wYWNrLm1hbmlmZXN0LnYyIiwidG90YWxzIjp7ImNodW5rX2J5dGVzIjoxNjM3MDAsImNodW5rcyI6NSwiZW1iZWRkZWRfY2h1bmtzIjowLCJ0ZXh0X2J5dGVzIjo5MH19Cg==",
+      "manifest_sha256": "8c720f2843cc97d6f7b735623c352a8421718af77750fa7c7a738e4ce8d78550",
+      "original_epoch_us": 1791760723524315,
+      "original_monotonic_us": 848819060116,
+      "schema": "meshticulum.native-public100k-bundle-context.v3",
+      "signature_base64": "eyJhbGdvcml0aG0iOiJlZDI1NTE5Iiwia2V5X2lkIjoicGstYmI1ZjdhNzQzZjE4MjU1YyIsIm1hbmlmZXN0X3NoYTI1NiI6IjhjNzIwZjI4NDNjYzk3ZDZmN2I3MzU2MjNjMzUyYTg0MjE3MThhZjc3NzUwZmE3YzdhNzM4ZTRjZThkNzg1NTAiLCJwdWJsaWNfa2V5X2hleCI6IjI2ZGQ0MWRiYjc1YzI4NzAzYWMzZjMwMThlNDE3N2JkZjYyMmI3NmU1ZmFhMTdiYzAwZWFkZDg4MWI4YzI3YTYiLCJzY2hlbWEiOiJzYWdlLmtub3dsZWRnZS1wYWNrLnNpZ25hdHVyZS52MSIsInNpZ25hdHVyZV9iYXNlNjQiOiIvNG1NLzJRNTgrY3hIYmtKeWRsV0Q4cEhiakZpNENESEhJdG01dVlkRlFEOUpvclFuS2d0M3ppRUxQYW4rTE1WMnlXK2p6OHRURU56MXZTQXdXaGVEQT09In0K",
+      "stages": [
+        {
+          "campaign_id": "5849987483ddc84b1045f5b36e6687fc",
+          "expires_epoch_us": 1791761008524315,
+          "handoff_end_epoch_us": 1791761068524315,
+          "index": 0,
+          "issued_epoch_us": 1791760828524315,
+          "response_sha256": "bce417b4882736b1ea2ee3b132ba960355c4abb687980f7e4e202c42af80ace1"
+        },
+        {
+          "campaign_id": "5d3ad2c81e0d07f34ed51dd3f1fb0dfa",
+          "expires_epoch_us": 1791761248524315,
+          "handoff_end_epoch_us": 1791761308524315,
+          "index": 1,
+          "issued_epoch_us": 1791761068524315,
+          "response_sha256": "da3e762d10d726e55035527dd6fca68db4c4f6bba36b4713930594b281eed70e"
+        },
+        {
+          "campaign_id": "ab62316a6f5eebba1d8f4d9f0ba35d65",
+          "expires_epoch_us": 1791761488524315,
+          "handoff_end_epoch_us": 1791761548524315,
+          "index": 2,
+          "issued_epoch_us": 1791761308524315,
+          "response_sha256": "b0468eba388e0d75ca60eb848157eb6dce9c68531a19dac5906399d43428c23e"
+        },
+        {
+          "campaign_id": "e572753866eaf28184d18939674e2a04",
+          "expires_epoch_us": 1791761728524315,
+          "handoff_end_epoch_us": 1791761788524315,
+          "index": 3,
+          "issued_epoch_us": 1791761548524315,
+          "response_sha256": "c08a864f9f4806505533a81f0fcca3bb588b23c9cda19dd6c33f8f907b6ecca1"
+        },
+        {
+          "campaign_id": "c8dd03161208c75dff8298fa0df419a3",
+          "expires_epoch_us": 1791761968524315,
+          "handoff_end_epoch_us": 1791761978524315,
+          "index": 4,
+          "issued_epoch_us": 1791761788524315,
+          "response_sha256": "ef8672149998c7f93e933aadbade8c0564ed8b3da4fc51b2520ca8d3ee9a2931"
+        }
+      ],
+      "trust": {
+        "keys": [
+          {
+            "algorithm": "ed25519",
+            "created_at": "2026-10-12T00:00:00Z",
+            "key_id": "pk-bb5f7a743f18255c",
+            "public_key_hex": "26dd41dbb75c28703ac3f3018e4177bdf622b76e5faa17bc00eadd881b8c27a6",
+            "status": "active"
+          }
+        ],
+        "schema": "sage.knowledge-pack.trust-root.v1"
+      },
+      "whole_bytes": 100000,
+      "whole_sha256": "c64f4a29f42309f269d5c63faff950e72c1db1bcc522537d3107f94fb9690adf"
+    },
+    "bundle_radio_checkpoint": {
+      "maximum_checkpoints": 4,
+      "primitives_sha256": "151856e1a8565a055c5cfdb848fb00cc490f2e3559bc1354c95985dc3ade96ea",
+      "producer_sha256": "b591c0ee44946e6bef65dd8b38a7d6a0a98849c6ae6e5fa2a2a07391522a3fd1",
+      "retained_history_count": 24,
+      "schema": "meshticulum.root-public100k-checkpoint-owner.v1"
+    },
+    "capture_record_sha256": "d3c56fb007dd8245ebcb8c485779b4b2510ec57866a8aa03bd5d099095bb645f",
+    "complete_global_debt": false,
+    "facts": {
+      "unit-a": {
+        "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-mesh-runtime.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "unit": "unit-a"
+      },
+      "unit-b": {
+        "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-mesh-runtime.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "0",
+            "InvocationID": "",
+            "MainPID": "0"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "unit": "unit-b"
+      },
+      "unit-c": {
+        "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+        "service_lifetimes": {
+          "sage-lantern-llm.service": {
+            "ExecMainStartTimestampMonotonic": "9492195",
+            "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+            "MainPID": "833"
+          },
+          "sage-lantern-personal-sage.service": {
+            "ExecMainStartTimestampMonotonic": "11578324",
+            "InvocationID": "34edf2382564498ab081451564db093e",
+            "MainPID": "1347"
+          },
+          "sage-lantern-vlm.service": {
+            "ExecMainStartTimestampMonotonic": "9507094",
+            "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+            "MainPID": "841"
+          },
+          "sage-lantern-voice-loop.service": {
+            "ExecMainStartTimestampMonotonic": "170825468927",
+            "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+            "MainPID": "910093"
+          }
+        },
+        "services": {
+          "sage-lantern-llm.service": "active",
+          "sage-lantern-personal-sage.service": "active",
+          "sage-lantern-vlm.service": "active",
+          "sage-lantern-voice-loop.service": "active"
+        },
+        "unit": "unit-c"
+      }
+    },
+    "history_binding_sha256": "777a72be9899a2a6674c972e5b453f0f978b79d3e52c0b34376ab334ff40d3d1",
+    "manifest_sha256": "d51632e31308e8f5084db22bf7498ef7073475b99ea52d7f9873e635519227ed",
+    "native_phase": {
+      "unit-a": {
+        "deadline_monotonic_us": 221431231945,
+        "epoch_us": 1791760780857987,
+        "monotonic_us": 220133565617
+      },
+      "unit-b": {
+        "deadline_monotonic_us": 221381994463,
+        "epoch_us": 1791760765597149,
+        "monotonic_us": 220069067297
+      },
+      "unit-c": {
+        "deadline_monotonic_us": 218371244036,
+        "epoch_us": 1791760740412236,
+        "monotonic_us": 217033131957
+      }
+    },
+    "native_python": {
+      "unit-a": "/root/esp-venv-r3/bin/python",
+      "unit-b": "/root/esp-venv-r3/bin/python",
+      "unit-c": "/usr/bin/python3"
+    },
+    "phase_end_epoch_us": 1791762078524315,
+    "phase_start_epoch_us": 1791760723524315,
+    "policy_digest": "4549a36a15cf11fda34441d66dcc1ff9af0083273d5338b74c68701d0e6de572",
+    "prior_registry": {
+      "unit-a": {
+        "full_caps": {
+          "estimated_airtime_us": 7140000000,
+          "ip_frames": 20480,
+          "radio_attempts": 30464,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "history_binding_sha256": "9613f1129f10401fc05ecf2c1e6f980b826ad31eff00737528243f77b30035c2",
+        "observation_sha256": "51afd11445e051a1e6d0ba11b038396df4ff07f71c7ac47cd993c246954b0e40"
+      },
+      "unit-b": {
+        "full_caps": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "history_binding_sha256": "19b772747768592ddbc53194bfc3dc70cb2d7353baade8ffa9da5a97c3c54095",
+        "observation_sha256": "c2b92c129f852ecdeb81edf0270d66098167656cd1689a0859e2746fe1a74990"
+      },
+      "unit-c": {
+        "full_caps": {
+          "estimated_airtime_us": 7980000000,
+          "ip_frames": 71680,
+          "radio_attempts": 34048,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "history_binding_sha256": "777a72be9899a2a6674c972e5b453f0f978b79d3e52c0b34376ab334ff40d3d1",
+        "observation_sha256": "c0db35b2cefa571579b4a20cebe4f29332757e241cd9ab5bc4247ebf3c07ecf7"
+      }
+    },
+    "qualification_kind": "c-bundle100k-v3",
+    "review_sha256": "8a68789760b014a2cbd921c35ba7101cbe7242d5b5cbcd266235390f82626528",
+    "rf_profile": {
+      "bandwidth_hz": 500000,
+      "chip_power_dbm": 0,
+      "coding_rate": 5,
+      "frequency_hz": 921375000,
+      "lease_ms": 90000,
+      "max_boot_attempts": 256,
+      "max_boot_estimated_airtime_us": 60000000,
+      "preamble": 8,
+      "spreading_factor": 7,
+      "sync_word": 66
+    },
+    "rf_record": {
+      "A_B_transmission_allowed": true,
+      "C_transmission_allowed": true,
+      "country": "MY",
+      "country_basis": "Owner answered yes to the question whether all three units are in Malaysia.",
+      "recorded_at": "2026-10-09T13:17:51.007046+00:00",
+      "schema": "meshticulum.owner-rf-physical-confirmation.v1",
+      "units": {
+        "unit-a": {
+          "antenna_connected": true,
+          "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+        },
+        "unit-b": {
+          "antenna_connected": true,
+          "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+        },
+        "unit-c": {
+          "antenna_connected": true,
+          "confirmation": "Owner followed up that C antenna is connected now (small antenna), in the context of the lower LoRa socket request."
+        }
+      }
+    },
+    "rf_record_sha256": "40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9",
+    "runtime_sha256": "9ade4747e44c2571a3be595c9500120fca2f0a6144c466a56260a2455421028f",
+    "schema": "meshticulum.finite-public-resume-owner.v1"
+  }
+}

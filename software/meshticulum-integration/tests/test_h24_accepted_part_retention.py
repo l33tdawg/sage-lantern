@@ -109,9 +109,9 @@ def test_exact_four_canonical_outcomes_are_required(unit):
 
 
 def test_roster_twenty_one_preserves_original_twenty_and_capture_twelve():
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==24
-    assert retained.PAID_HISTORY[-2]==rpc.V2_FAILED_BUNDLE_PAID
-    assert retained.PAID_HISTORY[-1]==rpc.V3_PARTIAL_BUNDLE_PAID
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==25
+    assert retained.PAID_HISTORY[22]==rpc.V2_FAILED_BUNDLE_PAID
+    assert retained.PAID_HISTORY[23]==rpc.V3_PARTIAL_BUNDLE_PAID
     assert len(retained.UNADMITTED_PAID_HISTORY)==12
     assert retained.PAID_HISTORY[19]==rpc.ENROLLED_ZERO_PAID
     assert retained.PAID_HISTORY[20]==rpc.PARTIAL_BUNDLE_PAID
@@ -175,7 +175,7 @@ def test_accepted_part_cannot_be_rebound_or_counted_as_whole(typed_rows,fault):
 def test_source_history_preserves_exact_old_twenty_three_and_capture_prefix():
     old=tuple(DATA['prior_paid_parent_ids'])
     assert len(old)==23 and old[-1]==rpc.V2_FAILED_BUNDLE_PAID
-    assert retained.PAID_HISTORY[:-1]==old
+    assert retained.PAID_HISTORY[:23]==old
     assert retained.UNADMITTED_PAID_HISTORY==old[:12]
 
 
@@ -204,12 +204,12 @@ def test_real_retained_public_part_file_binding_refuses_change(tmp_path,monkeypa
         else:
             with pytest.raises((RuntimeError,OSError)):rpc.verify_retained_v3_part_files(reader,unit,policy,observed,value)
 
-@pytest.mark.parametrize('count',[23,24])
+@pytest.mark.parametrize('count',[24,25])
 def test_next_checkpoint_owner_requires_exact_twenty_four(count):
     from lantern_meshticulum.bench import bundle_checkpoint_adapter as adapter
     policy=ParentPolicy.from_dict(DATA['policy']);owner=deepcopy(OWNER_PHASE['unit-a'])
     owner['bundle_radio_checkpoint']=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=count,maximum_checkpoints=4,producer_sha256='a'*64)
-    if count==24:
+    if count==25:
         context,_=adapter.context_for('unit-a',policy,owner,1);assert context.policy is policy
     else:
         with pytest.raises(RuntimeError):adapter.context_for('unit-a',policy,owner,1)
