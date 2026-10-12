@@ -80,17 +80,25 @@ class BatchContext:
         require(len({r['campaign_id'] for r in rows})==len({r['resource_sha256'] for r in rows})
                 ==len({r['chunk_sha256'] for r in rows})==COUNT,'batch_resource_reuse_refused')
         self.descriptor,self.policy,self.phase_end_epoch_us=descriptor,policy,phase_end_epoch_us
-        self._refs=(descriptor,policy,phase_end_epoch_us)
         self._descriptor_bytes=canonical(descriptor);self._policy_bytes=canonical(policy.to_dict())
+        from .pilot_native_caps import _state,_state_comparator
+        self._descriptor_comparison=_state_comparator(_state(descriptor))
+        self._policy_comparison=_state_comparator(_state(policy))
+        self._refs=(descriptor,policy,phase_end_epoch_us,self._descriptor_comparison,self._policy_comparison)
+        refs=self._refs;self._captured_refs=lambda:refs
         self._pid,self._thread=os.getpid(),threading.get_ident()
         self.check()
 
     def check(self):
+        from .pilot_native_caps import _compare_state
         require((os.getpid(),threading.get_ident())==(self._pid,self._thread)
+                and self._refs is self._captured_refs()
                 and self.descriptor is self._refs[0] and self.policy is self._refs[1]
                 and self.phase_end_epoch_us==self._refs[2]
-                and canonical(self.descriptor)==self._descriptor_bytes
-                and canonical(self.policy.to_dict())==self._policy_bytes,'batch_context_rebound')
+                and self._descriptor_comparison is self._refs[3]
+                and self._policy_comparison is self._refs[4]
+                and _compare_state(self.descriptor,self._descriptor_comparison[0],self._refs[3])
+                and _compare_state(self.policy,self._policy_comparison[0],self._refs[4]),'batch_context_rebound')
         return True
 
     @classmethod
@@ -211,19 +219,26 @@ class BatchApproval:
             self._history=owner['history_binding_sha256'];self._start,self._end=owner['phase_start_epoch_us'],owner['phase_end_epoch_us']
             phase=owner['native_phase'][unit];self._phase=(phase['epoch_us'],phase['monotonic_us'],phase['deadline_monotonic_us'])
             self._facts_bytes=canonical(stable(facts));self._policy_bytes=canonical(policy.to_dict());self._last=None
+            from .pilot_native_caps import _state,_state_comparator
+            self._policy_comparison=_state_comparator(_state(policy))
+            self._facts_comparison=_state_comparator(_state(stable(facts)))
             self._refs=(self.policy,self.unit,self.facts,self.clock,self.reader,self.context,self._phase,
-                self._history,self._start,self._end,self._facts_bytes,self._policy_bytes)
+                self._history,self._start,self._end,self._facts_bytes,self._policy_bytes,
+                self._policy_comparison,self._facts_comparison)
             refs=self._refs;self._captured_refs=lambda:refs
             self.check()
         except BaseException:self.close();raise
 
     def check(self):
         from .pilot_resume_rpc import stable
+        from .pilot_native_caps import _compare_state
         require(not self._closed and (os.getpid(),threading.get_ident())==(self._pid,self._thread)
                 and self._refs is self._captured_refs()
                 and all(a is b for a,b in zip((self.policy,self.unit,self.facts,self.clock,self.reader,self.context,self._phase,
-                    self._history,self._start,self._end,self._facts_bytes,self._policy_bytes),self._refs))
-                and canonical(self.policy.to_dict())==self._policy_bytes and canonical(stable(self.facts))==self._facts_bytes,
+                    self._history,self._start,self._end,self._facts_bytes,self._policy_bytes,
+                    self._policy_comparison,self._facts_comparison),self._refs))
+                and _compare_state(self.policy,self._policy_comparison[0],self._refs[-2])
+                and _compare_state(stable(self.facts),self._facts_comparison[0],self._refs[-1]),
                 'batch_approval_rebound')
         self.context.check();self.reader.check();now=self.clock()
         require(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
