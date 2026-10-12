@@ -17,7 +17,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK_KIND,admission_for,profile_record
 from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
@@ -57,10 +57,10 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
         selected = profile_for(profile)
         remaining_ms = (application_expires_epoch_us - now_epoch_us) // 1000
         lease_ms = min(selected.lease_ms, remaining_ms - RADIO_SETUP_RESERVE_MS)
-        require(lease_ms >= RADIO_ADMISSION.min_lease_ms,
+        require(lease_ms >= admission_for(selected).min_lease_ms,
                 'pilot_original_time_too_short_for_radio_admission')
         radio_profile = replace(selected, lease_ms=lease_ms)
-        RADIO_ADMISSION.check(radio_permission['country'], radio_permission['antenna_confirmed'], radio_profile)
+        admission_for(radio_profile).check(radio_permission['country'], radio_permission['antenna_confirmed'], radio_profile)
     run_id, generation, key = secrets.token_hex(16), secrets.token_hex(16), secrets.token_bytes(32)
     shared = dict(issued_epoch_us=max(1,now_epoch_us-1000000), expires_epoch_us=application_expires_epoch_us)
     values = {}
@@ -79,10 +79,13 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
         else:
             grant = dict(shared,schema='meshticulum.service-run.v1',unit=unit,host_boot_id=boots[unit],
                 local_peer=peers[unit],initiator=peers[sender],responder=peers[receiver],
-                session_id=run_id,generation=generation,profile=asdict(radio_profile),
+                session_id=run_id,generation=generation,profile=profile_record(radio_profile),
                 object=dict(descriptor,object_id=descriptor['sha256'],chunk_index=0),
                 sender_unit=sender,country='MY',antenna_confirmed=True,max_frames=512,
                 service=dict(kind='knowledge',format=format,application_expires_epoch_us=application_expires_epoch_us))
+        if transport=='lora' and profile==GFSK_NAME:
+            require(not public32 and {sender,receiver}=={'unit-a','unit-c'},'gfsk_public_adjacent_scope_required')
+            grant['radio_modem']=GFSK_NAME
         if public32: grant['service']['public_response_max_bytes'] = 32768
         values[unit] = dict(schema='meshticulum.public-pilot-package.v1',unit=unit,
             campaign_id=campaign_id,resource_sha256=resource_sha256,
@@ -104,10 +107,11 @@ class Controller:
                 'pilot_existing_parent_required')
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
                 'public32_parent_kind_mismatch')
-        require(type(radio_profile) is str and radio_profile in MODES
+        require(type(radio_profile) is str and radio_profile in PROFILE_NAMES
                 and (not public32 or radio_profile == 'sf7-500'), 'invalid_pilot_radio_profile')
+        require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind==GFSK_KIND),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
-        require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile == 'sf5-500'),
+        require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME)),
                 'invalid_lora_startup_order')
         self.lora_sender_first = self._lora_sender_first = lora_sender_first
         self.bundle_context = None
@@ -118,7 +122,13 @@ class Controller:
             require(resource_sha256 == self.bundle_context.value['manifest_sha256'], 'bundle_manifest_changed')
         else: require(bundle_context is None, 'unexpected_bundle_context')
         from .sf5_batch import KIND as BATCH_KIND,BatchContext
-        if parent.policy.qualification_kind==BATCH_KIND:
+        if parent.policy.qualification_kind==GFSK_KIND:
+            from .gfsk_batch import BatchContext as GfskContext
+            require(type(batch_context) is GfskContext and batch_context.policy is parent.policy
+                    and batch_context.check() and radio_profile==GFSK_NAME,'gfsk_batch_controller_context_missing')
+            require(any(r['campaign_id']==campaign_id and r['resource_sha256']==resource_sha256
+                        for r in batch_context.descriptor['samples']),'batch_controller_resource_undeclared')
+        elif parent.policy.qualification_kind==BATCH_KIND:
             require(type(batch_context) is BatchContext and batch_context.policy is parent.policy
                     and batch_context.check() and radio_profile=='sf5-500', 'batch_controller_context_missing')
             require(any(r['campaign_id']==campaign_id and r['resource_sha256']==resource_sha256

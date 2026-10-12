@@ -77,7 +77,7 @@ def test_h17_prefix_and_both_opaque_capture_bodies_stay_source_exact():
     assert current['CAPTURE_FILES']==old['CAPTURE_FILES'] and current['UNADMITTED']==old['UNADMITTED']
     policy=ParentPolicy.from_dict(json.loads((D/'POLICY.json').read_bytes()))
     assert tuple(rpc.HISTORY)==retained_capture.PAID_HISTORY and rpc.OLD_DIGESTS[17]==policy.digest
-    assert len(rpc.HISTORY)==31 and rpc.HISTORY[17]==policy.parent_id
+    assert len(rpc.HISTORY)==32 and rpc.HISTORY[17]==policy.parent_id
     assert rpc.HISTORY[22]==rpc.V2_FAILED_BUNDLE_PAID
     assert rpc.HISTORY[23]==rpc.V3_PARTIAL_BUNDLE_PAID
 

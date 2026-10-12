@@ -18,6 +18,7 @@ import threading
 import weakref
 
 from meshticulum.bench.serial_protocol import RadioProfile
+from .profiles import GFSK_NAME,GFSK_KIND,profile_from_plan
 from meshticulum.ip.wire import IpLimits
 from .pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, Cost, ParentPolicy, DOMAIN as PARENT_DOMAIN
 from . import pilot_debt_snapshot as debt
@@ -366,6 +367,8 @@ def _child(value, policy):
     public32 = policy.qualification_kind in PUBLIC32_KINDS
     fields = _META | ({'public_response_max_bytes'} if public32 else set())
     if policy.qualification_kind in BUNDLE_KINDS: fields.add('bundle_context_sha256')
+    gfsk=policy.qualification_kind==GFSK_KIND
+    if gfsk:fields.add('radio_modem')
     need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
     if policy.qualification_kind in BUNDLE_KINDS:
@@ -402,8 +405,9 @@ def _child(value, policy):
         need(not m['sends'] or m['format'] == 'MR1.request', 'invalid_child')
     need(type(m['profile']) is dict, 'invalid_full_caps')
     if m['transport'] == 'lora':
-        need(set(m['profile']) == set(RadioProfile.__dataclass_fields__), 'invalid_full_caps')
-        profile = RadioProfile(**m['profile']); profile.encode(board_id=1)
+        if gfsk:need(m['radio_modem']==GFSK_NAME and m['unit'] in ('unit-a','unit-c'),'invalid_gfsk_child_modem')
+        else:need(set(m['profile']) == set(RadioProfile.__dataclass_fields__), 'invalid_full_caps')
+        profile=profile_from_plan(m,board_id=1)
         if public32:
             need((profile.frequency_hz,profile.bandwidth_hz,profile.spreading_factor,profile.coding_rate,
                   profile.chip_power_dbm,profile.preamble,profile.sync_word)==(921375000,500000,7,5,0,8,0x42)
@@ -417,8 +421,9 @@ def _child(value, policy):
         expected = Cost(ip_frames=profile.max_frames, tx_stream_bytes=profile.max_tx_stream_bytes,
                         rx_stream_bytes=profile.max_rx_stream_bytes)
         need(integer(m['cipher_frame_limit'], 1) == profile.max_frames, 'invalid_full_caps')
-    for v in m['profile'].values():
-        need(type(v) is int, 'invalid_full_caps')
+    if not gfsk:
+        for v in m['profile'].values():
+            need(type(v) is int, 'invalid_full_caps')
     cost = _cost(value['cost'])
     need(cost == expected and cost.within(unit.limits), 'invalid_full_caps')
     need(value['digest'] == sha(PARENT_DOMAIN+b'child\0'+canonical(m)), 'invalid_child_digest')

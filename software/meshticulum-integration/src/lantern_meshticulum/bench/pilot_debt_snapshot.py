@@ -24,7 +24,7 @@ from meshticulum.bench.serial_protocol import RadioProfile
 from meshticulum.bench.public_block import PUBLIC32_MARKER, public32_service, object_limit
 from meshticulum.ip.wire import IpLimits, address
 from .pilot_parent_caps import Cost
-from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,profile_from_plan,admission_for,radio_route
 
 MAX = 2**63-1
 MAX_DB = 16*1024*1024
@@ -240,14 +240,15 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
         keys={'schema','unit','host_boot_id','local_peer','initiator','responder','session_id','generation',
               'issued_epoch_us','expires_epoch_us','profile','object','sender_unit','country','antenna_confirmed',
               'max_frames','service','application_deadline_monotonic_us'}
+        if p.get('radio_modem')==GFSK_NAME:keys.add('radio_modem')
         need(set(p)==keys and p['schema']=='meshticulum.service-run.v1' and p['unit']==scope.unit)
         local,a,b=_peer(p['local_peer']),_peer(p['initiator']),_peer(p['responder'])
         session=SessionKey(a,b,bytes.fromhex(identifier(p['session_id'])),bytes.fromhex(identifier(p['generation'])))
         need(p['sender_unit']in('unit-a','unit-b','unit-c'));sends=p['sender_unit']==scope.unit
         need(local==(a if sends else b));direction=0 if sends else 1
-        profile=RadioProfile(**p['profile']);profile.encode(board_id=1)
+        profile=profile_from_plan(p,board_id=1)
         admission = (LEGACY_SF5_8_ADMISSION if _retained573_grant(
-            p,scope,run,historical_parent,observed_epoch_us) else RADIO_ADMISSION)
+            p,scope,run,historical_parent,observed_epoch_us) else admission_for(profile))
         admission.check(p['country'],p['antenna_confirmed'],profile)
         service=p['service'];base_service={'kind','format','application_expires_epoch_us'}
         need(type(service)is dict and set(service)in(base_service,base_service|{PUBLIC32_MARKER})
@@ -255,13 +256,14 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
         public32=public32_service(service)
         obj=p['object'];need(type(obj)is dict and set(obj)=={'bytes','sha256','object_id','chunk_index'})
         integer(obj['bytes'],1,object_limit(service));hex_value(obj['sha256'],64);hex_value(obj['object_id'],64);integer(obj['chunk_index'],0,63)
+        if p.get('radio_modem')==GFSK_NAME:need(not public32 and scope.unit in ('unit-a','unit-c') and p['sender_unit'] in ('unit-a','unit-c'),'gfsk_public_debt_scope_changed')
         if public32:
             sender='unit-a' if service['format']=='MR1.request' else 'unit-c'
             need(p['sender_unit']==sender and scope.unit in ('unit-a','unit-c')
                  and (service['format']!='MR1.response' or obj['bytes']==32768),'invalid_public32_debt_grant')
         app=integer(service['application_expires_epoch_us'],1);need(issued<app<=expires)
         frames=integer(p['max_frames'],1,512)
-        route={k:p[k]for k in('initiator','responder','session_id','generation','profile','object','sender_unit','country','service')}
+        route=radio_route(p)
         context=dict(protocol='lantern.meshticulum.bench.v1',initiator=asdict(a),responder=asdict(b),
             session_id=session.session_id.hex(),session_generation=session.session_generation.hex(),service='bench_transfer',
             route=sha(canonical(route)),issued_epoch_us=issued,expires_epoch_us=expires,max_plaintext=208,max_frames=frames)

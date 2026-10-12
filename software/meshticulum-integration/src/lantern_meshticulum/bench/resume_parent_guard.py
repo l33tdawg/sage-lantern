@@ -297,6 +297,13 @@ class ResumeParentGuard:
                 _need(metadata['transport'] == 'lora' and selected == expected
                       and type(lease) is int and 10000 <= lease <= 90000,
                       'own_sf5_child_profile_changed')
+        if owner.get('qualification_kind')=='c-gfsk125-8k-batch-v1':
+            from .gfsk_batch import BatchContext as GfskContext
+            context=GfskContext.from_owner(owner,self.policy);seen=set()
+            for receipt in receipts.values():
+                metadata=receipt['child_caps']['metadata'];context.metadata(metadata)
+                key=metadata['campaign_id'],metadata['format']
+                _need(key not in seen,'gfsk_batch_duplicate_child_receipt');seen.add(key)
         if owner.get('qualification_kind')=='c-bulk-8k-batch-v1':
             from .sf5_batch import BatchContext
             context=BatchContext.from_owner(owner,self.policy)

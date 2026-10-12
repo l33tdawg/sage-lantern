@@ -26,12 +26,12 @@ from meshticulum.bench.services import _shape
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
-from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,profile_record,profile_from_plan,admission_for,radio_route
 
 BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3'))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
 BATCH_KIND = 'c-bulk-8k-batch-v1'
-POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND}
+POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND,GFSK_KIND}
 
 SCHEMA = 'meshticulum.public-parent-caps.v1'
 DOMAIN = b'meshticulum.public-parent-caps.v1\0'
@@ -194,6 +194,7 @@ def child_caps(package, policy):
             and set(package) == {'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
                                  'transport','grant','secret_base64','payload_base64','source_run_id'}
             and package['schema'] == 'meshticulum.public-pilot-package.v1')
+        require(policy.qualification_kind!=GFSK_KIND or package['transport']=='lora')
         unit = policy.unit(package['unit']); p = package['grant']
         identifier(package['campaign_id']); digest(package['resource_sha256'])
         secret = base64.b64decode(package['secret_base64'], validate=True)
@@ -213,6 +214,9 @@ def child_caps(package, policy):
             fields = {'schema','unit','host_boot_id','local_peer','initiator','responder','session_id',
                 'generation','profile','object','sender_unit','country','antenna_confirmed','max_frames',
                 'service','issued_epoch_us','expires_epoch_us'}
+            gfsk=p.get('radio_modem')==GFSK_NAME
+            if gfsk:fields.add('radio_modem')
+            require(gfsk == (policy.qualification_kind==GFSK_KIND))
             require(package['transport'] == 'lora' and p['schema'] == 'meshticulum.service-run.v1'
                 and set(p) == fields and set(p['service']) in ({'kind','format','application_expires_epoch_us'},
                     {'kind','format','application_expires_epoch_us','public_response_max_bytes'})
@@ -221,11 +225,11 @@ def child_caps(package, policy):
                 and type(p['object']['chunk_index']) is int and p['object']['chunk_index'] == 0
                 and p['unit'] == unit.unit and p['local_peer'] == asdict(unit.peer)
                 and p['service']['kind'] == 'knowledge')
-            rp = RadioProfile(**p['profile']); rp.encode(board_id=1)
+            rp=profile_from_plan(p,board_id=1)
             admission = (LEGACY_SF5_8_ADMISSION if policy.parent_id == LEGACY_SF5_8_PARENT
-                         else RADIO_ADMISSION)
+                         else admission_for(rp))
             admission.check(p['country'], p['antenna_confirmed'], rp)
-            route = {k: p[k] for k in ('initiator','responder','session_id','generation','profile','object','sender_unit','country','service')}
+            route=radio_route(p)
             session = SessionKey(PeerID(**p['initiator']), PeerID(**p['responder']), bytes.fromhex(p['session_id']), bytes.fromhex(p['generation']))
             grant = BenchGrant(session, 'bench_transfer', hashlib.sha256(canonical(route)).digest(),
                 p['issued_epoch_us'], p['expires_epoch_us'], 208, p['max_frames'], secret)
@@ -235,7 +239,7 @@ def child_caps(package, policy):
             fmt = p['service']['format']; run = p['session_id']; peers = session.initiator, session.responder
             obj = dict(bytes=p['object']['bytes'], sha256=p['object']['sha256'])
             cost = Cost(rp.max_boot_attempts, rp.max_boot_estimated_airtime_us)
-            profile = asdict(rp); frame_limit = grant.max_frames; expiry = p['service']['application_expires_epoch_us']
+            profile = profile_record(rp); frame_limit = grant.max_frames; expiry = p['service']['application_expires_epoch_us']
         from meshticulum.bench.public_block import public32_service, object_limit
         public32 = public32_service(p.get('service',{}))
         require(public32 == (policy.qualification_kind in PUBLIC32_KINDS))
@@ -277,6 +281,7 @@ def child_caps(package, policy):
             object=obj, source_run_id=source, application_expires_epoch_us=expiry,
             grant_digest=grant.digest.hex(), profile=profile, cipher_frame_limit=frame_limit,
             secret_sha256=hashlib.sha256(secret).hexdigest(), plan_sha256=hashlib.sha256(canonical(p)).hexdigest())
+        if package['transport']=='lora' and p.get('radio_modem')==GFSK_NAME:metadata['radio_modem']=GFSK_NAME
         if public32: metadata['public_response_max_bytes'] = 32768
         if policy.qualification_kind in BUNDLE_KINDS: metadata['bundle_context_sha256'] = policy.bundle_context_sha256
         return ChildCaps(unit.unit, run, sends, canonical(metadata), cost, expiry)
