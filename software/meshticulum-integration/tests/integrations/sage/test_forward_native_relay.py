@@ -11,6 +11,9 @@ import copy
 import hashlib
 import json
 import os
+from pathlib import Path
+import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -28,7 +31,7 @@ from lantern_meshticulum.sage.forward_native_relay import (
 )
 from lantern_meshticulum.sage.forward_native_provider import NativeAccountingSource, NativeAccountingObservation
 from lantern_meshticulum.sage.forward_budget import Cost, ChildPlan
-from lantern_meshticulum.sage.forward_children import ForwardChildrenError
+from lantern_meshticulum.sage.forward_children import ForwardChildrenError, ForwardClosePermit
 from lantern_meshticulum.sage.forward_receive_journal import ReceiveIntention
 from lantern_meshticulum.sage.mesh_inbox import _canonical
 from meshticulum.bench.authority import RunAuthority, canonical, revoke
@@ -46,6 +49,7 @@ from tests.test_forward_session_flow import session_pair
 from tests.test_meshticulum_bench_runtime import BOOT, Clock, ModelWorker
 from tests.test_meshticulum_private_carrier import sealed_message, open_private, CONTENT
 from tests.radio_profiles import SOURCE_ADMISSION, profile_for
+from tests.test_pilot_parent_snapshot import root_observation
 
 
 DEBT = Cost(7, 7000, 3, 11, 13)
@@ -56,6 +60,7 @@ class Accounting(NativeAccountingSource):
     def __init__(self, r):
         self.r = r; self.debt = DEBT; self.actual = None; self.evidence = 'a' * 64
         self.closed = False; self.calls = 0; self.hook = None
+        self._busy = 0
     def observe(self, resource, intention):
         assert not self.closed and resource is self.r.hardware and intention is self.r.intention
         self.calls += 1
@@ -65,10 +70,15 @@ class Accounting(NativeAccountingSource):
         assert all(f.closed for f in self.r.factories if f.opened)
         self.closed = True
         return True
+    def close_from_registry(self, permit):
+        assert type(permit) is ForwardClosePermit and permit.resource is self.r.hardware
+        assert permit.original_owner == self.r.owner._owner and permit.consume(self) is True
+        return self.close()
 
 
 @contextmanager
-def relay_rig(path, *, scopes=RELAY_SCOPES, limit=LIMITS, approval_change=None, before_create=None):
+def relay_rig(path, *, scopes=RELAY_SCOPES, limit=LIMITS, approval_change=None, before_create=None,
+              accounting_factory=Accounting):
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     clock = Clock(); inner = to_binary(sealed_message(1).wire)
     sessions, context, stores = session_pair(path, clock, inner)
@@ -98,7 +108,7 @@ def relay_rig(path, *, scopes=RELAY_SCOPES, limit=LIMITS, approval_change=None, 
     r = SimpleNamespace(hardware=h, client=client, state=state, clock=clock, context=context,
         description=description, intention=intention, local=local, inner=inner, sessions=sessions,
         path=path, owner=None, factories=[])
-    r.accounting = Accounting(r); r.authority = MeshActionAuthority()
+    r.accounting = accounting_factory(r); r.authority = MeshActionAuthority()
     approved = relay_approval_binding(description, intention, limit, r.accounting.observe(h, intention),
         config_revision=hashlib.sha256(_canonical(h.config)).hexdigest(), broker_id=h.supervisor.broker_id,
         storage_epoch=h.probe.snapshot().epoch)
@@ -543,7 +553,7 @@ def test_inconsistent_terminal_records_never_prove_native_retirement(tmp_path, c
         assert not r.owner.snapshot()['native_qualified']
 
 
-def test_quiescent_shutdown_thread_contains_both_legs_but_requires_creator_component_cleanup(tmp_path):
+def test_quiescent_shutdown_thread_closes_core_both_legs_then_accounting_with_one_use_permits(tmp_path):
     ready = threading.Event(); release = threading.Event(); holder = {}; failures = []
     def producer():
         try:
@@ -558,10 +568,10 @@ def test_quiescent_shutdown_thread_contains_both_legs_but_requires_creator_compo
         assert ready.wait(15) and not failures
         r = holder['r']
         with pytest.raises(ForwardNativeRelayError): r.owner.close()
-        assert r.hardware.close(2) is False  # The current core/source require the creator thread.
+        assert r.hardware.close(2) is True
         assert all(c.retired and c.transfer.flow.closed and c.transfer.authority.closed for c in holder['children'])
         assert all(holder[k].contained_on == [threading.get_ident()] for k in ('incoming', 'outgoing'))
-        assert not r.accounting.closed and not r.owner._core_closed
+        assert r.accounting.closed and r.owner._core_closed
         before = copy.deepcopy(r.state.rows)
         with pytest.raises(ForwardChildrenError): r.owner._registry_close(r.hardware._forward_children)
         with pytest.raises(ForwardNativeRelayError): r.owner.step()
@@ -599,4 +609,132 @@ def test_shutdown_never_contains_a_still_opening_factory_then_drains_both_tracke
     finally:
         unwind.set(); release.set(); thread.join(15)
     assert not thread.is_alive() and not failures
+
+
+def test_registered_component_permit_is_exact_target_one_use_and_source_idle(tmp_path):
+    observations = []
+    class CheckedAccounting(Accounting):
+        def close_from_registry(self, permit):
+            assert permit.original_owner == self.r.owner._owner and permit.resource is self.r.hardware
+            with pytest.raises(ForwardChildrenError): permit.consume(self.r.owner._relay)
+            assert not permit._used
+            self._busy = 1
+            try:
+                with pytest.raises(ForwardChildrenError): permit.consume(self)
+                assert not permit._used
+            finally: self._busy = 0
+            assert super().close_from_registry(permit) is True
+            with pytest.raises(ForwardChildrenError): permit.consume(self)
+            observations.append(permit)
+            return True
+    ready = threading.Event(); release = threading.Event(); holder = {}; failures = []
+    def producer():
+        try:
+            with relay_rig(tmp_path, accounting_factory=CheckedAccounting) as r:
+                holder['r'] = r; ready.set(); assert release.wait(15)
+        except BaseException as error: failures.append(error); ready.set()
+    thread = threading.Thread(target=producer); thread.start()
+    try:
+        assert ready.wait(15) and not failures
+        r = holder['r']; registry = r.hardware._forward_children
+        with pytest.raises(ForwardChildrenError): registry.cleanup_permit(r.owner, r.accounting)
+        forged = ForwardClosePermit(registry, r.owner, r.accounting, object(), time.monotonic() + 1)
+        with pytest.raises(AttributeError): forged.consume = lambda *args: True
+        with pytest.raises(ForwardChildrenError): forged.consume(r.accounting)
+        redirected = SimpleNamespace(consume_cleanup_permit=lambda *args: True)
+        forged._registry = redirected
+        with pytest.raises(ForwardChildrenError): forged.consume(r.accounting)
+        forged._registry = registry
+        registry.consume_cleanup_permit = lambda *args: True
+        try:
+            with pytest.raises(ForwardChildrenError): forged.consume(r.accounting)
+        finally: del registry.consume_cleanup_permit
+        assert r.hardware.close(2) is True
+        assert len(observations) == 1 and observations[0]._used
+        with pytest.raises(ForwardChildrenError): observations[0].consume(r.accounting)
+    finally:
+        release.set(); thread.join(15)
+    assert not thread.is_alive() and not failures
+
+
+def test_busy_independent_accounting_observer_blocks_registry_permits(tmp_path):
+    with relay_rig(tmp_path) as r:
+        r.accounting._busy = 1
+        assert r.hardware.close(.02) is False
+        assert not r.owner._core_closed and not r.accounting.closed
+        assert not r.hardware._forward_children._consumed_owner_permits
+        assert not r.hardware._forward_children._component_permits
+        r.accounting._busy = 0
+        assert r.hardware.close(2) is True and r.accounting.closed
+
+
+def test_optional_accounting_drain_absence_is_pinned_and_has_no_foreign_fallback(tmp_path, monkeypatch):
+    class OriginalThreadAccounting(Accounting): close_from_registry = None
+    ready = threading.Event(); release = threading.Event(); holder = {}; failures = []
+    def producer():
+        try:
+            with relay_rig(tmp_path, accounting_factory=OriginalThreadAccounting) as r:
+                holder['r'] = r; ready.set(); assert release.wait(15)
+        except BaseException as error: failures.append(error); ready.set()
+    thread = threading.Thread(target=producer); thread.start()
+    try:
+        assert ready.wait(15) and not failures
+        r = holder['r']
+        assert r.hardware.close(2) is False
+        assert r.owner._core_closed and not r.accounting.closed
+    finally:
+        release.set(); thread.join(15)
+    assert not thread.is_alive() and not failures and holder['r'].accounting.closed
+    with relay_rig(tmp_path / 'pinned', accounting_factory=OriginalThreadAccounting) as r:
+        monkeypatch.setattr(OriginalThreadAccounting, 'close_from_registry', Accounting.close_from_registry)
+        with pytest.raises(ForwardNativeRelayError): r.owner.access_check()
+        assert not r.state.rows
+
+
+def test_actual_held_sqlite_reader_closes_last_on_registry_shutdown_thread(root_observation):
+    from lantern_meshticulum.sage.forward_native_accounting import HeldParentAccounting
+    from tests.test_pilot_parent_snapshot import fixture as ledger_fixture, scope
+    directory = Path(tempfile.mkdtemp(prefix='.relay-held-control-', dir=Path(__file__).parents[2]))
+    ready = threading.Event(); release = threading.Event(); holder = {}; failures = []
+    try:
+        ledger = directory / 'ledger'; ledger.mkdir(mode=0o700)
+        data = ledger_fixture(ledger); native = data['natives']['unit-a']
+        original = {p: p.read_bytes() for p in native['path'].parent.iterdir() if p.is_file()}
+        def accounting(r):
+            selected = replace(scope(data), current_host_boot_id=r.intention.host_boot_id,
+                observation_expires_epoch_us=r.clock()[0] + 50000000)
+            return HeldParentAccounting(r.hardware, r.intention, native['state'], selected,
+                clock_reader=r.clock, boot_reader=lambda: r.state.boot)
+        def producer():
+            try:
+                with relay_rig(directory / 'relay', accounting_factory=accounting,
+                               limit=Cost(10000, 1000000000, 100000, 10000000, 10000000)) as r:
+                    stage, incoming, outgoing = prepare_stage(r, r.sessions[0].start())
+                    children = begin(r, stage, incoming, outgoing)
+                    holder.update(r=r, children=children, incoming=incoming, outgoing=outgoing,
+                        fds=tuple(r.accounting._reader._tokens), proof=r.accounting.evidence(),
+                        rows=copy.deepcopy(r.state.rows), owner=r.owner._owner,
+                        source_owner=r.accounting._owner, reader_owner=r.accounting._reader._owner)
+                    ready.set(); assert release.wait(30)
+            except BaseException as error: failures.append(error); ready.set()
+        thread = threading.Thread(target=producer); thread.start()
+        try:
+            assert ready.wait(30) and not failures
+            r = holder['r']
+            assert r.accounting.close() is False
+            assert r.hardware.close(5) is True
+            assert all(c.retired and c.transfer.flow.closed and c.transfer.authority.closed for c in holder['children'])
+            assert all(holder[k].contained_on == [threading.get_ident()] for k in ('incoming', 'outgoing'))
+            assert r.accounting._closed and r.owner._source_closed and r.owner._core_closed
+            assert r.owner._owner == holder['owner'] and r.accounting._owner == holder['source_owner']
+            assert r.accounting._reader._owner == holder['reader_owner']
+            assert r.state.rows == holder['rows'] and holder['proof']['actual_usage'] is None
+            assert not holder['proof']['complete_global_debt'] and not holder['proof']['private_dispatch_authority']
+            assert {p: p.read_bytes() for p in original} == original
+            for fd in holder['fds']:
+                with pytest.raises(OSError): os.fstat(fd)
+        finally:
+            release.set(); thread.join(30)
+        assert not thread.is_alive() and not failures
+    finally: shutil.rmtree(directory)
 

@@ -18,6 +18,26 @@ class ForwardChildrenError(RuntimeError):
 def require(value):
     if not value:raise ForwardChildrenError()
 
+class ForwardClosePermit:
+    """One registered component cleanup, never live/transport authority."""
+    __slots__=('_registry','_owner','_target','_generation','_deadline','_original_owner',
+               '_resource','_thread','_refs','_used')
+    def __init__(self,registry,owner,target,generation,deadline):
+        self._registry,self._owner,self._target=registry,owner,target
+        self._generation,self._deadline=generation,deadline
+        self._original_owner=registry._owner_threads[id(owner)]
+        self._resource=registry._resource
+        self._thread=os.getpid(),threading.get_ident()
+        self._refs=(registry,owner,target,generation,self._resource)
+        self._used=False
+    @property
+    def original_owner(self):return self._original_owner
+    @property
+    def resource(self):return self._resource
+    def consume(self,target):
+        require(type(self._registry) is ForwardChildren and self._registry is self._refs[0])
+        return ForwardChildren.consume_cleanup_permit(self._registry,self,target)
+
 class _Child:
     def __init__(self,owner,plan,contain,terminal):
         self.owner,self.plan,self.contain,self.terminal=owner,plan,contain,terminal
@@ -30,8 +50,11 @@ class ForwardChildren:
     def __init__(self,resource):
         self.resource=self._resource=resource;self._pid=os.getpid()
         self._condition=threading.Condition();self._owners={};self._children=[]
+        self._owner_threads={}
         self._closing=self._busy=self._uncertain=False
         self._close_permits={};self._drain_thread=None
+        self._consumed_owner_permits={};self._component_permits={};self._component_targets=set()
+        self._drain_generation=self._drain_deadline=None
     def __repr__(self):return '<ForwardChildren>'
     def _bound(self):
         require(os.getpid()==self._pid and self.resource is self._resource
@@ -44,6 +67,7 @@ class ForwardChildren:
             require(not self._closing and not self._uncertain and not self.resource._closing and type(owner) in (ForwardNativeOwner,ForwardNativeRelay)
                 and owner.resource is self.resource and len(self._owners)<32 and id(owner) not in self._owners)
             self._owners[id(owner)]=owner
+            self._owner_threads[id(owner)]=owner._owner
     def available(self,owner):
         self._bound()
         with self._condition:
@@ -127,7 +151,43 @@ class ForwardChildren:
         with self._condition:
             require(self._closing and self._busy and self._drain_thread==threading.get_ident()
                 and self._close_permits.pop(id(owner),None) is owner)
+            self._consumed_owner_permits[id(owner)]=owner
         return True
+    def _cleanup_current(self,owner,target):
+        from lantern_meshticulum.sage.forward_native_relay import ForwardNativeRelay
+        self._bound()
+        require(type(owner) is ForwardNativeRelay and self._closing and self._busy
+            and self._drain_thread==threading.get_ident() and self._drain_generation is not None
+            and time.monotonic()<self._drain_deadline
+            and self._owners.get(id(owner)) is self._consumed_owner_permits.get(id(owner)) is owner
+            and owner._owner==self._owner_threads[id(owner)] and owner._owner[0]==os.getpid()
+            and owner.resource is self.resource and owner._registry is self
+            and owner._closed and not owner._draining_busy())
+        children=[c for c in self._children if c.owner is owner]
+        require(not any(c.opening or c.observing or c.runner is not None and c.runner._executing for c in children))
+        require(target is owner._relay_ref or target is owner._source_close[0])
+        if target is owner._source_close[0]:
+            busy=getattr(target,'_busy',False)
+            require(all(c.retired for c in children) and type(busy) in (bool,int) and busy==0)
+    def cleanup_permit(self,owner,target):
+        with self._condition:
+            self._cleanup_current(owner,target)
+            key=id(owner),id(target)
+            require(key not in self._component_targets)
+            permit=ForwardClosePermit(self,owner,target,self._drain_generation,self._drain_deadline)
+            self._component_targets.add(key);self._component_permits[id(permit)]=permit
+            return permit
+    def consume_cleanup_permit(self,permit,target):
+        with self._condition:
+            require(type(permit) is ForwardClosePermit and self._component_permits.get(id(permit)) is permit
+                and not permit._used and target is permit._target
+                and all(a is b for a,b in zip(permit._refs,(self,permit._owner,target,self._drain_generation,self.resource)))
+                and permit._original_owner==self._owner_threads[id(permit._owner)]
+                and permit._thread==(os.getpid(),threading.get_ident())
+                and permit._deadline==self._drain_deadline)
+            self._cleanup_current(permit._owner,target)
+            permit._used=True;del self._component_permits[id(permit)]
+            return True
     def close(self,timeout):
         """Separate containment, never normal retire/fresh control dispatch.
 
@@ -170,6 +230,7 @@ class ForwardChildren:
             with self._condition:
                 self._drain_thread=threading.get_ident()
                 self._close_permits={id(o):o for o in owners}
+                self._drain_generation=object();self._drain_deadline=deadline
             for owner in owners:
                 try:
                     if owner._registry_close(self) is not True:result=False
@@ -201,6 +262,8 @@ class ForwardChildren:
         finally:
             with self._condition:
                 self._close_permits.clear();self._drain_thread=None
+                self._consumed_owner_permits.clear();self._component_permits.clear();self._component_targets.clear()
+                self._drain_generation=self._drain_deadline=None
                 self._busy=False;self._condition.notify_all()
 
 def attach(owner):

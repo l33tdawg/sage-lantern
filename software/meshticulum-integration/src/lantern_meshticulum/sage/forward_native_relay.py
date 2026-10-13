@@ -180,9 +180,11 @@ class ForwardNativeRelay:
                       accounting, boot_reader, clock_reader)
         self._native_refs = (resource.supervisor, resource.probe, resource.probe.client,
                             resource.identity, resource.identity._signing_key, resource._mutex)
-        self._source_methods = type(accounting).observe, type(accounting).close
+        self._source_methods = (type(accounting).observe, type(accounting).close,
+                                getattr(type(accounting), 'close_from_registry', None))
         self._source_close = accounting, self._source_methods[1]
         try:
+            require(self._source_methods[2] is None or callable(self._source_methods[2]))
             self.local = PeerID(resource.actor.chain_id, resource.identity.agent_id)
             self.config_revision = hashlib.sha256(_canonical(resource.config)).hexdigest()
             self.consent, self.broker_id = resource.consent(), resource.supervisor.broker_id
@@ -211,6 +213,10 @@ class ForwardNativeRelay:
             self._budget_refs = self._budget, self._budget.binding, _canonical(self._budget.binding)
             self._relay = OpaqueForwardRelay(description, clock=self.time)
             self._relay_ref = self._relay
+            self._core_token = self._relay.prepare_close_delegation()
+            self._core_token_ref = self._core_token
+            self._core_methods = tuple(getattr(OpaqueForwardRelay, name) for name in
+                ('close', 'snapshot', 'prepare_close_delegation', 'close_delegated'))
             from .forward_children import attach
             self._registry = attach(self)
             self.access_check()
@@ -237,8 +243,9 @@ class ForwardNativeRelay:
             and self.context is self.description.context and self.owner_lease is self._lease_ref
             and all(a is b for a, b in zip(self._store_refs, (self._store, self._store.storage, self._store.client)))
             and self._store.client is h.probe.client
-            and self._source_methods == (type(self.accounting).observe, type(self.accounting).close)
-            and not any(name in self.accounting.__dict__ for name in ('observe', 'close')))
+            and self._source_methods == (type(self.accounting).observe, type(self.accounting).close,
+                                         getattr(type(self.accounting), 'close_from_registry', None))
+            and not any(name in self.accounting.__dict__ for name in ('observe', 'close', 'close_from_registry')))
         require(self._facts == _canonical(dict(description=description_value(self.description),
             intention=self.intention.to_dict(), limits=asdict(self.limits), local=asdict(self.local),
             config=self.config_revision, broker=self.broker_id, storage=self.storage_epoch)))
@@ -247,7 +254,12 @@ class ForwardNativeRelay:
             require(self._budget is budget and budget.binding is binding and _canonical(binding) == raw
                 and budget.store is self._store and budget._lease is self.owner_lease
                 and budget.prior == self._retained_debt and budget.limits is self.limits)
-        if self._relay is not None: require(self._relay is self._relay_ref)
+        if self._relay is not None:
+            require(self._relay is self._relay_ref and self._core_token is self._core_token_ref
+                and self._core_methods == tuple(getattr(OpaqueForwardRelay, name) for name in
+                    ('close', 'snapshot', 'prepare_close_delegation', 'close_delegated'))
+                and not any(name in self._relay.__dict__ for name in
+                    ('close', 'snapshot', 'prepare_close_delegation', 'close_delegated')))
         for child in self._children: child.bound()
         if not cleanup and self._registry is not None: self._registry.available(self)
 
@@ -540,18 +552,28 @@ class ForwardNativeRelay:
         return True
 
     def _draining_busy(self):
-        return self._busy or self._held or self._observing or self._budget is not None and self._budget._busy
+        source_busy = getattr(self.accounting, '_busy', False)
+        return (self._busy or self._held or self._observing
+            or self._budget is not None and self._budget._busy
+            or self._relay is not None and self._relay._busy
+            or type(source_busy) not in (bool, int) or source_busy != 0)
 
     def fence(self): self._closed = True
 
     def _close_core(self):
         if self._relay is None or self._core_closed: return True
-        # The borrowed core has a creator-thread-only close API. Containment
-        # may still close both native legs on the registry shutdown thread,
-        # but cannot claim that this remaining component/source has drained.
-        if self._owner != (os.getpid(), threading.get_ident()): return False
         try:
-            self._relay.close(); self._core_closed = True; return True
+            if self._owner == (os.getpid(), threading.get_ident()):
+                self._relay.close()
+                result = self._relay.snapshot()
+                self._core_closed = result['closed'] and not result['uncertain'] and result['queued_records'] == 0
+            else:
+                self._available(cleanup=True)
+                permit = self._registry.cleanup_permit(self, self._relay)
+                require(permit.consume(self._relay) is True)
+                self._core_closed = self._relay.close_delegated(self._core_token) is True
+            if not self._core_closed: self._uncertain = True
+            return self._core_closed
         except BaseException:
             self._uncertain = True
             raise
@@ -564,9 +586,16 @@ class ForwardNativeRelay:
         if not core_closed: return False
         if not self._source_closed:
             source, close = self._source_close
+            permit = None
+            if self._owner != (os.getpid(), threading.get_ident()):
+                close = self._source_methods[2]
+                if close is None: return False
+                self._available(cleanup=True)
+                permit = self._registry.cleanup_permit(self, source)
             self._source_closed = True
             try:
-                if close(source) is not True: self._uncertain = True
+                result = close(source) if permit is None else close(source, permit)
+                if result is not True: self._uncertain = True
             except BaseException:
                 self._uncertain = True
                 raise
