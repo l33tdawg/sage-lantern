@@ -120,7 +120,7 @@ def validate_root_handoff(value,*,context,policy,next_index,authorization):
     require(type(next_index) is int and 1<=next_index<5,'invalid_checkpoint_index')
     require(type(authorization) is dict and set(authorization)=={'schema','producer_sha256','primitives_sha256',
         'retained_history_count','maximum_checkpoints'} and authorization['schema']=='meshticulum.root-public100k-checkpoint-owner.v1'
-        and authorization['primitives_sha256']==PRIMITIVES_SHA and type(authorization['retained_history_count']) is int and authorization['retained_history_count']==41
+        and authorization['primitives_sha256']==PRIMITIVES_SHA and type(authorization['retained_history_count']) is int and authorization['retained_history_count']==42
         and authorization['maximum_checkpoints']==4 and type(authorization['producer_sha256']) is str
         and len(authorization['producer_sha256'])==64 and all(c in '0123456789abcdef' for c in authorization['producer_sha256']),
         'original_Root_checkpoint_optin_required')
@@ -128,7 +128,7 @@ def validate_root_handoff(value,*,context,policy,next_index,authorization):
         and value['parent_id']==policy.parent_id and value['policy_digest']==policy.digest
         and value['bundle_context_sha256']==policy.bundle_context_sha256 and type(value['checkpoint_index']) is int and value['checkpoint_index']==next_index
         and value['next_campaign_id']==context.value['stages'][next_index]['campaign_id']
-        and value['retained_parent_ids']==list(HISTORY) and len(HISTORY)==41
+        and value['retained_parent_ids']==list(HISTORY) and len(HISTORY)==42
         and value['original_whole']=={k:context.value[k] for k in ('original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us')}
         and value['original_handoff_end_epoch_us']==context.value['stages'][next_index-1]['handoff_end_epoch_us']
         and value['all_owned_clients_terminal'] is True and value['all_remote_callbacks_exit_zero'] is True
