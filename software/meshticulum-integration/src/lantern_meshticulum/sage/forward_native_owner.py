@@ -264,15 +264,17 @@ class ForwardNativeOwner:
     @contextmanager
     def _lease(self):
         from sage_lantern.storage_supervisor_socket import CaptureLease
-        self.access_check()
+        # A held lease supplies no crypto or wire permission. Keep every fresh
+        # native/lifetime observation; action guards own signed-key validation.
+        self.storage_check()
         if self._held:self._uncertain=True;raise ForwardNativeOwnerError()
         mutex=self._refs[-1];require(mutex.acquire(blocking=False))
         lease=None;self._held=True
         try:
-            self.access_check();lease=self.resource.capture_lease(self.consent)
+            self.storage_check();lease=self.resource.capture_lease(self.consent)
             self._available();require(type(lease) is CaptureLease and lease.check() is True)
-            self.access_check();yield
-            self.access_check();require(lease.check() is True);self.access_check()
+            self.storage_check();yield
+            self.storage_check();require(lease.check() is True);self.storage_check()
         except BaseException:
             self._uncertain=True;raise
         finally:
@@ -281,6 +283,8 @@ class ForwardNativeOwner:
             except BaseException:
                 self._uncertain=True;raise
             finally:self._held=False;mutex.release()
+        # BinaryCapture can publish after lease exit without another full
+        # action guard. Reobserve signed keys after actual close/release.
         self.access_check()
     def receiver(self):
         """Canonical composition over the borrowed client, without radio open."""
