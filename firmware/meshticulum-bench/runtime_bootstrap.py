@@ -6,43 +6,85 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import stat
+import struct
 import sys
 import tarfile
 import tempfile
 import zipfile
+import zlib
 
 
 def require(condition, reason):
     if not condition: raise RuntimeError(reason)
 
 
+def deflated_directory(raw, count):
+    require(len(raw) >= 22, 'deflated_image_directory')
+    signature, disk, central_disk, local_count, total_count, size, start, comment = struct.unpack_from('<4s4H2IH', raw, len(raw)-22)
+    require(signature == b'PK\x05\x06' and disk == central_disk == comment == 0
+            and local_count == total_count == count and 0 <= size <= 245*count
+            and 0 <= start and start+size == len(raw)-22, 'deflated_image_directory')
+    return start
+
+
+def deflated_member(raw, row, cursor, central):
+    name = row.filename.encode('ascii')
+    require(row.header_offset == cursor and row.create_system == 3 and row.create_version == row.extract_version == 20
+            and row.reserved == row.flag_bits == row.volume == row.internal_attr == 0 and not row.extra and not row.comment
+            and row.date_time == (1980,1,1,0,0,0) and row.external_attr == 0o100600 << 16
+            and row.compress_type == zipfile.ZIP_DEFLATED and 0 <= row.file_size <= 500000
+            and 0 < row.compress_size <= 2000000 and cursor+30+len(name) <= central, 'deflated_image_member')
+    header = struct.unpack_from('<4s5H3I2H', raw, cursor)
+    require(header == (b'PK\x03\x04',20,0,8,0,33,row.CRC,row.compress_size,row.file_size,len(name),0)
+            and raw[cursor+30:cursor+30+len(name)] == name, 'deflated_image_header')
+    start = cursor+30+len(name); end = start+row.compress_size
+    require(end <= central, 'deflated_image_overlap')
+    decoder = zlib.decompressobj(-15)
+    data = decoder.decompress(raw[start:end], max_length=row.file_size+1)
+    require(len(data) == row.file_size and decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail
+            and zlib.crc32(data) == row.CRC, 'deflated_image_stream')
+    return data, end
+
+
 def image_members(raw, manifest):
     """Validate data only. Never execute a loader received in an archive."""
     layout = manifest.get('execution_layout'); sources = manifest.get('source_files')
+    compressed = type(layout) is dict and layout.get('schema') == 'sage-lantern.sealed-source-image.v2'
     require(type(layout) is dict and set(layout) == {'schema','image','bytes','sha256','loader','loader_sha256','source_files_sha256'}
-            and layout['schema'] == 'sage-lantern.sealed-source-image.v1' and layout['image'] == 'execution.zip'
+            | ({'expanded_bytes'} if compressed else set())
+            and layout['schema'] in ('sage-lantern.sealed-source-image.v1','sage-lantern.sealed-source-image.v2')
+            and layout['image'] == 'execution.zip'
             and layout['loader'] == 'execution_runtime.py' and type(layout['bytes']) is int
             and 0 < layout['bytes'] <= 2000000 and len(raw) == layout['bytes']
             and hashlib.sha256(raw).hexdigest() == layout['sha256'], 'sealed_runtime_layout_changed')
+    require(not compressed or type(layout['expanded_bytes']) is int and 0 < layout['expanded_bytes'] <= 2000000,
+            'sealed_runtime_expansion_bound')
     require(type(sources) is dict and 75 <= len(sources) <= 150
             and hashlib.sha256(json.dumps(sources,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
                 == layout['source_files_sha256'], 'sealed_runtime_source_correspondence_changed')
-    result = {}; total = 0
+    central = deflated_directory(raw, len(sources)) if compressed else None
+    result = {}; total = 0; cursor = 0
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         rows = archive.infolist()
         require(len(rows) == len(sources) and {row.filename for row in rows} == set(sources), 'sealed_runtime_member_roster')
+        require(not compressed or archive.start_dir == central and [r.filename for r in rows] == sorted(sources)
+                and sum(46+len(r.filename.encode('ascii')) for r in rows) == len(raw)-22-central,
+                'deflated_image_roster')
         for row in rows:
             path = PurePosixPath(row.filename)
             require(row.filename not in result and not path.is_absolute() and '..' not in path.parts
-                    and str(path) == row.filename and not row.is_dir() and row.compress_type == zipfile.ZIP_STORED
+                    and str(path) == row.filename and not row.is_dir()
+                    and row.compress_type == (zipfile.ZIP_DEFLATED if compressed else zipfile.ZIP_STORED)
                     and not row.flag_bits & 1 and stat.S_ISREG(row.external_attr >> 16)
                     and not row.filename.endswith(('.pyc','.pyo','.so','.pyd','.dll'))
                     and 0 <= row.file_size <= 500000, 'sealed_runtime_member_type')
             total += row.file_size; require(total <= 2000000, 'sealed_runtime_expansion_limit')
-            data = archive.read(row)
+            if compressed:data, cursor = deflated_member(raw, row, cursor, central)
+            else:data = archive.read(row)
             require(len(data) == row.file_size and hashlib.sha256(data).hexdigest() == sources[row.filename],
                     'sealed_runtime_member_source_changed')
             result[row.filename] = data
+        require(not compressed or cursor == central and total == layout['expanded_bytes'], 'deflated_image_extent')
     return result
 
 

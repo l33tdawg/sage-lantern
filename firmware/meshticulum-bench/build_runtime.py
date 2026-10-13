@@ -23,7 +23,7 @@ def main():
     parser.add_argument('--source-test-report', type=Path)
     parser.add_argument('--meshticulum-root', type=Path)
     parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
-    parser.add_argument('--execution-layout', choices=('directory', 'sealed-image'), default='directory')
+    parser.add_argument('--execution-layout', choices=('directory', 'sealed-image', 'sealed-image-deflated'), default='directory')
     parser.add_argument('--fast-five-part',action='store_true')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()
@@ -91,14 +91,18 @@ def main():
         manifest['firmware']=GFSK250_FIRMWARE
         manifest['firmware_by_unit']['unit-a']=GFSK250_FIRMWARE
         manifest['radio_profile_name']='gfsk250'
-    if args.execution_layout == 'sealed-image':
+    if args.execution_layout in ('sealed-image', 'sealed-image-deflated'):
         originals = files
+        deflated = args.execution_layout == 'sealed-image-deflated'
+        expanded_bytes = sum(map(len, originals.values()))
+        if expanded_bytes > 2000000:raise SystemExit('Sealed source expansion exceeds its reviewed byte limit.')
+        method = zipfile.ZIP_DEFLATED if deflated else zipfile.ZIP_STORED
         raw_image = io.BytesIO()
-        with zipfile.ZipFile(raw_image, 'w', compression=zipfile.ZIP_STORED, allowZip64=False) as image:
+        with zipfile.ZipFile(raw_image, 'w', compression=method, allowZip64=False) as image:
             for name, data in sorted(originals.items()):
                 entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-                entry.compress_type = zipfile.ZIP_STORED; entry.external_attr = 0o100600 << 16
-                image.writestr(entry, data)
+                entry.compress_type = method; entry.external_attr = 0o100600 << 16
+                image.writestr(entry, data, compresslevel=6 if deflated else None)
         image_bytes = raw_image.getvalue()
         if len(image_bytes) > 2000000:
             raise SystemExit('Sealed execution image exceeds its reviewed byte limit.')
@@ -110,11 +114,12 @@ def main():
                  if not name.startswith(('meshticulum/', 'lantern_meshticulum/'))}
         files.update({'execution.zip': image_bytes, 'execution_runtime.py': loader})
         manifest['files'] = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
-        manifest['execution_layout'] = dict(schema='sage-lantern.sealed-source-image.v1', image='execution.zip',
+        manifest['execution_layout'] = dict(schema='sage-lantern.sealed-source-image.v2' if deflated else 'sage-lantern.sealed-source-image.v1', image='execution.zip',
             bytes=len(image_bytes), sha256=hashlib.sha256(image_bytes).hexdigest(), loader='execution_runtime.py',
             loader_sha256=hashlib.sha256(loader).hexdigest(),
             source_files_sha256=hashlib.sha256(json.dumps(manifest['source_files'],sort_keys=True,
                 separators=(',',':'),allow_nan=False).encode()).hexdigest())
+        if deflated:manifest['execution_layout']['expanded_bytes'] = expanded_bytes
     files['manifest.json'] = json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode='w', format=tarfile.USTAR_FORMAT) as archive:

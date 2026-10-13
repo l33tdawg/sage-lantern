@@ -16,13 +16,13 @@ import pytest
 from tests.test_lantern_meshticulum_bench_runtime import helper
 
 
-@pytest.fixture(scope='module')
-def packaged_image():
+@pytest.fixture(scope='module',params=['sealed-image','sealed-image-deflated'])
+def packaged_image(request):
     root = Path(__file__).resolve().parents[3]
     anchor = Path(tempfile.mkdtemp(prefix='sealed-image-', dir=Path(__file__).parent)); anchor.chmod(0o700)
     output = anchor / 'output'
     result = subprocess.run([sys.executable, str(root / 'firmware/meshticulum-bench/build_runtime.py'),
-        '--execution-layout', 'sealed-image', '--radio-profile', 'gfsk250', '--output-dir', str(output)],
+        '--execution-layout', request.param, '--radio-profile', 'gfsk250', '--output-dir', str(output)],
         cwd=root, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
     record = json.loads((output / 'RUNTIME_BUNDLE.json').read_bytes())
@@ -173,7 +173,10 @@ def test_image_parser_rejects_execution_or_roster_substitution(packaged_image, c
                 elif case == 'traversal': name = '../' + name
             row = zipfile.ZipInfo(name); row.create_system = 3
             row.external_attr = (0o120600 if case == 'symlink' and name == target else 0o100600) << 16
-            row.compress_type = zipfile.ZIP_DEFLATED if case == 'compressed' and name == target else zipfile.ZIP_STORED
+            row.compress_type = (zipfile.ZIP_DEFLATED if manifest['execution_layout']['schema'].endswith('.v2')
+                                 else zipfile.ZIP_STORED)
+            if case == 'compressed' and name == target:
+                row.compress_type = zipfile.ZIP_STORED if row.compress_type == zipfile.ZIP_DEFLATED else zipfile.ZIP_DEFLATED
             archive.writestr(row, raw); sources[name] = hashlib.sha256(raw).hexdigest()
         if case == 'duplicate': archive.writestr(target, original[target])
     raw = output.getvalue(); digest = hashlib.sha256(raw).hexdigest()

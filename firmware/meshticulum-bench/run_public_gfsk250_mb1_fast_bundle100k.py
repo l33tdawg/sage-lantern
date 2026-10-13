@@ -15,8 +15,11 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import struct
 import sys
 import time
+import zipfile
+import zlib
 
 from run_public_sf5_c_bulk_8k import read,write,sha,canonical,stable,need,RPC_ENTRY
 
@@ -40,6 +43,34 @@ def phase_timing_mode(op):
     value=op.get('native_phase_timing',False)
     need(type(value) is bool,'invalid_native_phase_timing_mode')
     return value
+
+
+def deflated_directory(raw, count):
+    need(len(raw) >= 22, 'deflated_image_directory')
+    signature, disk, central_disk, local_count, total_count, size, start, comment = struct.unpack_from('<4s4H2IH', raw, len(raw)-22)
+    need(signature == b'PK\x05\x06' and disk == central_disk == comment == 0
+            and local_count == total_count == count and 0 <= size <= 245*count
+            and 0 <= start and start+size == len(raw)-22, 'deflated_image_directory')
+    return start
+
+
+def deflated_member(raw, row, cursor, central):
+    name = row.filename.encode('ascii')
+    need(row.header_offset == cursor and row.create_system == 3 and row.create_version == row.extract_version == 20
+            and row.reserved == row.flag_bits == row.volume == row.internal_attr == 0 and not row.extra and not row.comment
+            and row.date_time == (1980,1,1,0,0,0) and row.external_attr == 0o100600 << 16
+            and row.compress_type == zipfile.ZIP_DEFLATED and 0 <= row.file_size <= 500000
+            and 0 < row.compress_size <= 2000000 and cursor+30+len(name) <= central, 'deflated_image_member')
+    header = struct.unpack_from('<4s5H3I2H', raw, cursor)
+    need(header == (b'PK\x03\x04',20,0,8,0,33,row.CRC,row.compress_size,row.file_size,len(name),0)
+            and raw[cursor+30:cursor+30+len(name)] == name, 'deflated_image_header')
+    start = cursor+30+len(name); end = start+row.compress_size
+    need(end <= central, 'deflated_image_overlap')
+    decoder = zlib.decompressobj(-15)
+    data = decoder.decompress(raw[start:end], max_length=row.file_size+1)
+    need(len(data) == row.file_size and decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail
+            and zlib.crc32(data) == row.CRC, 'deflated_image_stream')
+    return data, end
 
 
 def archive_source_members(archive,manifest_pin):
@@ -66,31 +97,42 @@ def archive_source_members(archive,manifest_pin):
         return manifest,physical
     need(manifest['schema']=='meshticulum.bench-runtime-bundle.v2','batch_runtime_schema_changed')
     layout=manifest.get('execution_layout');sources=manifest.get('source_files')
+    compressed=type(layout) is dict and layout.get('schema')=='sage-lantern.sealed-source-image.v2'
     need(type(layout) is dict and set(layout)=={'schema','image','bytes','sha256','loader',
-        'loader_sha256','source_files_sha256'} and layout['schema']=='sage-lantern.sealed-source-image.v1'
+        'loader_sha256','source_files_sha256'} | ({'expanded_bytes'} if compressed else set())
+        and layout['schema'] in ('sage-lantern.sealed-source-image.v1','sage-lantern.sealed-source-image.v2')
         and layout['image']=='execution.zip' and layout['loader']=='execution_runtime.py'
         and type(sources) is dict and 75<=len(sources)<=150
         and sha(canonical(sources))==layout['source_files_sha256'],'batch_image_correspondence_changed')
+    need(not compressed or type(layout['expanded_bytes']) is int and 0<layout['expanded_bytes']<=2000000,
+        'batch_image_expansion_bound')
     need({'execution.zip','execution_runtime.py','bench_node.py'}<=set(physical)
         and type(layout['bytes']) is int and 0<layout['bytes']<=2000000
         and len(physical['execution.zip'])==layout['bytes']
         and sha(physical['execution.zip'])==layout['sha256']==files['execution.zip']
         and sha(physical['execution_runtime.py'])==layout['loader_sha256']==files['execution_runtime.py'],
         'batch_execution_image_changed')
-    logical={};expanded=0
+    image_raw=physical['execution.zip'];central=deflated_directory(image_raw,len(sources)) if compressed else None
+    logical={};expanded=0;cursor=0
     with zipfile.ZipFile(io.BytesIO(physical['execution.zip'])) as image:
         rows=image.infolist();need(len(rows)==len(sources) and {r.filename for r in rows}==set(sources),
             'batch_image_member_roster_changed')
+        need(not compressed or image.start_dir==central and [r.filename for r in rows]==sorted(sources)
+            and sum(46+len(r.filename.encode('ascii')) for r in rows)==len(image_raw)-22-central,
+            'deflated_image_roster')
         for row in rows:
             name=row.filename;mode=row.external_attr>>16
             need(name not in logical and not row.is_dir() and not Path(name).is_absolute()
                 and str(Path(name))==name and '..' not in Path(name).parts and len(name)<200
                 and not name.endswith(('.pyc','.pyo','.so','.pyd','.dll'))
-                and row.compress_type==zipfile.ZIP_STORED and not row.flag_bits&1
+                and row.compress_type==(zipfile.ZIP_DEFLATED if compressed else zipfile.ZIP_STORED) and not row.flag_bits&1
                 and stat.S_ISREG(mode) and 0<=row.file_size<=500000,'batch_image_member_type_changed')
             expanded+=row.file_size;need(expanded<=2000000,'batch_image_expansion_bound')
-            data=image.read(row);need(len(data)==row.file_size and sha(data)==sources[name],
+            if compressed:data,cursor=deflated_member(image_raw,row,cursor,central)
+            else:data=image.read(row)
+            need(len(data)==row.file_size and sha(data)==sources[name],
                 'batch_image_source_changed');logical[name]=data
+        need(not compressed or cursor==central and expanded==layout['expanded_bytes'],'deflated_image_extent')
     # Retained physical notices/entry must agree with their image sources.
     need(set(physical)-{'execution.zip','execution_runtime.py'}==
         {name for name in sources if not name.startswith(('meshticulum/','lantern_meshticulum/'))}
