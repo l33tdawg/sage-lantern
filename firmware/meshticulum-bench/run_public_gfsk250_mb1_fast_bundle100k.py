@@ -221,7 +221,7 @@ def fresh250_status(inspection,firmware,expected):
         and capability.get('record_version')==2 and capability.get('mcu_boot')==radio['mcu_boot']
         and capability.get('firmware')==radio['firmware']==firmware,'same_boot_gfsk250_capability_required')
     need(radio['disarmed'] is True and radio['usb_serial']=='F8:5B:1B:A5:F6:08'
-        and radio['radio_modem']=='gfsk250'
+        and radio.get('radio_modem') in (None,'lora','gfsk250')
         and all(radio[k]==expected[k] for k in ('mcu_boot','boot_attempts','boot_reserved_estimated_airtime_us'))
         and radio['boot_attempts']==radio['boot_reserved_estimated_airtime_us']==0
         and inspection['arm_commands']==inspection['tx_commands']==0,'fast250_fresh_native_status_required')

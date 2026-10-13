@@ -209,6 +209,12 @@ def test_fast_runner_250_inspection_accepts_actual_firmware_and_refuses125_or_un
     cap=dict(verified=True,radio_modem='gfsk250',record_version=2,mcu_boot=radio['mcu_boot'],firmware=radio['firmware'])
     actual=dict(radio=radio,radio_capability=cap,arm_commands=0,tx_commands=0)
     assert runner.fresh250_status(actual,radio['firmware'],radio)
+    cold=deepcopy(actual);cold['radio']['radio_modem']='lora'
+    assert runner.fresh250_status(cold,radio['firmware'],radio)
+    cold['radio'].pop('radio_modem')
+    assert runner.fresh250_status(cold,radio['firmware'],radio)
+    wrong=deepcopy(actual);wrong['radio']['radio_modem']='gfsk125'
+    with pytest.raises(Exception):runner.fresh250_status(wrong,radio['firmware'],radio)
     wrong=deepcopy(actual);wrong['radio_capability']['verified']=False
     with pytest.raises(Exception):runner.fresh250_status(wrong,radio['firmware'],radio)
     with pytest.raises(Exception):runner.fresh250_status(actual,'mtb1-b433927ba6',radio)
