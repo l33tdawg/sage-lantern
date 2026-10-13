@@ -214,6 +214,17 @@ class HardwareRuntime:
                 and self._radio_observer is None and self._forward_radio is None)
         return adoption.adopt(self)
 
+    def adopt_forward_relay_ip(self, adoption):
+        """Explicit IP leg for the same independently admitted native relay."""
+        from lantern_meshticulum.sage.forward_native_relay_ip import RelayIpAdoption
+        from lantern_meshticulum.sage.forward_native_relay_radio import RelayRadioAdoption
+        require(type(adoption) is RelayIpAdoption and adoption.owner.resource is self)
+        require(self._provider is None and self._coordinator is None and not self._initializing
+                and self._radio_observer is None and getattr(self, '_forward_relay_ip', None) is None)
+        radio = self._forward_radio
+        require(radio is None or type(radio) is RelayRadioAdoption and radio.owner is adoption.owner)
+        return adoption.adopt(self)
+
     def active(self):
         if self._provider is not None and not self._provider._runtime.admission_safe():
             self._uncertain = True
