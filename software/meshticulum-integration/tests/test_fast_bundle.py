@@ -200,6 +200,52 @@ def test_unbound_fast_native_source_refuses(monkeypatch):
     with pytest.raises(Exception,match='pending_fast_bundle_scope'):fast.require_bindings()
 
 
+def test_real_campaign_constructor_and_first_admissions_use_ssh_encoder(native,monkeypatch):
+    from lantern_meshticulum.bench.pilot_controller import Controller
+    from lantern_meshticulum.bench.pilot_ssh import SSHOperator, INVOKE
+    from tests.test_pilot_ssh import config
+    n=native;p=n['policy'];context=n['context'];cfg,source=config()
+    commitment=bundle.public_context_commitment(context.value,parent_id=p.parent_id)
+    cfg.update(schema=bundle.COMMITTED_CONTRACTS[fast.KIND][5],bundle_parent_id=p.parent_id,
+        bundle_context=context.value,bundle_capture_commitment=commitment,
+        handoff_end_epoch_us=commitment['phase_end_epoch_us'])
+    for row in cfg['units'].values():row['host_boot_id']=BOOT
+    mono=lambda:n['now'][0][1]/1000000;epoch=lambda:n['now'][0][0]
+    operator=SSHOperator(cfg,provision_source=source,clock=mono,epoch=epoch)
+    calls=[]
+    def command(unit,argv,schema,**kwargs):
+        assert argv[4]==INVOKE and argv[6]==cfg['manifest_sha256']
+        calls.append((unit,argv[7]))
+        if argv[7]=='pilot-bundle-status':
+            return dict(schema=schema,unit=unit,parent_id=p.parent_id,
+                bundle_context_sha256=p.bundle_context_sha256,manifest_sha256=context.value['manifest_sha256'],
+                whole_file_sha256=context.value['whole_sha256'],whole_bytes=100000,
+                original_whole_expires_epoch_us=context.value['expires_epoch_us'],
+                all_parts_present=False,whole_complete=False,verified_parts=[])
+        assert argv[7]=='pilot-fast-admit'
+        assert json.loads(base64.b64decode(argv[argv.index('--proof-base64')+1],validate=True)) is None
+        return dict(schema=schema,unit=unit,parent_id=p.parent_id,radio_opened=False,arm_commands=0,tx_commands=0,
+            admission=dict(context.value['stages'][0],schema=fast.STAGE,index=0,
+                bundle_context_sha256=p.bundle_context_sha256,issued_epoch_us=epoch(),expires_epoch_us=epoch()+180000000))
+    monkeypatch.setattr(operator,'_command',command)
+    guard_path=Path(__file__).parents[3]/'firmware/meshticulum-bench/pair_launch_guard_sender_first.py'
+    spec=importlib.util.spec_from_file_location('constructor_launch_guard',guard_path)
+    guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
+    guard.install(operator,lambda unit:pytest.fail('no endpoint starts in this control'),lora_sender_first=True)
+    class BeforeRadio(RuntimeError): pass
+    def no_radio(self,*args,**kwargs):raise BeforeRadio()
+    monkeypatch.setattr(Controller,'direct_piece',no_radio)
+    original=(p.expires_epoch_us,p.deadline_monotonic_us,context.raw)
+    campaign=fast.FastBundleCampaign(operator,n['parent'],context.value,peers=PEERS,
+        boots={u:BOOT for u in PEERS},handoff_deadline_monotonic=p.deadline_monotonic_us/1000000,
+        clock=mono,epoch=epoch,sleep=lambda seconds:pytest.fail('unexpected wait'),lora_sender_first=True)
+    with pytest.raises(BeforeRadio):campaign.transfer_part(0,context.transport.response(0,n['cache']))
+    assert calls==[('unit-a','pilot-bundle-status'),('unit-c','pilot-fast-admit'),('unit-a','pilot-fast-admit')]
+    assert len(campaign.controllers)==1 and campaign.links==campaign.parts==[]
+    assert n['parent'].snapshot()['allocations']==0 and operator.jobs=={} and operator.connections is None
+    assert (p.expires_epoch_us,p.deadline_monotonic_us,context.raw)==original
+
+
 def test_fast_runner_250_inspection_accepts_actual_firmware_and_refuses125_or_unproven_capability(monkeypatch):
     bench=Path(__file__).parents[3]/'firmware/meshticulum-bench';monkeypatch.syspath_prepend(str(bench))
     path=bench/'run_public_gfsk250_mb1_fast_bundle100k.py';spec=importlib.util.spec_from_file_location('fast_runner',path)

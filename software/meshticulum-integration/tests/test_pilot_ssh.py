@@ -54,6 +54,29 @@ def test_commands_pin_manifest_and_choose_tty_only_for_sudo():
     assert 'ControlMaster=no' in root and 'ForwardAgent=no' in root
 
 
+@pytest.mark.parametrize('action,proof', [('admit', None), ('admit', {'body': {'part_index': 0}, 'mac': 'd'*64}),
+                                         ('complete', {'body': {'session_id': 'e'*32}, 'mac': 'f'*64})])
+def test_fast_actions_encode_proofs_through_real_pinned_action(action, proof, monkeypatch):
+    import base64
+    from lantern_meshticulum.bench.pilot_ssh import INVOKE
+    op=operator();calls=[]
+    def command(unit,argv,schema,**kwargs):
+        calls.append((unit,argv,schema,kwargs));return {'schema':schema}
+    monkeypatch.setattr(op,'_command',command)
+    if action=='admit':op.fast_admit('unit-a','1'*32,0,1000000000,1180000000,proof)
+    else:op.fast_complete('unit-a','2'*32,proof)
+    assert len(calls)==1
+    unit,argv,schema,options=calls[0]
+    assert unit=='unit-a' and options=={'cleanup':False}
+    assert argv[:7]==['/usr/bin/python3','-I','-B','-c',INVOKE,
+        '/opt/meshticulum-bench/runtime-'+op.config['runtime_sha256'][:16]+'/bench_node.py',op.config['manifest_sha256']]
+    assert argv[7]=='pilot-fast-'+action and argv[8]=='unit-a'
+    assert schema==('meshticulum.native-fast-stage-admitted.v1' if action=='admit'
+                    else 'meshticulum.native-fast-completion-delivered.v1')
+    assert json.loads(base64.b64decode(argv[argv.index('--proof-base64')+1],validate=True))==proof
+    assert op.jobs=={} and op.connections is None
+
+
 def test_one_record_rejects_ambiguous_or_unexpected_schema():
     with pytest.raises(WireError):one_record(b'{"schema":"x"}\n{"schema":"x"}\n','x')
     with pytest.raises(WireError):one_record(b'{"schema":"other"}\n','x')

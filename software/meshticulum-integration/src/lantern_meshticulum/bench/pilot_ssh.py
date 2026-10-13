@@ -5,6 +5,7 @@ No connection occurs on import or construction. Target configuration and a
 current device window come from the operator. Sudo credentials stay in memory;
 package data uses a non-PTY channel and never appears in command arguments.
 """
+import base64
 import hashlib
 import ipaddress
 import json
