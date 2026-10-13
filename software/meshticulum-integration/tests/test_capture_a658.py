@@ -4,7 +4,7 @@ import hashlib,json,os,shutil,tempfile
 from pathlib import Path
 
 import pytest
-from lantern_meshticulum.bench import capture_a658 as pinned,retained_capture as retained
+from lantern_meshticulum.bench import capture_a658 as pinned,retained_capture as retained,capture_8120
 from lantern_meshticulum.bench.history_metadata_fence import FenceError,HistoricalMetadataFence
 from lantern_meshticulum.bench.history_identity_seal import capture,SealedHistory
 from lantern_meshticulum.bench.pilot_parent_caps import canonical
@@ -26,7 +26,7 @@ def test_actual_scope_retains_captures_without_a_paid_scope():
     assert pinned.EXPIRY_COMPLETION_SHA256=='ac43ad90fdb5aab5c1e544ee5c8063bef76ce390af4e0dfb8555b65167ccf295'
     assert pinned.H35_RECEIPT_SHA256=='37d961c7e5078fb98a5c4e3e4b31b7aac51d0afa1433966a56b47c00d2de36ca'
     assert pinned.row('unit-a') is None
-    assert [len(retained.expected_capture_only_parents(u)) for u in ('unit-a','unit-b','unit-c')]==[1,2,3]
+    assert [len(retained.expected_capture_only_parents(u)) for u in ('unit-a','unit-b','unit-c')]==[2,3,4]
     for unit in ('unit-b','unit-c'):
         row=pinned.row(unit)
         assert row['phase']['deadline_monotonic_us']==row['phase']['monotonic_us']+pinned.END-row['phase']['epoch_us']
@@ -36,13 +36,16 @@ def test_actual_scope_retains_captures_without_a_paid_scope():
 def test_exact_held_capture_enters_the_seal_and_keeps_unknown_cost(sample):
     state,unit,row,clock=sample;target=state/'parents'/pinned.PARENT
     before={name:(target/name).read_bytes() for name in row['files']}
-    assert retained.historical_parent_ids(state,unit,clock)==retained.PAID_HISTORY+(pinned.PARENT,)
+    assert retained.historical_parent_ids(state,unit,clock)==retained.PAID_HISTORY+(pinned.PARENT,retained.CAPTURE8120_PARENT)
     paths=retained.capture_paths(state,unit)
     # The optional older C artifact is not present in this dedicated local fixture.
-    files={path:pin for path,pin in paths['files'].items() if path.startswith('parents/'+pinned.PARENT+'/')}
-    directories={'':['parents','runs'],'parents':list(retained.PAID_HISTORY)+( [pinned.PARENT]),'runs':[]}
+    files={path:pin for path,pin in paths['files'].items()
+        if path.split('/')[1] in (pinned.PARENT,capture_8120.PARENT)}
+    directories={'':['parents','runs'],'parents':list(retained.PAID_HISTORY)+[pinned.PARENT,capture_8120.PARENT],'runs':[]}
     directories.update({'parents/'+p:[] for p in retained.PAID_HISTORY})
     directories['parents/'+pinned.PARENT]=list(row['files'])+['prepared-identities'];directories['parents/'+pinned.PARENT+'/prepared-identities']=[]
+    prefix='parents/'+capture_8120.PARENT
+    directories[prefix]=list(capture_8120.row(unit)['files'])+['prepared-identities'];directories[prefix+'/prepared-identities']=[]
     raw,pin=capture(state,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
     with SealedHistory(state,owner_uid=os.geteuid(),seal_bytes=raw,expected_sha256=pin) as held:held.check()
     assert before=={name:(target/name).read_bytes() for name in row['files']}

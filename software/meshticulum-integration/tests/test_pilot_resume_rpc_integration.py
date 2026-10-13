@@ -36,7 +36,7 @@ class LocalRuntimeModel:
 
 
 @pytest.fixture
-def local_scope(monkeypatch,request):
+def local_scope(monkeypatch,request,synthetic_8120_capture):
     root = Path(tempfile.mkdtemp(prefix='rpc-integration-',dir=Path(__file__).parent)); root.chmod(0o700)
     request.addfinalizer(lambda:shutil.rmtree(root,ignore_errors=True))
     state = root/'state'; state.mkdir(mode=0o700)
@@ -51,7 +51,11 @@ def local_scope(monkeypatch,request):
         caps=dict(radio_attempts=256,radio_estimated_airtime_us=60000000,ip_frames=0,tx_stream_bytes=0,rx_stream_bytes=0))
     directories = {'':['parents','runs'],'parents':list(rpc.HISTORY),'runs':[OLD]}
     directories.update({'parents/'+p:[] for p in rpc.HISTORY})
-    strict,_ = capture(state,owner_uid=os.geteuid(),expected_files={},expected_directories=directories)
+    from lantern_meshticulum.bench import capture_8120
+    extra=synthetic_8120_capture(state,'unit-a',rpc.clock,boot=BOOT);prefix='parents/'+capture_8120.PARENT
+    directories['parents'].append(capture_8120.PARENT)
+    directories[prefix]=list(extra['files'])+['prepared-identities'];directories[prefix+'/prepared-identities']=[]
+    strict,_ = capture(state,owner_uid=os.geteuid(),expected_files={prefix+'/'+name:pin for name,pin in extra['files'].items()},expected_directories=directories)
     legacy,_ = legacy_capture(state/'runs',owner_uid=os.geteuid(),expected_rows=[row],
         independently_verified=True,exact_namespace_gate=lambda:sorted(os.listdir(state/'runs')) == [OLD])
     target = state/'parents'/PARENT; target.mkdir(mode=0o700)

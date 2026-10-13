@@ -8,7 +8,7 @@ import shutil
 import tempfile
 
 import pytest
-from lantern_meshticulum.bench import retained_capture as retained, capture_a658 as a658
+from lantern_meshticulum.bench import retained_capture as retained, capture_a658 as a658, capture_8120
 from lantern_meshticulum.bench import resume_parent_guard as guard
 from lantern_meshticulum.bench.history_identity_seal import capture
 from lantern_meshticulum.bench.history_metadata_fence import FenceError, HistoricalMetadataFence, _stamp
@@ -65,16 +65,16 @@ def test_exact_capture_retained_without_becoming_a_paid_parent(state):
     assert len(set(retained.PAID_HISTORY))==42 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
     assert guard.HISTORY is retained.PAID_HISTORY
     assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
-    assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,a658.PARENT)
+    assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,a658.PARENT,capture_8120.PARENT)
     paths=retained.capture_paths(root,'unit-c')
-    assert set(paths['files'])=={'parents/'+parent+'/'+name for parent in (retained.CAPTURE_PARENT,a658.PARENT) for name in retained.CAPTURE_FILES}
+    assert set(paths['files'])=={'parents/'+parent+'/'+name for parent in (retained.CAPTURE_PARENT,a658.PARENT) for name in retained.CAPTURE_FILES}|{'parents/'+capture_8120.PARENT+'/'+name for name in capture_8120.row('unit-c')['files']}
     assert paths['directories'][-1].endswith('/prepared-identities')
     assert before=={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
 
 
 def test_missing_optional_fixture_is_distinct_from_required_native_retention(state):
     root,target,clock=state; target.rename(root/'held-artifact')
-    assert retained.historical_parent_ids(root,'unit-c',clock)==retained.PAID_HISTORY+(a658.PARENT,)
+    assert retained.historical_parent_ids(root,'unit-c',clock)==retained.PAID_HISTORY+(a658.PARENT,capture_8120.PARENT)
     with pytest.raises(FenceError,match='missing_retained_capture'):
         retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)
 
@@ -108,10 +108,11 @@ def test_retained_artifact_refuses_mutation_or_unexpired_phase(state,monkeypatch
 
 def expectations(root):
     paths=retained.capture_paths(root,'unit-c'); parent='parents/'+retained.CAPTURE_PARENT
-    dirs={'':['parents','runs'],'parents':list(retained.PAID_HISTORY)+[retained.CAPTURE_PARENT,a658.PARENT],'runs':[]}
+    dirs={'':['parents','runs'],'parents':list(retained.PAID_HISTORY)+[retained.CAPTURE_PARENT,a658.PARENT,capture_8120.PARENT],'runs':[]}
     dirs.update({'parents/'+old:[] for old in retained.PAID_HISTORY})
     for own in (retained.CAPTURE_PARENT,a658.PARENT):
         prefix='parents/'+own;dirs[prefix]=list(retained.CAPTURE_FILES)+['prepared-identities'];dirs[prefix+'/prepared-identities']=[]
+    prefix='parents/'+capture_8120.PARENT;dirs[prefix]=list(capture_8120.row('unit-c')['files'])+['prepared-identities'];dirs[prefix+'/prepared-identities']=[]
     return paths['files'],dirs
 
 
@@ -140,6 +141,7 @@ def unadmitted(state, monkeypatch, request,synthetic_a658_capture):
     """Real held filesystem; synthetic immutable pins/ownership, never native authority."""
     root, original, old_clock = state; unit=request.param
     (root/'parents'/a658.PARENT).rename(root.parent/'original-a658-c-fixture')
+    (root/'parents'/capture_8120.PARENT).rename(root.parent/'original-8120-c-fixture')
     if unit != 'unit-c': original.rename(root.parent/'original-c-only-fixture')
     target=root/'parents'/retained.UNADMITTED_PARENT; target.mkdir(mode=0o700)
     (target/'prepared-identities').mkdir(mode=0o700)
@@ -171,7 +173,7 @@ def unadmitted(state, monkeypatch, request,synthetic_a658_capture):
 def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admission(unadmitted):
     root,target,unit,clock=unadmitted
     before={p.name:p.read_bytes() for p in target.iterdir() if p.is_file()}
-    expected=retained.PAID_HISTORY+((retained.CAPTURE_PARENT,) if unit=='unit-c' else ())+(retained.UNADMITTED_PARENT,)+((a658.PARENT,) if unit!='unit-a' else ())
+    expected=retained.PAID_HISTORY+((retained.CAPTURE_PARENT,) if unit=='unit-c' else ())+(retained.UNADMITTED_PARENT,)+((a658.PARENT,) if unit!='unit-a' else ())+(capture_8120.PARENT,)
     assert retained.historical_parent_ids(root,unit,clock,require_retained=True,
                                          require_unadmitted=True)==expected
     record=json.loads((target/'capture.json').read_bytes())
@@ -186,7 +188,8 @@ def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admissi
     dirs={'':['parents','runs'],'parents':list(expected),'runs':[]}
     dirs.update({'parents/'+paid:[] for paid in retained.PAID_HISTORY})
     for parent in expected[len(retained.PAID_HISTORY):]:
-        prefix='parents/'+parent;dirs[prefix]=list(retained.CAPTURE_FILES)+['prepared-identities']
+        names=capture_8120.row(unit)['files'] if parent==capture_8120.PARENT else retained.CAPTURE_FILES
+        prefix='parents/'+parent;dirs[prefix]=list(names)+['prepared-identities']
         dirs[prefix+'/prepared-identities']=[]
     raw,_=capture(root,owner_uid=os.geteuid(),expected_files=paths['files'],expected_directories=dirs)
     new='9'*32;(root/'parents'/new).mkdir(mode=0o700)

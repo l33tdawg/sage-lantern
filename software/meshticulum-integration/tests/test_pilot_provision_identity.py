@@ -26,7 +26,7 @@ from tests.test_pilot_parent_snapshot import root_observation
 
 
 @pytest.fixture
-def setup(request):
+def setup(request,synthetic_8120_capture):
     # The guard refuses writable ancestors; pytest's system temp is unsuitable.
     base = Path(tempfile.mkdtemp(prefix='.provision-control-', dir=Path(__file__).parent))
     root = base / 'state'; root.mkdir(mode=0o700)
@@ -44,7 +44,11 @@ def setup(request):
         independently_verified=True,exact_namespace_gate=lambda: list((root/'runs').iterdir())==[old])
     dirs={'':['parents','runs','campaigns'],'parents':list(guard.HISTORY),'runs':['e'*32]}
     dirs.update({'parents/'+identity:[] for identity in guard.HISTORY})
-    strict,_=capture_history(root,owner_uid=os.geteuid(),expected_files={},expected_directories=dirs)
+    from lantern_meshticulum.bench import capture_8120
+    extra=synthetic_8120_capture(root,'unit-a',clock,boot=BOOT);prefix='parents/'+capture_8120.PARENT
+    dirs['parents'].append(capture_8120.PARENT)
+    dirs[prefix]=list(extra['files'])+['prepared-identities'];dirs[prefix+'/prepared-identities']=[]
+    strict,_=capture_history(root,owner_uid=os.geteuid(),expected_files={prefix+'/'+name:pin for name,pin in extra['files'].items()},expected_directories=dirs)
     parent=root/'parents'/('1'*32); parent.mkdir(mode=0o700)
     _,binding=guard.install_seals(root,'1'*32,'unit-a',strict,legacy)
     legacy_mode=getattr(request,'param',None)=='legacy'

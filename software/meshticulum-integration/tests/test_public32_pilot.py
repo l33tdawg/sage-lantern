@@ -122,6 +122,11 @@ def protected_records(root,p,unit):
         directories[prefix]=list(extra['files'])+['prepared-identities']
         directories[prefix+'/prepared-identities']=[]
         files.update({prefix+'/'+name:pin for name,pin in extra['files'].items()})
+    from lantern_meshticulum.bench import capture_8120
+    extra=capture_8120.row(unit);prefix='parents/'+capture_8120.PARENT
+    directories['parents'].append(capture_8120.PARENT)
+    directories[prefix]=list(extra['files'])+['prepared-identities'];directories[prefix+'/prepared-identities']=[]
+    files.update({prefix+'/'+name:pin for name,pin in extra['files'].items()})
     strict,_=strict_capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
     directory=root/'parents'/p.parent_id;directory.mkdir(mode=0o700)
     _,binding=guard.install_seals(root,p.parent_id,unit,strict,legacy,clock=clock)
