@@ -59,8 +59,9 @@
     "src/meshticulum/privacy/mesh_binary_envelope.py": "4dcc21ca0fa3a5d703c9f77274028122b3a5711b62c1cb89dc7e02582b91cca6",
     "src/meshticulum/privacy/mesh_envelope.py": "8e70d9005510f9801f2ef61029b06263c25a106dad7d8472a4c8eb77a06502a5",
     "src/meshticulum/resources/__init__.py": "a36762ec55dd6700c89f43248dbef38cf8e697d8039708d91a1e180eb6f4bb15",
+    "src/meshticulum/resources/bundle_transport.py": "d452e3c2690cca5c5bba1feae300d311834b6a29bc35974e8463d84a930527b8",
     "src/meshticulum/resources/bundle_wire.py": "20d60fee8590e23e188069bde99901a36f9b4c866b570582f34d3d14d214e75d",
-    "src/meshticulum/resources/byte_bundle.py": "951b6dc74d2f6c68ab61006c511c0219d7393c1dda47869421bb5e24c9fc3703",
+    "src/meshticulum/resources/byte_bundle.py": "7d5c1ef8f1bf7face66dccddbadcb729fa7f292ef310aab782890954db8096c8",
     "src/meshticulum/resources/knowledge_pack.py": "6f7aa071d9d25a031e5f952ee87beca74c03b6a21360708b8cd85b2efffc5156",
     "src/meshticulum/resources/lamplighter.py": "727d62ea9cfe248468f72d872b15a1569d8d42a34e91c95829eda76fb4311810",
     "src/meshticulum/resources/resource.py": "7a762313c32fb69867d62f8fa07245eaf50ba5cae3dd5ca48a951fd76901b930",
@@ -72,6 +73,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "07717f0067e2ea185ab594550301ad0cd426443d",
+  "revision": "a45c051aafd0be061f5b8160687277fe2b5eaca9",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }
