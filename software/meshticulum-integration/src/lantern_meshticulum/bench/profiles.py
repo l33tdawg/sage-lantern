@@ -59,8 +59,8 @@ def require_gfsk250_bindings():
 # A fresh native scope still requires its own current capture and owner approval.
 GFSK_FIRMWARE='mtb1-b433927ba6'
 GFSK_CORE_COMMIT='aec97045d945535deb95075a303a59bb975d21bd'
-GFSK_HISTORY_RECEIPT_SHA256 = '11ceb828c787eeed97ec978915b59ff5d34cf0056797035a238673ab407b1249'
-GFSK_PRECEDING_PARENT='3195cff3fc8fc8ee0b81694fe8f9e389'
+GFSK_HISTORY_RECEIPT_SHA256 = None
+GFSK_PRECEDING_PARENT='515c662fae6cc761c83e7fdef44cbda0'
 
 
 def require_gfsk_bindings():
@@ -71,7 +71,7 @@ def require_gfsk_bindings():
         and all(c in '0123456789abcdef' for c in GFSK_CORE_COMMIT)
         and type(GFSK_HISTORY_RECEIPT_SHA256) is str and len(GFSK_HISTORY_RECEIPT_SHA256)==64
         and all(c in '0123456789abcdef' for c in GFSK_HISTORY_RECEIPT_SHA256)
-        and len(PAID_HISTORY)==36 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
+        and len(PAID_HISTORY)==37 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
         'pending_gfsk_firmware_source_and_history_bindings')
     return True
 
