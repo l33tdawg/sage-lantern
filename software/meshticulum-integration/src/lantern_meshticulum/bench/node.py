@@ -286,7 +286,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
               'native_phase_timing_requested': native_phase_timing,
               'native_phase_timing_enabled': False}
     worker = authority = flow = journal = store = channel = None
-    caps = phase_profile = None
+    caps = phase_profile = transfer_timing = None
     authority_ref = grant_ref = profile_ref = authority_lifetime = start_binding = None
     runner = None
     saved_handlers = {}
@@ -448,6 +448,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             journal=journal, flow_key=authority.flow_key, contract=authority.contract,
             profile=authority.carrier_profile, ledger=ledger, scheduler_epoch=authority.scheduler_epoch,
             broker_epoch=authority.broker_epoch, sends=authority.sends, clock=clock)
+        if phase_profile is not None:
+            from .transfer_timing import install
+            transfer_timing = install(flow, phase_profile)
         if public_service:
             from meshticulum.bench.services import ServiceTransfer
             from meshticulum.bench.service_runner import ServiceRunner
@@ -458,6 +461,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             with authority.application_lease():
                 require(parent_current(), 'pilot_parent_not_current_before_ready')
                 ready(directory, result['native_job'], radio_receive_checked=receive_checked)
+            if transfer_timing is not None:
+                transfer_timing.mark('ready_complete')
         elif payload is not None:
             flow.send(payload)
         from .profiles import GFSK250_FAST_BUNDLE_KIND
@@ -471,6 +476,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                 if complete_at is None:
                     complete_at = clock()[1]
                     result['flow_complete_monotonic_us'] = complete_at
+                    if transfer_timing is not None:
+                        transfer_timing.mark('flow_complete_observed')
                     if fast_completion and authority.sends:
                         from .fast_bundle import final_ack_proof
                         with authority.application_lease():
@@ -516,6 +523,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             except BaseException as error:
                 result.setdefault('cleanup_errors', {})[name] = type(error).__name__
                 result['complete'] = False
+        if transfer_timing is not None:
+            cleanup('transfer_timing_cleanup_begin', lambda: transfer_timing.mark('cleanup_begin'))
         if runner is not None:
             cleanup('service_runner', runner.close)
         elif flow is not None:
@@ -538,6 +547,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         if caps is not None:
             cleanup('parent_snapshot', lambda: result.update(parent_caps=caps.snapshot()))
             cleanup('parent_close', caps.close)
+        if transfer_timing is not None:
+            cleanup('transfer_timing_cleanup_end', lambda: transfer_timing.mark('cleanup_end'))
+            cleanup('transfer_timing', lambda: result.update(native_transfer_timing=transfer_timing.snapshot()))
         if phase_profile is not None:
             cleanup('phase_timing',lambda:result.update(native_phase_timing=phase_profile.snapshot()))
         for number, handler in saved_handlers.items(): signal.signal(number, handler)

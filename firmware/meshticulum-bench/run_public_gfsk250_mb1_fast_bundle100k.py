@@ -46,6 +46,24 @@ def phase_timing_mode(op):
     return value
 
 
+def capture_storage_mode(op):
+    value=op.get('capture_storage','plain-json-v1')
+    need(type(value) is str and value in ('plain-json-v1','zlib-json-v1'),
+        'invalid_capture_storage_mode')
+    return value
+
+
+def capture_payloads_for(op, *, parent_id, histories, facts, epoch, end, review_sha256,
+                         bundle_context, commitment):
+    from lantern_meshticulum.bench.profiles import GFSK250_FAST_BUNDLE_KIND
+    mode=capture_storage_mode(op)
+    return {u:dict(parent_id=parent_id,history=histories[u],facts=facts[u],
+        phase_start_epoch_us=epoch,phase_end_epoch_us=end,review_sha256=review_sha256,
+        qualification_kind=GFSK250_FAST_BUNDLE_KIND,bundle_context=bundle_context,
+        bundle_capture_commitment=commitment,capture_storage=mode)
+        for u in ('unit-c','unit-b','unit-a')}
+
+
 def deflated_directory(raw, count):
     need(len(raw) >= 22, 'deflated_image_directory')
     signature, disk, central_disk, local_count, total_count, size, start, comment = struct.unpack_from('<4s4H2IH', raw, len(raw)-22)
@@ -150,6 +168,7 @@ def review(path,pin):
     raw=read(path,2000000);need(sha(raw)==pin,'operation_pin_changed');op=json.loads(raw)
     need(op['schema']==SCHEMA and op['runner_sha256']==sha(read(Path(__file__),100000)), 'wrong_batch_operation')
     phase_timing_mode(op)
+    capture_storage_mode(op)
     need(op.get('require_same_boot_gfsk250_capability') is True
         and op.get('first_inspect_before_claims') is True,'gfsk250_first_inspection_required')
     need(op['phase_seconds']==1355 and op['whole_seconds']==1350 and op['application_seconds']==180 and op['part_count']==5,'batch_original_limits_changed')
@@ -432,7 +451,7 @@ def main():
     epoch,mono=helpers.parent_clock();end=epoch+1355000000;absolute=op['absolute_device_window'];need(absolute['issued_epoch_us']<=epoch and end<=absolute['expires_epoch_us'],'batch_original_absolute_window_unavailable')
     cfg['handoff_end_epoch_us']=end;parent_id=secrets.token_hex(16);out=Path(op['output_directory'])/('gfsk250-mb1-fast-bundle100k-'+parent_id);out.mkdir(mode=0o700)
     used=Path(op['output_directory'])/('OPERATION_USED-'+args.operation_sha256+'.json');write(used,dict(parent_id=parent_id,operation_sha256=args.operation_sha256,original_phase_end_epoch_us=end,count_used=1))
-    result=dict(schema='meshticulum.public-gfsk250-mb1-fast-bundle100k-result.v1',parent_id=parent_id,complete=False,qualification_complete=False,private_production=False,refunds=0,original_phase_start_epoch_us=epoch,original_phase_end_epoch_us=end,bundle_parts=[],rpc_clients=[],links=[],native_final={},previous_parent_ids=op['history_parent_ids'],native_phase_timing_enabled=phase_timing_mode(op))
+    result=dict(schema='meshticulum.public-gfsk250-mb1-fast-bundle100k-result.v1',parent_id=parent_id,complete=False,qualification_complete=False,private_production=False,refunds=0,original_phase_start_epoch_us=epoch,original_phase_end_epoch_us=end,bundle_parts=[],rpc_clients=[],links=[],native_final={},previous_parent_ids=op['history_parent_ids'],native_phase_timing_enabled=phase_timing_mode(op),capture_storage_selected=capture_storage_mode(op))
     stages=planned_stages(epoch)
     mraw=read(piece['path']/'pack/manifest.json',65536);sraw=read(piece['path']/'pack/manifest.sig.json',4096)
     chunks={p['chunk_sha256']:piece['cache'].piece(p['chunk_sha256']) for p in piece['whole']['parts']}
@@ -501,7 +520,9 @@ def main():
         for unit,role in (('unit-c','source'),('unit-a','recipient')):
             operator.seed(helpers.seed_package(cfg,unit,role,piece['path']/'pack',piece['trust'],f['manifest_sha256'],piece['cache'].value))
         facts={u:stable(operator.facts(u)) for u in histories}
-        capture_payloads={u:dict(parent_id=parent_id,history=histories[u],facts=facts[u],phase_start_epoch_us=epoch,phase_end_epoch_us=end,review_sha256=args.operation_sha256,qualification_kind=KIND,bundle_context=bundle_context,bundle_capture_commitment=commitment) for u in ('unit-c','unit-b','unit-a')}
+        capture_payloads=capture_payloads_for(op,parent_id=parent_id,histories=histories,facts=facts,
+            epoch=epoch,end=end,review_sha256=args.operation_sha256,bundle_context=bundle_context,
+            commitment=commitment)
         capture_started=time.monotonic_ns();result['capture_units_parallel']=True
         try:captures=parallel_captures(native,capture_payloads)
         finally:result['capture_elapsed_us']=(time.monotonic_ns()-capture_started)//1000
