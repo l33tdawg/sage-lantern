@@ -195,3 +195,49 @@ def test_modeled_partial_costs_refuse_refunds_or_completed_whole_claim(modeled_c
     elif fault=='whole_success':row['require_result_complete']=True
     else:row['database_sha256']='f'*64
     with pytest.raises(RuntimeError):rpc.qualify_gfsk250_mb1_partial_costs(unit,policy,observed,row)
+
+
+@pytest.fixture(params=['unit-a','unit-b','unit-c'])
+def actual_h41(request):
+    base=Path('/Users/l33tdawg/nodejs-projects/sage-commons/work/meshticulum-history41-inputs-20261013')
+    observations=base/'expired-parent-observation-1791873988888371';unit=request.param
+    raw=(observations/'COMPLETION.json').read_bytes()
+    assert hashlib.sha256(raw).hexdigest()==history.EXPIRY_COMPLETION_SHA256
+    completion=json.loads(raw);raw=(observations/('NATIVE-'+unit+'.json')).read_bytes()
+    assert hashlib.sha256(raw).hexdigest()==completion['observation_sha256'][unit]
+    native=json.loads(raw);output=base/'resume-history-preparation-41'
+    raw=(output/'RECEIPT.json').read_bytes()
+    assert hashlib.sha256(raw).hexdigest()==history.NEXT_HISTORY_RECEIPT_SHA256
+    receipt=json.loads(raw);raw=(output/(unit+'.json')).read_bytes()
+    assert len(raw)<=2500000 and hashlib.sha256(raw).hexdigest()==receipt['payload_sha256'][unit]
+    payload=json.loads(raw);row=payload['previous'][-1]
+    assert len(payload['previous'])==41 and tuple(r['policy']['parent_id'] for r in payload['previous'][:-1])==history.H40_PREFIX
+    return unit,native,row,ParentPolicy.from_dict(row['policy'])
+
+
+def test_actual_expired_native_costs_and_full_reservation(actual_h41):
+    unit,native,row,policy=actual_h41
+    assert history.require_final_bindings() is True and history.pending_next_roster()==rpc.HISTORY
+    rpc.qualify_gfsk250_mb1_partial_costs(unit,policy,native['observation'],row)
+    assert native['observation']['expected_database_sha256']==history.NATIVE_DATABASE_SHA256[unit]
+    assert native['terminal_outcome_sha256']==history.NATIVE_OUTCOME_SHA256[unit]
+    assert native['verified_piece_metadata_present'] is False and row['verified_piece_sha256']==history.VERIFIED_PIECE_SHA256[unit]=={}
+    assert row['require_result_complete'] is False and row['failed_started_runs']==[]
+
+
+def test_actual_public_metadata_bytes_and_piece_absence(actual_h41,tmp_path):
+    import base64
+    unit,native,row,policy=actual_h41
+    (tmp_path/'parents'/history.PARENT).mkdir(parents=True)
+    for relative,record in native['public_metadata'].items():
+        target=tmp_path/relative;target.parent.mkdir(parents=True,exist_ok=True)
+        raw=base64.b64decode(record['base64'],validate=True)
+        assert hashlib.sha256(raw).hexdigest()==record['sha256'];target.write_bytes(raw)
+    class Reader:
+        def directory(self,path):assert path.is_dir()
+        def read(self,path,maximum):
+            raw=path.read_bytes();assert len(raw)<=maximum;return raw
+        def check(self):return True
+    files=history.metadata_files(Reader(),tmp_path,unit,row)
+    assert len(files)==(0 if unit=='unit-b' else 2)
+    assert all(name.endswith(('fast-stage-0.json','fast-final-ack.json')) for name in files)
