@@ -10,6 +10,10 @@ from lantern_meshticulum.bench.pilot_parent_caps import ParentPolicy,Cost,canoni
 from lantern_meshticulum.bench.pilot_native_caps import NativeCaps,NativeFacts
 ACTUAL=Path('/Users/l33tdawg/nodejs-projects/sage-commons/work/meshticulum-history39-inputs-20261014/ORIGINAL_INPUTS.json')
 
+def test_shared_prefix_preserves_original_38_parent_bytes():
+ assert len(history.H38_PREFIX)==38 and history.H38_PREFIX[-1]=='4675a437918764d62ddc53d288685367'
+ assert hashlib.sha256(canonical(history.H38_PREFIX)).hexdigest()=='1bc216182b858cff21d7e0f0d84cdb83609eb7c7fbc4063231b16c4a7bc61559'
+
 @pytest.fixture
 def original():
  raw=ACTUAL.read_bytes();assert hashlib.sha256(raw).hexdigest()=='6e3cd6dc46a2fe8369782f646bcd4832300b0fc73bf7699472160597238b2e1b'
