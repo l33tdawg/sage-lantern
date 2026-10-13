@@ -170,7 +170,7 @@ class ForwardNativeProvider:
                 local_initiator=local_initiator, intention=intention,
                 signing_key=self._native_refs[4], issued_epoch_us=issued_epoch_us,
                 approval_digest=self._setup_approval, owner_lease=self._lease,
-                access_check=self._guard, storage_check=self._guard,
+                access_check=self._access_check, storage_check=self._storage_check,
                 native_check=self._purpose_check, enrollment_check=self._enrollment_check,
                 remote_pin_check=self._peer_check, boot_reader=boot_reader, clock=clock_reader)
             self._components['_purpose'] = self._purpose
@@ -228,53 +228,70 @@ class ForwardNativeProvider:
         self._last_clock = now
         return now
 
-    def _guard(self):
+    def _permissions(self):
+        h = self.resource
+        require(self._checked(h._epoch) == self.setup_context.epoch)
+        for scope in SETUP_SCOPES:
+            require(self._checked(self.authority.authorized, self.setup_context, scope, None) is True)
+        if self._exchange is not None:
+            require(self._exchange.actor == h.actor and self._exchange.epoch == self.setup_context.epoch
+                    and self._exchange.approval_binding == approval_binding(self._context, self.intention,
+                        self.local_initiator, config_revision=self.config_revision,
+                        broker_id=self.broker_id, storage_epoch=self.storage_epoch))
+            for scope in SETUP_SCOPES:
+                require(self._checked(self.authority.authorized, self._exchange, scope, None) is True)
+
+    def _check_access(self):
+        h = self.resource
+        require(self._checked(h.configured) is True and self._checked(h.active) is True
+                and self._checked(h.consent) == self.consent
+                and self.consent.messaging_enabled is True and self.consent.dispatch_enabled is True
+                and h.supervisor.broker_id == self.broker_id
+                and any(p['chain_id'] == self.remote.chain_id
+                        and p['agent_id'] == self.remote.public_key.hex() for p in h.config['peers']))
+        self._permissions()
+
+    def _check_storage(self):
+        h = self.resource
+        require(self._checked(h.supervisor.resource_lifecycle_check) is True
+                and self._checked(h.supervisor.verified_epoch) == self.storage_epoch
+                and self._checked(h.probe.snapshot).epoch == self.storage_epoch
+                and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch)
+
+    def _check_native(self):
+        before = self._time()
+        observed = self._checked(self._source_observe, self.resource, self.intention)
+        after = self._time()
+        require(type(observed) is NativeAccountingObservation
+                and observed.host_boot_id == self.intention.host_boot_id
+                and before[0] <= observed.observed_epoch_us <= after[0]
+                and before[1] <= observed.observed_monotonic_us <= after[1]
+                and observed.retained_debt.within(self.limits))
+        binding = _canonical(observed.binding())
+        require(self._accounting_binding is None or binding == self._accounting_binding)
+        approved = setup_approval_binding(local=self.local, remote=self.remote,
+            local_initiator=self.local_initiator, intention=self.intention,
+            issued_epoch_us=self.issued_epoch_us, limits=self.limits, accounting=observed,
+            config_revision=self.config_revision, broker_id=self.broker_id, storage_epoch=self.storage_epoch)
+        require(self.setup_context.approval_binding == approved)
+        if self._accounting_binding is None:
+            self._accounting_binding, self._setup_approval = binding, approved
+            self._retained_debt = observed.retained_debt
+        require(self._retained_debt == observed.retained_debt)
+        # The source is an independent callback. Fence callback-time storage
+        # and approval drift before the combined purpose guard may return.
+        self._check_storage()
+        self._check_access()
+        self._time()
+
+    def _observe(self, predicate):
         if self._observing:
             self._uncertain = True
             raise ForwardNativeProviderError()
         self._observing = True
         try:
-            h = self.resource
             self._available()
-            require(self._checked(h.configured) is True and self._checked(h.active) is True
-                    and self._checked(h.consent) == self.consent
-                    and self.consent.messaging_enabled is True and self.consent.dispatch_enabled is True
-                    and h.supervisor.broker_id == self.broker_id
-                    and self._checked(h.supervisor.resource_lifecycle_check) is True
-                    and self._checked(h.supervisor.verified_epoch) == self.storage_epoch
-                    and self._checked(h.probe.snapshot).epoch == self.storage_epoch
-                    and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch
-                    and self._checked(h._epoch) == self.setup_context.epoch
-                    and any(p['chain_id'] == self.remote.chain_id
-                            and p['agent_id'] == self.remote.public_key.hex() for p in h.config['peers']))
-            for scope in SETUP_SCOPES:
-                require(self._checked(self.authority.authorized, self.setup_context, scope, None) is True)
-            before = self._time()
-            observed = self._checked(self._source_observe, h, self.intention)
-            after = self._time()
-            require(type(observed) is NativeAccountingObservation
-                    and observed.host_boot_id == self.intention.host_boot_id
-                    and before[0] <= observed.observed_epoch_us <= after[0]
-                    and before[1] <= observed.observed_monotonic_us <= after[1]
-                    and observed.retained_debt.within(self.limits))
-            binding = _canonical(observed.binding())
-            require(self._accounting_binding is None or binding == self._accounting_binding)
-            approved = setup_approval_binding(local=self.local, remote=self.remote,
-                local_initiator=self.local_initiator, intention=self.intention,
-                issued_epoch_us=self.issued_epoch_us, limits=self.limits, accounting=observed,
-                config_revision=self.config_revision, broker_id=self.broker_id, storage_epoch=self.storage_epoch)
-            require(self.setup_context.approval_binding == approved)
-            if self._accounting_binding is None:
-                self._accounting_binding, self._setup_approval = binding, approved
-                self._retained_debt = observed.retained_debt
-            require(self._retained_debt == observed.retained_debt)
-            if self._exchange is not None:
-                require(self._exchange.actor == h.actor and self._exchange.epoch == self.setup_context.epoch
-                        and self._exchange.approval_binding == approval_binding(self._context, self.intention,
-                            self.local_initiator, config_revision=self.config_revision,
-                            broker_id=self.broker_id, storage_epoch=self.storage_epoch))
-                for scope in SETUP_SCOPES:
-                    require(self._checked(self.authority.authorized, self._exchange, scope, None) is True)
+            predicate()
             self._available()
             return True
         except BaseException:
@@ -284,6 +301,19 @@ class ForwardNativeProvider:
             self._observing = False
             if self._closed:
                 self.close()
+
+    def _access_check(self):
+        return self._observe(self._check_access)
+
+    def _storage_check(self):
+        return self._observe(self._check_storage)
+
+    def _guard(self):
+        def all_predicates():
+            self._check_access()
+            self._check_storage()
+            self._check_native()
+        return self._observe(all_predicates)
 
     @contextmanager
     def _lease(self):
@@ -311,8 +341,10 @@ class ForwardNativeProvider:
         self._guard()
 
     def _purpose_check(self, binding):
-        require(self._purpose is not None and binding is self._purpose.binding)
-        return self._guard()
+        def native():
+            require(self._purpose is not None and binding is self._purpose.binding)
+            self._check_native()
+        return self._observe(native)
 
     def _enrollment_check(self, info, context_digest):
         self._guard()

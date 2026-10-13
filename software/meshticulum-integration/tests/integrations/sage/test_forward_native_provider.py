@@ -359,3 +359,51 @@ def test_cleanup_unknown_is_not_success_and_actual_usage_cannot_exceed_retained_
         assert p.close() is False and source.close_calls == 1
     with pytest.raises(ForwardNativeProviderError):
         NativeAccountingObservation(Cost(), Cost(1), 'a' * 64, r.state.boot, 1, 1)
+
+
+def test_purpose_guard_observes_accounting_once_and_never_reuses_previous_permission():
+    with fixture() as (r, p, source, bind):
+        before = source.observations
+        p._purpose._guard()
+        assert source.observations == before + 1
+        p._purpose._guard()
+        assert source.observations == before + 2
+        source.evidence = 'f' * 64
+        with pytest.raises(ForwardNativeProviderError):
+            p._purpose._guard()
+        assert source.observations == before + 3
+        assert source.closed and not r.state.rows
+
+
+@pytest.mark.parametrize('field', ['consent', 'authority', 'storage', 'boot', 'clock', 'source_method', 'close'])
+def test_split_guard_refuses_drift_inside_accounting_before_combined_return(field, monkeypatch):
+    with fixture() as (r, p, source, bind):
+        def drift():
+            if field == 'consent': r.hardware.config['dispatch_enabled'] = False
+            elif field == 'authority': r.state.owner_live = False
+            elif field == 'storage': r.state.instance_id = 'f' * 64
+            elif field == 'boot': r.state.boot = str(uuid.uuid4())
+            elif field == 'clock': r.state.now = (r.intention.application_expires_epoch_us, r.state.now[1])
+            elif field == 'source_method': monkeypatch.setattr(ModeledAccounting, 'observe', lambda *a: True)
+            else: assert p.close() is False
+        source.hook = drift
+        with pytest.raises(ForwardNativeProviderError):
+            p._purpose._guard()
+        assert source.closed and source.close_calls == 1 and not r.state.rows
+
+
+@pytest.mark.parametrize('field', ['authority', 'storage'])
+def test_split_guard_rechecks_drift_inside_actual_storage_callback(field, monkeypatch):
+    with fixture() as (r, p, source, bind):
+        probe = p._store.storage
+        original = type(probe).snapshot
+        def snapshot(target):
+            result = original(target)
+            if target is probe:
+                if field == 'authority': r.state.owner_live = False
+                else: r.state.instance_id = 'f' * 64
+            return result
+        monkeypatch.setattr(type(probe), 'snapshot', snapshot)
+        with pytest.raises(ForwardNativeProviderError):
+            p._purpose._guard()
+        assert source.closed and source.close_calls == 1 and not r.state.rows
