@@ -79,6 +79,7 @@ OLD_DIGESTS = (
     '1a7511b250bb052acff2ca0bf7a5ab27a79da94ae4d76cba30a1ccf37160381a',
     '8e727113809884e808988d8f3236e3aa8cb35f1b87bd0e3610d39a8a29754e3f',
     '8349f507f1e208085672dbc19c99436d97a6564d7d73e51a08cf29d43007d8c5',
+    '0e2675102aa9259d5969af5b592c49728138e07b331ae014735e3c63ce99c315',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -213,8 +214,9 @@ from .gfsk_bundle_partial_history import PARENT as GFSK_PARTIAL_BUNDLE_PAID, NAT
 from .gfsk_mb1_partial_history import PARENT as MB1_PARTIAL_BUNDLE_PAID, NATIVE_OUTCOME_SHA256 as MB1_PARTIAL_BUNDLE_OUTCOMES, NATIVE_DATABASE_SHA256 as MB1_PARTIAL_BUNDLE_DATABASES, FAILED_STARTED_RUNS as MB1_PARTIAL_BUNDLE_FAILED
 from .gfsk250_mb1_partial_history import PARENT as GFSK250_MB1_PARTIAL_PAID, NATIVE_OUTCOME_SHA256 as GFSK250_MB1_PARTIAL_OUTCOMES, NATIVE_DATABASE_SHA256 as GFSK250_MB1_PARTIAL_DATABASES, FAILED_STARTED_RUNS as GFSK250_MB1_PARTIAL_FAILED
 from .gfsk_mb1_complete_history import PARENT as MB1_COMPLETE_BUNDLE_PAID, NATIVE_OUTCOME_SHA256 as MB1_COMPLETE_BUNDLE_OUTCOMES, NATIVE_DATABASE_SHA256 as MB1_COMPLETE_BUNDLE_DATABASES, FAILED_STARTED_RUNS as MB1_COMPLETE_BUNDLE_FAILED
+from .fast_bundle_zero_history import PARENT as FAST_ZERO_PAID, NATIVE_DATABASE_SHA256 as FAST_ZERO_DATABASES
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34],MB1_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[35],MB1_COMPLETE_BUNDLE_PAID:OLD_DIGESTS[36],GFSK250_MB1_PARTIAL_PAID:OLD_DIGESTS[37]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34],MB1_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[35],MB1_COMPLETE_BUNDLE_PAID:OLD_DIGESTS[36],GFSK250_MB1_PARTIAL_PAID:OLD_DIGESTS[37],FAST_ZERO_PAID:OLD_DIGESTS[38]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -763,7 +765,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     need(sha(raw) == record['sha256'], 'old_typed_file_changed')
         for name, record in observed['files'].items():
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
-        if policy.parent_id==ENROLLED_ZERO_PAID:
+        if policy.parent_id==FAST_ZERO_PAID:
+            qualify_fast_zero_costs(unit,policy,observed,v)
+        elif policy.parent_id==ENROLLED_ZERO_PAID:
             qualify_enrolled_zero_costs(unit,policy,observed,v)
         elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
             qualify_partial_bundle_costs(unit,policy,observed,v)
@@ -890,6 +894,8 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
         need(ids==(set() if unit=='unit-b' else {SF5_STARTUP_RUN}) and not absent, 'sf5_startup_claim_scope_changed')
     elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
         need(ids==set(PARTIAL_BUNDLE_SCOPES[policy.parent_id][3][unit]) and not absent,'partial_bundle_claim_scope_changed')
+    elif policy.parent_id==FAST_ZERO_PAID:
+        need(not ids and not absent and not claims,'fast_zero_child_scope_changed')
     elif policy.parent_id==ENROLLED_ZERO_PAID:
         need(not ids and not absent and not claims,'enrolled_zero_child_scope_changed')
     else: need(not unstarted,'unexpected_old_unstarted_claim')
@@ -2283,3 +2289,37 @@ def qualify_gfsk250_mb1_partial_costs(unit,policy,observed,value):
     else:need(observed['legacy_runs'] is None and observed['legacy_relation'] is None and value['legacy_sha256'] is None,
               'partial_gfsk250_mb1_bundle_zero_peer_changed')
     context._check()
+
+
+def qualify_fast_zero_costs(unit,policy,observed,value):
+    """One exact enrolled zero-child attempt: retain limits, never invent spent cost."""
+    need(policy.parent_id==FAST_ZERO_PAID and policy.digest==OLD_DIGESTS[38]
+         and policy.qualification_kind=='c-gfsk250-mb1-fast-bundle100k-v1' and unit in FAST_ZERO_DATABASES,
+         'unknown_fast_zero_parent')
+    from .fast_bundle_zero_history import require_final_bindings,retained_context
+    require_final_bindings();retained_context(value['owner'],policy,unit=unit,observation=observed)
+    detail=observed['detail'];local=policy.unit(unit);actual=detail['prior_plus_prepaid_caps']
+    need(observed['policy_expired_at_observation'] is True
+         and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
+         and observed['observation_original_epoch_us']>=policy.expires_epoch_us
+         and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
+         'fast_zero_original_clocks_not_expired')
+    extra=Cost(2560,600000000) if unit in ('unit-a','unit-c') else Cost()
+    need(all(type(detail[k]) is int and detail[k]==0 for k in
+             ('claim_count','prepared_count','start_count','resource_count'))
+         and detail['claims']==[] and detail['resources']==[]
+         and detail['full_prepaid_caps']==asdict(Cost())
+         and detail['approval_bytes_match_enrollment'] is True
+         and detail['enrollment']['history_binding_sha256']==value['owner']['history_binding_sha256']
+         and observed['expected_database_sha256']==value['database_sha256']==FAST_ZERO_DATABASES[unit]
+         and observed['legacy_runs'] is None and observed['legacy_relation'] is None,
+         'fast_zero_actual_rows_changed')
+    need(actual==asdict(local.prior_debt)==value['actual_native_paid_caps']
+         ==value['actual_controller_paid_caps'] and detail['limit']==asdict(local.limits)
+         and local.limits==local.prior_debt.plus(extra)
+         and value['conservative_unused_enrollment_caps']==asdict(extra)
+         and value['paid_caps']==asdict(local.limits), 'fast_zero_conservative_bound_changed')
+    need(value['runs']==value['retired_unstarted']==value['controller_endpoint_refs']==[]
+         and value['preparation_sha256']=={} and value['legacy_sha256'] is None
+         and value['require_result_complete'] is False and value['failed_started_runs']==[],
+         'fast_zero_retention_scope_changed')

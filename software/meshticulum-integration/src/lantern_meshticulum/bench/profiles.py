@@ -76,7 +76,7 @@ def require_gfsk_bindings():
         and all(c in '0123456789abcdef' for c in GFSK_CORE_COMMIT)
         and type(GFSK_HISTORY_RECEIPT_SHA256) is str and len(GFSK_HISTORY_RECEIPT_SHA256)==64
         and all(c in '0123456789abcdef' for c in GFSK_HISTORY_RECEIPT_SHA256)
-        and len(PAID_HISTORY)==38 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
+        and len(PAID_HISTORY)==39 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
         'pending_gfsk_firmware_source_and_history_bindings')
     return True
 
