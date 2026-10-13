@@ -119,7 +119,7 @@ def _disarmed_status(worker,identity):
         dropped_receive=int.from_bytes(reply.body[42:46],'big'))
 
 
-def _serial(unit,*,radio_modem=None):
+def _serial(unit,*,radio_modem=None,qualification_kind=None):
     require(radio_modem in (None,GFSK_NAME,GFSK250_NAME),'unsupported_native_radio_modem')
     firmware=FIRMWARE_BY_UNIT[unit]
     if radio_modem==GFSK_NAME:
@@ -127,7 +127,7 @@ def _serial(unit,*,radio_modem=None):
         from .profiles import GFSK_FIRMWARE
         firmware=GFSK_FIRMWARE
     elif radio_modem==GFSK250_NAME:
-        require_gfsk250_bindings();require(unit=='unit-a','gfsk250_USB_unit_not_reviewed')
+        require_gfsk250_bindings(qualification_kind);require(unit=='unit-a','gfsk250_USB_unit_not_reviewed')
         from .profiles import GFSK250_FIRMWARE
         firmware=GFSK250_FIRMWARE
     serial=USB[unit]
@@ -144,14 +144,16 @@ def _serial(unit,*,radio_modem=None):
         channel.close();raise
 
 
-def inspect(unit,*,radio_modem=None):
+def inspect(unit,*,radio_modem=None,qualification_kind=None):
     import cryptography
     before = roles(unit)
     result = {'unit': unit, 'host_boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
               'cryptography': cryptography.__version__, 'services_before': before,
               'radio_opened': False, 'arm_commands': 0, 'tx_commands': 0}
     if unit in USB:
-        channel, worker, status = _serial(unit) if radio_modem is None else _serial(unit,radio_modem=radio_modem)
+        channel, worker, status = (_serial(unit) if radio_modem is None else
+            _serial(unit,radio_modem=radio_modem) if qualification_kind is None else
+            _serial(unit,radio_modem=radio_modem,qualification_kind=qualification_kind))
         try:
             result.update(radio=status,radio_opened=True)
             if radio_modem==GFSK250_NAME:
@@ -356,7 +358,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         # Convert the OS-owner observation to an exact bool, never a caller flag.
         selected_profile=profile_from_plan(native_plan,board_id=1) if public_service else None
         if public_service and native_plan.get('radio_modem')==GFSK_NAME:require_gfsk_bindings()
-        if public_service and native_plan.get('radio_modem')==GFSK250_NAME:require_gfsk250_bindings()
+        if public_service and native_plan.get('radio_modem')==GFSK250_NAME:require_gfsk250_bindings(caps.policy.qualification_kind)
         authority = RunAuthority(directory, radio_admission=admission_for(selected_profile) if public_service else RADIO_ADMISSION, expected_unit=unit, host_boot_id=boot,
                                  clock=clock, owner_probe=lambda: bool(owned()))
         if public_service:
@@ -403,7 +405,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                              boot_id=boot, clock=clock, create=True)
         require(parent_current(), 'pilot_parent_not_current')
         if unit in USB:
-            channel,worker,radio=(_serial(unit,radio_modem=modem_for(profile))
+            channel,worker,radio=(_serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind)
+                                 if public_service and caps.policy.qualification_kind=='c-gfsk250-mb1-fast-bundle100k-v1' else
+                                 _serial(unit,radio_modem=modem_for(profile))
                                  if type(profile) in (GfskProfile,Gfsk250Profile) else _serial(unit))
             require(parent_current(), 'pilot_parent_not_current')
             result['radio'] = radio
@@ -456,6 +460,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                 ready(directory, result['native_job'], radio_receive_checked=receive_checked)
         elif payload is not None:
             flow.send(payload)
+        from .profiles import GFSK250_FAST_BUNDLE_KIND
+        fast_completion = public_service and caps.policy.qualification_kind == GFSK250_FAST_BUNDLE_KIND
         complete_at = None
         while not result['stop_requested']:
             now = clock()[1]
@@ -465,6 +471,11 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                 if complete_at is None:
                     complete_at = clock()[1]
                     result['flow_complete_monotonic_us'] = complete_at
+                    if fast_completion and authority.sends:
+                        from .fast_bundle import final_ack_proof
+                        with authority.application_lease():
+                            require(parent_current(), 'fast_completion_parent_not_current')
+                            result['fast_final_ack_proof'] = final_ack_proof(authority,caps,runner)
                     if not authority.sends:
                         if runner is not None:
                             data = runner.public_payload
@@ -478,7 +489,16 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                             result['verified_chunk_sha256'] = hashlib.sha256(data).hexdigest()
                             result['chunk_durable'] = True
                 # Receiver stays available to re-ACK a lost final receipt.
-                if authority.sends or clock()[1] - complete_at > 20000000:
+                if fast_completion and not authority.sends:
+                    from .fast_bundle import receiver_completed
+                    with authority.application_lease():
+                        require(parent_current(), 'fast_completion_parent_not_current')
+                        completed = receiver_completed(authority,caps,directory)
+                    if completed:
+                        result['fast_final_ack_verified'] = True
+                        result['complete'] = True
+                        break
+                elif authority.sends or clock()[1] - complete_at > 20000000:
                     result['complete'] = True
                     break
             time.sleep(.002 if radio_is_fast(profile) else .01)

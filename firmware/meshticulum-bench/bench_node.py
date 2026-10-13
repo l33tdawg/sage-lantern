@@ -31,12 +31,16 @@ def trusted(path, limit=2000000):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('inspect', 'run', 'service-run', 'ip-service-run', 'pilot-facts', 'pilot-debt-snapshot', 'pilot-parent-snapshot', 'pilot-cache-status', 'pilot-result', 'pilot-status', 'pilot-stop', 'pilot-retire', 'pilot-verify', 'pilot-bundle-status', 'pilot-bundle-finish', 'revoke', 'ip-revoke'))
+    parser.add_argument('action', choices=('inspect', 'run', 'service-run', 'ip-service-run', 'pilot-facts', 'pilot-debt-snapshot', 'pilot-parent-snapshot', 'pilot-cache-status', 'pilot-result', 'pilot-status', 'pilot-stop', 'pilot-retire', 'pilot-verify', 'pilot-bundle-status', 'pilot-bundle-finish', 'pilot-fast-complete', 'pilot-fast-admit', 'revoke', 'ip-revoke'))
     parser.add_argument('unit', choices=('unit-a', 'unit-b', 'unit-c'))
     parser.add_argument('--run-id')
     parser.add_argument('--campaign-id')
     parser.add_argument('--parent-id')
     parser.add_argument('--request-run-id')
+    parser.add_argument('--proof-base64')
+    parser.add_argument('--part-index',type=int)
+    parser.add_argument('--issued-epoch-us',type=int)
+    parser.add_argument('--expires-epoch-us',type=int)
     parser.add_argument('--test-rx-cutoff',type=int)
     parser.add_argument('--sender-receive-ready',action='store_true')
     parser.add_argument('--native-phase-timing',action='store_true')
@@ -76,7 +80,9 @@ def main():
     from lantern_meshticulum.bench import node; from meshticulum.bench import authority
     if args.action == 'inspect':
         if manifest.get('radio_profile_name')=='gfsk250' and args.unit=='unit-a':
-            result=node.inspect(args.unit,radio_modem='gfsk250')
+            if manifest.get('native_operation_kind')=='c-gfsk250-mb1-fast-bundle100k-v1':
+                result=node.inspect(args.unit,radio_modem='gfsk250',qualification_kind=manifest['native_operation_kind'])
+            else:result=node.inspect(args.unit,radio_modem='gfsk250')
         else:result = node.inspect(args.unit)
         result['schema'] = 'meshticulum.native-bench-inspection.v1'
     elif args.action == 'pilot-facts':
@@ -162,6 +168,17 @@ def main():
         result['declared_runtime_archive_sha256'] = wrapper['runtime_sha256']
         result['runtime_archive_sha256_observed'] = False
         result['runtime_manifest_and_payloads_verified'] = True
+    elif args.action in ('pilot-fast-complete','pilot-fast-admit'):
+        import base64
+        if args.proof_base64 is None or len(args.proof_base64)>8192:
+            raise RuntimeError('fast_bounded_proof_required')
+        proof=json.loads(base64.b64decode(args.proof_base64,validate=True))
+        from lantern_meshticulum.bench.fast_bundle import native_admit,deliver_final_ack
+        if args.action=='pilot-fast-admit':
+            result=native_admit(args.unit,args.parent_id,args.part_index,args.issued_epoch_us,args.expires_epoch_us,proof)
+        else:
+            from lantern_meshticulum.ip.node import clock,_facts
+            result=deliver_final_ack(args.unit,args.run_id,proof,state=Path('/var/lib/meshticulum-bench'),clock=clock,facts=_facts(args.unit))
     elif args.action in ('pilot-bundle-status','pilot-bundle-finish'):
         from lantern_meshticulum.bench.pilot_bundle import native_action
         result=native_action(args.unit,args.parent_id,'status' if args.action=='pilot-bundle-status' else 'finish')

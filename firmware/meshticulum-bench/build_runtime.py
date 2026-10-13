@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--meshticulum-root', type=Path)
     parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
     parser.add_argument('--execution-layout', choices=('directory', 'sealed-image'), default='directory')
+    parser.add_argument('--fast-five-part',action='store_true')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()
     source = core_source(args.meshticulum_root)
@@ -48,6 +49,10 @@ def main():
              'meshticulum/resources/resource.py': (source / 'src/meshticulum/resources/resource.py').read_bytes(),
              **{('meshticulum/resources/' + name): (source / 'src/meshticulum/resources' / name).read_bytes()
                 for name in ('knowledge_pack.py', 'lamplighter.py', 'swarm.py', 'byte_bundle.py', 'bundle_wire.py')}}
+    if args.fast_five_part:
+        transport_source=source/'src/meshticulum/resources/bundle_transport.py'
+        if not transport_source.is_file():raise RuntimeError('fast_bundle_requires_reviewed_bounded_FD_SDK')
+        files['meshticulum/resources/bundle_transport.py']=transport_source.read_bytes()
     for package in ('bench', 'contracts', 'scheduler', 'flow', 'ip',
                     'meshticulum_contracts', 'meshticulum_scheduler'):
         for path in sorted((source / 'src/meshticulum' / package).glob('*.py')):
@@ -77,6 +82,8 @@ def main():
         'public_debt_snapshot_schemas': ['meshticulum.public-debt-scope.v1'],
         'public_parent_snapshot_schemas': ['meshticulum.public-parent-observation.v1'],
         'radio_mtu_bytes': 255, 'flow_payload_bytes': 193}
+    if args.fast_five_part and args.radio_profile!='gfsk250':raise RuntimeError('fast_bundle_requires_explicit250')
+    if args.fast_five_part:manifest['native_operation_kind']='c-gfsk250-mb1-fast-bundle100k-v1'
     if args.radio_profile=='gfsk250':
         from sys import path as import_path
         import_path[:0]=[str(source/'src'),str(application_source)]

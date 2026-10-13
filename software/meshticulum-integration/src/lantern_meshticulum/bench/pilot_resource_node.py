@@ -65,9 +65,9 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
         if public_mb1_service(plan.get('service',{})) is not None:
             require(parent_id is not None,'native_mb1_parent_required')
             from .pilot_parent_caps import ParentPolicy
-            from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND
+            from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND
             saved_policy=ParentPolicy.from_dict(json.loads(_read(root/'parents'/identifier(parent_id)/'policy.json',20000)))
-            require(saved_policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND),'native_mb1_parent_kind_changed')
+            require(saved_policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND),'native_mb1_parent_kind_changed')
             from .pilot_native_caps import _open_existing
             from .pilot_bundle import _NativeOwner
             mb1_caps=_open_existing(root,parent_id,facts,clock)
@@ -102,6 +102,9 @@ def verify(unit, campaign_id, request_run_id, response_run_id):
                     request_run_id=request_run_id,response_run_id=response_run_id,verified=result,clock=clock)
                 finally:
                     if mb1_caps is None:require(caps.close(),'bundle_owner_close_unproved')
+        if mb1_caps is not None and mb1_caps.policy.qualification_kind == GFSK250_FAST_BUNDLE_KIND:
+            from .fast_bundle import verified_part_proof
+            result['fast_progress_proof'] = verified_part_proof(mb1_caps,response_run_id,result)
         _write(root / 'runs' / response_run_id / 'verified-piece.json', json.dumps(result, sort_keys=True).encode() + b'\n')
         return result
     finally:

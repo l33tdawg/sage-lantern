@@ -41,6 +41,7 @@ GFSK_BUNDLE_KIND='c-gfsk125-bundle100k-v1'
 GFSK_MB1_BUNDLE_KIND='c-gfsk125-mb1-bundle100k-v1'
 GFSK250_NAME='gfsk250'
 GFSK250_MB1_BUNDLE_KIND='c-gfsk250-mb1-bundle100k-v1'
+GFSK250_FAST_BUNDLE_KIND='c-gfsk250-mb1-fast-bundle100k-v1'
 PROFILE_NAMES=frozenset(MODES)|{GFSK_NAME,GFSK250_NAME}
 GFSK_ADMISSION=GfskAdmission('MY',(921375000,),(0,),10000,180000,256,60000000)
 GFSK250_ADMISSION=Gfsk250Admission('MY',(921375000,),(0,),10000,180000,256,60000000)
@@ -49,7 +50,11 @@ GFSK250_ADMISSION=Gfsk250Admission('MY',(921375000,),(0,),10000,180000,256,60000
 GFSK250_FIRMWARE='mtb1-def16514fc'
 GFSK250_FIRMWARE_SHA256='c865685db18dc016d9b0c7f16b83df79ccf94be4a0dd43a847c4d2d6c30e6c4f'
 GFSK250_CORE_COMMIT='07717f0067e2ea185ab594550301ad0cd426443d'
-def require_gfsk250_bindings():
+GFSK250_FAST_CORE_COMMIT='a45c051aafd0be061f5b8160687277fe2b5eaca9'
+def require_gfsk250_bindings(kind=None):
+    if kind==GFSK250_FAST_BUNDLE_KIND:
+        from .fast_bundle import require_bindings
+        return require_bindings()
     # Lazy import keeps the future native scope in one immutable source table.
     from .gfsk250_mb1_bundle import require_bindings
     return require_bindings()
@@ -116,6 +121,6 @@ def modem_for(profile):
 
 
 def profile_name_for_kind(kind):
-    if kind==GFSK250_MB1_BUNDLE_KIND:return GFSK250_NAME
+    if kind in (GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND):return GFSK250_NAME
     if kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND):return GFSK_NAME
     return None

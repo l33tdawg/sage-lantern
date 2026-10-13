@@ -157,7 +157,7 @@ class _Public32Approval:
     """Held original owner/source records, never an owner supplied in a package."""
     def __init__(self,directory,policy,unit,facts,clock):
         from .pilot_resume_rpc import Reader,Runtime,parse,sha,stable,endpoint_budget
-        from .profiles import profile_for,profile_record,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK_NAME,profile_name_for_kind
+        from .profiles import profile_for,profile_record,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND,GFSK_NAME,profile_name_for_kind
         self.reader=self.runtime=None;self._closed=False
         self.policy,self.unit,self.facts,self.clock=policy,unit,facts,clock
         self._pid,self._thread=os.getpid(),threading.get_ident()
@@ -207,10 +207,12 @@ class _Public32Approval:
                     and sha(prior_raw)==local.prior_snapshot_sha256
                     and owner['prior_registry'][unit]['observation_sha256']==sha(canonical(prior))
                     and sha(canonical(owner['prior_registry']))==policy.prior_snapshot_sha256)
-            auth=owner['authorization'];gfsk=policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND)
+            auth=owner['authorization'];gfsk=policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND)
             rp=profile_for(profile_name_for_kind(policy.qualification_kind) if gfsk else 'sf7-500');rf=owner['rf_record']
             if gfsk:
-                if policy.qualification_kind==GFSK250_MB1_BUNDLE_KIND:
+                if policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+                    from .fast_bundle import require_owner
+                elif policy.qualification_kind==GFSK250_MB1_BUNDLE_KIND:
                     from .gfsk250_mb1_bundle import require_owner
                 elif policy.qualification_kind==GFSK_MB1_BUNDLE_KIND:
                     from .gfsk_mb1_bundle import require_owner
@@ -231,6 +233,10 @@ class _Public32Approval:
                 from .pilot_bundle import BundleContext
                 self.bundle = BundleContext(owner['bundle_context'],policy)
             self._bundle_ref=self.bundle
+            if policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+                for index in range(5):
+                    stage_path=directory/('fast-stage-'+str(index)+'.json')
+                    if os.path.lexists(stage_path):self.reader.read(stage_path,8192)
             self._binding=history_pin;self._phase=canonical(captured['native_phase'])
             self._facts_bytes=canonical(owner['facts'][unit])
             self._start,self._end=owner['phase_start_epoch_us'],owner['phase_end_epoch_us']
@@ -309,6 +315,9 @@ class _Public32Approval:
         # The closure retains the constructor's original owners independently
         # of mutable reader/runtime fields or comparison metadata.
         self._closed=True;self._owned_close()
+
+
+from .profiles import GFSK250_FAST_BUNDLE_KIND
 
 
 class NativeCaps:
@@ -504,7 +513,15 @@ class NativeCaps:
             resource_id,resource_bytes,cost=self._claim_rows(claim_id,raw,run,
                 self.unit.unit,self.unit.host_boot_id,self._policy_digest)
             resource=timed_call(profile,'sql_resource',lambda:self.db.execute('SELECT body FROM resources WHERE id=?',(resource_id,)).fetchone())
-            require(resource==(resource_bytes,));used=used.plus(Cost(*cost))
+            require(resource==(resource_bytes,))
+            if self.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+                value=json.loads(resource_bytes)
+                declared=self._approve.bundle.value['stages']
+                matches=[stage['index'] for stage in declared if stage['campaign_id']==value['campaign_id']]
+                require(len(matches)==1)
+                raw_stage=self._approve.reader.read(self.path.parent/('fast-stage-'+str(matches[0])+'.json'),8192)
+                require(hashlib.sha256(raw_stage).hexdigest()==value['fast_stage_sha256'])
+            used=used.plus(Cost(*cost))
         require(used.within(self.unit.limits));return rows,used
     def _run(self,phase,action,verify):
         entered=False
@@ -563,7 +580,11 @@ class NativeCaps:
                 from .pilot_bundle import BundleContext
                 require(type(self._approve) is _Public32Approval and type(bundle) is BundleContext and bundle is self._approve._bundle_ref)
                 stage=bundle.package(package,now[0])
+                if self.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+                    from .fast_bundle import stage_receipt
+                    stage=stage_receipt(self,stage['index'],child.expires_epoch_us,now)
                 first,stage_deadline,_=bundle.monotonic_bounds(stage,self._enrollment)
+                if self.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:stage_deadline=min(stage_deadline,stage['native_deadline_monotonic_us'])
                 require(first<=now[1]<stage_deadline)
                 for prior_claim, in self.db.execute('SELECT body FROM claims'):
                     prior_meta=json.loads(prior_claim)['child']['metadata']
@@ -585,6 +606,12 @@ class NativeCaps:
                     bundle_original_deadline_monotonic_us=self._enrollment['deadline_monotonic_us'])
                 if row is None:resource['application_deadline_monotonic_us']=min(resource['application_deadline_monotonic_us'],stage_deadline)
                 require(resource['application_deadline_monotonic_us']<=stage_deadline)
+            if self.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+                stage_raw=canonical(stage)
+                if row is None:resource.update(fast_stage_sha256=hashlib.sha256(stage_raw).hexdigest(),
+                    fast_stage_deadline_monotonic_us=stage['native_deadline_monotonic_us'])
+                require(resource['fast_stage_sha256']==hashlib.sha256(stage_raw).hexdigest()
+                    and resource['fast_stage_deadline_monotonic_us']==stage['native_deadline_monotonic_us'])
             limits=(child.expires_epoch_us,resource['application_deadline_monotonic_us']);self._live(now,limits)
             require(now[0]>=resource['original_epoch_us'] and now[1]>=resource['original_monotonic_us'])
             rows,used=self._validate();require(len(rows)<4096 and not any(run==child.run_id for _,_,run in rows))

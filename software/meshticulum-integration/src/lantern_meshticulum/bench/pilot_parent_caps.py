@@ -26,9 +26,9 @@ from meshticulum.bench.services import _shape
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.ip.authority import grant_from_plan
 from meshticulum.resources.resource import decode_request
-from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_NAME,profile_name_for_kind,profile_for,profile_record,profile_from_plan,admission_for,radio_route
+from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND,GFSK250_NAME,profile_name_for_kind,profile_for,profile_record,profile_from_plan,admission_for,radio_route
 
-BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3',GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND))
+BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3',GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
 BATCH_KIND = 'c-bulk-8k-batch-v1'
 POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND,GFSK_KIND}
@@ -194,7 +194,7 @@ def child_caps(package, policy):
             and set(package) == {'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
                                  'transport','grant','secret_base64','payload_base64','source_run_id'}
             and package['schema'] == 'meshticulum.public-pilot-package.v1')
-        require(policy.qualification_kind not in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND) or package['transport']=='lora')
+        require(policy.qualification_kind not in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND) or package['transport']=='lora')
         unit = policy.unit(package['unit']); p = package['grant']
         identifier(package['campaign_id']); digest(package['resource_sha256'])
         secret = base64.b64decode(package['secret_base64'], validate=True)
@@ -218,7 +218,7 @@ def child_caps(package, policy):
             gfsk=p.get('radio_modem') in (GFSK_NAME,GFSK250_NAME)
             require(p.get('radio_modem')==expected_modem if expected_modem else 'radio_modem' not in p)
             if gfsk:fields.add('radio_modem')
-            require(gfsk == (policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND)))
+            require(gfsk == (policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND)))
             require(package['transport'] == 'lora' and p['schema'] == 'meshticulum.service-run.v1'
                 and set(p) == fields and set(p['service']) in ({'kind','format','application_expires_epoch_us'},
                     {'kind','format','application_expires_epoch_us','public_response_max_bytes'},
@@ -247,9 +247,9 @@ def child_caps(package, policy):
         from meshticulum.bench.public_block import public32_service, public_mb1_service, object_limit
         public32 = public32_service(p.get('service',{}))
         mb1_pin=public_mb1_service(p.get('service',{}))
-        require((mb1_pin is not None)==(policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND)))
+        require((mb1_pin is not None)==(policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND)))
         require(public32 == (policy.qualification_kind in PUBLIC32_KINDS))
-        if public32 and policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND):
+        if public32 and policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND):
             selected=profile_record(rp);expected=profile_record(profile_for(expected_modem))
             selected.pop('lease_ms');expected.pop('lease_ms')
             require(package['transport']=='lora' and gfsk and selected==expected)

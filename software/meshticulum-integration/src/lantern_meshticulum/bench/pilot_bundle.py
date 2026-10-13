@@ -19,7 +19,7 @@ from types import MappingProxyType
 from meshticulum.bench.wire import require
 from meshticulum.resources import byte_bundle as bundle, knowledge_pack as kp, lamplighter as ll, resource
 from .pilot_parent_caps import BUNDLE_KINDS, canonical, digest, identifier, Cost
-from .profiles import GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK_NAME,GFSK250_MB1_BUNDLE_KIND,profile_name_for_kind
+from .profiles import GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK_NAME,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND,profile_name_for_kind
 from .phase_timing import phase
 
 KIND = 'c-bundle100k-v1'
@@ -35,8 +35,10 @@ SSH_SCHEMA_V3 = 'meshticulum.finite-ssh-bundle100k.v3'
 SCHEMA_GFSK='meshticulum.native-public100k-gfsk125-bundle-context.v1'
 SCHEMA_GFSK_MB1='meshticulum.native-public100k-gfsk125-mb1-bundle-context.v1'
 SCHEMA_GFSK250_MB1='meshticulum.native-public100k-gfsk250-mb1-bundle-context.v1'
+SCHEMA_FAST='meshticulum.native-public100k-gfsk250-mb1-fast-bundle-context.v1'
 # Versioned original scopes; never upgrade or renew an existing context.
 COMMITTED_CONTRACTS = MappingProxyType({
+    GFSK250_FAST_BUNDLE_KIND:(SCHEMA_FAST,1350000000,1355000000,180000000,'meshticulum.public100k-gfsk250-mb1-fast-capture-commitment.v1','meshticulum.finite-ssh-gfsk250-mb1-fast-bundle100k.v1','meshticulum.private-resume-actual-gfsk250-mb1-fast-capture.v1'),
     KIND_V2:(SCHEMA_V2,1200000000,1205000000,150000000,COMMITMENT_SCHEMA,SSH_SCHEMA_V2,'meshticulum.private-resume-actual-capture.v2'),
     KIND_V3:(SCHEMA_V3,1350000000,1355000000,180000000,COMMITMENT_SCHEMA_V3,SSH_SCHEMA_V3,'meshticulum.private-resume-actual-capture.v3'),
     GFSK_BUNDLE_KIND:(SCHEMA_GFSK,1350000000,1355000000,180000000,'meshticulum.public100k-gfsk125-capture-commitment.v1','meshticulum.finite-ssh-gfsk125-bundle100k.v1','meshticulum.private-resume-actual-gfsk125-capture.v1'),
@@ -46,7 +48,7 @@ COMMITTED_CONTRACTS = MappingProxyType({
 
 
 def _transport(value):
-    if value['schema'] not in (SCHEMA_GFSK_MB1,SCHEMA_GFSK250_MB1):return None
+    if value['schema'] not in (SCHEMA_GFSK_MB1,SCHEMA_GFSK250_MB1,SCHEMA_FAST):return None
     from .pilot_bundle_transport import MB1Transport
     raw=base64.b64decode(value['transport_descriptor_base64'],validate=True)
     require(base64.b64encode(raw).decode()==value['transport_descriptor_base64'],'noncanonical_mb1_transport_descriptor')
@@ -60,9 +62,9 @@ def _context_data(value, *, parent_id=None):
     v=json.loads(raw)
     required={'schema','manifest_base64','signature_base64','trust','manifest_sha256','whole_bytes','whole_sha256',
           'original_epoch_us','original_monotonic_us','expires_epoch_us','deadline_monotonic_us','stages'}
-    if v.get('schema') in (SCHEMA_GFSK_MB1,SCHEMA_GFSK250_MB1):required|={'transport_descriptor_base64','transport_descriptor_sha256'}
-    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3,SCHEMA_GFSK,SCHEMA_GFSK_MB1,SCHEMA_GFSK250_MB1),'bundle_context_policy_changed')
-    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3,SCHEMA_GFSK:GFSK_BUNDLE_KIND,SCHEMA_GFSK_MB1:GFSK_MB1_BUNDLE_KIND,SCHEMA_GFSK250_MB1:GFSK250_MB1_BUNDLE_KIND}[v['schema']]
+    if v.get('schema') in (SCHEMA_GFSK_MB1,SCHEMA_GFSK250_MB1,SCHEMA_FAST):required|={'transport_descriptor_base64','transport_descriptor_sha256'}
+    require(set(v)==required and v['schema'] in (SCHEMA,SCHEMA_V2,SCHEMA_V3,SCHEMA_GFSK,SCHEMA_GFSK_MB1,SCHEMA_GFSK250_MB1,SCHEMA_FAST),'bundle_context_policy_changed')
+    kind={SCHEMA:KIND,SCHEMA_V2:KIND_V2,SCHEMA_V3:KIND_V3,SCHEMA_GFSK:GFSK_BUNDLE_KIND,SCHEMA_GFSK_MB1:GFSK_MB1_BUNDLE_KIND,SCHEMA_GFSK250_MB1:GFSK250_MB1_BUNDLE_KIND,SCHEMA_FAST:GFSK250_FAST_BUNDLE_KIND}[v['schema']]
     for key in ('manifest_sha256','whole_sha256'):digest(v[key])
     manifest_raw=base64.b64decode(v['manifest_base64'],validate=True)
     signature_raw=base64.b64decode(v['signature_base64'],validate=True)
@@ -85,7 +87,7 @@ def _context_data(value, *, parent_id=None):
     transport=_transport(v)
     previous=v['original_epoch_us']; campaigns=set()
     for index,stage in enumerate(v['stages']):
-        stage_fields={'index','campaign_id','issued_epoch_us','expires_epoch_us','handoff_end_epoch_us','response_sha256'}
+        stage_fields={'index','campaign_id','response_sha256'} if kind==GFSK250_FAST_BUNDLE_KIND else {'index','campaign_id','issued_epoch_us','expires_epoch_us','handoff_end_epoch_us','response_sha256'}
         if transport is not None:stage_fields.add('response_bytes')
         require(type(stage) is dict and set(stage)==stage_fields
             and type(stage['index']) is int and stage['index']==index,'bundle_part_order_changed')
@@ -96,6 +98,7 @@ def _context_data(value, *, parent_id=None):
                 and stage['response_sha256']==part['response_sha256'],'mb1_bundle_stage_descriptor_changed')
         identifier(stage['campaign_id']);require(stage['campaign_id'] != parent_id and stage['campaign_id'] not in campaigns,'bundle_campaign_reused')
         campaigns.add(stage['campaign_id'])
+        if kind==GFSK250_FAST_BUNDLE_KIND:continue
         a,z,h=(stage[k] for k in ('issued_epoch_us','expires_epoch_us','handoff_end_epoch_us'))
         require(all(type(n) is int for n in (a,z,h)) and previous<=a<z
             and z-a<=180000000 and z+10000000<=h<=v['expires_epoch_us'], 'bundle_stage_window_changed')
@@ -194,7 +197,12 @@ class BundleContext:
     def stage(self,campaign,expiry):
         self._check()
         stages=[v for v in self.value['stages'] if v['campaign_id']==campaign]
-        require(len(stages)==1 and type(expiry) is int and stages[0]['expires_epoch_us']==expiry,'unplanned_bundle_campaign')
+        require(len(stages)==1 and type(expiry) is int,'unplanned_bundle_campaign')
+        if self.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+            require(self.value['original_epoch_us']<expiry<=self.value['expires_epoch_us']-10000000,'fast_part_deadline_changed')
+            return dict(stages[0],issued_epoch_us=max(self.value['original_epoch_us'],expiry-180000000),
+                expires_epoch_us=expiry,handoff_end_epoch_us=expiry+10000000)
+        require(stages[0]['expires_epoch_us']==expiry,'unplanned_bundle_campaign')
         return stages[0]
 
     def exchange(self,index):
@@ -272,8 +280,12 @@ class _NativeOwner:
     def boot(self):self.check();return self.caps.unit.host_boot_id
     def stage(self,campaign,expiry):
         now=self.check();stage=self.context.stage(campaign,expiry)
+        if self.caps.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
+            from .fast_bundle import stage_receipt
+            stage=stage_receipt(self.caps,stage['index'],expiry,now)
         first,end,_=self.context.monotonic_bounds(stage,self.anchor)
-        require(stage['issued_epoch_us']<=now[0]<stage['expires_epoch_us'] and first<=now[1]<end,
+        require(stage['issued_epoch_us']<=now[0]<stage['expires_epoch_us'] and first<=now[1]<end
+                and (self.caps.policy.qualification_kind!=GFSK250_FAST_BUNDLE_KIND or now[1]<stage['native_deadline_monotonic_us']),
                 'native_original_stage_expired');return stage
 
 
@@ -523,7 +535,7 @@ def context_value(manifest_raw,signature_raw,trust,manifest_sha256,*,chunks,poli
     require(expected['bytes']==100000 and len(expected['parts'])==5 and type(stages) is list and len(stages)==5,
             'only100k_native_bundle_prepared')
     rows=[];transport=None;transport_fields={}
-    if qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND):
+    if qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND):
         from .pilot_bundle_transport import prepare_descriptor,MB1Transport
         encoded=prepare_descriptor(manifest_raw,signature_raw,trust,manifest_sha256,chunks=chunks)
         transport_pin=hashlib.sha256(encoded).hexdigest()
@@ -640,7 +652,7 @@ class BundleCampaign:
             self.parts.append(verified);return verified
         finally:
             cleanup=controller.retire();self.links.extend(controller.links)
-            if self.parent.policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND):
+            if self.parent.policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND):
                 require(all('stop_error' not in row and 'retirement_error' not in row for row in cleanup),'gfsk_bundle_retirement_unproved')
                 for link in controller.links:
                     expected=set(link['attempted'])|set(link['prepared'])

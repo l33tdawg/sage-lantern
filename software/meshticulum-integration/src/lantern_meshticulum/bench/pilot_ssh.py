@@ -21,6 +21,7 @@ import uuid
 
 from lantern_meshticulum.bench.pilot_provision import identifier
 from meshticulum.bench.wire import require
+from .pilot_parent_caps import canonical
 
 PROMPT = b'MESHTICULUM_SUDO_PROMPT:'
 
@@ -489,6 +490,13 @@ class SSHOperator:
     def verify(self,unit,campaign,request,response):
         return self._action(unit,'pilot-verify',response,'--campaign-id',identifier(campaign),'--request-run-id',identifier(request),
                             schema='meshticulum.pilot-verified-piece.v1')
+    def fast_complete(self,unit,run,proof):
+        return self._action(unit,'pilot-fast-complete',identifier(run),'--proof-base64',
+            base64.b64encode(canonical(proof)).decode(),schema='meshticulum.native-fast-completion-delivered.v1')
+    def fast_admit(self,unit,parent_id,index,issued,expires,proof):
+        return self._action(unit,'pilot-fast-admit',None,'--parent-id',identifier(parent_id),
+            '--part-index',str(index),'--issued-epoch-us',str(issued),'--expires-epoch-us',str(expires),
+            '--proof-base64',base64.b64encode(canonical(proof)).decode(),schema='meshticulum.native-fast-stage-admitted.v1')
     def bundle_status(self,unit,parent_id):
         return self._action(unit,'pilot-bundle-status',None,'--parent-id',identifier(parent_id),schema='meshticulum.native-public100k-bundle-status.v1')
     def bundle_finish(self,unit,parent_id):

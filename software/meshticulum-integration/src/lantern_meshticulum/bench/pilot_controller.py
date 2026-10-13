@@ -17,7 +17,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK250_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,profile_name_for_kind,require_gfsk250_bindings,admission_for,profile_record
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK250_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND,profile_name_for_kind,require_gfsk250_bindings,admission_for,profile_record
 from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
@@ -116,8 +116,8 @@ class Controller:
                 'public32_parent_kind_mismatch')
         require(type(radio_profile) is str and radio_profile in PROFILE_NAMES
                 and (not public32 or radio_profile == (profile_name_for_kind(parent.policy.qualification_kind) or 'sf7-500')), 'invalid_pilot_radio_profile')
-        require((radio_profile==GFSK250_NAME)==(parent.policy.qualification_kind==GFSK250_MB1_BUNDLE_KIND),'gfsk250_parent_kind_mismatch')
-        if radio_profile==GFSK250_NAME:require_gfsk250_bindings()
+        require((radio_profile==GFSK250_NAME)==(parent.policy.qualification_kind in (GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND)),'gfsk250_parent_kind_mismatch')
+        if radio_profile==GFSK250_NAME:require_gfsk250_bindings(parent.policy.qualification_kind)
         require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
         require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME,GFSK250_NAME)),
@@ -287,11 +287,20 @@ class Controller:
                 self.sleep(.02)
             handles[second] = self.operator.start(second, pair)
             row['phase']='running'
+            barrier_relayed=False
             while True:
                 # Poll every owned child: poll() also services its one sudo
                 # prompt. Short-circuiting on a live receiver starves the
                 # sender's authentication until the receiver times out.
                 codes=[handle.poll() for handle in handles.values()]
+                if self.parent.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND and not barrier_relayed:
+                    if handles[sender].poll() is not None:
+                        require(handles[sender].poll()==0, 'fast_sender_failed_before_barrier')
+                        from .fast_bundle import relay_final_ack
+                        self.current()
+                        row['completion_barrier']=relay_final_ack(self.operator,row,pair,
+                            expected_claim=row['prepared_parent_claims'][sender],boots=self.boots)
+                        self.current();barrier_relayed=True
                 if all(code is not None for code in codes):break
                 self.current();self.sleep(.02)
             statuses={};collection_errors={};row['terminal_statuses']=statuses
