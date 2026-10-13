@@ -16,6 +16,7 @@ from pathlib import Path
 import queue
 import select
 import struct
+import sys
 import threading
 import time
 import tty
@@ -149,8 +150,26 @@ def provision(directory,profile,owner,transport):
     a.release()
 
 
+@pytest.fixture
+def shared_process_peer_scheduling(request):
+    # Both native peers share one interpreter only in this model. Repeated
+    # short hash/crypto/FD checks otherwise convoy on the default GIL quantum.
+    # Keep every real clock, startup bound, retry and authority check intact.
+    original=sys.getswitchinterval()
+    request.node.user_properties.append(('thread_switch_interval_before',original))
+    try:
+        sys.setswitchinterval(0.0001)
+        request.node.user_properties.append(('thread_switch_interval_during',sys.getswitchinterval()))
+        yield
+    finally:
+        sys.setswitchinterval(original)
+        restored=sys.getswitchinterval()
+        request.node.user_properties.append(('thread_switch_interval_restored',restored))
+        assert restored==original
+
+
 @pytest.mark.parametrize('fault',['none','loss'])
-def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path,monkeypatch,fault):
+def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path,monkeypatch,fault,shared_process_peer_scheduling):
     values=original();commands=[queue.Queue(),queue.Queue()];replies=queue.Queue();reports=[[],[]];pairs=[];active=[];counters=([0,0],[0,0])
     def device(observer):
         observer._bound();assert observer.adoption.current();observer._bound();return True
