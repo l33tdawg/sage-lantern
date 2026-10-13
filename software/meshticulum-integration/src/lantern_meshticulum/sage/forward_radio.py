@@ -8,6 +8,7 @@ source models are not native qualification. Physical retirement is separate
 from application acceptance and never refunds paid maxima.
 """
 from dataclasses import dataclass, replace
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
@@ -267,11 +268,15 @@ class ForwardRadioFactory:
         self._grant_retired=False
         self._snapshot=None
         self._authorize_callback=self._authorize
+        self._authorize_callback_ref=self._authorize_callback
+        self._owned_callback=self._owned
+        self._owned_callback_ref=self._owned_callback
         self._arm_started=False
         self._authority_refs=self._journal_refs=self._store_ref=None
+        self._authority_binding=self._authority_binding_ref=None
         self._native_observing=False;self._native_adoption=None
         self._native_methods=tuple((obj,name,getattr(type(obj),name)) for obj,names in (
-            (self,('_bound','_native','_native_current')),
+            (self,('_bound','_native','_native_current','_live','_authorize','_owned','_observed')),
             (observer,('_bound','device','current','_device_facts','_worker_current')),
             (owner,('_available','phase_check')),
             (owner._registry,('_child','available')),
@@ -285,6 +290,25 @@ class ForwardRadioFactory:
         require(self.profile==plan_stage(self.owner,json.loads(self.profile.plan_bytes),self.profile.grant.secret,
                                        slot=self.profile.child.slot,kind=self.profile.child.kind))
         require(all(getattr(self,name) is value for name,value in self._handles.items()))
+        require(self._authorize_callback is self._authorize_callback_ref
+            and type(self._authorize_callback) is MethodType and self._authorize_callback.__self__ is self
+            and self._authorize_callback.__func__ is type(self)._authorize
+            and self._owned_callback is self._owned_callback_ref
+            and type(self._owned_callback) is MethodType and self._owned_callback.__self__ is self
+            and self._owned_callback.__func__ is type(self)._owned
+            and self._authority_binding is self._authority_binding_ref)
+        if self._authority_binding is not None:
+            a,live,clock,owned,grant,digest,secret,profile,deadlines,bounds=self._authority_binding
+            bound=a.live
+            require(type(a) is RunAuthority and self.authority is a
+                and type(bound) is MethodType and bound.__self__ is a and bound.__func__ is live
+                and 'live' not in a.__dict__ and type(a).live is live
+                and a.clock is clock is self.owner._clock and a.owner_probe is owned is self._owned_callback_ref
+                and a.grant is grant and grant.digest==digest and grant.secret is secret
+                and a.profile is profile and a.deadlines is deadlines
+                and tuple((type(v),v) for v in (a.deadline_us,a.application_expires_epoch_us,
+                    a.application_deadline_us,deadlines.application_deadline_monotonic,
+                    deadlines.authority_deadline_monotonic,deadlines.authority_expires_epoch))==bounds)
         if self.authority is not None:require(_canonical(self.authority.plan)==self.profile.plan_bytes
             and self.authority.grant.digest==self.profile.grant.digest and self.authority.grant.secret==self.profile.grant.secret
             and self.authority.application_deadline_us==self.profile.child.application_deadline_monotonic_us)
@@ -309,11 +333,21 @@ class ForwardRadioFactory:
                     or (type(self.worker) is hat_type and (not hasattr(self.worker,'io') or self.worker.io is self._refs[3])))
 
     def _live(self):
-        self._bound();require(not self._unknown and not self._retired and self.adoption.current())
-        self.observer.device();self._bound();return True
+        with self._observed(self.owner.context,self.profile.child,self.transfer,first_current=True) as checked:
+            checked(self.observer._device_facts)
+            checked(self.adoption.current)
+        return True
 
     def _authorize(self):
-        self._live();require(self.authority.live());self._live();return True
+        require(type(self.authority) is RunAuthority and self._authority_binding is not None)
+        with self._observed(self.owner.context,self.profile.child,self.transfer,first_current=True) as checked:
+            checked(self.observer._device_facts)
+            checked(self.adoption.current)
+            checked(self.authority.live)
+            checked(self.adoption.current)
+            checked(self.observer._device_facts)
+            checked(self.adoption.current)
+        return True
 
     def _owned(self):
         try:return self._live()
@@ -329,7 +363,13 @@ class ForwardRadioFactory:
                 tuple((a,name,getattr(type(a),name)) for name in ('_bound','_guard','_assets','_observe','current')))
             self.observer.bind(self.adoption)
             self.authority=RunAuthority(self.directory,expected_unit=json.loads(self.profile.plan_bytes)['unit'],
-                host_boot_id=child.host_boot_id,clock=self.owner._clock,owner_probe=self._owned,radio_admission=admission_for(self.profile.radio))
+                host_boot_id=child.host_boot_id,clock=self.owner._clock,owner_probe=self._owned_callback_ref,radio_admission=admission_for(self.profile.radio))
+            a=self.authority
+            self._authority_binding=self._authority_binding_ref=(a,type(a).live,a.clock,a.owner_probe,
+                a.grant,a.grant.digest,a.grant.secret,a.profile,a.deadlines,
+                tuple((type(v),v) for v in (a.deadline_us,a.application_expires_epoch_us,
+                    a.application_deadline_us,a.deadlines.application_deadline_monotonic,
+                    a.deadlines.authority_deadline_monotonic,a.deadlines.authority_expires_epoch)))
             self._handles['authority']=self.authority;self._live()
             self._authority_refs=(self.authority.fds,tuple((n,fd,_identity(fd))for n,fd in self.authority.fds.items()))
             require(self.authority.profile==self.profile.radio)
@@ -396,47 +436,73 @@ class ForwardRadioFactory:
         Adjacent wrapper observations are one boundary, not reusable authority.
         SDK guards, source/grant reads and physical probes remain fresh per call.
         """
-        acquired=False;original=self._native_adoption
+        with self._observed(context,plan,transfer) as checked:
+            checked(self.adoption.current)
+            checked(self.observer._device_facts)
+            checked(self.adoption.current)
+            checked(self.observer._device_facts)
+            checked(self.adoption.current)
+            checked(self.observer._worker_current,self.worker)
+
+    @contextmanager
+    def _observed(self,context,plan,transfer,*,first_current=False):
+        """One callback bracket; holds references/ownership, never live results."""
+        require(type(first_current) is bool)
+        acquired=initial_refusal=False;original=self._native_adoption
         require(type(original) is tuple and len(original)==5)
         a,child,registry,condition,methods=original
         worker=self.worker;native_methods=self._native_method_refs
-        def references():
+        authority_binding=self._authority_binding_ref
+        handles=self._handles;handle_refs=tuple(handles.items())
+        def references(*,refused=False):
             require(self._native_adoption is original and self._native_methods is self._native_method_refs is native_methods
-                and type(native_methods) is tuple and len(native_methods)==12
+                and type(native_methods) is tuple and len(native_methods)==16
                 and type(methods) is tuple and len(methods)==5
+                and self._authority_binding is self._authority_binding_ref is authority_binding
+                and self._handles is handles and tuple(handles.items())==handle_refs
                 and self.adoption is a and a._child is child and self.owner._registry is registry
                 and registry._condition is condition and child.owner is self.owner and child.plan is plan
                 and self.observer.adoption is a and self.worker is worker
                 and context is self.owner.context and plan is self.profile.child and transfer is self.transfer
-                and not self._unknown and not self._retired and not a._closed and not a._uncertain
+                and not self._unknown and not self._retired and not a._closed and (refused or not a._uncertain)
                 and not registry._closing and not registry._uncertain and not child.unknown and not child.retired
-                and not self.owner._closed and not self.owner._uncertain
+                and not self.owner._closed and (refused or not self.owner._uncertain)
                 and not self.owner.resource._closed and not self.owner.resource._closing)
             for obj,name,method in native_methods+methods:
                 bound=getattr(obj,name)
                 require(type(bound) is MethodType and bound.__self__ is obj and bound.__func__ is method
                     and name not in obj.__dict__ and getattr(type(obj),name) is method)
             if acquired:require(self._native_observing and child.observing and child.observe_thread==threading.get_ident())
-        def bindings():
-            references();self._bound();references()
-            self.owner._available();references();registry._child(child);references()
+        def bindings(*,refused=False):
+            references(refused=refused);self._bound();references(refused=refused)
+            if not refused:self.owner._available();references()
+            registry._child(child);references(refused=refused)
         def checked(callback,*args):
             bindings();value=callback(*args);bindings();require(value is True)
         try:
-            bindings()
+            bindings(refused=first_current)
             with condition:
                 require(not child.observing and not self._native_observing and not registry._closing)
                 child.observing=True;child.observe_thread=threading.get_ident()
                 self._native_observing=acquired=True
-            checked(a.current)
-            checked(self.observer._device_facts)
-            checked(a.current)
-            checked(self.observer._device_facts)
-            checked(a.current)
-            checked(self.observer._worker_current,worker)
+            if first_current:
+                bindings(refused=True);value=a.current()
+                # A known initial permission refusal occurs before either fact
+                # or authority callback. Preserve the old live-mode physical
+                # containment result; the adoption itself stays fenced. Caught
+                # reentry/cleanup/drain remains an unknown, never authority.
+                if value is False and a._uncertain is True and not self._unknown and not registry._closing:
+                    bindings(refused=True)
+                    require(self.observer.owned() is True);bindings(refused=True)
+                    a._assets();bindings(refused=True)
+                    initial_refusal=True;raise ForwardRadioError()
+                bindings();require(value is True)
+            yield checked
+            bindings()
         except BaseException as error:
-            self._unknown=True
-            if acquired:a._uncertain=True;child.unknown=True
+            if not initial_refusal:
+                self._unknown=True
+                if acquired:a._uncertain=True;child.unknown=True
             if not isinstance(error,Exception):raise
             raise ForwardRadioError() from None
         finally:
