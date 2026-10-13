@@ -188,7 +188,8 @@ class BatchApproval:
             local=policy.unit(unit);prior_raw=self.reader.read(directory/'prior.json',200000);prior=parse(prior_raw)
             require(self.reader.read(directory/'policy.json',20000)==canonical(policy.to_dict()),'batch_protected_policy_changed')
             binding_raw=self.reader.read(directory/'history-binding.json',16384);binding=parse(binding_raw)
-            captured_raw=self.reader.read(directory/'capture.json',2000000);captured=parse(captured_raw)
+            from .management_input import RAW_MAX
+            captured_raw=self.reader.read(directory/'capture.json',RAW_MAX);captured=parse(captured_raw)
             require(sha(binding_raw)==owner['history_binding_sha256']==prior['history_binding_sha256']
                 and sha(prior_raw)==local.prior_snapshot_sha256
                 and sha(canonical(owner['prior_registry']))==policy.prior_snapshot_sha256

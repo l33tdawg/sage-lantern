@@ -24,6 +24,7 @@ import sys
 
 from .history_identity_seal import _Ancestry, capture, SealedHistory, MAX_FILES, MAX_DIRS
 from .history_metadata_fence import _FLAGS, _FILES, _stamp, MAX_FILE, _EXTRA_FILES
+from .management_input import RAW_MAX
 from .legacy_grant_fence import capture as legacy_capture, LegacyGrantFence
 from .legacy_grant_fence import MAX_RUNS, OWNERS
 from .pilot_parent_snapshot import Scope, collect, _child_ref
@@ -578,7 +579,7 @@ def phase_check(unit, expected, start, end, phase, *, commitment=None):
 
 
 def write_new(directory, name, raw):
-    need(type(raw) is bytes and len(raw) <= 2000000, 'RPC_write_bound')
+    need(type(raw) is bytes and len(raw) <= (RAW_MAX if name=='capture.json' else 2000000), 'RPC_write_bound')
     with _Ancestry(directory, os.geteuid()) as chain:
         fd = os.open(name, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,
                      0o600, dir_fd=chain.fds[-1])
@@ -1748,7 +1749,7 @@ def enrolled_action(action, unit, p, runtime):
          and HEX.fullmatch(owner['runtime_sha256']) and owner['review_sha256'] == p.get('review_sha256',owner['review_sha256']),
          'wrong_runtime_or_review_scope')
     with Reader() as reader:
-        capture_raw = reader.read(target/'capture.json',2000000)
+        capture_raw = reader.read(target/'capture.json',RAW_MAX)
         need(sha(capture_raw) == owner['capture_record_sha256'], 'actual_capture_record_changed')
         saved = parse(capture_raw); binding = owner['history_binding_sha256']
         need(saved['unit'] == unit and saved['parent_id'] == policy.parent_id
@@ -2145,7 +2146,7 @@ def dispatch(action, unit, payload, *, runtime_root, manifest_sha256):
     """Actual root entry; import alone performs no native operation."""
     need(os.geteuid() == 0 and unit in ('unit-a','unit-b','unit-c')
          and action in ('capture','enroll','guard','audit','observe-cache','inspect-paid-parent','checkpoint-audit','store-handoff','checkpoint')
-         and type(payload) is dict and len(canonical(payload)) <= 2000000, 'invalid_native_resume_RPC')
+         and type(payload) is dict and len(canonical(payload)) <= RAW_MAX, 'invalid_native_resume_RPC')
     with Runtime(runtime_root,manifest_sha256) as runtime:
         if action == 'capture': result = capture_history(unit,payload,runtime)
         elif action in ('enroll','guard','audit','checkpoint-audit','store-handoff','checkpoint'): result = enrolled_action(action,unit,payload,runtime)

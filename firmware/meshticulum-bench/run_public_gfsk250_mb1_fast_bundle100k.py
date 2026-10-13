@@ -340,8 +340,9 @@ def main():
     from lantern_meshticulum.bench.profiles import profile_for,profile_record,GFSK250_NAME as GFSK_NAME
     from meshticulum.contracts.identity import PeerID
     from run_public_sf5_c_bulk_8k import retained_controller_caps
-    histories={u:json.loads(read(Path(op['history_path'])/(u+'.json'),2000000)) for u in ('unit-a','unit-b','unit-c')}
-    for u,h in histories.items():need(sha(read(Path(op['history_path'])/(u+'.json'),2000000))==receipt['payload_sha256'][u],'batch_history_bytes_changed')
+    from lantern_meshticulum.bench.management_input import RAW_MAX
+    histories={u:json.loads(read(Path(op['history_path'])/(u+'.json'),RAW_MAX)) for u in ('unit-a','unit-b','unit-c')}
+    for u,h in histories.items():need(sha(read(Path(op['history_path'])/(u+'.json'),RAW_MAX))==receipt['payload_sha256'][u],'batch_history_bytes_changed')
     if args.check:print(json.dumps(dict(source_checked=True,decoded_file_bytes=100000,parts=5,radio_opened=False)));return
     controllers=[];projection=('status','scoped_rows_complete','pending_unknown','policy_row_sha256','prior_lineage','detail','files')
     for i,pid in enumerate(op['history_parent_ids']):

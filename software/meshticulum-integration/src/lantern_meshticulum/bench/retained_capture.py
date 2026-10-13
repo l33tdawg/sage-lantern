@@ -9,6 +9,7 @@ import time
 
 from .history_identity_seal import _Ancestry
 from .history_metadata_fence import _FLAGS, _need, _stamp
+from .management_input import RAW_MAX
 from meshticulum.ip.journal import private
 
 PAID_HISTORY = (
@@ -149,7 +150,7 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
             for name, pin in pins.items():
                 fd = os.open(name, _FLAGS, dir_fd=parent.fds[-1]); descriptors.append(fd)
                 first = os.fstat(fd); private(first)
-                _need(first.st_size <= 2000000, 'retained_capture_size_bound')
+                _need(first.st_size <= (RAW_MAX if name=='capture.json' else 2000000), 'retained_capture_size_bound')
                 fcntl.flock(fd, fcntl.LOCK_SH|fcntl.LOCK_NB)
                 raw = os.pread(fd, first.st_size+1, 0)
                 _need(len(raw) == first.st_size and _sha(raw) == pin

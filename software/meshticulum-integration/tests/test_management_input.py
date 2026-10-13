@@ -102,7 +102,7 @@ def test_decoder_retains_exact_limits_and_pins(fault):
     elif fault=='raw_hash':rsha='f'*64
     elif fault=='truncated':packed=packed[:-1];csha=inputs.sha(packed)
     elif fault=='trailing':packed+=b'\0';csha=inputs.sha(packed)
-    elif fault=='decoded_bound':raw=b'x'*2000001;packed=lzma.compress(raw);csha,rsha=inputs.sha(packed),inputs.sha(raw)
+    elif fault=='decoded_bound':raw=b'x'*(inputs.RAW_MAX+1);packed=lzma.compress(raw);csha,rsha=inputs.sha(packed),inputs.sha(raw)
     elif fault=='compressed_bound':packed=b'x'*262145;csha=inputs.sha(packed)
     elif fault=='memory_bound':packed=lzma.compress(raw,preset=9);csha=inputs.sha(packed)
     else:raw=b'[]';packed=lzma.compress(raw);csha,rsha=inputs.sha(packed),inputs.sha(raw)

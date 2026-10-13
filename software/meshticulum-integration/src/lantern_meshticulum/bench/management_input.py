@@ -10,7 +10,7 @@ import stat
 import sys
 import time
 
-RAW_MAX = 2000000
+RAW_MAX = 2500000
 COMPRESSED_MAX = 262144
 DECODER_MEMORY_MAX = 33554432
 DIRECTORY = 'meshticulum-bench-management-inputs'
