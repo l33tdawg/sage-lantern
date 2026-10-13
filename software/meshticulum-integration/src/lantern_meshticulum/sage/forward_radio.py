@@ -7,7 +7,7 @@ ARM. Native observer uses actual USB/sysfs/firmware replies or fixed HAT pins;
 source models are not native qualification. Physical retirement is separate
 from application acceptance and never refunds paid maxima.
 """
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, fields
 from contextlib import contextmanager
 import fcntl
 import hashlib
@@ -17,7 +17,8 @@ from pathlib import Path
 import struct
 import threading
 import time
-from types import MethodType
+from types import MethodType, UnionType
+from typing import get_args
 
 from meshticulum.bench.authority import RunAuthority, canonical
 from meshticulum.bench.attempts import AttemptJournal
@@ -34,11 +35,19 @@ from meshticulum.bench.state import SessionStore
 from meshticulum.bench.wire import BenchGrant, SessionCipher
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.scheduler.budget import BudgetPolicy, Ledger
+from meshticulum.privacy.forward_session import ForwardContext
+from meshticulum.privacy.mesh_envelope import Peer
+from meshticulum.bench.admission import RadioAdmission, Gfsk250Admission
+from meshticulum.bench import gfsk250_profile as _gfsk250_module, wire as _wire_module
+from meshticulum.privacy import forward_session as _forward_module
 from .forward_budget import ChildPlan, Cost
 from .forward_native_owner import ForwardNativeOwner
 from .forward_operation import describe_child
+from .forward_receive_journal import ReceiveIntention
 from .mesh_inbox import _canonical
 from .radio_native_adoption import NativeRadioAdoption, _identity, private_radio_profile
+from . import radio_native_adoption as _adoption_module
+from ..bench import profiles as _profiles_module
 from ..bench.profiles import GFSK250_FIRMWARE, profile_record, radio_route, admission_for
 
 KINDS = (1,2,3,4,5)
@@ -94,6 +103,113 @@ def plan_stage(owner, native_plan, secret, *, slot, kind):
         return ForwardRadioProfile(owner.context.digest,hashlib.sha256(_canonical(owner.intention.to_dict())).digest(),
                                    owner._approval,raw,grant,radio,child)
     except Exception:raise ForwardRadioError() from None
+
+
+_DESCRIPTOR_MISSING=object()
+
+
+def _descriptor_scalar(value):
+    kind=type(value);require(kind in (int,bool,str,bytes,tuple,type(None)))
+    return kind,tuple(_descriptor_scalar(v) for v in value) if kind is tuple else value
+
+
+def _compile_descriptor(owner,profile):
+    """Freeze only a completely validated description, never live permission."""
+    allowed=(ForwardRadioProfile,ForwardContext,Peer,ReceiveIntention,Cost,ChildPlan,
+        BenchGrant,PeerID,SessionKey,RadioProfile,Gfsk250Profile,RadioAdmission,Gfsk250Admission)
+    objects=[];links=[];leaves=[];schemas=[];seen=set();seen_classes=set()
+    def visit(obj):
+        kind=type(obj);require(kind in allowed)
+        if id(obj) in seen:return
+        seen.add(id(obj));objects.append((obj,kind))
+        declared=fields(kind)
+        if kind not in seen_classes:
+            seen_classes.add(kind)
+            schemas.append((kind,kind.__dataclass_fields__,tuple((f.name,f,f.type,
+                kind.__dict__.get(f.name,_DESCRIPTOR_MISSING)) for f in declared)))
+        for field in declared:
+            value=getattr(obj,field.name);declared_types=get_args(field.type) if type(field.type) is UnionType else (field.type,)
+            require(type(value) in declared_types)
+            if type(value) in allowed:links.append((obj,field.name,value));visit(value)
+            else:leaves.append((obj,field.name,_descriptor_scalar(value)))
+    visit(profile)
+    for name,kind in (('context',ForwardContext),('intention',ReceiveIntention),('local',Peer),('remote',Peer)):
+        value=getattr(owner,name);require(type(value) is kind);links.append((owner,name,value));visit(value)
+    for name,kind in (('local_initiator',bool),('_approval',str)):
+        value=getattr(owner,name);require(type(value) is kind);leaves.append((owner,name,_descriptor_scalar(value)))
+    admission=admission_for(profile.radio);visit(admission)
+    selected='GFSK250_ADMISSION' if type(profile.radio) is Gfsk250Profile else 'RADIO_ADMISSION'
+    links.append((_profiles_module,selected,admission))
+    # Raw class descriptors also cover properties/classmethods and inherited
+    # validators. Instance aliases must still resolve to the original method.
+    methods=[];instance_methods=[];functions=[];seen_functions=set()
+    def pin_function(function):
+        if not callable(function) or not hasattr(function,'__code__') or id(function) in seen_functions:return
+        seen_functions.add(id(function));kw=function.__kwdefaults__
+        require(kw is None or type(kw) is dict)
+        # Defaults are exact primitive/tuple trees: their retained identity
+        # proves their immutable values. Keyword-default dictionaries remain
+        # mutable and are compared by exact keys/types/values on every check.
+        _descriptor_scalar(function.__defaults__)
+        functions.append((function,function.__code__,function.__defaults__,kw,
+            None if kw is None else tuple((k,_descriptor_scalar(v)) for k,v in kw.items())))
+    def pin_method(kind,name):
+        base=next(c for c in kind.__mro__ if name in c.__dict__)
+        raw=base.__dict__[name];methods.append((kind,name,kind.__mro__,
+            kind.__dict__.get(name,_DESCRIPTOR_MISSING),base,raw))
+        function=raw.__func__ if type(raw) in (staticmethod,classmethod) else raw
+        pin_function(function)
+        if type(raw) is property:
+            for function in (raw.fget,raw.fset,raw.fdel):pin_function(function)
+    for kind in seen_classes:
+        for name in ('__init__','__post_init__','__eq__','__getattribute__'):
+            if any(name in c.__dict__ for c in kind.__mro__):pin_method(kind,name)
+    pin_method(ForwardNativeOwner,'__getattribute__')
+    for kind in (*seen_classes,ForwardNativeOwner):
+        # Missing fallback getters are part of the original field layout too.
+        methods.append((kind,'__getattr__',kind.__mro__,kind.__dict__.get('__getattr__',_DESCRIPTOR_MISSING),
+            kind,kind.__dict__.get('__getattr__',_DESCRIPTOR_MISSING)))
+    owner_layout=tuple((name,ForwardNativeOwner.__dict__.get(name,_DESCRIPTOR_MISSING))
+        for name in ('context','intention','local','remote','local_initiator','_approval'))
+    for kind,names in ((NativeRadioAdoption,('validate_plan',)),(ForwardContext,('prologue','digest')),
+        (BenchGrant,('context','digest')),(Peer,('to_dict',)),(ReceiveIntention,('to_dict',)),
+        (ChildPlan,('to_dict',)),(type(profile.radio),('encode',)),(type(admission),('check',))):
+        for name in names:pin_method(kind,name)
+    if type(profile.radio) is Gfsk250Profile:
+        for name in ('from_dict','to_dict'):pin_method(Gfsk250Profile,name)
+    for obj,kind in objects:
+        for name in ('to_dict','context','encode','check'):
+            if any(name in c.__dict__ for c in kind.__mro__):
+                bound=getattr(obj,name);require(type(bound) is MethodType and bound.__self__ is obj)
+                instance_methods.append((obj,name,bound.__func__))
+    dependencies=[]
+    def pin_namespace(namespace,names):
+        for name in names:
+            value=namespace[name];dependencies.append((namespace,name,value))
+            pin_function(value)
+    pin_namespace(globals(),('plan_stage','private_radio_profile','profile_record','radio_route','admission_for',
+        '_canonical','canonical','_descriptor_scalar','_compile_descriptor','_DESCRIPTOR_MISSING',
+        *tuple(c.__name__ for c in allowed)))
+    pin_namespace(vars(_adoption_module),('private_radio_profile','profile_from_plan','profile_record','radio_route',
+        'admission_for','radio_canonical','ForwardNativeOwner','ChildPlan','PeerID','SessionKey','Cost','BenchGrant','ServiceKind'))
+    pin_namespace(vars(_profiles_module),('profile_from_plan','profile_record','radio_route','admission_for',
+        'GFSK_NAME','GFSK250_NAME','RadioProfile','Gfsk250Profile'))
+    pin_namespace(vars(_wire_module),('SessionKey','require'))
+    pin_namespace(vars(_forward_module),('Peer','require','canonical_x25519'))
+    pin_namespace(vars(_gfsk250_module),('Gfsk250Profile','need'))
+    links.append((_adoption_module.ServiceKind,'MESSAGE',_adoption_module.ServiceKind.MESSAGE))
+    leaves.append((_adoption_module.ServiceKind.MESSAGE,'_value_',_descriptor_scalar(_adoption_module.ServiceKind.MESSAGE.value)))
+    constants=[]
+    for namespace,names in ((globals(),('KINDS',)),(vars(_forward_module),('DOMAIN','MAX_WINDOW_SECONDS')),
+        (vars(_wire_module),('MAX_BODY',))):
+        constants.extend((namespace,name,_descriptor_scalar(namespace[name])) for name in names)
+    if type(profile.radio) is Gfsk250Profile:
+        for name in ('MAGIC','VERSION','BIT_RATE_BPS','DEVIATION_HZ','RX_BANDWIDTH_HZ',
+            'PREAMBLE_BITS','SYNC_WORD','SHAPING_CODE'):
+            constants.append((vars(_gfsk250_module),name,_descriptor_scalar(getattr(_gfsk250_module,name))))
+        links.append((_gfsk250_module,'RECORD',_gfsk250_module.RECORD))
+    return (owner,profile,tuple(objects),tuple(links),tuple(leaves),tuple(schemas),tuple(methods),
+        tuple(instance_methods),tuple(dependencies),tuple(constants),tuple(functions),owner_layout)
 
 
 class NativeRadioObserver:
@@ -260,8 +376,12 @@ class ForwardRadioFactory:
                 and observer.profile is profile and observer.transport is transport)
         require(profile==plan_stage(owner,json.loads(profile.plan_bytes),profile.grant.secret,
                                    slot=profile.child.slot,kind=profile.child.kind))
+        self._descriptor=_compile_descriptor(owner,profile)
+        self._descriptor_method=type(self)._descriptor_current
+        self._descriptor_code=self._descriptor_method.__code__
         self.owner,self.profile,self.directory,self.transport,self.observer=owner,profile,Path(directory),transport,observer
-        self._refs=(owner,profile,self.directory,transport,observer);self._thread=(os.getpid(),threading.get_ident())
+        self._refs=(owner,profile,self.directory,transport,observer,self._descriptor,self._descriptor_method,self._descriptor_code)
+        self._thread=(os.getpid(),threading.get_ident())
         self._busy=self._used=self._unknown=self._retired=False;self._handles={};self._transport_refs=None
         self.adoption=self.authority=self.worker=self.journal=self.store=self.flow=self.transfer=self.runner=None
         self._disarmed=False;self._wire_retired=False;self._store_closed=False;self._journal_closed=False
@@ -284,11 +404,15 @@ class ForwardRadioFactory:
         self._native_method_refs=self._native_methods
 
     def _bound(self):
-        require(self._thread==(os.getpid(),threading.get_ident()) and all(a is b for a,b in zip(self._refs,
-                (self.owner,self.profile,self.directory,self.transport,self.observer))))
+        require(type(self._refs) is tuple and len(self._refs)==8
+            and self._thread==(os.getpid(),threading.get_ident()) and all(a is b for a,b in zip(self._refs,
+                (self.owner,self.profile,self.directory,self.transport,self.observer,self._descriptor,self._descriptor_method,self._descriptor_code))))
         self.observer._bound()
-        require(self.profile==plan_stage(self.owner,json.loads(self.profile.plan_bytes),self.profile.grant.secret,
-                                       slot=self.profile.child.slot,kind=self.profile.child.kind))
+        method=self._descriptor_current
+        require(type(method) is MethodType and method.__self__ is self and method.__func__ is self._descriptor_method
+            and '_descriptor_current' not in self.__dict__ and type(self)._descriptor_current is self._descriptor_method
+            and self._descriptor_method.__code__ is self._descriptor_code)
+        self._descriptor_current()
         require(all(getattr(self,name) is value for name,value in self._handles.items()))
         require(self._authorize_callback is self._authorize_callback_ref
             and type(self._authorize_callback) is MethodType and self._authorize_callback.__self__ is self
@@ -337,6 +461,37 @@ class ForwardRadioFactory:
             checked(self.observer._device_facts)
             checked(self.adoption.current)
         return True
+
+    def _descriptor_current(self):
+        """Compare original typed preparation inputs; supplies no live authority."""
+        original=self._descriptor
+        require(type(original) is tuple and len(original)==12 and original is self._refs[5]
+            and type(self.owner) is ForwardNativeOwner and original[0] is self.owner and original[1] is self.profile)
+        _,_,objects,links,leaves,schemas,methods,instance_methods,dependencies,constants,functions,owner_layout=original
+        def definitions():
+            require(all(type(obj) is kind for obj,kind in objects))
+            for kind,mapping,declared in schemas:
+                require(kind.__dataclass_fields__ is mapping and tuple(mapping)==tuple(f[0] for f in declared)
+                    and all(mapping[name] is field and field.type is declared_type
+                        and kind.__dict__.get(name,_DESCRIPTOR_MISSING) is raw for name,field,declared_type,raw in declared))
+            for obj,name,mro,local,base,raw in methods:
+                require(obj.__mro__ is mro and obj.__dict__.get(name,_DESCRIPTOR_MISSING) is local
+                    and base.__dict__.get(name,_DESCRIPTOR_MISSING) is raw)
+            require(all(ForwardNativeOwner.__dict__.get(name,_DESCRIPTOR_MISSING) is raw for name,raw in owner_layout))
+            require(all(namespace.get(name) is value for namespace,name,value in dependencies))
+            for function,code,defaults,kw,kw_value in functions:
+                require(function.__code__ is code and function.__defaults__ is defaults
+                    and function.__kwdefaults__ is kw
+                    and (kw is None or type(kw) is dict and tuple((k,_descriptor_scalar(v)) for k,v in kw.items())==kw_value))
+            for obj,name,function in instance_methods:
+                bound=getattr(obj,name)
+                require(type(bound) is MethodType and bound.__self__ is obj and bound.__func__ is function
+                    and name not in getattr(obj,'__dict__',{}))
+        definitions()
+        require(all(getattr(obj,name) is value for obj,name,value in links)
+            and all(_descriptor_scalar(getattr(obj,name))==value for obj,name,value in leaves)
+            and all(_descriptor_scalar(namespace[name])==value for namespace,name,value in constants))
+        definitions();require(self._descriptor is original)
 
     def _authorize(self):
         require(type(self.authority) is RunAuthority and self._authority_binding is not None)
