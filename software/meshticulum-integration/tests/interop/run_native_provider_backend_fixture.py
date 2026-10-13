@@ -87,13 +87,14 @@ def parse_outcome(raw):
     return value
 
 
-def execute(sage,out,inputs,env,child_seconds):
+def execute(sage,out,inputs,env,child_seconds,diagnose_replay=False):
     os.umask(0o077);out.mkdir(mode=0o700,exist_ok=False)
     started_epoch_us=time.time_ns()//1000;started_monotonic_ns=time.monotonic_ns()
     overlay=out/'overlay.json'
     overlay.write_text(json.dumps({'Replace':{str(sage/'api/rest/meshticulum_native_provider_backend_test.go'):
         str(Path(__file__).with_name('native_provider_backend_test.go.txt'))}},sort_keys=True,indent=2)+'\n')
-    command=['go','test','-overlay',str(overlay),'./api/rest','-run','^'+TEST_NAME+'$','-count=1','-v',
+    selected='TestMeshticulumNativeProviderReplayWindowBoundary' if diagnose_replay else TEST_NAME
+    command=['go','test','-overlay',str(overlay),'./api/rest','-run','^'+selected+'$','-count=1','-v',
         '-timeout',str(child_seconds+60)+'s']
     timed_out=False;interrupted=False
     with (out/'output.log').open('xb') as log:
@@ -117,7 +118,8 @@ def execute(sage,out,inputs,env,child_seconds):
     try:outcome=parse_outcome(log.read_text())
     except Exception as error:outcome_error=type(error).__name__
     record=dict(schema='lantern.meshticulum.native-provider-backend-fixture-run.v1',
-        complete=code==0 and not timed_out and unchanged and outcome is not None,
+        complete=code==0 and not timed_out and unchanged and outcome is not None and not diagnose_replay,
+        diagnostic_only=diagnose_replay,diagnostic_completed=diagnose_replay and code==0 and unchanged,
         returncode=code,test_execution_timed_out=timed_out,test_execution_interrupted=interrupted,
         owned_process_group_reaped=True,
         started_epoch_us=started_epoch_us,finished_epoch_us=time.time_ns()//1000,
@@ -129,7 +131,7 @@ def execute(sage,out,inputs,env,child_seconds):
         private_transport_qualified=False,private_production_enabled=False,radio_opened=False)
     target=out/'RESULT.json';target.write_text(json.dumps(record,sort_keys=True,indent=2)+'\n')
     print(json.dumps(dict(saved=str(target),complete=record['complete'],returncode=code)))
-    return 0 if record['complete'] else code or 1
+    return 0 if record['complete'] or record['diagnostic_completed'] else code or 1
 
 
 def main():
@@ -139,6 +141,7 @@ def main():
     parser.add_argument('--runtime-source',type=Path,required=True)
     parser.add_argument('--child-timeout-seconds',type=int,required=True)
     parser.add_argument('--output',type=Path)
+    parser.add_argument('--diagnose-replay-window',action='store_true')
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check',action='store_true');mode.add_argument('--run',action='store_true')
     args=parser.parse_args()
@@ -151,7 +154,7 @@ def main():
             input_manifest_sha256=hashlib.sha256(json.dumps(inputs,sort_keys=True,separators=(',',':')).encode()).hexdigest()),sort_keys=True))
         return 0
     need(args.output is not None,'new_output_directory_required')
-    return execute(sage,args.output.resolve(),inputs,env,args.child_timeout_seconds)
+    return execute(sage,args.output.resolve(),inputs,env,args.child_timeout_seconds,args.diagnose_replay_window)
 
 
 if __name__=='__main__':raise SystemExit(main())

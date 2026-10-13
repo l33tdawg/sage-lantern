@@ -87,7 +87,7 @@ def accounting_fixture(module,clock,trace,label):
 
 
 @contextmanager
-def generated_canary_pair(module,*,start=True,backend_factory=backend,clock=None,keys=None):
+def generated_canary_pair(module,*,start=True,backend_factory=backend,clock=None,keys=None,phase_observer=None):
     """One original UUID/deadline, independent endpoint stores and fresh keys."""
     clock=SharedClock() if clock is None else clock
     keys=[SigningKey.generate(),SigningKey.generate()] if keys is None else list(keys)
@@ -105,9 +105,12 @@ def generated_canary_pair(module,*,start=True,backend_factory=backend,clock=None
     limits=canary_limits();trace=[]
     endpoints=[resource_fixture(keys[i],peers[i],peers[1-i],clock,backend_factory) for i in (0,1)]
     sources=[accounting_fixture(module,clock,trace,str(i)) for i in (0,1)];providers=[]
+    def phase(name,index):
+        if phase_observer is not None:phase_observer(name,index)
     with ExitStack() as stack:
         try:
             for i,e in enumerate(endpoints):
+                phase('provider_constructor',i)
                 h=e.resource;observation=sources[i].observe(h,intention)
                 digest=module.setup_approval_binding(local=peers[i],remote=peers[1-i],local_initiator=i==0,
                     intention=intention,issued_epoch_us=issued,limits=limits,accounting=observation,
@@ -118,23 +121,30 @@ def generated_canary_pair(module,*,start=True,backend_factory=backend,clock=None
                 providers.append(module.ForwardNativeProvider(h,e.authority,setup,remote=peers[1-i],local_initiator=i==0,
                     intention=intention,issued_epoch_us=issued,limits=limits,accounting=sources[i],
                     boot_reader=lambda e=e:e.state.boot,clock_reader=clock))
-            publics=[p.generate() for p in providers]
+            publics=[]
+            for i,p in enumerate(providers):
+                phase('provider_generate',i);publics.append(p.generate())
             context=ForwardContext(peers[0],peers[1],uuid.uuid4().bytes,binding,issued,expires,64,
                 publics[0].public_key,publics[1].public_key)
             for i,e in enumerate(endpoints):
+                phase('provider_bind',i)
                 h=e.resource;digest=approval_binding(context,intention,i==0,
                     config_revision=hashlib.sha256(_canonical(h.config)).hexdigest(),broker_id=h.supervisor.broker_id,
                     storage_epoch=h.probe.snapshot().epoch)
                 exchange=stack.enter_context(e.authority.grant(h.actor,MeshRequestAccess(e.state.epoch,lambda e=e:e.state.owner_live),
                     module.SETUP_SCOPES,approval_binding=digest))
                 providers[i].bind(context,exchange,remote_generation_id=publics[1-i].binding.generation_id)
-            operations=[p.start(sealed_record=packet if i==0 else None) for i,p in enumerate(providers)] if start else []
+            operations=[]
+            if start:
+                for i,p in enumerate(providers):
+                    phase('provider_start',i);operations.append(p.start(sealed_record=packet if i==0 else None))
             yield SimpleNamespace(clock=clock,context=context,intention=intention,packet=packet,wire=wire,
                 content=content,message_id=message,peers=peers,keys=keys,endpoints=endpoints,sources=sources,
                 providers=providers,owners=[p.owner for p in providers] if start else [],operations=operations,trace=trace,
                 native_accounting_qualified=False,private_transport_qualified=False,backend_modeled=True)
         finally:
-            for p in reversed(providers):p.close()
+            for i,p in reversed(list(enumerate(providers))):
+                phase('provider_close',i);p.close()
             for e in endpoints:e.client._client.close()
 
 

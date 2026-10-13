@@ -25,6 +25,34 @@ MAX_DISK_BYTES=32*1024*1024
 CANARY_PREFIX=b'MESHTICULUM-GENERATED-CANARY-'
 
 
+class RequestDiagnostics:
+    """Non-authority aggregate counters; no headers, bodies, IDs or responses."""
+    def __init__(self):
+        self.phase='backend_setup';self.endpoint=-1;self.stage=-1
+        self.counts={};self.last_failure=None;self.boundaries=[]
+    def boundary(self,name,index=-1):
+        self.phase=name;self.endpoint=index
+        self.boundaries.append(dict(phase=name,endpoint=index,request_count=sum(self.counts.values())))
+    def response(self,response):
+        path=response.request.url.path
+        route=path if path in ('/v1/messages/storage','/v1/workflows') else '/v1/workflows/{record}'
+        key=(self.phase,self.endpoint,self.stage,response.request.method,route,response.status_code)
+        self.counts[key]=self.counts.get(key,0)+1
+        if response.status_code>=500:
+            # Classify only exact static server titles; never retain a body.
+            response.read()
+            try:title=response.json().get('title')
+            except Exception:title=None
+            allowed=('Replay window saturated','Message storage unavailable','Access control unavailable')
+            self.last_failure=dict(status=response.status_code,route=route,
+                gate=title if title in allowed else 'unclassified_server_refusal',phase=self.phase,
+                endpoint=self.endpoint,stage=self.stage)
+    def snapshot(self):
+        return dict(request_count=sum(self.counts.values()),rows=[dict(phase=k[0],endpoint=k[1],stage=k[2],
+            method=k[3],route=k[4],status=k[5],count=v) for k,v in sorted(self.counts.items())],
+            boundaries=list(self.boundaries),last_failure=self.last_failure)
+
+
 def need(value):
     if not value:raise RuntimeError('native_backend_fixture_invalid')
 
@@ -74,7 +102,7 @@ def source_fixture_imports():
     return helper
 
 
-def real_backend_factory(config):
+def real_backend_factory(config,diagnostics):
     from sage_sdk.auth import AgentIdentity
     from sage_sdk.client import SageClient
     import httpx
@@ -82,6 +110,7 @@ def real_backend_factory(config):
     def backend(key):
         endpoint=urls[key.encode().hex()]
         client=SageClient(endpoint,AgentIdentity(key),timeout=2,trust_env=False)
+        client._client.event_hooks['response'].append(diagnostics.response)
         try:
             # The new path uses ordinary socket HTTP, never MockTransport.
             need(type(client._client._transport) is httpx.HTTPTransport)
@@ -129,7 +158,7 @@ def scan_disk(databases,seeds,canary):
     return count
 
 
-def run(config):
+def run(config,diagnostics):
     helper=source_fixture_imports()
     from nacl.signing import SigningKey
     from meshticulum.privacy.mesh_envelope import open_envelope
@@ -139,7 +168,8 @@ def run(config):
     keys=[SigningKey(seed) for seed in seeds]
     checks={}
     with tempfile.TemporaryDirectory(prefix='meshticulum-native-backend-carrier-') as directory:
-        with helper.generated_canary_pair(provider,backend_factory=real_backend_factory(config),keys=keys) as pair:
+        with helper.generated_canary_pair(provider,backend_factory=real_backend_factory(config,diagnostics),
+                keys=keys,phase_observer=diagnostics.boundary) as pair:
             original=(pair.context.expires_epoch_us,pair.intention.application_deadline_monotonic_us)
             # A plaintext fixture probe exercises vault encryption itself;
             # encrypted MPF2 delivery alone cannot demonstrate encryption at rest.
@@ -150,13 +180,14 @@ def run(config):
             checks['real_vault_plaintext_probe_roundtrip']=True
             attempts=[]
             for index in range(5):
+                diagnostics.stage=index;diagnostics.boundary('modeled_stage')
                 row=helper.modeled_stage(Path(directory),pair,index,replay=index==4)
                 need(row['modeled_transport'] is True and row['physical_qualified'] is False
                     and all(type(v) is int and v>0 for v in row['attempt_counts']))
                 if index==4:need(row['replay_refusals']>0)
                 attempts.extend(row['attempt_counts'])
             checks['five_prepaid_modeled_stages_and_replay_refusal']=True
-            decision=pair.operations[1].settle();need(decision.status=='admitted')
+            diagnostics.boundary('recipient_settlement');decision=pair.operations[1].settle();need(decision.status=='admitted')
             receiver=pair.owners[1];incoming=receiver._composition.store
             record=incoming.get(decision.record_id,kind='mesh_inbound',access_check=receiver.access_check)
             opened=open_envelope(record['payload']['wire'],keys[1],expected_sender=pair.peers[0],
@@ -179,18 +210,20 @@ def run(config):
                 native_owner_consent_qualified=False,private_transport_qualified=False,
                 private_production_enabled=False,radio_opened=False,memory_erasure_qualified=False,
                 noise_key_encodings_scanned=False,noise_key_disk_persistence_qualified=False,
-                source_attempt_count=sum(attempts),canary_sha256=hashlib.sha256(pair.content.encode()).hexdigest())
+                source_attempt_count=sum(attempts),canary_sha256=hashlib.sha256(pair.content.encode()).hexdigest(),
+                request_diagnostics=diagnostics.snapshot())
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check-input',action='store_true')
     args=parser.parse_args()
+    diagnostics=RequestDiagnostics()
     try:
         config=configuration(sys.stdin.buffer.read(MAX_INPUT+1))
         if args.check_input:
             value=dict(schema=CONFIG_SCHEMA,input_valid=True,execution_started=False)
-        else:value=run(config)
+        else:value=run(config,diagnostics)
         print(json.dumps(value,sort_keys=True,separators=(',',':')))
     except BaseException as error:
         # Never print SDK exceptions, stdin, generated canary or private keys.
@@ -198,7 +231,8 @@ def main():
         while trace is not None:
             frames.append(dict(file=Path(trace.tb_frame.f_code.co_filename).name,line=trace.tb_lineno));trace=trace.tb_next
         print(json.dumps(dict(schema=RESULT_SCHEMA,complete=False,error_type=type(error).__name__,
-            frames=frames[-8:],private_transport_qualified=False,radio_opened=False),sort_keys=True))
+            frames=frames[-8:],request_diagnostics=diagnostics.snapshot(),
+            private_transport_qualified=False,radio_opened=False),sort_keys=True))
         raise SystemExit(1) from None
 
 

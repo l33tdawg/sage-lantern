@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -16,6 +17,34 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// This separate process-selected test preserves the real shared replay guard.
+// It neither clears its cache nor changes its capacity, expiry or signatures.
+func TestMeshticulumNativeProviderReplayWindowBoundary(t *testing.T) {
+	fixture := newWorkflowTestFixture(t)
+	for index := 0; index < 10001; index++ {
+		name := "first"
+		if index%2 == 1 {
+			name = "second"
+		}
+		key := fixture.keys[name]
+		actor := appV23LookupVaultID(key)
+		request := signedGovernanceRequestAs(t, key, actor, http.MethodGet, "/v1/messages/storage", nil)
+		response := httptest.NewRecorder()
+		fixture.server.Router().ServeHTTP(response, request)
+		if index < 10000 {
+			require.Equal(t, http.StatusOK, response.Code, "fresh signed storage observation unexpectedly refused")
+		} else {
+			require.Equal(t, http.StatusServiceUnavailable, response.Code)
+			var problem struct {
+				Title string `json:"title"`
+			}
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &problem))
+			require.Equal(t, "Replay window saturated", problem.Title)
+			t.Log("NATIVE_PROVIDER_REPLAY_DIAGNOSTIC requests=10001 accepted=10000 status=503 gate=Replay_window_saturated")
+		}
+	}
+}
 
 func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
 	python, script := os.Getenv("MESHTICULUM_NATIVE_BACKEND_PYTHON"), os.Getenv("MESHTICULUM_NATIVE_BACKEND_SCRIPT")
@@ -52,6 +81,11 @@ func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
 		var failure struct {
 			Schema    string `json:"schema"`
 			ErrorType string `json:"error_type"`
+			Frames    []struct {
+				File string `json:"file"`
+				Line int    `json:"line"`
+			} `json:"frames"`
+			Diagnostics json.RawMessage `json:"request_diagnostics"`
 		}
 		if len(output) <= 32768 && json.Unmarshal(output, &failure) == nil &&
 			failure.Schema == "lantern.meshticulum.native-provider-backend-canary.v1" {
@@ -62,6 +96,19 @@ func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
 			}
 			if valid {
 				t.Log("native provider fixture refusal class=" + failure.ErrorType)
+				for _, frame := range failure.Frames {
+					if len(frame.File) <= 100 && filepath.Base(frame.File) == frame.File && frame.Line > 0 && frame.Line < 1000000 {
+						t.Logf("native provider safe frame=%s:%d", frame.File, frame.Line)
+					}
+				}
+				// Python records only static phase/route names and integer counts.
+				// It does not retain headers, bodies, record IDs or response data.
+				if len(failure.Diagnostics) > 0 && len(failure.Diagnostics) <= 16384 {
+					var diagnostics map[string]any
+					if json.Unmarshal(failure.Diagnostics, &diagnostics) == nil {
+						t.Log("NATIVE_PROVIDER_REQUEST_DIAGNOSTICS " + string(failure.Diagnostics))
+					}
+				}
 			}
 		}
 	}
