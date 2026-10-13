@@ -253,7 +253,7 @@ def validate_review(args):
 # Only metadata enters argv; bounded compressed SHA-checked native adapter
 # input. No seed bodies, keys or MR1 response bodies are passed through it.
 RPC_ENTRY=r'''
-import base64,hashlib,importlib,json,os,stat,sys,lzma
+import base64,hashlib,importlib,json,os,stat,sys,lzma,types
 from pathlib import Path
 root,pin,adapter_pin,action,unit,blob,input_sha=sys.argv[1:]
 def need(v,r):
@@ -271,14 +271,22 @@ mraw=read(root/'manifest.json',65536);need(hashlib.sha256(mraw).hexdigest()==pin
 m=json.loads(mraw);need(m['private_services_enabled'] is False and m['public_parent_claims_required'] is True,'public_runtime_required')
 for name,h in m['files'].items():
  part=Path(name);need(not part.is_absolute() and '..' not in part.parts,'runtime_member')
- need(hashlib.sha256(read(root/part,500000)).hexdigest()==h,'runtime_member_pin')
-need(m['files'].get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')
+ limit=2000000 if m.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
+ need(hashlib.sha256(read(root/part,limit)).hexdigest()==h,'runtime_member_pin')
+sources=m['source_files'] if m.get('schema')=='meshticulum.bench-runtime-bundle.v2' else m['files']
+need(sources.get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')
 need(len(blob)<=112000,'RPC_encoded_bound')
 compressed=base64.b64decode(blob,validate=True);need(len(compressed)<=84000,'RPC_compressed_bound')
 d=lzma.LZMADecompressor(format=lzma.FORMAT_XZ,memlimit=33554432);raw=d.decompress(compressed,max_length=2000001)
 need(len(raw)<=2000000 and d.eof and not d.unused_data
  and hashlib.sha256(raw).hexdigest()==input_sha,'RPC_input_bound_or_pin')
-sys.path.insert(0,str(root));module=importlib.import_module('lantern_meshticulum.bench.pilot_resume_rpc')
+if m.get('schema')=='meshticulum.bench-runtime-bundle.v2':
+ hraw=read(root/'execution_runtime.py',500000);need(hashlib.sha256(hraw).hexdigest()==m['execution_layout']['loader_sha256'],'image_loader_pin')
+ need('_lantern_execution_runtime' not in sys.modules,'image_loader_duplicate')
+ helper=types.ModuleType('_lantern_execution_runtime');helper.__file__=str(root/'execution_runtime.py');sys.modules[helper.__name__]=helper
+ exec(compile(hraw,helper.__file__,'exec'),helper.__dict__);helper.install(root,mraw,expected_manifest_sha256=pin)
+else:sys.path.insert(0,str(root))
+module=importlib.import_module('lantern_meshticulum.bench.pilot_resume_rpc')
 need(getattr(module,'CONTRACT_SCHEMA',None)=='meshticulum.private-resume-native-rpc.v1','native_integration_contract_missing')
 # dispatch MUST implement the reviewed real-admission integration described
 # above; no local fallback, lambda approval or deserialized Snapshot allowed.

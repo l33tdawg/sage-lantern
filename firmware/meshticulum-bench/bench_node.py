@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import types
 
 
 def trusted(path, limit=2000000):
@@ -52,7 +53,7 @@ def main():
     bundle = Path(__file__).resolve().parent
     manifest_bytes = trusted(bundle / 'manifest.json')
     manifest = json.loads(manifest_bytes)
-    if manifest['schema'] != 'meshticulum.bench-runtime-bundle.v1':
+    if manifest['schema'] not in ('meshticulum.bench-runtime-bundle.v1', 'meshticulum.bench-runtime-bundle.v2'):
         raise RuntimeError('wrong_runtime_bundle')
     for name, digest in manifest['files'].items():
         path = Path(name)
@@ -60,7 +61,18 @@ def main():
             raise RuntimeError('unsafe_runtime_member')
         if hashlib.sha256(trusted(bundle / path)).hexdigest() != digest:
             raise RuntimeError('runtime_source_drift')
-    sys.path.insert(0, str(bundle))
+    if manifest['schema'] == 'meshticulum.bench-runtime-bundle.v2':
+        raw = trusted(bundle / 'execution_runtime.py', 500000)
+        layout = manifest['execution_layout']
+        if hashlib.sha256(raw).hexdigest() != layout['loader_sha256']:
+            raise RuntimeError('sealed_loader_source_drift')
+        helper = types.ModuleType('_lantern_execution_runtime'); helper.__file__ = str(bundle / 'execution_runtime.py')
+        if helper.__name__ in sys.modules: raise RuntimeError('sealed_loader_module_already_present')
+        sys.modules[helper.__name__] = helper
+        exec(compile(raw, helper.__file__, 'exec'), helper.__dict__)
+        helper.install(bundle, manifest_bytes, expected_manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest())
+    else:
+        sys.path.insert(0, str(bundle))
     from lantern_meshticulum.bench import node; from meshticulum.bench import authority
     if args.action == 'inspect':
         if manifest.get('radio_profile_name')=='gfsk250' and args.unit=='unit-a':

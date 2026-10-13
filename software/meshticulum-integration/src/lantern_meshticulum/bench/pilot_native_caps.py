@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import threading
 from types import FunctionType
 from .phase_timing import phase,call as timed_call
@@ -170,7 +171,10 @@ class _Public32Approval:
             raw=self.reader.read(directory/'owner.json',200000);owner=parse(raw)
             require(owner['schema']=='meshticulum.finite-public-resume-owner.v1'
                     and owner['qualification_kind']==policy.qualification_kind and policy.qualification_kind in PUBLIC32_KINDS and owner['policy_digest']==policy.digest)
-            self.runtime=self._runtime_ref=Runtime(Path(__file__).absolute().parents[2],owner['manifest_sha256'])
+            image_helper=sys.modules.get('_lantern_execution_runtime')
+            runtime_root=(image_helper.module_root(__name__) if image_helper is not None
+                          else Path(__file__).absolute().parents[2])
+            self.runtime=self._runtime_ref=Runtime(runtime_root,owner['manifest_sha256'])
             runtime=self.runtime
             def close_owned():
                 if own==(os.getpid(),threading.get_ident()):

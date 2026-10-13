@@ -13,6 +13,7 @@ from pathlib import Path
 import threading
 import stat
 import math
+import sys
 
 from meshticulum.bench.wire import require,WireError
 from .pilot_parent_caps import ParentCaps,canonical
@@ -59,6 +60,8 @@ def callback_window(policy,stage_epoch,stage_mono,operator_end,campaign_end,coun
 
 
 def source_pin():
+    image_helper=sys.modules.get('_lantern_execution_runtime')
+    if image_helper is not None:return sha(image_helper.member_source(__name__))
     path=Path(__file__).absolute();ancestry=[]
     for parent in (path.parent,*path.parent.parents):
         value=parent.lstat()

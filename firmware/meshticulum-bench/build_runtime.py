@@ -9,6 +9,7 @@ import json
 from source_core import core_source
 from pathlib import Path
 import tarfile
+import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +23,7 @@ def main():
     parser.add_argument('--source-test-report', type=Path)
     parser.add_argument('--meshticulum-root', type=Path)
     parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
+    parser.add_argument('--execution-layout', choices=('directory', 'sealed-image'), default='directory')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()
     source = core_source(args.meshticulum_root)
@@ -82,6 +84,30 @@ def main():
         manifest['firmware']=GFSK250_FIRMWARE
         manifest['firmware_by_unit']['unit-a']=GFSK250_FIRMWARE
         manifest['radio_profile_name']='gfsk250'
+    if args.execution_layout == 'sealed-image':
+        originals = files
+        raw_image = io.BytesIO()
+        with zipfile.ZipFile(raw_image, 'w', compression=zipfile.ZIP_STORED, allowZip64=False) as image:
+            for name, data in sorted(originals.items()):
+                entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+                entry.compress_type = zipfile.ZIP_STORED; entry.external_attr = 0o100600 << 16
+                image.writestr(entry, data)
+        image_bytes = raw_image.getvalue()
+        if len(image_bytes) > 2000000:
+            raise SystemExit('Sealed execution image exceeds its reviewed byte limit.')
+        loader = (ROOT / 'firmware/meshticulum-bench/execution_runtime.py').read_bytes()
+        compile(loader, 'execution_runtime.py', 'exec')
+        manifest['schema'] = 'meshticulum.bench-runtime-bundle.v2'
+        manifest['source_files'] = manifest['files']
+        files = {name: data for name, data in originals.items()
+                 if not name.startswith(('meshticulum/', 'lantern_meshticulum/'))}
+        files.update({'execution.zip': image_bytes, 'execution_runtime.py': loader})
+        manifest['files'] = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
+        manifest['execution_layout'] = dict(schema='sage-lantern.sealed-source-image.v1', image='execution.zip',
+            bytes=len(image_bytes), sha256=hashlib.sha256(image_bytes).hexdigest(), loader='execution_runtime.py',
+            loader_sha256=hashlib.sha256(loader).hexdigest(),
+            source_files_sha256=hashlib.sha256(json.dumps(manifest['source_files'],sort_keys=True,
+                separators=(',',':'),allow_nan=False).encode()).hexdigest())
     files['manifest.json'] = json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode='w', format=tarfile.USTAR_FORMAT) as archive:

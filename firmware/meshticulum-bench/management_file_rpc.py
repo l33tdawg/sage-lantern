@@ -5,7 +5,7 @@ import re
 import time
 
 RPC_FILE_ENTRY=r'''try:
- import hashlib,importlib,json,os,re,stat,sys
+ import hashlib,importlib,json,os,re,stat,sys,types
  from pathlib import Path
  root,pin,adapter_pin,action,unit,parent,operation,nonce,path,csha,rsha,end,uid,identity=sys.argv[1:]
  def need(v,r):
@@ -23,14 +23,22 @@ RPC_FILE_ENTRY=r'''try:
  manifest=json.loads(mraw);need(manifest['private_services_enabled'] is False and manifest['public_parent_claims_required'] is True,'public_runtime_required')
  for name,wanted in manifest['files'].items():
   part=Path(name);need(not part.is_absolute() and '..' not in part.parts,'runtime_member')
-  need(hashlib.sha256(read(root/part,500000)).hexdigest()==wanted,'runtime_member_pin')
- need(manifest['files'].get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')
- need('lantern_meshticulum/bench/management_input.py' in manifest['files'],'management_input_runtime_missing')
+  limit=2000000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
+  need(hashlib.sha256(read(root/part,limit)).hexdigest()==wanted,'runtime_member_pin')
+ sources=manifest['source_files'] if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' else manifest['files']
+ need(sources.get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')
+ need('lantern_meshticulum/bench/management_input.py' in sources,'management_input_runtime_missing')
  need(len(identity)<=1024,'management_input_identity_bound');identities=json.loads(identity)
  need(type(identities) is dict and set(identities)=={'file','directory'} and all(type(v) is list for v in identities.values())
   and len(identities['file'])==9 and len(identities['directory'])==5
   and all(type(x) is int for v in identities.values() for x in v),'management_input_identity_shape')
- sys.path.insert(0,str(root));inputs=importlib.import_module('lantern_meshticulum.bench.management_input')
+ if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2':
+  hraw=read(root/'execution_runtime.py',500000);need(hashlib.sha256(hraw).hexdigest()==manifest['execution_layout']['loader_sha256'],'image_loader_pin')
+  need('_lantern_execution_runtime' not in sys.modules,'image_loader_duplicate')
+  helper=types.ModuleType('_lantern_execution_runtime');helper.__file__=str(root/'execution_runtime.py');sys.modules[helper.__name__]=helper
+  exec(compile(hraw,helper.__file__,'exec'),helper.__dict__);helper.install(root,mraw,expected_manifest_sha256=pin)
+ else:sys.path.insert(0,str(root))
+ inputs=importlib.import_module('lantern_meshticulum.bench.management_input')
  if action=='cleanup-management-input':
   absent=inputs.cleanup(path,nonce=nonce,compressed_sha256=csha,expected_stage_uid=int(uid),
    expected_identity=identities['file'],expected_directory_identity=identities['directory'])

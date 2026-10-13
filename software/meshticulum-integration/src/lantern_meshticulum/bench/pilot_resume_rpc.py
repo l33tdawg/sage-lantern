@@ -20,6 +20,7 @@ import resource
 import stat
 import threading
 import time
+import sys
 
 from .history_identity_seal import _Ancestry, capture, SealedHistory, MAX_FILES, MAX_DIRS
 from .history_metadata_fence import _FLAGS, _FILES, _stamp, MAX_FILE
@@ -486,6 +487,13 @@ class Reader:
 
 class Runtime:
     """Full independently pinned installed SDK-free source closure, held per RPC."""
+    __slots__ = ('__image_current', '__dict__')
+    def __setattr__(self, name, value):
+        need(name != '_Runtime__image_current' or not hasattr(self, name), 'sealed_runtime_binding_rebound')
+        object.__setattr__(self, name, value)
+    def __delattr__(self, name):
+        need(name != '_Runtime__image_current', 'sealed_runtime_binding_rebound')
+        object.__delattr__(self, name)
     def __init__(self, root, digest):
         need(type(digest) is str and HEX.fullmatch(digest), 'invalid_runtime_manifest_pin')
         self.root, self.reader = Path(root), Reader()
@@ -496,18 +504,42 @@ class Runtime:
             need(sha(raw) == digest, 'runtime_manifest_changed'); self.manifest = parse(raw)
             m = self.manifest
             need(m['private_services_enabled'] is False and m['public_parent_claims_required'] is True
-                 and type(m['files']) is dict and 75 <= len(m['files']) <= 150, 'wrong_public_runtime')
+                 and type(m['files']) is dict, 'wrong_public_runtime')
+            self._image=None
+            if m.get('schema')=='meshticulum.bench-runtime-bundle.v2':
+                helper=sys.modules.get('_lantern_execution_runtime')
+                need(helper is not None,'sealed_runtime_loader_missing')
+                self._image=helper.active(self.root,digest)
+                helper.manifest_layout(m)
+                need(3<=len(m['files'])<=32,'wrong_sealed_runtime_files')
+            else:
+                need(m.get('schema')=='meshticulum.bench-runtime-bundle.v1'
+                     and 75<=len(m['files'])<=150,'wrong_public_runtime')
             for name, pin in m['files'].items():
                 part = Path(name)
                 need(type(name) is str and not part.is_absolute() and '..' not in part.parts
                      and '.' not in part.parts and HEX.fullmatch(pin), 'unsafe_runtime_member')
-                need(sha(self.reader.read(self.root/part, 500000)) == pin, 'runtime_payload_changed')
+                maximum=2000000 if self._image is not None and name=='execution.zip' else 500000
+                need(sha(self.reader.read(self.root/part, maximum)) == pin, 'runtime_payload_changed')
             relative = 'lantern_meshticulum/bench/pilot_resume_rpc.py'
-            need(relative in m['files'] and Path(__file__).absolute() == self.root/relative,
-                 'RPC_not_installed_pinned_source')
+            if self._image is not None:
+                need(relative in m['source_files'] and helper.module_root(__name__)==self.root
+                     and sha(helper.member_source(__name__))==m['source_files'][relative],
+                     'RPC_not_installed_pinned_source')
+            else:
+                need(relative in m['files'] and Path(__file__).absolute() == self.root/relative,
+                     'RPC_not_installed_pinned_source')
+            image, reader = self._image, self.reader
+            def image_current():
+                need(self._image is image and self.reader is reader, 'sealed_runtime_binding_rebound')
+                if image is not None:image.check_modules()
+            self.__image_current = image_current if image is not None else None
             self.check()
         except BaseException: self.close(); raise
-    def check(self): return self.reader.check()
+    def check(self):
+        self.reader.check()
+        if self.__image_current is not None:self.__image_current()
+        return True
     def close(self): self.reader.close()
     def __enter__(self): return self
     def __exit__(self, *_): self.close()

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import types
 import tempfile
 import time
 
@@ -78,7 +79,7 @@ def main():
     manifest_raw = read(bundle / 'manifest.json', 20000, root=True)
     need(hashlib.sha256(manifest_raw).hexdigest() == manifest_digest, 'runtime_manifest_changed')
     manifest = json.loads(manifest_raw)
-    need(manifest.get('schema') == 'meshticulum.bench-runtime-bundle.v1'
+    need(manifest.get('schema') in ('meshticulum.bench-runtime-bundle.v1','meshticulum.bench-runtime-bundle.v2')
          and manifest.get('private_services_enabled') is False
          and manifest.get('public_parent_claims_required') is True
          and manifest.get('public_ip_service_formats') == ['MR1.request', 'MR1.response'],
@@ -86,9 +87,17 @@ def main():
     for name, expected in manifest['files'].items():
         part = Path(name)
         need(not part.is_absolute() and '..' not in part.parts, 'invalid_runtime_path')
-        need(hashlib.sha256(read(bundle / part, 500000, root=True)).hexdigest() == expected,
+        maximum=2000000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
+        need(hashlib.sha256(read(bundle / part, maximum, root=True)).hexdigest() == expected,
              'runtime_source_changed')
-    sys.path.insert(0, str(bundle))
+    if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2':
+        hraw=read(bundle/'execution_runtime.py',500000,root=True)
+        need(hashlib.sha256(hraw).hexdigest()==manifest['execution_layout']['loader_sha256'],'image_loader_pin')
+        need('_lantern_execution_runtime' not in sys.modules,'image_loader_duplicate')
+        helper=types.ModuleType('_lantern_execution_runtime');helper.__file__=str(bundle/'execution_runtime.py')
+        sys.modules[helper.__name__]=helper;exec(compile(hraw,helper.__file__,'exec'),helper.__dict__)
+        helper.install(bundle,manifest_raw,expected_manifest_sha256=manifest_digest)
+    else:sys.path.insert(0, str(bundle))
     from lantern_meshticulum.ip.node import _facts, clock
     facts = _facts(unit)
     if package.get('schema') == 'meshticulum.pilot-public-seed.v1':
