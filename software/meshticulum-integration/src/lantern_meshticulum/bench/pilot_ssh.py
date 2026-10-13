@@ -83,7 +83,7 @@ def read(p):
   return os.read(fd,2000001)
  finally:os.close(fd)
 raw=read(root/'manifest.json');assert hashlib.sha256(raw).hexdigest()==pin
-m=json.loads(raw);assert m['schema']=='meshticulum.bench-runtime-bundle.v1' and m['private_services_enabled'] is False
+m=json.loads(raw);assert m['schema'] in ('meshticulum.bench-runtime-bundle.v1','meshticulum.bench-runtime-bundle.v2') and m['private_services_enabled'] is False
 assert hashlib.sha256(read(Path(path))).hexdigest()==m['files']['bench_node.py']
 sys.argv=[path,*args]
 runpy.run_path(path,run_name='__main__')
