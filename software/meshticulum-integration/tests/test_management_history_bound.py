@@ -104,11 +104,12 @@ def test_raw_bound_refuses_larger_valid_json_and_decoder_does_not_allocate_unbou
     assert inputs.COMPRESSED_MAX==262144 and inputs.DECODER_MEMORY_MAX==33554432
 
 
-def test_runtime_image_archive_and_existing_argv_contracts_keep_their_original_limits():
+def test_runtime_image_input_and_existing_argv_contracts_keep_their_original_limits():
     bench=Path(__file__).resolve().parents[3]/'firmware/meshticulum-bench'
     source=(bench/'run_public_gfsk250_mb1_fast_bundle100k.py').read_text()
     assert "archive=read(op['runtime_archive'],2000000)" in source
-    assert "total<=2000000,'batch_archive_total_bound'" in source
+    # Physical container overhead is tested with actual archives in
+    # test_runtime_container_budget; image/input limits remain separate.
     assert "expanded<=2000000,'batch_image_expansion_bound'" in source
     tree=ast.parse((bench/'run_public_sf5_c_bulk_8k.py').read_bytes())
     entry=ast.literal_eval(next(n.value for n in tree.body if isinstance(n,ast.Assign)

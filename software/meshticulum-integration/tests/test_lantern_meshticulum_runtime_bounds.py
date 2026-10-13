@@ -39,13 +39,18 @@ def test_128_and_129_payloads_plus_manifest_are_rejected(payloads):
 
 
 @pytest.mark.parametrize('sizes,reason',[( [500001], 'runtime_archive_member_limit'),
-    ([450000]*5, 'runtime_archive_total_limit')])
+    ([450000]*5, 'runtime_archive_packaging_limit')])
 def test_member_count_change_keeps_original_byte_limits(sizes,reason):
+    bodies = {'bench_node.py': b'# synthetic source\n',
+              **{'blob_%d' % index: b'x' * size for index, size in enumerate(sizes)}}
+    manifest = dict(schema='meshticulum.bench-runtime-bundle.v1',
+        files={name: hashlib.sha256(raw).hexdigest() for name, raw in bodies.items()})
+    bodies['manifest.json'] = json.dumps(manifest, sort_keys=True).encode()
     output=io.BytesIO()
     with tarfile.open(fileobj=output,mode='w:gz') as bundle:
-        for index,size in enumerate(sizes):
-            entry=tarfile.TarInfo('blob_%d' % index); entry.size=size
-            bundle.addfile(entry,io.BytesIO(b'x'*size))
+        for name, body in bodies.items():
+            entry=tarfile.TarInfo(name); entry.size=len(body)
+            bundle.addfile(entry,io.BytesIO(body))
     raw=output.getvalue()
     with pytest.raises(RuntimeError,match=reason):
         helper('runtime_bootstrap').members(raw,hashlib.sha256(raw).hexdigest())
