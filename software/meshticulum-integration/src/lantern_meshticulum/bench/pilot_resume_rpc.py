@@ -1786,6 +1786,7 @@ def enrolled_action(action, unit, p, runtime):
          and HEX.fullmatch(owner['runtime_sha256']) and owner['review_sha256'] == p.get('review_sha256',owner['review_sha256']),
          'wrong_runtime_or_review_scope')
     with Reader() as reader:
+        history_reader = reader.stack.enter_context(Reader()) if action == 'enroll' else None
         capture_raw = reader.read(target/'capture.json',RAW_MAX)
         need(sha(capture_raw) == owner['capture_record_sha256'], 'actual_capture_record_changed')
         saved = parse(capture_raw); binding = owner['history_binding_sha256']
@@ -1837,7 +1838,7 @@ def enrolled_action(action, unit, p, runtime):
         if action in checkpoint_actions:
             from . import bundle_checkpoint_adapter as adapter
             remote_check=adapter.remote_guard(policy,owner,unit,p,clock)
-        def bounds():
+        def own_bounds():
             now = clock(); phase = saved['native_phase']
             need(owner['phase_start_epoch_us'] <= now[0] < owner['phase_end_epoch_us']
                  and phase['epoch_us'] <= now[0] and phase['monotonic_us'] <= now[1]
@@ -1846,12 +1847,17 @@ def enrolled_action(action, unit, p, runtime):
             last_clock[0] = now
             if remote_check is not None:remote_check()
             reader.check(); return True
-        def current_facts():
-            bounds(); value = stable(native_facts(unit)); bounds()
+        def bounds():
+            own_bounds()
+            if history_reader is not None:history_reader.check()
+            return True
+        def checked_facts(check):
+            check(); value = stable(native_facts(unit)); check()
             need(value == owner['facts'][unit], 'native_service_lifetime_changed')
             need(value['host_boot_id'] == local.host_boot_id and local.peer.chain_id == 'meshticulum-public-pilot-v1'
                  and local.peer.agent_id == sha(('meshticulum-public-pilot-v1/'+unit+'/'+boot()).encode()), 'own_public_peer_changed')
             return NativeFacts(unit,value['host_boot_id'],PeerID(local.peer.chain_id,local.peer.agent_id))
+        def current_facts():return checked_facts(bounds)
         def records():
             bounds()
             with Reader() as check:
@@ -1870,7 +1876,7 @@ def enrolled_action(action, unit, p, runtime):
                  and e['deadline_monotonic_us'] < saved['native_phase']['deadline_monotonic_us'], 'own_approval_binding_changed')
             records(); return True
         def history_gate():
-            current_facts(); return dict(phase_end_epoch_us=owner['phase_end_epoch_us'])
+            checked_facts(own_bounds); return dict(phase_end_epoch_us=owner['phase_end_epoch_us'])
         if action == 'enroll':
             for name, raw in (('owner.json',owner_raw),('prior.json',prior_raw),('policy.json',policy_raw)):
                 write_new(target,name,raw)
@@ -1879,14 +1885,17 @@ def enrolled_action(action, unit, p, runtime):
             def initial_prior(raw):
                 need(parse(raw) == dict(parent_id=policy.parent_id,policy_digest=policy.digest,
                      unit=asdict(local),prior_snapshot_sha256=policy.prior_snapshot_sha256), 'native_prior_callback_rebound')
-                full_history(reader,unit,saved['history'],history_gate,own_parent=policy.parent_id)
+                # Loading old rows grants nothing. Keep their Reader held through
+                # close; every authority callback below freshly checks all bytes.
+                full_history(history_reader,unit,saved['history'],history_gate,own_parent=policy.parent_id)
                 records(); return True
             caps = NativeCaps.enroll(target/'native.sqlite',policy,unit=unit,clock=clock,
                 facts=current_facts,approve=approve,prior_check=initial_prior,history_binding_sha256=binding)
             try:
                 need(caps.current() is True and caps.history_binding_sha256 == binding, 'own_enrollment_not_current')
                 return dict(parent_id=policy.parent_id,policy_digest=policy.digest,snapshot=caps.snapshot())
-            finally: need(caps.close() is True, 'own_enrollment_close_uncertain')
+            finally:
+                need(caps.close() is True, 'own_enrollment_close_uncertain'); bounds()
         records()
         strict=parse(reader.read(target/'history-identity-seal.json',2000000))
         legacy=parse(reader.read(target/'legacy-grant-seal.json',2000000))
