@@ -7,7 +7,7 @@ ARM. Native observer uses actual USB/sysfs/firmware replies or fixed HAT pins;
 source models are not native qualification. Physical retirement is separate
 from application acceptance and never refunds paid maxima.
 """
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, replace
 import fcntl
 import hashlib
 import json
@@ -20,11 +20,13 @@ import time
 from meshticulum.bench.authority import RunAuthority, canonical
 from meshticulum.bench.attempts import AttemptJournal
 from meshticulum.bench.flow_runtime import BenchFlow
-from meshticulum.bench.hat_worker import HATWorker, journal_binding as hat_binding
+from meshticulum.bench.hat_worker import HATWorker, Gfsk250HATWorker, journal_binding as hat_binding
+from meshticulum.bench.gfsk250_profile import Gfsk250Profile
+from meshticulum.bench.gfsk_profile import radio_is_fast
 from meshticulum.bench.linux_hat import LinuxHAT
 from meshticulum.bench.serial_port import ExclusiveSerial, usb_identity
-from meshticulum.bench.serial_protocol import Frame, Message, FirmwareIdentity, RadioProfile
-from meshticulum.bench.serial_worker import SerialWorker, journal_binding as serial_binding
+from meshticulum.bench.serial_protocol import Frame, Message, FirmwareIdentity, RadioProfile, GfskStatus, Gfsk250Status
+from meshticulum.bench.serial_worker import SerialWorker, Gfsk250SerialWorker, journal_binding as serial_binding
 from meshticulum.bench.services import ServiceTransfer
 from meshticulum.bench.state import SessionStore
 from meshticulum.bench.wire import BenchGrant, SessionCipher
@@ -34,8 +36,8 @@ from .forward_budget import ChildPlan, Cost
 from .forward_native_owner import ForwardNativeOwner
 from .forward_operation import describe_child
 from .mesh_inbox import _canonical
-from .radio_native_adoption import NativeRadioAdoption, _identity
-from ..bench.profiles import RADIO_ADMISSION
+from .radio_native_adoption import NativeRadioAdoption, _identity, private_radio_profile
+from ..bench.profiles import GFSK250_FIRMWARE, profile_record, radio_route, admission_for
 
 KINDS = (1,2,3,4,5)
 FIRMWARE = 'mtb1-9816f92488'
@@ -50,6 +52,12 @@ def require(value):
     if not value:raise ForwardRadioError()
 
 
+def _radio_types(profile):
+    if type(profile) is Gfsk250Profile:return Gfsk250SerialWorker,Gfsk250HATWorker,GFSK250_FIRMWARE
+    require(type(profile) is RadioProfile)
+    return SerialWorker,HATWorker,FIRMWARE
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class ForwardRadioProfile:
     context_digest: bytes
@@ -57,7 +65,7 @@ class ForwardRadioProfile:
     approval: str
     plan_bytes: bytes
     grant: BenchGrant
-    radio: RadioProfile
+    radio: RadioProfile | Gfsk250Profile
     child: ChildPlan
 
 
@@ -66,14 +74,13 @@ def plan_stage(owner, native_plan, secret, *, slot, kind):
     require(type(owner) is ForwardNativeOwner and type(native_plan) is dict
             and type(slot) is int and 0<=slot<5 and kind==KINDS[slot])
     try:
-        raw=_canonical(native_plan);p=json.loads(raw);radio=RadioProfile(**p['profile'])
-        RADIO_ADMISSION.check(p['country'],p['antenna_confirmed'],radio)
-        route={k:p[k] for k in ('initiator','responder','session_id','generation','profile','object','sender_unit','country','service')}
+        raw=_canonical(native_plan);p=json.loads(raw);radio=private_radio_profile(p)
+        route=radio_route(p)
         grant=BenchGrant(SessionKey(PeerID(**p['initiator']),PeerID(**p['responder']),bytes.fromhex(p['session_id']),bytes.fromhex(p['generation'])),
             'bench_transfer',hashlib.sha256(canonical(route)).digest(),p['issued_epoch_us'],p['expires_epoch_us'],208,p['max_frames'],secret)
         sends=(kind%2==1)==owner.local_initiator
         child=ChildPlan(slot,kind,sends,grant.digest.hex(),p['object']['sha256'],p['object']['bytes'],'lora',
-            hashlib.sha256(canonical(asdict(radio))).hexdigest(),owner.intention.host_boot_id,
+            hashlib.sha256(canonical(profile_record(radio))).hexdigest(),owner.intention.host_boot_id,
             owner.context.expires_epoch_us,p['application_deadline_monotonic_us'],
             Cost(radio.max_boot_attempts,radio.max_boot_estimated_airtime_us),grant.max_frames)
         # Reuse the actual adoption's pure grant binding validator; no adoption,
@@ -95,11 +102,17 @@ class NativeRadioObserver:
         self.owner,self.profile,self.transport=owner,profile,transport
         self._refs=(owner,profile,transport);self.adoption=None;self.worker=None;self.identity=None
         self.last_status=None;self.physical_disarmed=None;self._used=False
+        self._armed_record=self._armed_ref=None
         self._methods=tuple((name,getattr(type(self),name)) for name in
-            ('device','discovered','status','owned','current','disarmed','bind'))
+            ('device','discovered','armed','status','_status250','owned','current','disarmed','bind'))
 
     def _bound(self):
         require(all(a is b for a,b in zip(self._refs,(self.owner,self.profile,self.transport))))
+        require(self._armed_record is self._armed_ref)
+        if self._armed_record is not None:
+            worker,profile,lease,_=self._armed_record
+            require(self.worker is worker and worker.profile is profile and profile==self.profile.radio
+                    and worker.arm_lease_ms==lease)
         require(all(name not in self.__dict__ and getattr(type(self),name) is method for name,method in self._methods))
         if self.adoption is not None:
             require(self.adoption.owner is self.owner and self.adoption.child is self.profile.child
@@ -129,18 +142,33 @@ class NativeRadioObserver:
         self._bound();require(self.adoption.current());return True
 
     def discovered(self,worker):
-        self.device();require(type(worker) is SerialWorker and worker.channel is self.transport
-                and type(worker.identity) is FirmwareIdentity and worker.identity.version==FIRMWARE
+        serial_type,_,firmware=_radio_types(self.profile.radio)
+        self.device();require(type(worker) is serial_type and worker.channel is self.transport
+                and type(worker.identity) is FirmwareIdentity and worker.identity.version==firmware
                 and worker.identity.board_id==1)
         serial=self.owner.resource.config['radio']['serial']
         require(worker.identity.boot[:8]==bytes(2)+bytes.fromhex(serial.replace(':',''))[::-1])
         self.worker=worker;self.identity=worker.identity;self.status(disarmed=True)
 
+    def armed(self,worker):
+        """Pin the acknowledged, possibly narrowed lease before status/flow use."""
+        self.device();require(type(self.profile.radio) is Gfsk250Profile
+            and type(worker) is Gfsk250SerialWorker and worker is self.worker
+            and worker.channel is self.transport and worker.identity is self.identity
+            and worker.profile==self.profile.radio and not worker.fenced
+            and self._armed_record is None and type(worker.arm_lease_ms) is int
+            and 1000<=worker.arm_lease_ms<=self.profile.radio.lease_ms)
+        profile=replace(self.profile.radio,lease_ms=worker.arm_lease_ms)
+        self._armed_record=(worker,worker.profile,worker.arm_lease_ms,profile.encode(board_id=self.identity.board_id))
+        self._armed_ref=self._armed_record;self._bound()
+
     def status(self,*,disarmed=False,containment=False):
-        self._bound();worker=self.worker;require(type(worker) is SerialWorker and worker.channel is self.transport
+        self._bound();worker=self.worker;serial_type,_,_=_radio_types(self.profile.radio)
+        require(type(worker) is serial_type and worker.channel is self.transport
             and worker.identity is self.identity)
         if containment:self.owned()
         else:self.device()
+        if type(self.profile.radio) is Gfsk250Profile:return self._status250(disarmed=disarmed,containment=containment)
         request=(worker.journal.command_request(containment=containment) if worker.journal is not None
                  else self.owner._clock()[0])
         deadline=min(self.transport.monotonic()+2,self.profile.child.application_deadline_monotonic_us/1000000) if not containment else self.transport.monotonic()+2
@@ -155,6 +183,39 @@ class NativeRadioObserver:
         if not containment:self.device()
         return self.last_status
 
+    def _status250(self,*,disarmed,containment):
+        worker=self.worker
+        deadline=self.transport.monotonic()+2
+        if not containment:deadline=min(deadline,self.profile.child.application_deadline_monotonic_us/1000000)
+        commands=(Message.STATUS,Message.GFSK_STATUS,Message.GFSK250_STATUS) if disarmed else (Message.GFSK250_STATUS,)
+        base=self.owner._clock()[0] if worker.journal is None else None
+        for index,command in enumerate(commands):
+            request=worker.journal.command_request(containment=containment) if worker.journal is not None else base+index
+            worker._send(Frame(command,self.identity.boot,request),deadline);reply=worker._wait(request,deadline)
+            require(reply.boot==self.identity.boot and reply.request==request)
+            if reply.type is Message.REFUSED:
+                require(disarmed and reply.body==b'\x01' and index+1<len(commands))
+                continue
+            if command is Message.STATUS:
+                require(reply.type is Message.STATUS_REPLY and len(reply.body)==49 and reply.body[46:]==bytes(3))
+                attempts=int.from_bytes(reply.body[30:34],'big');air=int.from_bytes(reply.body[34:42],'big');armed=False
+            else:
+                parser=Gfsk250Status if command is Message.GFSK250_STATUS else GfskStatus
+                status=parser.from_reply(reply,boot=self.identity.boot,request=request,board_id=self.identity.board_id)
+                require(not status.transmitting and not status.fenced and (not disarmed or not status.armed))
+                attempts=status.boot_attempts;air=status.boot_reserved_estimated_airtime_us;armed=status.armed
+                if not disarmed:
+                    record=self._armed_record
+                    require(record is not None and record[0] is worker and record[1] is worker.profile
+                        and record[2]==worker.arm_lease_ms and worker.profile==self.profile.radio and armed
+                        and status.profile.encode(board_id=self.identity.board_id)==record[3])
+            require(attempts<=self.profile.radio.max_boot_attempts and air<=self.profile.radio.max_boot_estimated_airtime_us)
+            if self.last_status is not None:require(attempts>=self.last_status['attempts'] and air>=self.last_status['reserved_us'])
+            self.last_status=dict(attempts=attempts,reserved_us=air,disarmed=not armed)
+            if not containment:self.device()
+            return self.last_status
+        raise ForwardRadioError()
+
     def owned(self):
         """Retained FD/source ownership for containment after permission expiry."""
         self._bound();a=self.adoption;require(a is not None)
@@ -165,16 +226,18 @@ class NativeRadioObserver:
 
     def current(self,worker):
         self.device();require(worker is self.worker)
-        if type(worker) is SerialWorker:require(worker.identity is self.identity and not worker.fenced)
-        else:require(type(worker) is HATWorker and worker.io is self.transport
+        serial_type,hat_type,_=_radio_types(self.profile.radio)
+        if type(worker) is serial_type:require(worker.identity is self.identity and not worker.fenced)
+        else:require(type(worker) is hat_type and worker.io is self.transport
                      and worker.profile==self.profile.radio and not worker.fenced)
         return True
 
     def disarmed(self):
         self.owned();w=self.worker
-        if type(w) is SerialWorker:result=self.status(disarmed=True,containment=True)['disarmed']
+        serial_type,hat_type,_=_radio_types(self.profile.radio)
+        if type(w) is serial_type:result=self.status(disarmed=True,containment=True)['disarmed']
         else:
-            require(type(w) is HATWorker and w.io is self.transport and hasattr(w,'radio'))
+            require(type(w) is hat_type and w.io is self.transport and hasattr(w,'radio'))
             result=not w.radio.fenced and not w.radio.transmitting and (w.radio.status()>>4)&7==2
         self.owned();self.physical_disarmed=result;return result is True
 
@@ -223,8 +286,9 @@ class ForwardRadioFactory:
         if self.worker is not None and (self._arm_started or getattr(self.worker,'journal',None) is not None):
             require(self.worker.journal is self.journal and self.worker.authorize is self._authorize_callback)
         if self.worker is not None:
-            require((type(self.worker) is SerialWorker and self.worker.channel is self._refs[3])
-                    or (type(self.worker) is HATWorker and (not hasattr(self.worker,'io') or self.worker.io is self._refs[3])))
+            serial_type,hat_type,_=_radio_types(self.profile.radio)
+            require((type(self.worker) is serial_type and self.worker.channel is self._refs[3])
+                    or (type(self.worker) is hat_type and (not hasattr(self.worker,'io') or self.worker.io is self._refs[3])))
 
     def _live(self):
         self._bound();require(not self._unknown and not self._retired and self.adoption.current())
@@ -243,7 +307,7 @@ class ForwardRadioFactory:
             self.adoption=NativeRadioAdoption(self.owner,child,self.directory,self.transport);self._handles['adoption']=self.adoption
             self.owner.resource.adopt_forward_radio(self.adoption);self.observer.bind(self.adoption)
             self.authority=RunAuthority(self.directory,expected_unit=json.loads(self.profile.plan_bytes)['unit'],
-                host_boot_id=child.host_boot_id,clock=self.owner._clock,owner_probe=self._owned,radio_admission=RADIO_ADMISSION)
+                host_boot_id=child.host_boot_id,clock=self.owner._clock,owner_probe=self._owned,radio_admission=admission_for(self.profile.radio))
             self._handles['authority']=self.authority;self._live()
             self._authority_refs=(self.authority.fds,tuple((n,fd,_identity(fd))for n,fd in self.authority.fds.items()))
             require(self.authority.profile==self.profile.radio)
@@ -252,9 +316,10 @@ class ForwardRadioFactory:
             self.store=SessionStore(self.directory/'wire.sqlite',self.authority.grant,self.authority.local_peer,
                 boot_id=child.host_boot_id,clock=self.owner._clock,create=True);self._handles['store']=self.store
             self._store_ref=self.store._db
+            serial_type,hat_type,firmware=_radio_types(self.profile.radio)
             if type(self.transport) is ExclusiveSerial:
-                self.worker=SerialWorker(self.transport);self._handles['worker']=self.worker
-                self._live();self.worker.discover(expected_board_id=1,expected_version=FIRMWARE);self._live()
+                self.worker=serial_type(self.transport);self._handles['worker']=self.worker
+                self._live();self.worker.discover(expected_board_id=1,expected_version=firmware);self._live()
                 self.observer.discovered(self.worker);status=self.observer.last_status
                 require(status['attempts']<self.profile.radio.max_boot_attempts and status['reserved_us']<self.profile.radio.max_boot_estimated_airtime_us)
                 binding=serial_binding(self.authority.grant.digest,self.worker.identity,self.profile.radio)
@@ -266,10 +331,12 @@ class ForwardRadioFactory:
             self._arm_started=True
             if type(self.transport) is ExclusiveSerial:
                 self.worker.arm(journal=self.journal,profile=self.authority.profile,context_digest=self.authority.grant.digest,
-                    authorize=self._authorize_callback,authority_deadline=deadline);self._live();self.observer.status()
+                    authorize=self._authorize_callback,authority_deadline=deadline);self._live()
+                if type(self.profile.radio) is Gfsk250Profile:self.observer.armed(self.worker)
+                self.observer.status()
             else:
-                self.worker=HATWorker.__new__(HATWorker);self._handles['worker']=self.worker;self.observer.worker=self.worker
-                HATWorker.__init__(self.worker,self.transport,journal=self.journal,profile=self.authority.profile,
+                self.worker=hat_type.__new__(hat_type);self._handles['worker']=self.worker;self.observer.worker=self.worker
+                hat_type.__init__(self.worker,self.transport,journal=self.journal,profile=self.authority.profile,
                     context_digest=self.authority.grant.digest,authorize=self._authorize_callback,authority_deadline=deadline,
                     antenna_confirmed=json.loads(self.profile.plan_bytes)['antenna_confirmed']);self._live()
             ledger=Ledger(BudgetPolicy(240000000,60000000,120000000,1000000,quantization_us=1),
@@ -309,8 +376,9 @@ class ForwardRadioFactory:
         if w is not None and not self._disarmed:
             def disarm():
                 self.observer.owned();require(time.monotonic()+2<deadline)
-                if type(w) is SerialWorker:require(w.channel is self._refs[3] and w.journal is j)
-                else:require(w.io is self._refs[3] and w.journal is j)
+                serial_type,hat_type,_=_radio_types(self.profile.radio)
+                if type(w) is serial_type:require(w.channel is self._refs[3] and w.journal is j)
+                else:require(type(w) is hat_type and w.io is self._refs[3] and w.journal is j)
                 w.disarm();require(self.observer.disarmed());self._disarmed=True
             attempt(disarm)
         elif w is None:self._disarmed=True # Factory never created a worker or touched radio commands.
@@ -360,7 +428,7 @@ class ForwardRadioFactory:
             end=self.owner._clock()[1]+ACK_GRACE_US
             require(end<self.profile.child.application_deadline_monotonic_us)
             while self.owner._clock()[1]<end:
-                self._live();self.flow.step();time.sleep(.002 if self.profile.radio.bandwidth_hz>=250000 else .01)
+                self._live();self.flow.step();time.sleep(.002 if radio_is_fast(self.profile.radio) else .01)
         return self._cleanup(min(time.monotonic()+3,self.profile.child.application_deadline_monotonic_us/1000000))
 
     def _contain(self,child,runner,deadline):

@@ -8,7 +8,6 @@ released its producer/client; this API never closes or resets that producer.
 FD release is distinct from physical disarm and native qualification.
 """
 import base64
-from dataclasses import asdict
 import hashlib
 import importlib
 import json
@@ -22,19 +21,24 @@ from meshticulum.bench.authority import canonical as radio_canonical
 from meshticulum.bench.linux_hat import LinuxHAT
 from meshticulum.bench.serial_port import ExclusiveSerial
 from meshticulum.bench.serial_protocol import RadioProfile
+from meshticulum.bench.gfsk250_profile import Gfsk250Profile
 from meshticulum.bench.wire import BenchGrant
 from meshticulum.contracts.identity import PeerID, SessionKey, ServiceKind
 from .forward_budget import ChildPlan, Cost
 from .forward_native_owner import ForwardNativeOwner
 from .mesh_inbox import _canonical, _id
 from .workflow_store import WorkflowStore
-from ..bench.profiles import RADIO_ADMISSION
+from ..bench.profiles import profile_from_plan, profile_record, radio_route, admission_for
 
 SCHEMA = 'sage.lantern.native-forward-radio-adoption.v1'
 DOMAIN = b'sage.lantern.native-forward-radio-adoption.v1/signature\0'
 SCOPE = 'meshticulum_forward_radio_adopt'
 SOURCE_MODULES = ('meshticulum.bench.serial_port', 'meshticulum.bench.linux_hat',
                   'meshticulum.bench.serial_worker', 'meshticulum.bench.hat_worker',
+                  'meshticulum.bench.serial_protocol', 'meshticulum.bench.admission',
+                  'meshticulum.bench.gfsk_profile', 'meshticulum.bench.gfsk250_profile',
+                  'meshticulum.bench.sx1262', 'meshticulum.bench.gfsk_sx1262',
+                  'meshticulum.bench.gfsk250_sx1262', 'meshticulum.bench.hat_probe',
                   'meshticulum.bench.authority', 'meshticulum.bench.flow_runtime',
                   'meshticulum.bench.wire', 'meshticulum.bench.state',
                   'meshticulum.flow.flow', 'meshticulum.flow.flow_port',
@@ -44,7 +48,8 @@ SOURCE_MODULES = ('meshticulum.bench.serial_port', 'meshticulum.bench.linux_hat'
                   'lantern_meshticulum.sage.forward_budget',
                   'lantern_meshticulum.sage.workflow_store',
                   'lantern_meshticulum.sage.forward_radio',
-                  'lantern_meshticulum.sage.radio_native_adoption')
+                  'lantern_meshticulum.sage.radio_native_adoption',
+                  'lantern_meshticulum.bench.profiles')
 
 
 class RadioAdoptionError(RuntimeError):
@@ -53,6 +58,15 @@ class RadioAdoptionError(RuntimeError):
 
 def require(value):
     if not value:raise RadioAdoptionError()
+
+
+def private_radio_profile(plan):
+    """Only legacy LoRa or explicitly selected GFSK250; no campaign authority."""
+    require('radio_modem' not in plan or plan['radio_modem']=='gfsk250')
+    profile=profile_from_plan(plan)
+    require(type(profile) in (RadioProfile,Gfsk250Profile))
+    admission_for(profile).check(plan['country'],plan['antenna_confirmed'],profile)
+    return profile
 
 
 def source_pins():
@@ -185,9 +199,12 @@ class NativeRadioAdoption:
         first=o.context.initiator if c.kind%2 else o.context.responder
         second=o.context.responder if c.kind%2 else o.context.initiator
         peer=lambda value:PeerID(value.chain_id,value.public_key.hex())
-        require(type(p) is dict and set(p)=={'schema','unit','host_boot_id','local_peer','initiator','responder',
+        keys={'schema','unit','host_boot_id','local_peer','initiator','responder',
             'session_id','generation','issued_epoch_us','expires_epoch_us','profile','object','sender_unit','country',
-            'antenna_confirmed','max_frames','service','application_deadline_monotonic_us'})
+            'antenna_confirmed','max_frames','service','application_deadline_monotonic_us'}
+        require(type(p) is dict)
+        if p.get('radio_modem')=='gfsk250':keys.add('radio_modem')
+        require(set(p)==keys)
         require(p['schema']=='meshticulum.service-run.v1' and p['host_boot_id']==c.host_boot_id
             and PeerID(**p['local_peer'])==peer(o.local)
             and PeerID(**p['initiator'])==peer(first) and PeerID(**p['responder'])==peer(second)
@@ -196,11 +213,11 @@ class NativeRadioAdoption:
             and p['service']==dict(kind=ServiceKind.MESSAGE.value,format='MPF2.record',application_expires_epoch_us=o.context.expires_epoch_us)
             and p['application_deadline_monotonic_us']==c.application_deadline_monotonic_us
             and p['object']['bytes']==c.packet_bytes and p['object']['sha256']==c.packet_sha256)
-        profile=RadioProfile(**p['profile']);RADIO_ADMISSION.check(p['country'],p['antenna_confirmed'],profile)
-        require(hashlib.sha256(radio_canonical(asdict(profile))).hexdigest()==c.profile_digest
+        profile=private_radio_profile(p)
+        require(hashlib.sha256(radio_canonical(profile_record(profile))).hexdigest()==c.profile_digest
                 and c.cost==Cost(profile.max_boot_attempts,profile.max_boot_estimated_airtime_us)
                 and p['max_frames']==c.cipher_frame_limit)
-        route={key:p[key] for key in ('initiator','responder','session_id','generation','profile','object','sender_unit','country','service')}
+        route=radio_route(p)
         grant=BenchGrant(SessionKey(peer(first),peer(second),bytes.fromhex(p['session_id']),bytes.fromhex(p['generation'])),
             'bench_transfer',hashlib.sha256(radio_canonical(route)).digest(),p['issued_epoch_us'],p['expires_epoch_us'],208,p['max_frames'],secret)
         require(grant.digest.hex()==c.grant_digest)
