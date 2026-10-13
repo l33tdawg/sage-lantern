@@ -29,22 +29,28 @@ class RequestDiagnostics:
     """Non-authority aggregate counters; no headers, bodies, IDs or responses."""
     def __init__(self):
         self.phase='backend_setup';self.endpoint=-1;self.stage=-1
-        self.counts={};self.last_failure=None;self.boundaries=[]
+        self.counts={};self.last_failure=None;self.boundaries=[];self.seen_boundaries=set()
     def boundary(self,name,index=-1):
         self.phase=name;self.endpoint=index
-        self.boundaries.append(dict(phase=name,endpoint=index,request_count=sum(self.counts.values())))
+        key=(name,index,self.stage)
+        # Retain the first boundary per stage/endpoint/phase. Every request is
+        # still counted; repeated step callbacks do not create unbounded logs.
+        if key not in self.seen_boundaries:
+            self.seen_boundaries.add(key)
+            self.boundaries.append(dict(phase=name,endpoint=index,stage=self.stage,
+                request_count=sum(self.counts.values())))
     def response(self,response,actual_endpoint=None):
         path=response.request.url.path
         route=path if path in ('/v1/messages/storage','/v1/workflows') else '/v1/workflows/{record}'
         endpoint=self.endpoint if actual_endpoint is None else actual_endpoint
         key=(self.phase,endpoint,self.stage,response.request.method,route,response.status_code)
         self.counts[key]=self.counts.get(key,0)+1
-        if response.status_code>=500:
+        if response.status_code==429 or response.status_code>=500:
             # Classify only exact static server titles; never retain a body.
             response.read()
             try:title=response.json().get('title')
             except Exception:title=None
-            allowed=('Replay window saturated','Message storage unavailable','Access control unavailable')
+            allowed=('Rate limit exceeded','Replay window saturated','Message storage unavailable','Access control unavailable')
             self.last_failure=dict(status=response.status_code,route=route,
                 gate=title if title in allowed else 'unclassified_server_refusal',phase=self.phase,
                 endpoint=endpoint,stage=self.stage)
@@ -185,7 +191,7 @@ def run(config,diagnostics):
             attempts=[]
             for index in range(5):
                 diagnostics.stage=index;diagnostics.boundary('modeled_stage')
-                row=helper.modeled_stage(Path(directory),pair,index,replay=index==4)
+                row=helper.modeled_stage(Path(directory),pair,index,replay=index==4,phase_observer=diagnostics.boundary)
                 need(row['modeled_transport'] is True and row['physical_qualified'] is False
                     and all(type(v) is int and v>0 for v in row['attempt_counts']))
                 if index==4:need(row['replay_refusals']>0)

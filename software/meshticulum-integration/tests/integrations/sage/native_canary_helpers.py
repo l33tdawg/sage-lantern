@@ -148,12 +148,15 @@ def generated_canary_pair(module,*,start=True,backend_factory=backend,clock=None
             for e in endpoints:e.client._client.close()
 
 
-def modeled_stage(directory,pair,index,*,replay=False):
+def modeled_stage(directory,pair,index,*,replay=False,phase_observer=None):
     """Actual flow/AEAD/SQLite journals; only RF and terminal IO are modeled."""
     from tests.test_meshticulum_private_carrier import carrier_pair
     from meshticulum.bench.services import ServiceTransfer
     from lantern_meshticulum.sage.forward_operation import describe_child
-    source=index%2;destination=1-source;packet=pair.operations[source].packet()
+    source=index%2;destination=1-source
+    def phase(name,endpoint):
+        if phase_observer is not None:phase_observer(name,endpoint)
+    phase('stage_packet',source);packet=pair.operations[source].packet()
     service=dict(kind='protected_message',format='MPF2.record',application_expires_epoch_us=pair.context.expires_epoch_us)
     with carrier_pair(directory/str(index),packet,pair.clock,'unit-a' if source==0 else 'unit-b',
         'unit-b' if source==0 else 'unit-a',index+1,service=service,
@@ -161,6 +164,7 @@ def modeled_stage(directory,pair,index,*,replay=False):
         if replay:carrier.workers[0].replay_once=True
         runners=[]
         for n,(flow,owner) in enumerate(zip((carrier.sender,carrier.receiver),(pair.owners[source],pair.owners[destination]))):
+            endpoint=source if n==0 else destination
             transfer=ServiceTransfer(flow);plan=describe_child(transfer,slot=index,kind=index+1)
             def native(context,child,t,owner=owner):
                 return owner.phase_check(context,child.kind,child.sends) and t.flow.authority.live()
@@ -171,15 +175,23 @@ def modeled_stage(directory,pair,index,*,replay=False):
             def terminal(child,runner):
                 return runner.retired and runner.transfer.flow.flow.complete and not runner.transfer.flow.flow.failure and runner.transfer.flow.journal.db.execute(
                     "SELECT COUNT(*) FROM attempts WHERE state IN ('RESERVED','UNKNOWN')").fetchone()==(0,)
-            runner=owner.prepare_stage(plan,open_child=lambda child,t=transfer:t,native_check=native,
+            def open_child(child,t=transfer,endpoint=endpoint):
+                phase('stage_factory_open',endpoint);return t
+            # Owner.prepare_stage prepays the full child budget before this
+            # factory. This label includes its surrounding fresh owner guards;
+            # it is not a separately timed production-budget method span.
+            phase('stage_budget_pre_admit',endpoint)
+            runner=owner.prepare_stage(plan,open_child=open_child,native_check=native,
                 retire_child=retire,contain_child=lambda *a:False,terminal_check=terminal,
                 payload=packet if n==0 else None)
-            runner.start();runners.append(runner)
+            phase('stage_start',endpoint);runner.start();runners.append(runner)
         for _ in range(1600):
-            runners[0].step();runners[1].step();pair.clock.advance(50000)
+            phase('stage_step',source);runners[0].step()
+            phase('stage_step',destination);runners[1].step();pair.clock.advance(50000)
             if all(r.wire_complete for r in runners):break
         else:raise AssertionError('finite source canary stage did not complete')
-        for owner,runner in zip((pair.owners[source],pair.owners[destination]),runners):
+        for endpoint,owner,runner in zip((source,destination),(pair.owners[source],pair.owners[destination]),runners):
+            phase('stage_retire',endpoint)
             assert owner.retire_stage(runner)
         return dict(modeled_transport=True,physical_qualified=False,
             replay_refusals=carrier.receiver.counts['rx_refused'],
