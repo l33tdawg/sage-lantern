@@ -63,7 +63,7 @@ def protected_units(base,p,value,monkeypatch):
     p=replace(p,units=tuple(replace(u,prior_snapshot_sha256=prior_pins[u.unit]) for u in p.units),
         prior_snapshot_sha256=kp.sha256_hex(canonical(registry)))
     owner0=json.loads((records['unit-a'][0]/'owner.json').read_bytes())
-    pins=dict(scope_sha256='f'*64,core_commit='002694c3a7ad3b402891029ded0c82fabecde691',
+    pins=dict(scope_sha256='f'*64,core_commit=getattr(mode,'GFSK250_CORE_COMMIT','002694c3a7ad3b402891029ded0c82fabecde691'),
         history_receipt_sha256='a'*64,preceding_parent=PAID_HISTORY[-1])
     # Model-only source assignment. Default source has every physical pin None.
     monkeypatch.setattr(mode,'PHYSICAL_BINDINGS',MappingProxyType(pins))

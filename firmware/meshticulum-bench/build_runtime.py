@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-test-report', type=Path)
     parser.add_argument('--meshticulum-root', type=Path)
+    parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()
     source = core_source(args.meshticulum_root)
@@ -74,6 +75,13 @@ def main():
         'public_debt_snapshot_schemas': ['meshticulum.public-debt-scope.v1'],
         'public_parent_snapshot_schemas': ['meshticulum.public-parent-observation.v1'],
         'radio_mtu_bytes': 255, 'flow_payload_bytes': 193}
+    if args.radio_profile=='gfsk250':
+        from sys import path as import_path
+        import_path[:0]=[str(source/'src'),str(application_source)]
+        from lantern_meshticulum.bench.profiles import GFSK250_FIRMWARE
+        manifest['firmware']=GFSK250_FIRMWARE
+        manifest['firmware_by_unit']['unit-a']=GFSK250_FIRMWARE
+        manifest['radio_profile_name']='gfsk250'
     files['manifest.json'] = json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode='w', format=tarfile.USTAR_FORMAT) as archive:

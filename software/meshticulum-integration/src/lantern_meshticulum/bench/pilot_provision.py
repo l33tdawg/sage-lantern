@@ -169,8 +169,8 @@ def _provision(package, *, state, facts, clock, leases, caps):
             and mono < plan['application_deadline_monotonic_us'], 'pilot_grant_not_current')
     public32 = public32_service(plan.get('service',{}))
     mb1_pin=public_mb1_service(plan.get('service',{}))
-    from .profiles import GFSK_MB1_BUNDLE_KIND
-    require((mb1_pin is not None)==(caps.policy.qualification_kind==GFSK_MB1_BUNDLE_KIND),
+    from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND
+    require((mb1_pin is not None)==(caps.policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND)),
         'mb1_parent_kind_mismatch')
     require(not public32 or (caps.policy.qualification_kind in PUBLIC32_KINDS
             and package['transport'] == 'lora'), 'public32_parent_kind_mismatch')

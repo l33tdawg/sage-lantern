@@ -17,7 +17,7 @@ from meshticulum.contracts.identity import PeerID
 from meshticulum.ip.wire import IpLimits
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
-from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,admission_for,profile_record
+from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK250_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,profile_name_for_kind,require_gfsk250_bindings,admission_for,profile_record
 from lantern_meshticulum.bench.pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentCaps, canonical
 from meshticulum.bench.wire import require
 
@@ -35,7 +35,7 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
     """Fresh independent adjacent-link sessions; receiver never gets a body."""
     identifier(campaign_id)
     require(type(public32) is bool and (not public32 or transport == 'lora'), 'invalid_public32_pilot')
-    require(mb1_descriptor_sha256 is None or (public32 and profile==GFSK_NAME
+    require(mb1_descriptor_sha256 is None or (public32 and profile in (GFSK_NAME,GFSK250_NAME)
         and type(mb1_descriptor_sha256) is str and len(mb1_descriptor_sha256)==64
         and all(c in '0123456789abcdef' for c in mb1_descriptor_sha256)),'invalid_mb1_pilot_descriptor')
     require(sender in UNITS and receiver in UNITS and sender != receiver
@@ -87,9 +87,9 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                 object=dict(descriptor,object_id=descriptor['sha256'],chunk_index=0),
                 sender_unit=sender,country='MY',antenna_confirmed=True,max_frames=512,
                 service=dict(kind='knowledge',format=format,application_expires_epoch_us=application_expires_epoch_us))
-        if transport=='lora' and profile==GFSK_NAME:
+        if transport=='lora' and profile in (GFSK_NAME,GFSK250_NAME):
             require({sender,receiver}=={'unit-a','unit-c'},'gfsk_public_adjacent_scope_required')
-            grant['radio_modem']=GFSK_NAME
+            grant['radio_modem']=profile
         if public32: grant['service']['public_response_max_bytes'] = 32768
         if mb1_descriptor_sha256 is not None:
             from meshticulum.bench.public_block import REPRESENTATION_MARKER,TRANSPORT_DESCRIPTOR_MARKER
@@ -115,10 +115,12 @@ class Controller:
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
                 'public32_parent_kind_mismatch')
         require(type(radio_profile) is str and radio_profile in PROFILE_NAMES
-                and (not public32 or radio_profile == ('gfsk125' if parent.policy.qualification_kind in (GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND) else 'sf7-500')), 'invalid_pilot_radio_profile')
+                and (not public32 or radio_profile == (profile_name_for_kind(parent.policy.qualification_kind) or 'sf7-500')), 'invalid_pilot_radio_profile')
+        require((radio_profile==GFSK250_NAME)==(parent.policy.qualification_kind==GFSK250_MB1_BUNDLE_KIND),'gfsk250_parent_kind_mismatch')
+        if radio_profile==GFSK250_NAME:require_gfsk250_bindings()
         require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
-        require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME)),
+        require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME,GFSK250_NAME)),
                 'invalid_lora_startup_order')
         self.lora_sender_first = self._lora_sender_first = lora_sender_first
         self.bundle_context = None

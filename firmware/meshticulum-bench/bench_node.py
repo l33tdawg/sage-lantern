@@ -63,7 +63,9 @@ def main():
     sys.path.insert(0, str(bundle))
     from lantern_meshticulum.bench import node; from meshticulum.bench import authority
     if args.action == 'inspect':
-        result = node.inspect(args.unit)
+        if manifest.get('radio_profile_name')=='gfsk250' and args.unit=='unit-a':
+            result=node.inspect(args.unit,radio_modem='gfsk250')
+        else:result = node.inspect(args.unit)
         result['schema'] = 'meshticulum.native-bench-inspection.v1'
     elif args.action == 'pilot-facts':
         from lantern_meshticulum.bench.pilot_manage import facts

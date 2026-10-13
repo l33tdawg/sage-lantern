@@ -13,17 +13,19 @@ import subprocess
 import time
 
 from meshticulum.bench.attempts import AttemptJournal
-from .profiles import RADIO_ADMISSION,GFSK_NAME,profile_from_plan,admission_for,require_gfsk_bindings
+from .profiles import (RADIO_ADMISSION,GFSK_NAME,GFSK250_NAME,profile_from_plan,admission_for,
+                       require_gfsk_bindings,require_gfsk250_bindings,modem_for)
 from meshticulum.bench.public_block import public32_service, public_mb1_service, object_limit
 from meshticulum.bench.authority import RunAuthority, _open, _private_info
 from meshticulum.bench.flow_runtime import BenchFlow
-from meshticulum.bench.hat_worker import HATWorker,GfskHATWorker, journal_binding as hat_binding
+from meshticulum.bench.hat_worker import HATWorker,GfskHATWorker,Gfsk250HATWorker, journal_binding as hat_binding
 from meshticulum.bench.linux_hat import LinuxHAT
 from meshticulum.bench.objects import VerifiedChunks
 from meshticulum.bench.serial_port import ExclusiveSerial
-from meshticulum.bench.serial_protocol import Frame, Message,GfskStatus
-from meshticulum.bench.serial_worker import SerialWorker,GfskSerialWorker, journal_binding as serial_binding
+from meshticulum.bench.serial_protocol import Frame, Message,GfskStatus,Gfsk250Status
+from meshticulum.bench.serial_worker import SerialWorker,GfskSerialWorker,Gfsk250SerialWorker, journal_binding as serial_binding
 from meshticulum.bench.gfsk_profile import GfskProfile,radio_is_fast
+from meshticulum.bench.gfsk250_profile import Gfsk250Profile
 from meshticulum.bench.state import SessionStore
 from meshticulum.bench.wire import SessionCipher, require
 from meshticulum.scheduler.budget import BudgetPolicy, Ledger
@@ -96,11 +98,20 @@ def _disarmed_status(worker,identity):
         require(reply.body==bytes([1]),'radio_status_refused')
         request+=1
         worker._send(Frame(Message.GFSK_STATUS,identity.boot,request),end);reply=worker._wait(request,end)
-        status=GfskStatus.from_reply(reply,boot=identity.boot,request=request,board_id=1)
+        if reply.type is Message.REFUSED:
+            require(reply.boot==identity.boot and reply.request==request and reply.body==bytes([1]),
+                    'radio_status_refused')
+            request+=1
+            worker._send(Frame(Message.GFSK250_STATUS,identity.boot,request),end);reply=worker._wait(request,end)
+            status=Gfsk250Status.from_reply(reply,boot=identity.boot,request=request,board_id=1)
+            modem=GFSK250_NAME
+        else:
+            status=GfskStatus.from_reply(reply,boot=identity.boot,request=request,board_id=1)
+            modem=GFSK_NAME
         require(not status.armed and not status.transmitting and not status.fenced,'radio_not_disarmed_or_fenced')
         return dict(boot_attempts=status.boot_attempts,
             boot_reserved_estimated_airtime_us=status.boot_reserved_estimated_airtime_us,
-            dropped_receive=status.dropped_receive,radio_modem=GFSK_NAME)
+            dropped_receive=status.dropped_receive,radio_modem=modem)
     require(reply.type is Message.STATUS_REPLY and len(reply.body)==49 and reply.body[46:]==bytes(3),
             'radio_not_disarmed_or_fenced')
     return dict(boot_attempts=int.from_bytes(reply.body[30:34],'big'),
@@ -109,16 +120,21 @@ def _disarmed_status(worker,identity):
 
 
 def _serial(unit,*,radio_modem=None):
-    require(radio_modem in (None,GFSK_NAME),'unsupported_native_radio_modem')
+    require(radio_modem in (None,GFSK_NAME,GFSK250_NAME),'unsupported_native_radio_modem')
     firmware=FIRMWARE_BY_UNIT[unit]
     if radio_modem==GFSK_NAME:
         require_gfsk_bindings();require(unit=='unit-a','gfsk_USB_unit_not_reviewed')
         from .profiles import GFSK_FIRMWARE
         firmware=GFSK_FIRMWARE
+    elif radio_modem==GFSK250_NAME:
+        require_gfsk250_bindings();require(unit=='unit-a','gfsk250_USB_unit_not_reviewed')
+        from .profiles import GFSK250_FIRMWARE
+        firmware=GFSK250_FIRMWARE
     serial=USB[unit]
     channel=ExclusiveSerial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_'+serial+'-if00',usb_serial=serial)
     try:
-        worker=(GfskSerialWorker if radio_modem==GFSK_NAME else SerialWorker)(channel)
+        worker_type={None:SerialWorker,GFSK_NAME:GfskSerialWorker,GFSK250_NAME:Gfsk250SerialWorker}[radio_modem]
+        worker=worker_type(channel)
         identity=worker.discover(expected_board_id=1,expected_version=firmware)
         require(identity.boot[:8]==bytes(2)+bytes.fromhex(serial.replace(':',''))[::-1],'wrong_radio_efuse_identity')
         counters=_disarmed_status(worker,identity)
@@ -128,15 +144,20 @@ def _serial(unit,*,radio_modem=None):
         channel.close();raise
 
 
-def inspect(unit):
+def inspect(unit,*,radio_modem=None):
     import cryptography
     before = roles(unit)
     result = {'unit': unit, 'host_boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
               'cryptography': cryptography.__version__, 'services_before': before,
               'radio_opened': False, 'arm_commands': 0, 'tx_commands': 0}
     if unit in USB:
-        channel, _, status = _serial(unit)
-        try: result.update(radio=status, radio_opened=True)
+        channel, worker, status = _serial(unit) if radio_modem is None else _serial(unit,radio_modem=radio_modem)
+        try:
+            result.update(radio=status,radio_opened=True)
+            if radio_modem==GFSK250_NAME:
+                require(type(worker) is Gfsk250SerialWorker,'gfsk250_inspection_worker_changed')
+                result['radio_capability']=dict(verified=True,radio_modem=GFSK250_NAME,record_version=2,
+                    firmware=worker.identity.version,mcu_boot=worker.identity.boot.hex())
         finally: channel.close()
     result['services_after'] = roles(unit)
     return result
@@ -186,7 +207,7 @@ def _sender_readiness_pass(enabled, runner, flow, worker, authority, parent_curr
 
 
 def _fast_profile(profile):
-    if type(profile) is GfskProfile:
+    if type(profile) in (GfskProfile,Gfsk250Profile):
         profile.encode(board_id=1)
         return profile.frequency_hz==921375000 and profile.chip_power_dbm==0
     return (profile.frequency_hz, profile.bandwidth_hz, profile.spreading_factor,
@@ -335,6 +356,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         # Convert the OS-owner observation to an exact bool, never a caller flag.
         selected_profile=profile_from_plan(native_plan,board_id=1) if public_service else None
         if public_service and native_plan.get('radio_modem')==GFSK_NAME:require_gfsk_bindings()
+        if public_service and native_plan.get('radio_modem')==GFSK250_NAME:require_gfsk250_bindings()
         authority = RunAuthority(directory, radio_admission=admission_for(selected_profile) if public_service else RADIO_ADMISSION, expected_unit=unit, host_boot_id=boot,
                                  clock=clock, owner_probe=lambda: bool(owned()))
         if public_service:
@@ -359,8 +381,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                 and (authority.public32 is True or _fast_profile(authority.profile))),
                 'sender_receive_ready_requires_public32_sender')
         grant, profile = authority.grant, authority.profile
-        if type(profile) is GfskProfile:
-            result['radio_modem']=GFSK_NAME
+        if type(profile) in (GfskProfile,Gfsk250Profile):
+            result['radio_modem']=modem_for(profile)
             result['airtime_basis']='GFSK source estimate; raw driver completion timings are separate'
         result.update(grant_context_sha256=grant.digest.hex(), session_id=grant.session.session_id.hex(),
                       object=authority.plan['object'], sends=authority.sends)
@@ -381,7 +403,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                              boot_id=boot, clock=clock, create=True)
         require(parent_current(), 'pilot_parent_not_current')
         if unit in USB:
-            channel,worker,radio=(_serial(unit,radio_modem=GFSK_NAME) if type(profile) is GfskProfile else _serial(unit))
+            channel,worker,radio=(_serial(unit,radio_modem=modem_for(profile))
+                                 if type(profile) in (GfskProfile,Gfsk250Profile) else _serial(unit))
             require(parent_current(), 'pilot_parent_not_current')
             result['radio'] = radio
             require(radio['boot_attempts'] < profile.max_boot_attempts
@@ -408,7 +431,9 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                     firmware_lease_end_upper_bound=worker.arm_lease_end_upper_bound,
                     host_lease_end=worker.armed_until, original_authority_deadline=deadline)
         else:
-            worker = (GfskHATWorker if type(profile) is GfskProfile else HATWorker)(channel, journal=journal, profile=profile, context_digest=grant.digest,
+            worker_type=(Gfsk250HATWorker if type(profile) is Gfsk250Profile
+                         else GfskHATWorker if type(profile) is GfskProfile else HATWorker)
+            worker = worker_type(channel, journal=journal, profile=profile, context_digest=grant.digest,
                 authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline,
                 antenna_confirmed=authority.plan['antenna_confirmed'])
         require(parent_current(), 'pilot_parent_not_current')

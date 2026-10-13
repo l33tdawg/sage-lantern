@@ -90,9 +90,9 @@ def _native_capture(state,run,*,facts,format,clock,public32,transport,owner):
         with captured(state,run,facts=facts,format=format,clock=clock,public32=public32) as value:yield value
         return
     from .pilot_bundle import _NativeOwner,_HeldCapture
-    from .profiles import GFSK_MB1_BUNDLE_KIND
+    from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND
     require(public32 and type(owner) is _NativeOwner and owner.context.transport is transport
-        and owner.caps.policy.qualification_kind==GFSK_MB1_BUNDLE_KIND and owner.clock is clock
+        and owner.caps.policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND) and owner.clock is clock
         and owner.state==Path(state).absolute() and owner.caps.unit.unit==facts['unit'],
         'protected_mb1_native_owner_required')
     with _HeldCapture(owner,run,sends=False,format=format) as held:

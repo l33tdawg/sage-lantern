@@ -32,7 +32,7 @@ from .pilot_native_caps import NativeCaps, NativeFacts
 from .pilot_manage import facts as native_facts
 from .resume_parent_guard import HISTORY, ResumeParentGuard, install_seals
 from .retained_capture import historical_parent_ids, capture_paths, CAPTURE_PARENT, CAPTURE_ONLY_PARENTS
-from .profiles import profile_for,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,profile_record,profile_from_plan,admission_for
+from .profiles import profile_for,GFSK_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_NAME,profile_record,profile_from_plan,admission_for
 from meshticulum.ip.wire import IpLimits
 from meshticulum.bench.serial_protocol import RadioProfile
 from meshticulum.contracts.identity import PeerID
@@ -291,6 +291,10 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
 def owner_radio_profile(owner, policy):
     """An explicit SF5 choice is confined to the two-link C/A 8 KiB scope."""
     name = owner.get('radio_profile_name', 'sf7-500')
+    if name==GFSK250_NAME:
+        from .gfsk250_mb1_bundle import require_owner
+        require_owner(owner,policy)
+        return profile_for(GFSK250_NAME)
     if name==GFSK_NAME and policy.qualification_kind==GFSK_MB1_BUNDLE_KIND:
         from .gfsk_mb1_bundle import require_owner
         require_owner(owner,policy)
@@ -301,7 +305,7 @@ def owner_radio_profile(owner, policy):
         return profile_for(GFSK_NAME)
     if name==GFSK_NAME:
         from .gfsk_batch import BatchContext as GfskContext
-        need(owner.get('radio_modem')==GFSK_NAME and policy.qualification_kind==GFSK_KIND,'owner_gfsk_scope_not_reviewed')
+        need(owner.get('radio_modem') in (GFSK_NAME,GFSK250_NAME) and policy.qualification_kind==GFSK_KIND,'owner_gfsk_scope_not_reviewed')
         GfskContext.from_owner(owner,policy)
         selected=profile_for(GFSK_NAME);need(profile_record(selected)==owner['rf_profile'],'owner_RF_profile_changed');return selected
     need('radio_modem' not in owner,'owner_unreviewed_radio_modem')
@@ -1700,7 +1704,7 @@ def enrolled_action(action, unit, p, runtime):
              and rf['country'] == 'MY' and rf['C_transmission_allowed'] is True
              and rf['A_B_transmission_allowed'] is True and all(rf['units'][u]['antenna_connected'] is True
              for u in ('unit-a','unit-b','unit-c')) and profile_record(rp) == owner['rf_profile']
-             and (owner.get('radio_modem')==GFSK_NAME or (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,rp.coding_rate,rp.chip_power_dbm,
+             and (owner.get('radio_modem') in (GFSK_NAME,GFSK250_NAME) or (rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,rp.coding_rate,rp.chip_power_dbm,
                   rp.preamble,rp.sync_word) in ((921375000,500000,7,5,0,8,0x42),
                                                (921375000,500000,5,5,0,12,0x42))), 'owner_RF_basis_changed')
         radio = Cost(rp.max_boot_attempts,rp.max_boot_estimated_airtime_us)
