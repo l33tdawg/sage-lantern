@@ -26,6 +26,7 @@ from .message_storage import MessageStorageProbe
 from .noise_native_enrollment import NativeNoiseEnrollment, ENROLL_SCOPE
 from .noise_purpose import NoisePurpose
 from .workflow_store import WorkflowStore
+from .bound_storage_pair import BoundStoragePair, BoundStoragePairError
 
 SETUP_SCOPES = SCOPES + (ENROLL_SCOPE,)
 SETUP_DOMAIN = b'sage.lantern.forward-native-setup.v1\0'
@@ -124,7 +125,7 @@ class ForwardNativeProvider:
     """
     def __init__(self, resource, authority, setup_context, *, remote, local_initiator,
                  intention, issued_epoch_us, limits, accounting,
-                 boot_reader=host_boot, clock_reader=clock):
+                 boot_reader=host_boot, clock_reader=clock, storage_pair_factory=BoundStoragePair):
         from sage_lantern.mesh_daemon import HardwareRuntime
         from sage_lantern.mesh_community import MeshActionAuthority
         from sage_lantern.mesh_runtime import MeshUserContext
@@ -133,6 +134,7 @@ class ForwardNativeProvider:
                 and type(local_initiator) is bool and type(intention) is ReceiveIntention
                 and type(limits) is Cost and isinstance(accounting, NativeAccountingSource)
                 and callable(boot_reader) and callable(clock_reader)
+                and (storage_pair_factory is None or storage_pair_factory is BoundStoragePair)
                 and type(issued_epoch_us) is int
                 and 0 <= issued_epoch_us < intention.application_expires_epoch_us)
         self.resource, self.authority, self.setup_context = resource, authority, setup_context
@@ -144,13 +146,17 @@ class ForwardNativeProvider:
         self._source_closed = False
         self._purpose = self._enrollment = self._handle = self._owner = self._operation = None
         self._context = self._exchange = self._public = None
+        self._storage_pair_factory = storage_pair_factory
+        self._storage_pair = self._storage_pair_ref = None
+        self._storage_pair_check = self._storage_pair_check_ref = None
+        self._storage_pair_delegates = None
         self._components = {}
         self._last_clock = self._accounting_binding = self._setup_approval = None
         self._source_methods = (type(accounting).observe, type(accounting).close)
         self._source_observe, self._source_close = accounting.observe, accounting.close
         self._source_cleanup = (accounting, self._source_methods[1])
         self._refs = (resource, authority, setup_context, remote, local_initiator, intention,
-                      limits, accounting, boot_reader, clock_reader)
+                      limits, accounting, boot_reader, clock_reader, storage_pair_factory)
         try:
             self._native_refs = (resource.supervisor, resource.probe, resource.probe.client,
                                 resource.identity, resource.identity._signing_key, resource._mutex)
@@ -165,6 +171,12 @@ class ForwardNativeProvider:
                 resource.probe.client, actor=RecipientID(self.local.chain_id, self.local.public_key.hex()),
                 endpoint=resource.probe.endpoint))
             self._components['_store'] = self._store
+            if storage_pair_factory is not None:
+                self._storage_pair = self._storage_pair_ref = storage_pair_factory(resource.probe, self._store)
+                self._storage_pair_check = self._storage_pair_check_ref = self._storage_pair.observe
+                self._storage_pair_delegates = (self._storage_pair._BoundStoragePair__matches,
+                                               self._storage_pair._BoundStoragePair__observe)
+            self._components['_storage_pair_delegates'] = self._storage_pair_delegates
             self._guard()
             self._purpose = NoisePurpose(self._store, local=self.local, remote=remote,
                 local_initiator=local_initiator, intention=intention,
@@ -177,9 +189,10 @@ class ForwardNativeProvider:
                 workflow_access_check=self._access_check)
             self._components['_purpose'] = self._purpose
             self._guard()
-        except BaseException:
+        except BaseException as error:
             self._uncertain = True
             self.close()
+            if isinstance(error, BoundStoragePairError): raise ForwardNativeProviderError() from None
             raise
 
     def __repr__(self):
@@ -190,7 +203,8 @@ class ForwardNativeProvider:
                 and self._process == (os.getpid(), threading.get_ident()))
         h = self.resource
         require(all(a is b for a, b in zip(self._refs, (h, self.authority, self.setup_context,
-            self.remote, self.local_initiator, self.intention, self.limits, self.accounting, self._boot, self._clock))))
+            self.remote, self.local_initiator, self.intention, self.limits, self.accounting, self._boot, self._clock,
+            self._storage_pair_factory))))
         require(all(a is b for a, b in zip(self._native_refs, (h.supervisor, h.probe, h.probe.client,
             h.identity, h.identity._signing_key, h._mutex))))
         require(self._source_methods == (type(self.accounting).observe, type(self.accounting).close)
@@ -202,6 +216,22 @@ class ForwardNativeProvider:
                 and self._source_cleanup[0] is self.accounting
                 and self._source_cleanup[1] is self._source_methods[1])
         require(all(getattr(self, name) is value for name, value in self._components.items()))
+        require(self._storage_pair is self._storage_pair_ref
+                and self._storage_pair_check is self._storage_pair_check_ref)
+        if self._storage_pair_factory is None:
+            require(self._storage_pair is None and self._storage_pair_check is None
+                    and self._storage_pair_delegates is None)
+        else:
+            require(self._storage_pair_factory is BoundStoragePair and type(self._storage_pair) is BoundStoragePair
+                    and self._storage_pair_check.__self__ is self._storage_pair
+                    and self._storage_pair_check.__func__ is BoundStoragePair.observe
+                    and all(current is original for current, original in zip(
+                        (getattr(self._storage_pair, '_BoundStoragePair__matches', None),
+                         getattr(self._storage_pair, '_BoundStoragePair__observe', None)),
+                        self._storage_pair_delegates)))
+            try: paired = self._storage_pair.matches(h.probe, self._store)
+            except BoundStoragePairError: raise ForwardNativeProviderError() from None
+            require(paired is True)
         require(self._facts == (self.local, self.config_revision, self.consent, self.broker_id,
                 self.storage_epoch, self.issued_epoch_us, _canonical(self.intention.to_dict())))
         require(h.supervisor._resource is h and h.supervisor.phase == 'active'
@@ -256,9 +286,12 @@ class ForwardNativeProvider:
     def _check_storage(self):
         h = self.resource
         require(self._checked(h.supervisor.resource_lifecycle_check) is True
-                and self._checked(h.supervisor.verified_epoch) == self.storage_epoch
-                and self._checked(h.probe.snapshot).epoch == self.storage_epoch
-                and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch)
+                and self._checked(h.supervisor.verified_epoch) == self.storage_epoch)
+        if self._storage_pair_check is None:
+            require(self._checked(h.probe.snapshot).epoch == self.storage_epoch
+                    and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch)
+        else:
+            require(self._checked(self._storage_pair_check, self.storage_epoch) == self.storage_epoch)
 
     def _check_native(self):
         before = self._time()
@@ -296,8 +329,9 @@ class ForwardNativeProvider:
             predicate()
             self._available()
             return True
-        except BaseException:
+        except BaseException as error:
             self._uncertain = self._closed = True
+            if isinstance(error, BoundStoragePairError): raise ForwardNativeProviderError() from None
             raise
         finally:
             self._observing = False
@@ -410,7 +444,7 @@ class ForwardNativeProvider:
             self._enrollment = NativeNoiseEnrollment(self.resource, self.authority, exchange_context,
                 self._store, context=context, intention=self.intention, local_initiator=self.local_initiator,
                 local_public=self._public, remote_generation_id=remote_generation_id,
-                boot_reader=self._boot, clock_reader=self._clock)
+                boot_reader=self._boot, clock_reader=self._clock, storage_pair=self._storage_pair)
             self._components['_enrollment'] = self._enrollment
             with self._lease():
                 require(self._enrollment.enroll() is True)

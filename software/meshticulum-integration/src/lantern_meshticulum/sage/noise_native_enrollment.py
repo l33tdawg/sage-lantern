@@ -23,6 +23,7 @@ from .forward_receive_journal import ReceiveIntention
 from .mesh_inbox import _canonical,_id,_uuid
 from .noise_purpose import NoisePublic,PURPOSE,ALGORITHM
 from .workflow_store import WorkflowStore,WorkflowNotFound
+from .bound_storage_pair import BoundStoragePair,BoundStoragePairError
 
 SCHEMA='sage.lantern.native-noise-enrollment.v1'
 SIGNATURE_DOMAIN=b'sage.lantern.native-noise-enrollment.v1/signature\0'
@@ -46,7 +47,8 @@ class NativeNoiseEnrollment:
     Guards work inside a caller's held lease and after exit; no second lease.
     """
     def __init__(self,resource,authority,native_context,store,*,context,intention,
-                 local_initiator,local_public,remote_generation_id,boot_reader=host_boot,clock_reader=clock):
+                 local_initiator,local_public,remote_generation_id,boot_reader=host_boot,clock_reader=clock,
+                 storage_pair=None):
         from sage_lantern.mesh_daemon import HardwareRuntime
         from sage_lantern.mesh_community import MeshActionAuthority
         from sage_lantern.mesh_runtime import MeshUserContext
@@ -54,7 +56,8 @@ class NativeNoiseEnrollment:
             and type(native_context) is MeshUserContext and type(store) is WorkflowStore
             and type(context) is ForwardContext and type(intention) is ReceiveIntention
             and type(local_initiator) is bool and type(local_public) is NoisePublic
-            and callable(boot_reader) and callable(clock_reader))
+            and callable(boot_reader) and callable(clock_reader)
+            and (storage_pair is None or type(storage_pair) is BoundStoragePair))
         _uuid(remote_generation_id)
         local=context.initiator if local_initiator else context.responder
         remote=context.responder if local_initiator else context.initiator
@@ -73,11 +76,15 @@ class NativeNoiseEnrollment:
         self.context,self.intention,self.local_public=context,intention,local_public
         self.local,self.remote,self.local_initiator=local,remote,local_initiator
         self._boot,self._clock=boot_reader,clock_reader
+        self._storage_pair=self._storage_pair_ref=storage_pair
+        self._storage_pair_check=self._storage_pair_check_ref=None if storage_pair is None else storage_pair.observe
+        self._storage_pair_delegates=None if storage_pair is None else (
+            storage_pair._BoundStoragePair__matches,storage_pair._BoundStoragePair__observe)
         self._pid_thread=(os.getpid(),threading.get_ident());self._closed=self._busy=self._uncertain=False
         self._last=None;self._highest=-1;self._body=None
         self._refs=(resource,authority,native_context,store,store.client,store.storage,resource.supervisor,
                     resource.probe,resource.identity,resource.identity._signing_key,context,intention,local_public,
-                    boot_reader,clock_reader)
+                    boot_reader,clock_reader,storage_pair,self._storage_pair_check,self._storage_pair_delegates)
         self.config_revision=hashlib.sha256(_canonical(resource.config)).hexdigest()
         self.consent=resource.consent();self.broker_id=resource.supervisor.broker_id
         self.storage_epoch=store.storage.snapshot().epoch
@@ -107,9 +114,22 @@ class NativeNoiseEnrollment:
         h=self.resource
         current=(h,self.authority,self.native_context,self.store,self.store.client,self.store.storage,h.supervisor,
                  h.probe,h.identity,h.identity._signing_key,self.context,self.intention,self.local_public,
-                 self._boot,self._clock)
+                 self._boot,self._clock,self._storage_pair,self._storage_pair_check,self._storage_pair_delegates)
         if not all(a is b for a,b in zip(self._refs,current)):
             self._uncertain=True;raise NativeNoiseEnrollmentError()
+        require(self._storage_pair is self._storage_pair_ref and self._storage_pair_check is self._storage_pair_check_ref)
+        if self._storage_pair is None:
+            require(self._storage_pair_check is None and self._storage_pair_delegates is None)
+        else:
+            require(type(self._storage_pair) is BoundStoragePair
+                and self._storage_pair_check.__self__ is self._storage_pair
+                and self._storage_pair_check.__func__ is BoundStoragePair.observe
+                and all(current is original for current,original in zip(
+                    (getattr(self._storage_pair,'_BoundStoragePair__matches',None),
+                     getattr(self._storage_pair,'_BoundStoragePair__observe',None)),self._storage_pair_delegates)))
+            try: paired=self._storage_pair.matches(h.probe,self.store)
+            except BoundStoragePairError: raise NativeNoiseEnrollmentError() from None
+            require(paired is True)
         current_facts=(self.record_id,self.config_revision,self.consent,self.broker_id,self.storage_epoch,
                        self.exchange_approval,self._binding,self.local,self.remote,self.local_initiator)
         if (current_facts!=self._facts or _canonical(self.local_public.to_dict())!=self._original_public
@@ -156,8 +176,12 @@ class NativeNoiseEnrollment:
 
     def _guard(self):
         self._workflow_guard()
-        require(self._checked(self.resource.probe.snapshot).epoch==self.storage_epoch
-            and self._checked(self.store.storage.snapshot).epoch==self.storage_epoch)
+        if self._storage_pair_check is None:
+            require(self._checked(self.resource.probe.snapshot).epoch==self.storage_epoch
+                and self._checked(self.store.storage.snapshot).epoch==self.storage_epoch)
+        else:
+            try: require(self._checked(self._storage_pair_check,self.storage_epoch)==self.storage_epoch)
+            except BoundStoragePairError: raise NativeNoiseEnrollmentError() from None
         self._workflow_guard();return True
 
     def _validate(self,record):
