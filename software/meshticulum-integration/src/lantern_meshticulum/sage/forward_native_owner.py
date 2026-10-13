@@ -76,6 +76,9 @@ class ForwardNativeOwner:
         self._composition=None;self._composition_ref=None;self._constructing=False
         self._budget=self._session=self._operation=None;self._budget_refs=None;self._registry=None
         self._operation_observing=False;self._operation_refs=None;self._operation_methods=None
+        self._journal_action_ref=self._journal_action_method=None
+        self._journal_receiver_available=self._journal_receiver_method=None
+        self._journal_receiver_refs=None
         self._owner=(os.getpid(),threading.get_ident());self._busy=self._closed=self._uncertain=False
         self._held=False;self._last_time=None
         self._native_refs=(resource,authority,native_context,context,intention,local_initiator,self.local,self.remote)
@@ -302,6 +305,68 @@ class ForwardNativeOwner:
         finally:
             if entered:self._operation_observing=False
     def time(self):return self._run(lambda:self._observe(keys=False))
+    def journal_action_check(self,journal,context,intention,remote,local_initiator):
+        """Full fresh purpose/enrollment authorization for one journal guard.
+
+        Initial claim runs during session construction, before the session and
+        operation are installed. The original journal/store/budget already exist.
+        Read-only recovery never enters this callback.
+        """
+        from .forward_receive_journal import ForwardReceiveJournal
+        from .forward_budget import ForwardBudget
+        def references():
+            self._available()
+            require(self._budget_refs is not None)
+            receiver,store,original,budget=self._budget_refs
+            require(type(journal) is ForwardReceiveJournal and journal is original is receiver.journal
+                and receiver is self._composition_ref is self._composition
+                and type(receiver) is ForwardReceiver and type(budget) is ForwardBudget
+                and self._budget is budget and journal.store is receiver.store is budget.store is store
+                and journal._lease is receiver._lease is budget._lease is self.owner_lease
+                and context is journal.context is receiver.context is budget.context is self.context
+                and intention is journal.intention is receiver.intention is budget.intention is self.intention
+                and remote is journal.remote is receiver.remote is self.remote
+                and type(local_initiator) is bool
+                and local_initiator is journal.local_initiator is receiver.local_initiator is self.local_initiator
+                and journal._busy and journal._guarding and journal._fresh is True
+                and journal._journal_action is receiver._journal_action is self._journal_action_ref
+                and getattr(self._journal_action_ref,'__self__',None) is self
+                and getattr(self._journal_action_ref,'__func__',None) is self._journal_action_method
+                and type(self).journal_action_check is self._journal_action_method
+                and 'journal_action_check' not in self.__dict__
+                and getattr(self._journal_receiver_available,'__self__',None) is receiver
+                and getattr(self._journal_receiver_available,'__func__',None) is self._journal_receiver_method
+                and type(receiver)._available is self._journal_receiver_method
+                and '_available' not in receiver.__dict__)
+            require(not receiver._closed and not receiver._uncertain
+                and receiver._owner==(os.getpid(),threading.get_ident())
+                and receiver._workflow_access is receiver._workflow_access_ref
+                and receiver._crypto_action is receiver._crypto_action_ref
+                and receiver._journal_action is receiver._journal_action_ref
+                and all(a is b for a,b in zip(self._journal_receiver_refs,
+                    (receiver.client,receiver.client._client,receiver.client._identity,receiver.probe,
+                     receiver._key,receiver._lease,receiver._access,receiver._storage,receiver._peer,
+                     receiver._dispatch,receiver._read,receiver._purpose,receiver._clock,
+                     receiver._workflow_access,receiver._crypto_action)))
+                and receiver.client is store.client is receiver.probe.client
+                and receiver.client._client is receiver.probe._transport
+                and receiver.client._identity is receiver.probe._identity
+                and receiver.client._identity._signing_key is receiver._key is self._refs[4]
+                and receiver.client._client.is_closed is False)
+            journal._available()
+        def bindings():
+            references();self._checked(self._journal_receiver_available);references()
+        def check():
+            bindings();self._observe(keys=False)
+            local_key=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
+            remote_key=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
+            if self._exchange_key_check is None:
+                require(self._checked(self._key_check,local_key,self.context.digest) is True)
+                require(self._checked(self._peer_key_check,remote,remote_key,self.context.digest) is True)
+            else:
+                require(self._checked(self._exchange_key_check,local_key,remote,remote_key,self.context.digest) is True)
+            self._observe(keys=False);bindings();return True
+        return self._run(check)
     def workflow_access_check(self):
         """Fresh original native access inside one held metadata operation.
 
@@ -339,12 +404,20 @@ class ForwardNativeOwner:
     def receiver(self):
         """Canonical composition over the borrowed client, without radio open."""
         self.access_check();require(self._composition is None)
+        self._journal_action_ref=self.journal_action_check
+        self._journal_action_method=type(self).journal_action_check
         result=ForwardReceiver(self._refs[2],context=self.context,local_initiator=self.local_initiator,
             intention=self.intention,boot_id=self.intention.host_boot_id,endpoint=self.resource.probe.endpoint,
             signing_key=self._refs[4],owner_lease=self.owner_lease,access_check=self.access_check,
             storage_check=self.storage_check,peer_check=self.peer_check,dispatch_check=self.dispatch_check,
             read_check=self.read_check,key_check=self.key_check,clock=self.time,
-            workflow_access_check=self.workflow_access_check,crypto_action_check=self.crypto_action_check)
+            workflow_access_check=self.workflow_access_check,crypto_action_check=self.crypto_action_check,
+            journal_action_check=self._journal_action_ref)
+        self._journal_receiver_available=result._available
+        self._journal_receiver_method=type(result)._available
+        self._journal_receiver_refs=(result.client,result.client._client,result.client._identity,result.probe,
+            result._key,result._lease,result._access,result._storage,result._peer,result._dispatch,
+            result._read,result._purpose,result._clock,result._workflow_access,result._crypto_action)
         self.access_check();self._composition=self._composition_ref=result;return result
     def operation(self,noise_static_key,*,limits,prior_debt,sealed_record=None):
         """Prebind parent and both-role durable counters; creates no wire child.

@@ -42,13 +42,14 @@ class ForwardReceiver:
     def __init__(self, client, *, context, local_initiator, intention, boot_id,
                  endpoint, signing_key, owner_lease, access_check, storage_check,
                  peer_check, dispatch_check, read_check, key_check, clock, workflow_access_check=None,
-                 crypto_action_check=None):
+                 crypto_action_check=None, journal_action_check=None):
         _require(type(context) is ForwardContext and type(local_initiator) is bool
                  and type(intention) is ReceiveIntention and isinstance(signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease,access_check,storage_check,
                      peer_check,dispatch_check,read_check,key_check,clock))
                  and (workflow_access_check is None or callable(workflow_access_check))
-                 and (crypto_action_check is None or callable(crypto_action_check)))
+                 and (crypto_action_check is None or callable(crypto_action_check))
+                 and (journal_action_check is None or callable(journal_action_check)))
         local=context.initiator if local_initiator else context.responder
         remote=context.responder if local_initiator else context.initiator
         _require(bytes(signing_key.verify_key)==local.public_key
@@ -60,6 +61,7 @@ class ForwardReceiver:
         self._dispatch,self._read,self._purpose,self._clock=dispatch_check,read_check,key_check,clock
         self._workflow_access=self._workflow_access_ref=workflow_access_check
         self._crypto_action=self._crypto_action_ref=crypto_action_check
+        self._journal_action=self._journal_action_ref=journal_action_check
         self._crypto_refs=(context,intention,local_initiator,local,remote)
         self._crypto_value=(context.digest,intention.to_dict())
         self._crypto_observing=False
@@ -86,7 +88,8 @@ class ForwardReceiver:
     def _available(self):
         _require(not self._closed and not self._uncertain and (os.getpid(),threading.get_ident())==self._owner
                  and self._workflow_access is self._workflow_access_ref
-                 and self._crypto_action is self._crypto_action_ref)
+                 and self._crypto_action is self._crypto_action_ref
+                 and self._journal_action is self._journal_action_ref)
         # Handshake operations may not touch storage; still verify that the
         # borrowed identity/endpoint/transport has not been structurally replaced.
         self.probe._binding()
@@ -125,7 +128,7 @@ class ForwardReceiver:
             local_signing_key=self._key,intention=self.intention,boot_id=self.boot_id,
             owner_lease=self._lease,access_check=self._access_allowed,storage_check=self._storage_allowed,
             peer_check=self._peer_allowed,permission_check=self._dispatch_allowed,clock=self._time,
-            workflow_access_check=self._workflow_access)
+            workflow_access_check=self._workflow_access,journal_action_check=self._journal_action)
 
     def _authorize_crypto(self):
         if self._crypto_observing or self._busy and not self._constructing:

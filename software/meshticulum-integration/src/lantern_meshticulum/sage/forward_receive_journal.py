@@ -111,13 +111,15 @@ class ForwardReceiveJournal:
     """
     def __init__(self, store, *, context, local_initiator, local_signing_key,
                  intention, boot_id, owner_lease, access_check, storage_check,
-                 peer_check, permission_check, clock, workflow_access_check=None):
+                 peer_check, permission_check, clock, workflow_access_check=None,
+                 journal_action_check=None):
         _require(type(store) is WorkflowStore and type(context) is ForwardContext
                  and type(local_initiator) is bool and type(intention) is ReceiveIntention
                  and isinstance(local_signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease, access_check, storage_check,
                                                peer_check, permission_check, clock))
-                 and (workflow_access_check is None or callable(workflow_access_check)))
+                 and (workflow_access_check is None or callable(workflow_access_check))
+                 and (journal_action_check is None or callable(journal_action_check)))
         _uuid(boot_id)
         local = context.initiator if local_initiator else context.responder
         remote = context.responder if local_initiator else context.initiator
@@ -136,6 +138,14 @@ class ForwardReceiveJournal:
         self._lease, self._access, self._storage = owner_lease, access_check, storage_check
         self._peer, self._permission, self._clock = peer_check, permission_check, clock
         self._workflow_access = self._workflow_access_ref = workflow_access_check
+        self._journal_action = self._journal_action_ref = journal_action_check
+        self._action_refs = (store, store.storage, store.client, context, intention, local, remote,
+            local_signing_key, owner_lease, access_check, storage_check, peer_check, permission_check,
+            clock, workflow_access_check)
+        self._action_values = (context.digest, _canonical(intention.to_dict()), local_initiator,
+            boot_id, self.binding, self.record_id, _canonical(self._context_value))
+        self._guarding = False
+        self._action_run = None
         self._workflow_epoch = self._workflow_run = None
         self._owner = (os.getpid(), threading.get_ident())
         self._busy = self._closed = self._uncertain = self._claimed = False
@@ -151,7 +161,47 @@ class ForwardReceiveJournal:
     def _available(self):
         _require(not self._closed and not self._uncertain
                  and self._owner == (os.getpid(), threading.get_ident())
-                 and self._workflow_access is self._workflow_access_ref)
+                 and self._workflow_access is self._workflow_access_ref
+                 and self._journal_action is self._journal_action_ref)
+        if self._journal_action_ref is not None:
+            self._action_bindings()
+            if self._action_run is not None:
+                _require(self._busy is True and self._fresh is self._action_run)
+
+    def _action_bindings(self):
+        _require(all(a is b for a,b in zip(self._action_refs,
+            (self.store, self.store.storage, self.store.client, self.context, self.intention,
+             self.local, self.remote, self._key, self._lease, self._access, self._storage, self._peer,
+             self._permission, self._clock, self._workflow_access)))
+            and type(self.local_initiator) is bool
+            and self._action_values == (self.context.digest, _canonical(self.intention.to_dict()),
+                self.local_initiator, self.boot_id, self.binding, self.record_id, _canonical(self._context_value))
+            and bytes(self._key.verify_key) == self.local.public_key
+            and self.store.storage.actor.chain_id == self.local.chain_id
+            and self.store.storage.actor.agent_id == self.local.public_key.hex())
+
+    def _guard_action(self):
+        """One fresh observation at this original guard, never a reusable grant."""
+        if self._guarding:
+            self._uncertain = True
+            raise ForwardJournalError()
+        self._guarding = True
+        try:
+            self._available()
+            _require(self._busy is True and self._fresh is self._action_run is True)
+            original = (self._workflow_epoch, self._workflow_run, self._claimed, self._epoch,
+                        self._highest_revision, self._highest_body, self._last_clock)
+            self._checked(self._journal_action, self, self.context, self.intention, self.remote,
+                          self.local_initiator)
+            _require(self._busy is True and self._fresh is self._action_run is True
+                and all(a is b for a,b in zip(original,
+                    (self._workflow_epoch, self._workflow_run, self._claimed, self._epoch,
+                     self._highest_revision, self._highest_body, self._last_clock))))
+        except BaseException:
+            self._uncertain = True
+            raise
+        finally:
+            self._guarding = False
 
     def _checked(self, callback, *args):
         self._available()
@@ -164,6 +214,8 @@ class ForwardReceiveJournal:
         return self._checked(self._storage)
 
     def _guard(self, *, fresh):
+        if fresh is True and self._journal_action_ref is not None:
+            return self._guard_action()
         self._checked(self._access)
         self._storage_allowed()
         self._checked(self._peer, self.remote)
@@ -230,6 +282,8 @@ class ForwardReceiveJournal:
                 raise ForwardJournalError()
             self._busy = entered = True
             self._fresh = fresh
+            if self._journal_action_ref is not None:
+                self._action_run = fresh
             self._available()
             lease = self._lease()
             self._available()
@@ -270,6 +324,7 @@ class ForwardReceiveJournal:
         finally:
             if entered:
                 self._workflow_epoch = self._workflow_run = None
+                self._action_run = None
                 self._busy = False
 
     def _validate(self, record):
