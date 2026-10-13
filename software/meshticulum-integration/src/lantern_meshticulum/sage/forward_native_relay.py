@@ -15,6 +15,7 @@ import os
 import sqlite3
 import threading
 import time
+from types import MethodType
 
 from meshticulum.bench.flow_runtime import BenchFlow
 from meshticulum.bench.services import ServiceTransfer
@@ -173,6 +174,8 @@ class ForwardNativeRelay:
         self._core_closed = False
         self._registry = self._budget = self._relay = None
         self._active = None
+        self._budget_stage = None
+        self._budget_observing = False
         self._children = []
         self._position = 0
         self._last_time = self._accounting_binding = self._approval = None
@@ -197,6 +200,13 @@ class ForwardNativeRelay:
             self._store_refs = self._store, self._store.storage, self._store.client
             self.owner_lease = self._lease
             self._lease_ref = self.owner_lease
+            self._budget_action = self.budget_action_check
+            self._budget_callbacks = (self.access_check, self.access_check, self._budget_check, self.time)
+            self._budget_methods = tuple((target, name, getattr(type(target), name)) for target, name in
+                ((self, 'budget_action_check'), (self, 'access_check'), (self, '_budget_check'),
+                 (self, 'time'), (self, '_validate_pair'), (self._store, 'get'), (self._store, 'put'),
+                 (self._store.storage, 'snapshot')))
+            self._budget_plan_methods = ChildPlan.__post_init__, Cost.__post_init__
             require(self.local == description.relay_peer and resource.actor.agent_id == self.local.agent_id
                 and self.local.agent_id not in (self.context.initiator.public_key.hex(), self.context.responder.public_key.hex())
                 and native_context.actor == resource.actor
@@ -208,8 +218,9 @@ class ForwardNativeRelay:
             self._budget = ForwardBudget(self._store, context=self.context, intention=intention,
                 signing_key=self._native_refs[4], boot_id=intention.host_boot_id, limits=limits,
                 prior_debt=self._retained_debt, slots=tuple((kind, sends) for kind in SEQUENCE for sends in (False, True)),
-                owner_lease=self.owner_lease, access_check=self.access_check, storage_check=self.access_check,
-                native_check=self._budget_check, clock=self.time)
+                owner_lease=self.owner_lease, access_check=self._budget_callbacks[0],
+                storage_check=self._budget_callbacks[1], native_check=self._budget_callbacks[2],
+                clock=self._budget_callbacks[3], budget_action_check=self._budget_action)
             self._budget_refs = self._budget, self._budget.binding, _canonical(self._budget.binding)
             self._relay = OpaqueForwardRelay(description, clock=self.time)
             self._relay_ref = self._relay
@@ -352,6 +363,63 @@ class ForwardNativeRelay:
             require(self._active is not None and any(c.plan is plan for c in self._active[1:]))
         return self.access_check()
 
+    def budget_action_check(self, context, intention, plan):
+        """One complete fresh relay observation at each original budget guard.
+
+        Both adjacent plans remain bound to their original prepared stage. This
+        does not authorize a carrier or replace its signed enrollment checks.
+        """
+        entered = False
+        def bindings():
+            self._available()
+            budget = self._budget
+            require(type(budget) is ForwardBudget and self._busy and budget._busy and budget._guarding
+                and context is self.context is budget.context and intention is self.intention is budget.intention
+                and budget._budget_action is budget._budget_action_ref is self._budget_action
+                and type(self._budget_action) is MethodType
+                and getattr(self._budget_action, '__self__', None) is self
+                and getattr(self._budget_action, '__func__', None) is self._budget_methods[0][2]
+                and type(self._budget_callbacks) is tuple and len(self._budget_callbacks) == 4
+                and all(a is b for a, b in zip(self._budget_callbacks,
+                    (budget._access, budget._storage, budget._native, budget._clock)))
+                and budget._lease is self.owner_lease and budget.store is self._store
+                and budget.key is self._native_refs[4] and budget.prior is self._retained_debt
+                and budget.limits is self.limits and budget.boot_id == self.intention.host_boot_id
+                and budget.slots == tuple((kind, sends) for kind in SEQUENCE for sends in (False, True))
+                and self._budget_plan_methods == (ChildPlan.__post_init__, Cost.__post_init__))
+            for callback, index in zip(self._budget_callbacks, (1, 1, 2, 3)):
+                require(type(callback) is MethodType and callback.__self__ is self
+                    and callback.__func__ is self._budget_methods[index][2])
+            for target, name, method in self._budget_methods:
+                current = getattr(target, name)
+                require(type(current) is MethodType and current.__self__ is target
+                    and getattr(current, '__func__', None) is method
+                    and getattr(type(target), name) is method and name not in target.__dict__)
+            require(self._budget_stage is not None)
+            active, plans, encoded, stage_value = self._budget_stage
+            require(self._active is active and asdict(active[0]) == stage_value
+                and type(active[0].kind) is int and type(active[0].packet_bytes) is int
+                and (plan is None or any(plan is original for original in plans)))
+            for child, original, raw in zip(active[1:], plans, encoded):
+                require(type(child) is RelayChild and child.owner is self and child.plan is original
+                    and type(original) is ChildPlan and type(original.cost) is Cost
+                    and _canonical(original.to_dict()) == raw)
+                self._budget_plan_methods[0](original); self._budget_plan_methods[1](original.cost)
+                child.bound()
+            self._validate_pair(active[0], plans)
+        try:
+            if self._budget_observing:
+                self._uncertain = True; self.fence(); raise ForwardNativeRelayError()
+            self._budget_observing = entered = True
+            bindings()
+            require(self._budget_callbacks[0]() is True)
+            bindings()
+            return True
+        except BaseException:
+            self._uncertain = True; self.fence(); raise
+        finally:
+            if entered: self._budget_observing = False
+
     def _run(self, action):
         if self._busy:
             self._uncertain = True; self.fence(); raise ForwardNativeRelayError()
@@ -409,6 +477,8 @@ class ForwardNativeRelay:
             children = tuple(RelayChild(self, plan, hop, factory) for plan, hop, factory in zip(
                 (incoming_plan, outgoing_plan), (stage.incoming, stage.outgoing), (incoming_factory, outgoing_factory)))
             self._active = (stage, *children); self._children.extend(children)
+            self._budget_stage = (self._active, (incoming_plan, outgoing_plan),
+                tuple(_canonical(c.plan.to_dict()) for c in children), asdict(stage))
             for child in children: self._factory(child, 'prepared', child.plan, child.hop)
             self._budget.prepare()
             for child in children:
@@ -537,7 +607,7 @@ class ForwardNativeRelay:
                 require(self._terminal_child(child.plan, child))
                 child.retired = True
                 require(self._registry.retired(child))
-            self._active = None; self._position += 1
+            self._active = self._budget_stage = None; self._position += 1
             return {**receipt, 'native_qualified': False, 'refunds': 0}
         return self._run(finish)
 
@@ -553,7 +623,7 @@ class ForwardNativeRelay:
 
     def _draining_busy(self):
         source_busy = getattr(self.accounting, '_busy', False)
-        return (self._busy or self._held or self._observing
+        return (self._busy or self._held or self._observing or self._budget_observing
             or self._budget is not None and self._budget._busy
             or self._relay is not None and self._relay._busy
             or type(source_busy) not in (bool, int) or source_busy != 0)
