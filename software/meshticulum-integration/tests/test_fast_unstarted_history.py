@@ -28,7 +28,7 @@ def test_original_context_and_full_reservation(original,unit,monkeypatch):
  assert c.value['whole_bytes']==100000 and len(c.value['stages'])==5
  assert history.declared_partition(p)[unit]['declared_new_reservation']==asdict(Cost() if unit=='unit-b' else Cost(2560,600000000))
  assert rpc.HISTORY[:39]==history.H39_PREFIX and rpc.HISTORY[39]==history.PARENT
- assert len(rpc.OLD_DIGESTS)==len(rpc.HISTORY)==40 and rpc.OLD_DIGESTS[39]==history.POLICY_DIGEST
+ assert len(rpc.OLD_DIGESTS)==len(rpc.HISTORY)==41 and rpc.OLD_DIGESTS[39]==history.POLICY_DIGEST
 
 @pytest.mark.parametrize('field',['EXPIRY_COMPLETION_SHA256','NEXT_HISTORY_RECEIPT_SHA256','NATIVE_DATABASE_SHA256'])
 def test_pending_actual_evidence_blocks_retention(field,monkeypatch):
@@ -206,4 +206,4 @@ def test_actual_h40_receipt_and_expiry_qualify_without_modeling_final_pins(unit)
  policy=ParentPolicy.from_dict(value['policy'])
  rpc.qualify_history_claims(policy,unit,observed,value['runs'],value['retired_unstarted'])
  history.qualify_costs(unit,policy,observed,value)
- assert history.pending_next_roster()==rpc.HISTORY
+ assert history.pending_next_roster()==rpc.HISTORY[:40]

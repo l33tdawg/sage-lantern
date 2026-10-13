@@ -109,7 +109,7 @@ def test_exact_four_canonical_outcomes_are_required(unit):
 
 
 def test_roster_twenty_one_preserves_original_twenty_and_capture_twelve():
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==40
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==41
     assert retained.PAID_HISTORY[22]==rpc.V2_FAILED_BUNDLE_PAID
     assert retained.PAID_HISTORY[23]==rpc.V3_PARTIAL_BUNDLE_PAID
     assert len(retained.UNADMITTED_PAID_HISTORY)==12

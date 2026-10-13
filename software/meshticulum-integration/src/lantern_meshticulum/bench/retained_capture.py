@@ -52,6 +52,7 @@ PAID_HISTORY = (
     '4675a437918764d62ddc53d288685367',
     '27563497b7f6d89526f7249f2bf9005a',
     '9f90bdec3df97edbbe1e77cfc8ab836e',
+    '1d4359b68baf1d8572bb33790f96fa21',
 )
 # Capture638 froze the first twelve paid parents; later completed runs do not alter it.
 UNADMITTED_PAID_HISTORY = PAID_HISTORY[:12]

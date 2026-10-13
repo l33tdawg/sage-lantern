@@ -4,6 +4,7 @@ The terminal local result, actual expiry observations and the H38 receipt are pi
 context decoding intentionally does not consult a later live GFSK scope.
 """
 import hashlib
+import sys
 from dataclasses import asdict
 
 from meshticulum.bench.wire import require
@@ -21,6 +22,8 @@ ORIGINAL_SCOPE_SHA256='791fb4c61b08734ee58830f6bd94d8b9c6db4e995be7d99962934df4e
 ORIGINAL_RUNTIME_SHA256='9c86a003a7d86f9fe0a55d05901e04c772690009935ef7519abd220d8b7a213a'
 ORIGINAL_MANIFEST_SHA256='a819772073a92a4e62e1849f0a64bf8829c927cebeab3c836a9bd99ecbbc02ea'
 ORIGINAL_PHASE_END=1791854349857802
+ORIGINAL_ABSOLUTE_END=ORIGINAL_PHASE_END
+QUALIFICATION_KIND=GFSK250_MB1_BUNDLE_KIND
 H37_PREFIX=('28765d19f654ce3162525afe9c3f89c5', '5ad7e65b7e50901a6f63629c04a776e2', '4d1b5d6fe8d4b022c5cf1e21cef7f8ca', 'd60d8308326314a7753e651fa43a99e3', '4559277fa43913ce3935b078d6744a55', '4034f8979b985660df21859606c4f8a7', 'ba4572e95e598ad6c17fc954c3792db7', '1df30b47fa36b8d47328fb886528a7a9', 'f153a7a87a2803db85078df81a6a1aaf', '25a990a2d565c50b237ee45812a8c75f', 'cb5869e6aa8de545a267007b085d4762', 'f6e147e70ec7ce07f673ea5e9cd2cdc2', 'b8f9b5d9c5479c8d363c7b7e8014bc3b', '806fdca055e79dfc0b86ff8f304bcdf9', '4ea23c6b8fa83366904ac62ffa98e2bf', 'c26cd03a8fd427daf6b8d894e4b1d04c', '8dfcfdfe8f8be2c0b326520d70eab7f5', '6f89e2a21919991e15224e393446928c', '62bcef4f1c74532fd7ab3ada1b8b94e2', '141c892d83b6064a800c11aab6444f28', '05c36e09fd4056c94d341d2dd32243f4', 'bccb99afe6589968190b131eeaf372b3', '487ae574816ff5444de03e3daa4401e4', 'e01508ddcae7389728add074de4876b7', '2429969fcbb0f57b3deaeda7187036c2', '7746ddba2544ce79c01a195f1e8746ce', '57339cca60ddf62b41eafac60147a252', '4aa3ad2bc1346cae82bc90d8abd6dcd4', 'a3ded77ef251c9d7e085ab790b9ac5b3', '76fe38883690e058771940d51d0d57d6', '7630420c0e72181d6e7239c105c165c6', '4ca8d86644aa24e6fefd06872a9cd131', '6be212b13351cb9852ed07ba7998be96', 'e8aac38a787f33daa91c80e39cfc8710', '73c1cda8c02939409d0b1e7e2a39be67', '3195cff3fc8fc8ee0b81694fe8f9e389', '515c662fae6cc761c83e7fdef44cbda0')
 
 # Bind only from the actual final local result and independently captured
@@ -35,63 +38,63 @@ NATIVE_OUTCOME_SHA256={'unit-a': {'44070ab5613d5d8f9d93b82d5b357f57': 'ffe30472e
 def _sha(value):return hashlib.sha256(canonical(value)).hexdigest()
 
 
-def declared_partition(policy):
+def _declared_partition(c,policy):
     """Full original reservations, never actual consumption or refundable credit."""
-    require(type(policy) is ParentPolicy and policy.parent_id==PARENT and policy.digest==POLICY_DIGEST
-        and _sha(policy.to_dict())==POLICY_SHA256 and policy.qualification_kind==GFSK250_MB1_BUNDLE_KIND,
-        '4675_original_policy_changed')
+    require(type(policy) is ParentPolicy and policy.parent_id==c.PARENT and policy.digest==c.POLICY_DIGEST
+        and _sha(policy.to_dict())==c.POLICY_SHA256 and policy.qualification_kind==c.QUALIFICATION_KIND,
+        f'{c.PARENT[:4]}_original_policy_changed')
     rows={}
     for unit in policy.units:
         extra=Cost() if unit.unit=='unit-b' else Cost(2560,600000000)
-        require(unit.limits==unit.prior_debt.plus(extra),'4675_original_full_caps_changed')
+        require(unit.limits==unit.prior_debt.plus(extra),f'{c.PARENT[:4]}_original_full_caps_changed')
         rows[unit.unit]=dict(full_original_caps=asdict(unit.limits),prior_caps=asdict(unit.prior_debt),
             declared_new_reservation=asdict(extra),actual_consumption=None,refunds=0)
     return rows
 
 
-def original_context(owner,policy,*,unit):
+def _original_context(c,owner,policy,*,unit):
     """Exact original signed data/clock decoding, with no admission side effect."""
-    declared_partition(policy)
-    require(unit in OWNER_SHA256 and type(owner) is dict and _sha(owner)==OWNER_SHA256[unit]
-        and owner['policy_digest']==POLICY_DIGEST and owner['qualification_kind']==GFSK250_MB1_BUNDLE_KIND
+    _declared_partition(c,policy)
+    require(unit in c.OWNER_SHA256 and type(owner) is dict and _sha(owner)==c.OWNER_SHA256[unit]
+        and owner['policy_digest']==c.POLICY_DIGEST and owner['qualification_kind']==c.QUALIFICATION_KIND
         and owner['radio_profile_name']==owner['radio_modem']==GFSK250_NAME
         and owner['rf_profile']==profile_record(profile_for(GFSK250_NAME))
-        and owner['mb1_bundle_scope_sha256']==ORIGINAL_SCOPE_SHA256
-        and owner['runtime_sha256']==ORIGINAL_RUNTIME_SHA256 and owner['manifest_sha256']==ORIGINAL_MANIFEST_SHA256
-        and owner['phase_start_epoch_us']==policy.issued_epoch_us and owner['phase_end_epoch_us']==ORIGINAL_PHASE_END,
-        '4675_original_owner_changed')
+        and owner['mb1_bundle_scope_sha256']==c.ORIGINAL_SCOPE_SHA256
+        and owner['runtime_sha256']==c.ORIGINAL_RUNTIME_SHA256 and owner['manifest_sha256']==c.ORIGINAL_MANIFEST_SHA256
+        and owner['phase_start_epoch_us']==policy.issued_epoch_us and owner['phase_end_epoch_us']==c.ORIGINAL_PHASE_END,
+        f'{c.PARENT[:4]}_original_owner_changed')
     context=BundleContext(owner['bundle_context'],policy)
-    require(context.transport is not None,'4675_exact_MB1_transport_required')
-    require(owner['bundle_capture_commitment']==public_context_commitment(owner['bundle_context'],parent_id=PARENT),
-        '4675_original_capture_commitment_changed')
+    require(context.transport is not None,f'{c.PARENT[:4]}_exact_MB1_transport_required')
+    require(owner['bundle_capture_commitment']==public_context_commitment(owner['bundle_context'],parent_id=c.PARENT),
+        f'{c.PARENT[:4]}_original_capture_commitment_changed')
     return context
 
 
-def retained_context(owner,policy,*,unit,observation):
+def _retained_context(c,owner,policy,*,unit,observation):
     """Pure expired-context predicate; an actual collector remains mandatory."""
-    context=original_context(owner,policy,unit=unit)
+    context=_original_context(c,owner,policy,unit=unit)
     require(type(observation) is dict and observation.get('status')=='scoped_rows_observed'
-        and observation.get('parent_id')==PARENT and observation.get('policy_digest')==POLICY_DIGEST
+        and observation.get('parent_id')==c.PARENT and observation.get('policy_digest')==c.POLICY_DIGEST
         and observation.get('unit')==unit and observation.get('policy_expired_at_observation') is True,
-        '4675_actual_expired_scope_required')
+        f'{c.PARENT[:4]}_actual_expired_scope_required')
     epoch,mono=(observation.get(k) for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
     require(type(epoch) is int and type(mono) is int
-        and epoch>=ORIGINAL_PHASE_END>=policy.expires_epoch_us
-        and mono>=owner['native_phase'][unit]['deadline_monotonic_us'],'4675_original_clocks_live')
+        and epoch>=c.ORIGINAL_ABSOLUTE_END>=c.ORIGINAL_PHASE_END>=policy.expires_epoch_us
+        and mono>=owner['native_phase'][unit]['deadline_monotonic_us']+c.ORIGINAL_ABSOLUTE_END-c.ORIGINAL_PHASE_END,f'{c.PARENT[:4]}_original_clocks_live')
     context._check();return context
 
 
-def require_final_bindings():
+def _require_final_bindings(c):
     def pin(value):return type(value) is str and len(value)==64 and all(c in '0123456789abcdef' for c in value)
-    require(all(pin(v) for v in (FINAL_RESULT_SHA256,EXPIRY_COMPLETION_SHA256,NEXT_HISTORY_RECEIPT_SHA256)),
-        'pending_4675_final_result_expiry_and_history')
-    require(set(NATIVE_DATABASE_SHA256)==set(NATIVE_OUTCOME_SHA256)=={'unit-a','unit-b','unit-c'}
-        and all(pin(v) for v in NATIVE_DATABASE_SHA256.values())
-        and all(type(v) is dict for v in NATIVE_OUTCOME_SHA256.values())
-        and NATIVE_OUTCOME_SHA256['unit-b']=={}
+    require(all(pin(v) for v in (c.FINAL_RESULT_SHA256,c.EXPIRY_COMPLETION_SHA256,c.NEXT_HISTORY_RECEIPT_SHA256)),
+        f'pending_{c.PARENT[:4]}_final_result_expiry_and_history')
+    require(set(c.NATIVE_DATABASE_SHA256)==set(c.NATIVE_OUTCOME_SHA256)=={'unit-a','unit-b','unit-c'}
+        and all(pin(v) for v in c.NATIVE_DATABASE_SHA256.values())
+        and all(type(v) is dict for v in c.NATIVE_OUTCOME_SHA256.values())
+        and c.NATIVE_OUTCOME_SHA256['unit-b']=={}
         and all(type(run) is str and len(run)==32 and pin(value)
-            for outcomes in NATIVE_OUTCOME_SHA256.values() for run,value in outcomes.items()),
-        'pending_4675_native_terminal_metadata')
+            for outcomes in c.NATIVE_OUTCOME_SHA256.values() for run,value in outcomes.items()),
+        f'pending_{c.PARENT[:4]}_native_terminal_metadata')
     # Outcome cardinality and complete/failed partition are bound only after
     # actual completion. The two retired grants do not imply whole-file application completion.
     return True
@@ -102,3 +105,10 @@ def pending_next_roster():
     require(len(PAID_HISTORY)>=38 and PAID_HISTORY[:37]==H37_PREFIX and PAID_HISTORY[37]==PARENT,
         '4675_H37_prefix_changed')
     return PAID_HISTORY[:38]
+
+from functools import partial
+_contract=sys.modules[__name__]
+declared_partition=partial(_declared_partition,_contract)
+original_context=partial(_original_context,_contract)
+retained_context=partial(_retained_context,_contract)
+require_final_bindings=partial(_require_final_bindings,_contract)

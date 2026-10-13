@@ -32,48 +32,14 @@ NATIVE_DATABASE_SHA256={
 
 def _sha(value):return hashlib.sha256(canonical(value)).hexdigest()
 
-def declared_partition(policy):
-    """Full original reservations, never actual consumption or refundable credit."""
-    require(type(policy) is ParentPolicy and policy.parent_id==PARENT and policy.digest==POLICY_DIGEST
-        and _sha(policy.to_dict())==POLICY_SHA256 and policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND,
-        '2756_original_policy_changed')
-    rows={}
-    for unit in policy.units:
-        extra=Cost() if unit.unit=='unit-b' else Cost(2560,600000000)
-        require(unit.limits==unit.prior_debt.plus(extra),'2756_original_full_caps_changed')
-        rows[unit.unit]=dict(full_original_caps=asdict(unit.limits),prior_caps=asdict(unit.prior_debt),
-            declared_new_reservation=asdict(extra),actual_consumption=None,refunds=0)
-    return rows
-
-def original_context(owner,policy,*,unit):
-    """Exact original signed data/clock decoding, with no admission side effect."""
-    declared_partition(policy)
-    require(unit in OWNER_SHA256 and type(owner) is dict and _sha(owner)==OWNER_SHA256[unit]
-        and owner['policy_digest']==POLICY_DIGEST and owner['qualification_kind']==GFSK250_FAST_BUNDLE_KIND
-        and owner['radio_profile_name']==owner['radio_modem']==GFSK250_NAME
-        and owner['rf_profile']==profile_record(profile_for(GFSK250_NAME))
-        and owner['mb1_bundle_scope_sha256']==ORIGINAL_SCOPE_SHA256
-        and owner['runtime_sha256']==ORIGINAL_RUNTIME_SHA256 and owner['manifest_sha256']==ORIGINAL_MANIFEST_SHA256
-        and owner['phase_start_epoch_us']==policy.issued_epoch_us and owner['phase_end_epoch_us']==ORIGINAL_PHASE_END,
-        '2756_original_owner_changed')
-    context=BundleContext(owner['bundle_context'],policy)
-    require(context.transport is not None,'2756_exact_MB1_transport_required')
-    require(owner['bundle_capture_commitment']==public_context_commitment(owner['bundle_context'],parent_id=PARENT),
-        '2756_original_capture_commitment_changed')
-    return context
-
-def retained_context(owner,policy,*,unit,observation):
-    """Pure expired-context predicate; an actual collector remains mandatory."""
-    context=original_context(owner,policy,unit=unit)
-    require(type(observation) is dict and observation.get('status')=='scoped_rows_observed'
-        and observation.get('parent_id')==PARENT and observation.get('policy_digest')==POLICY_DIGEST
-        and observation.get('unit')==unit and observation.get('policy_expired_at_observation') is True,
-        '2756_actual_expired_scope_required')
-    epoch,mono=(observation.get(k) for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
-    require(type(epoch) is int and type(mono) is int
-        and epoch>=ORIGINAL_PHASE_END>=policy.expires_epoch_us
-        and mono>=owner['native_phase'][unit]['deadline_monotonic_us'],'2756_original_clocks_live')
-    context._check();return context
+QUALIFICATION_KIND=GFSK250_FAST_BUNDLE_KIND
+ORIGINAL_ABSOLUTE_END=ORIGINAL_PHASE_END
+from . import gfsk250_mb1_partial_history as shared
+from functools import partial
+import sys
+declared_partition=partial(shared._declared_partition,sys.modules[__name__])
+original_context=partial(shared._original_context,sys.modules[__name__])
+retained_context=partial(shared._retained_context,sys.modules[__name__])
 
 def require_final_bindings():
     def pin(value):return type(value) is str and len(value)==64 and all(c in '0123456789abcdef' for c in value)
