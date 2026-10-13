@@ -75,7 +75,7 @@ def test_old_source_and_captured_prefixes_remain_exact():
         if isinstance(node,ast.Assign) and isinstance(node.targets[0],ast.Name) and node.targets[0].id=='PAID_HISTORY')
     assert retained_capture.PAID_HISTORY[:18]==old_history
     assert retained_capture.UNADMITTED_PAID_HISTORY==old_history[:12]
-    assert len(rpc.HISTORY)==39 and rpc.HISTORY[18]==rpc.PUBLIC32_COMPLETE_PAID
+    assert len(rpc.HISTORY)==40 and rpc.HISTORY[18]==rpc.PUBLIC32_COMPLETE_PAID
     assert rpc.HISTORY[22]==rpc.V2_FAILED_BUNDLE_PAID
     assert rpc.HISTORY[23]==rpc.V3_PARTIAL_BUNDLE_PAID
     assert rpc.OLD_DIGESTS[18]==ParentPolicy.from_dict(json.loads((D/'POLICY.json').read_bytes())).digest

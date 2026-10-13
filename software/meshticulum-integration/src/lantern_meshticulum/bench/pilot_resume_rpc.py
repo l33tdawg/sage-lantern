@@ -23,7 +23,7 @@ import time
 import sys
 
 from .history_identity_seal import _Ancestry, capture, SealedHistory, MAX_FILES, MAX_DIRS
-from .history_metadata_fence import _FLAGS, _FILES, _stamp, MAX_FILE
+from .history_metadata_fence import _FLAGS, _FILES, _stamp, MAX_FILE, _FAST_UNSTARTED_STAGE
 from .legacy_grant_fence import capture as legacy_capture, LegacyGrantFence
 from .legacy_grant_fence import MAX_RUNS, OWNERS
 from .pilot_parent_snapshot import Scope, collect, _child_ref
@@ -80,6 +80,7 @@ OLD_DIGESTS = (
     '8e727113809884e808988d8f3236e3aa8cb35f1b87bd0e3610d39a8a29754e3f',
     '8349f507f1e208085672dbc19c99436d97a6564d7d73e51a08cf29d43007d8c5',
     '0e2675102aa9259d5969af5b592c49728138e07b331ae014735e3c63ce99c315',
+    'b69fa11456944fc1bd3d35983eefc50e5dddf0b666d9d9cb2ab036bca4e04ad1',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -215,8 +216,9 @@ from .gfsk_mb1_partial_history import PARENT as MB1_PARTIAL_BUNDLE_PAID, NATIVE_
 from .gfsk250_mb1_partial_history import PARENT as GFSK250_MB1_PARTIAL_PAID, NATIVE_OUTCOME_SHA256 as GFSK250_MB1_PARTIAL_OUTCOMES, NATIVE_DATABASE_SHA256 as GFSK250_MB1_PARTIAL_DATABASES, FAILED_STARTED_RUNS as GFSK250_MB1_PARTIAL_FAILED
 from .gfsk_mb1_complete_history import PARENT as MB1_COMPLETE_BUNDLE_PAID, NATIVE_OUTCOME_SHA256 as MB1_COMPLETE_BUNDLE_OUTCOMES, NATIVE_DATABASE_SHA256 as MB1_COMPLETE_BUNDLE_DATABASES, FAILED_STARTED_RUNS as MB1_COMPLETE_BUNDLE_FAILED
 from .fast_bundle_zero_history import PARENT as FAST_ZERO_PAID, NATIVE_DATABASE_SHA256 as FAST_ZERO_DATABASES
+from .fast_bundle_unstarted_history import PARENT as FAST_UNSTARTED_PAID, RUN as FAST_UNSTARTED_RUN
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
-                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34],MB1_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[35],MB1_COMPLETE_BUNDLE_PAID:OLD_DIGESTS[36],GFSK250_MB1_PARTIAL_PAID:OLD_DIGESTS[37],FAST_ZERO_PAID:OLD_DIGESTS[38]}
+                BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34],MB1_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[35],MB1_COMPLETE_BUNDLE_PAID:OLD_DIGESTS[36],GFSK250_MB1_PARTIAL_PAID:OLD_DIGESTS[37],FAST_ZERO_PAID:OLD_DIGESTS[38],FAST_UNSTARTED_PAID:OLD_DIGESTS[39]}
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -664,6 +666,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id in GUARDED_PAID:
             for relative,pin in latest_preparation_files(reader,unit,policy,observed,
                                                        v['preparation_sha256']).items(): known[relative]=pin
+        if policy.parent_id==FAST_UNSTARTED_PAID:
+            from .fast_bundle_unstarted_history import stage_files
+            known.update(stage_files(reader,STATE,unit,v))
         refs = sorted([dict(controller_allocation_id=c['controller_allocation_id'],child=c['child'])
                        for c in claims],key=lambda c:c['child']['run_id'])
         unstarted = v.get('retired_unstarted',[])
@@ -765,7 +770,10 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     need(sha(raw) == record['sha256'], 'old_typed_file_changed')
         for name, record in observed['files'].items():
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
-        if policy.parent_id==FAST_ZERO_PAID:
+        if policy.parent_id==FAST_UNSTARTED_PAID:
+            from .fast_bundle_unstarted_history import qualify_costs
+            qualify_costs(unit,policy,observed,v)
+        elif policy.parent_id==FAST_ZERO_PAID:
             qualify_fast_zero_costs(unit,policy,observed,v)
         elif policy.parent_id==ENROLLED_ZERO_PAID:
             qualify_enrolled_zero_costs(unit,policy,observed,v)
@@ -894,6 +902,9 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
         need(ids==(set() if unit=='unit-b' else {SF5_STARTUP_RUN}) and not absent, 'sf5_startup_claim_scope_changed')
     elif policy.parent_id in PARTIAL_BUNDLE_SCOPES:
         need(ids==set(PARTIAL_BUNDLE_SCOPES[policy.parent_id][3][unit]) and not absent,'partial_bundle_claim_scope_changed')
+    elif policy.parent_id==FAST_UNSTARTED_PAID:
+        need(not ids and absent==({FAST_UNSTARTED_RUN} if unit in ('unit-a','unit-c') else set()),
+             'fast_unstarted_child_scope_changed')
     elif policy.parent_id==FAST_ZERO_PAID:
         need(not ids and not absent and not claims,'fast_zero_child_scope_changed')
     elif policy.parent_id==ENROLLED_ZERO_PAID:
@@ -1578,6 +1589,9 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
     No missing file becomes a zero measurement or process-terminal claim.
     The canonical collector must have read the native append-only start table.
     """
+    if policy.parent_id==FAST_UNSTARTED_PAID:
+        from .fast_bundle_unstarted_history import retired_metadata
+        return retired_metadata(reader,STATE,unit,policy,observed,row,now,boot)
     if policy.parent_id==PARTIAL_PAID:return retired_partial_radio(reader,unit,policy,observed,row,now)
     run=row['run_id'];need(policy.parent_id==LATEST_PAID and unit in ('unit-b','unit-c')
          and run==RETIRED_UNSTARTED,'unexpected_retired_unstarted_scope')
@@ -1645,7 +1659,7 @@ def seal_inputs(reader, unit, known, original, newer):
             need(set(entries)==expected and all(re.fullmatch(r'[0-9a-f]{32}\.json',name)
                  and int(name[:-5],16)!=0 for name in entries),'prepared_identity_namespace_changed_before_seal')
         for name in entries:
-            if name in _FILES or path in identities:
+            if name in _FILES or path in identities or str((path/name).relative_to(STATE))==_FAST_UNSTARTED_STAGE:
                 key=(rel+'/' if rel else '')+name;raw=reader.read(path/name,MAX_FILE)
                 files[key]=sha(raw)
                 need(key not in known or files[key]==known[key],'metadata_changed_before_seal')

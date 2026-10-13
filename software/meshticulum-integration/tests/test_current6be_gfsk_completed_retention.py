@@ -94,7 +94,7 @@ def test_completed_batch_cannot_lose_debt_rebind_original_clock_or_hide_failed_e
 
 def test_roster_preserves_all_old32_and_only_appends_completed_batch():
     old=tuple(DATA['prior_paid_parent_ids']);assert len(old)==32 and retained.PAID_HISTORY[:32]==old
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==39
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==40
     assert retained.PAID_HISTORY[32]==rpc.GFSK_COMPLETE_PAID
     assert retained.UNADMITTED_PAID_HISTORY==old[:12]
 
