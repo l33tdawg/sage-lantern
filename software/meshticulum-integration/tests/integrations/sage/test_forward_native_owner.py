@@ -201,6 +201,45 @@ def test_observation_only_checks_still_refuse_native_permission_or_epoch_drift(m
         with pytest.raises(ForwardNativeOwnerError):getattr(owner,method)()
         assert not r.state.rows
 
+
+def test_metadata_callback_requires_an_actual_held_native_lease():
+    with setup() as r:
+        owner=r.create()
+        with pytest.raises(ForwardNativeOwnerError):owner.workflow_access_check()
+        assert not r.state.rows
+        with owner.owner_lease():assert owner.workflow_access_check() is True
+        with pytest.raises(ForwardNativeOwnerError):owner.workflow_access_check()
+
+
+def test_metadata_callbacks_do_not_recursively_query_storage_or_noise_records(monkeypatch):
+    with setup() as r:
+        owner=r.create()
+        with owner.owner_lease():
+            with monkeypatch.context() as patch:
+                def query(*args,**kwargs):pytest.fail('metadata access recursively queried the backend')
+                patch.setattr(r.client,'message_storage_status',query)
+                patch.setattr(r.client,'workflow_get',query)
+                patch.setattr(r.client,'workflow_put',query)
+                assert owner.workflow_access_check() is True
+                assert owner.workflow_access_check() is True
+        assert not r.state.rows
+
+
+@pytest.mark.parametrize('drift',['authority','consent','epoch','boot','expiry'])
+def test_held_metadata_access_is_fresh_and_refuses_original_native_drift(drift):
+    with setup() as r:
+        owner=r.create()
+        with pytest.raises(ForwardNativeOwnerError):
+            with owner.owner_lease():
+                assert owner.workflow_access_check() is True
+                if drift=='authority':r.state.owner_live=False
+                elif drift=='consent':r.hardware.config['dispatch_enabled']=False
+                elif drift=='epoch':r.state.epoch='f'*32
+                elif drift=='boot':r.state.boot=str(uuid.uuid4())
+                else:r.state.now=(r.intention.application_expires_epoch_us,r.state.now[1])
+                owner.workflow_access_check()
+        assert not r.state.rows and not r.hardware._mutex.locked()
+
 def test_native_callback_caught_reentry_fences_owner_before_publication():
     holder={}
     def purpose(*args):

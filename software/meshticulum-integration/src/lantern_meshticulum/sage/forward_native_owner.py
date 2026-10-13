@@ -133,14 +133,14 @@ class ForwardNativeOwner:
             and hashlib.sha256(_canonical(h.config)).hexdigest()==self.config_revision)
     def _checked(self,callback,*args):
         self._available();v=callback(*args);self._available();return v
-    def _observe(self,*,live=True,keys=True):
+    def _observe(self,*,live=True,keys=True,storage=True):
         h=self.resource;self._available()
         require(self._checked(h.configured) is True and self._checked(h.active) is True
             and self._checked(h.consent)==self.consent
             and hashlib.sha256(_canonical(h.config)).hexdigest()==self.config_revision
             and self._checked(h.supervisor.resource_lifecycle_check) is True
             and self._checked(h.supervisor.verified_epoch)==self.storage_epoch
-            and self._checked(h.probe.snapshot).epoch==self.storage_epoch
+            and (not storage or self._checked(h.probe.snapshot).epoch==self.storage_epoch)
             and self._checked(h._epoch)==self.native_context.epoch
             and self._checked(self._boot)==self.intention.host_boot_id)
         # Epoch/unlock is only a lifecycle fence. The live authority record owns
@@ -201,6 +201,15 @@ class ForwardNativeOwner:
             self._observe();return True
         return self._run(check)
     def time(self):return self._run(lambda:self._observe(keys=False))
+    def workflow_access_check(self):
+        """Fresh original native access inside one held metadata operation.
+
+        WorkflowStore owns fresh HTTP epochs on both sides of the SDK call.
+        This callback supplies no key or wire permission and cannot be used
+        outside the original native lease. Action/crypto observers stay full.
+        """
+        require(self._held and self._refs[-1].locked())
+        return self._run(lambda:(self._observe(keys=False,storage=False),True)[1])
     @contextmanager
     def _lease(self):
         from sage_lantern.storage_supervisor_socket import CaptureLease
@@ -229,7 +238,8 @@ class ForwardNativeOwner:
             intention=self.intention,boot_id=self.intention.host_boot_id,endpoint=self.resource.probe.endpoint,
             signing_key=self._refs[4],owner_lease=self.owner_lease,access_check=self.access_check,
             storage_check=self.storage_check,peer_check=self.peer_check,dispatch_check=self.dispatch_check,
-            read_check=self.read_check,key_check=self.key_check,clock=self.time)
+            read_check=self.read_check,key_check=self.key_check,clock=self.time,
+            workflow_access_check=self.workflow_access_check)
         self.access_check();self._composition=self._composition_ref=result;return result
     def operation(self,noise_static_key,*,limits,prior_debt,sealed_record=None):
         """Prebind parent and both-role durable counters; creates no wire child.
@@ -250,7 +260,7 @@ class ForwardNativeOwner:
                 signing_key=self._refs[4],boot_id=self.intention.host_boot_id,limits=limits,prior_debt=prior_debt,
                 slots=slots,owner_lease=self.owner_lease,access_check=self.access_check,storage_check=self.storage_check,
                 native_check=lambda c,i,p:self.dispatch_check(c,i) if p is None else self.phase_check(c,p.kind,p.sends),
-                clock=self.time)
+                clock=self.time,workflow_access_check=self.workflow_access_check)
             self._budget=budget;self._budget_refs=(receiver,receiver.store,receiver.journal,budget)
             budget.prepare()
             # Observe the actual shared signed quarantine while original read
