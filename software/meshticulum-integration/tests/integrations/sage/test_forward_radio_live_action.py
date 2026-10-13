@@ -44,8 +44,8 @@ def test_each_call_has_fresh_complete_observations(tmp_path,monkeypatch,mode,cur
         with observations() as count:
             assert invoke(r,mode) is True
             assert invoke(r,mode) is True
-        assert count==dict(current=2*current,guard=18*current,assets=4*current,
-            phase=18*current,**({'authority':2*authority} if authority else {}))
+        assert count==dict(current=2*current,guard=16*current,assets=4*current,
+            phase=16*current,**({'authority':2*authority} if authority else {}))
         assert r.action['calls']==2*facts
         retained(r)
         assert r.stage.report()['native_qualified'] is False
@@ -73,7 +73,7 @@ def test_real_setup_partial_arm_and_separate_application_owner_probe(tmp_path,mo
         with observations() as count:
             assert r.stage.authority.application_live() is True
             assert r.stage.authority.application_live() is True
-        assert count==dict(current=4,guard=36,assets=8,phase=36,authority=2)
+        assert count==dict(current=4,guard=32,assets=8,phase=32,authority=2)
         assert not r.stage._native_observing and not r.stage.adoption._child.observing
         assert r.stage._cleanup(time.monotonic()+3) is True
 

@@ -26,6 +26,8 @@ from meshticulum.bench.wire import BenchGrant
 from meshticulum.contracts.identity import PeerID, SessionKey, ServiceKind
 from .forward_budget import ChildPlan, Cost
 from .forward_native_owner import ForwardNativeOwner
+from .message_contacts import RecipientID
+from .message_storage import MessageStorageProbe
 from .mesh_inbox import _canonical, _id
 from .workflow_store import WorkflowStore
 from ..bench.profiles import profile_from_plan, profile_record, radio_route, admission_for
@@ -92,6 +94,42 @@ def _exclusive(identity):
     return False
 
 
+def _read_return_fields(adoption):
+    """Inspect only original descriptors and raw fields; invoke no observer."""
+    for cls, pins in _READ_RETURN_LAYOUTS:
+        namespace = type.__getattribute__(cls, '__dict__')
+        mro = type.__getattribute__(cls, '__mro__')
+        require(len(mro) == 2 and mro[0] is cls and mro[1] is object)
+        require(all(namespace.get(name, _READ_ABSENT) is value for name, value in pins))
+
+    def fields(value, cls, methods):
+        require(type(value) is cls)
+        raw = object.__getattribute__(value, '__dict__')
+        require(type(raw) is dict and all(type(key) is str for key in raw))
+        require(not any(name in raw for name in methods))
+        return raw
+
+    a = fields(adoption, NativeRadioAdoption, _ADOPTION_READ_METHODS)
+    store = a['store']; s = fields(store, WorkflowStore, _STORE_READ_METHODS)
+    probe = s['storage']; p = fields(probe, MessageStorageProbe, _PROBE_READ_METHODS)
+    actor = p['actor']
+    require(type(actor) is RecipientID and s['_actor'] is actor and p['client'] is s['client'])
+    chain = _ACTOR_CHAIN.__get__(actor, RecipientID)
+    agent = _ACTOR_AGENT.__get__(actor, RecipientID)
+    endpoint = p['endpoint']
+    require(type(chain) is type(agent) is type(endpoint) is str and s['_endpoint'] is endpoint)
+    return a, (store, s, s['client'], probe, p, actor, chain, agent, endpoint)
+
+
+def _read_return_fence(adoption):
+    """A binding fence, never a cached permission or storage observation."""
+    a, current = _read_return_fields(adoption)
+    saved = a['_read_return']
+    require(type(saved) is tuple and len(saved) == len(current) and saved is a['_read_return_ref'])
+    require(all(old is now for old, now in zip(saved, current)))
+    require(a['_closed'] is False and a['_uncertain'] is False)
+
+
 class NativeRadioAdoption:
     def __init__(self, owner, child, directory, transport):
         require(type(owner) is ForwardNativeOwner and type(child) is ChildPlan
@@ -99,6 +137,8 @@ class NativeRadioAdoption:
         require(owner._composition is not None and type(owner._composition.store) is WorkflowStore)
         self.owner, self.child, self.transport = owner, child, transport
         self.store = owner._composition.store
+        _, self._read_return = _read_return_fields(self)
+        self._read_return_ref = self._read_return
         require(self.store.client is self.store.storage.client is owner.resource.probe.client)
         self.directory = Path(directory)
         require(self.directory.is_absolute() and '..' not in self.directory.parts)
@@ -134,6 +174,7 @@ class NativeRadioAdoption:
     def __repr__(self):return '<NativeRadioAdoption>'
 
     def _bound(self):
+        _read_return_fence(self)
         require(not self._closed and not self._uncertain and self._process==(os.getpid(),threading.get_ident()))
         require(all(a is b for a,b in zip(self._refs,(self.owner,self.child,self.transport,self.store,
             self.store.client,self.store.storage,self.directory,self.owner.resource,self.owner.authority,self.owner.native_context))))
@@ -164,6 +205,14 @@ class NativeRadioAdoption:
                 and self.child.application_expires_epoch_us==o.context.expires_epoch_us
                 and self.child.application_deadline_monotonic_us<=o.intention.application_deadline_monotonic_us)
         if type(self.transport) is LinuxHAT:require(self.transport.boot_id==self.child.host_boot_id)
+        return True
+
+    def _read_guard(self):
+        _read_return_fence(self)
+        self._guard()
+        # WorkflowStore._access still compares probe fields after this returns.
+        # Seal those exact reads/equality methods before they can be invoked.
+        _read_return_fence(self)
         return True
 
     def _read_grant(self):
@@ -236,9 +285,13 @@ class NativeRadioAdoption:
         require(source_pins()==json.loads(self._binding)['sources'])
 
     def _observe(self):
+        _read_return_fence(self)
         self._guard();self._assets()
-        record=self.store.get(self.record_id,kind='mesh_outbound',access_check=self._guard)
-        self._guard();value=record['payload'];body=value['body']
+        _read_return_fence(self)
+        record=self.store.get(self.record_id,kind='mesh_outbound',access_check=self._read_guard)
+        # The original get already completed its final full access guard. Its
+        # sealed comparison/return tail introduces no further authority callback.
+        _read_return_fence(self);value=record['payload'];body=value['body']
         require(set(value)=={'schema','body','signature'} and value['schema']==SCHEMA)
         VerifyKey(self.owner.local.public_key).verify(DOMAIN+_canonical(body),base64.b64decode(value['signature'],validate=True))
         require(set(body)=={'record_id','revision','binding','state'} and body['record_id']==record['record_id']==self.record_id
@@ -305,3 +358,24 @@ class NativeRadioAdoption:
     def report(self):
         return dict(adopted=self._adopted,released=self._closed,uncertain=self._uncertain,
                     physical_disarmed=None,native_qualified=False)
+
+
+# Capture original implementations at module load, not from a possibly replaced
+# instance at adoption time. Plain-field names must remain descriptor-free.
+_READ_ABSENT = object()
+_STORE_READ_METHODS = ('get', '_invoke', '_snapshot', '_access', '_record')
+_PROBE_READ_METHODS = ('snapshot', '_binding')
+_ADOPTION_READ_METHODS = ('_guard', '_read_guard', '_bound', '_observe', '_assets')
+_READ_RETURN_LAYOUTS = tuple((cls, tuple((name, vars(cls).get(name, _READ_ABSENT)) for name in names))
+    for cls, names in (
+        (WorkflowStore, _STORE_READ_METHODS + ('__dict__', '__getattribute__', '__getattr__',
+            'client', 'storage', '_actor', '_endpoint')),
+        (MessageStorageProbe, _PROBE_READ_METHODS + ('__dict__', '__getattribute__', '__getattr__',
+            'client', 'actor', 'endpoint')),
+        (RecipientID, ('__getattribute__', '__getattr__', '__dict__', '__class__', '__eq__', '__ne__',
+            'chain_id', 'agent_id')),
+        (NativeRadioAdoption, _ADOPTION_READ_METHODS + ('__dict__', '__getattribute__', '__getattr__',
+            'store', '_read_return', '_read_return_ref', '_closed', '_uncertain')),
+    ))
+_ACTOR_CHAIN = vars(RecipientID)['chain_id']
+_ACTOR_AGENT = vars(RecipientID)['agent_id']

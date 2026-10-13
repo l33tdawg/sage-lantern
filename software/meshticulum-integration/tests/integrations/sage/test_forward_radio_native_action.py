@@ -74,7 +74,7 @@ def test_three_fresh_full_observations_and_two_fact_probes_each_call(tmp_path,mo
             assert invoke(r) is True
             assert invoke(r) is True
         finally:sys.setprofile(old)
-        assert count==dict(current=6,guard=54,assets=12,phase=54)
+        assert count==dict(current=6,guard=48,assets=12,phase=48)
         assert r.action['calls']==4
         retained(r)
         assert r.stage.report()['native_qualified'] is False

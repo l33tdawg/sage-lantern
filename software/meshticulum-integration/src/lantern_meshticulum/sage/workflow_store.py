@@ -173,6 +173,9 @@ class WorkflowStore:
 
     def get(self, record_id, *, kind, access_check, expected_epoch=None):
         try:
+            # Record decoding may call an SDK model's model_dump callback. Keep
+            # the original final access method across that callback boundary.
+            access = self._access
             _identifier(record_id)
             if (type(kind) is not str or kind not in KINDS
                 or expected_epoch is not None and (type(expected_epoch) is not str
@@ -183,10 +186,10 @@ class WorkflowStore:
             if value is None:
                 capability, _ = self._invoke("workflow_list", {"limit": 1}, access_check, epoch=epoch)
                 self._page(capability, None, 1)
-                self._access(access_check)
+                access(access_check)
                 raise WorkflowNotFound()
             result = self._record(value, record_id=record_id, kind=kind)
-            self._access(access_check)
+            access(access_check)
             return result
         except WorkflowNotFound:
             raise
