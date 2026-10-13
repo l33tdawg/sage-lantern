@@ -41,6 +41,35 @@ def phase_timing_mode(op):
     return value
 
 
+def require_fresh_radio(inspection, expected, firmware):
+    """Require the actual same-boot250 capability before any paid admission."""
+    from lantern_meshticulum.bench.profiles import GFSK250_FIRMWARE, GFSK250_NAME
+    need(type(expected) is dict and set(expected)=={'mcu_boot','boot_attempts','boot_reserved_estimated_airtime_us'}
+         and all(type(expected[k]) is int and expected[k]==0
+                 for k in ('boot_attempts','boot_reserved_estimated_airtime_us')),
+         'batch_fresh_boot_expectation_changed')
+    boot=expected['mcu_boot']
+    need(type(boot) is str and len(boot)==32 and boot.startswith('000008f6a51b5bf8')
+         and all(c in '0123456789abcdef' for c in boot),'batch_boot_identity_changed')
+    need(type(inspection) is dict and inspection.get('unit')=='unit-a'
+         and inspection.get('schema')=='meshticulum.native-bench-inspection.v1',
+         'batch_A_inspection_required')
+    radio=inspection.get('radio');capability=inspection.get('radio_capability')
+    need(type(radio) is dict and type(capability) is dict,'batch_A_inspection_required')
+    need(firmware==GFSK250_FIRMWARE and radio.get('firmware')==firmware
+         and radio.get('usb_serial')=='F8:5B:1B:A5:F6:08' and radio.get('disarmed') is True
+         and radio.get('mcu_boot')==boot
+         and all(type(radio.get(k)) is int and radio[k]==expected[k]
+                 for k in ('boot_attempts','boot_reserved_estimated_airtime_us'))
+         and all(type(inspection.get(k)) is int and inspection[k]==0 for k in ('arm_commands','tx_commands')),
+         'batch_A_fresh_status_changed')
+    need(capability.get('verified') is True and capability.get('radio_modem')==GFSK250_NAME
+         and type(capability.get('record_version')) is int and capability['record_version']==2
+         and capability.get('mcu_boot')==boot and capability.get('firmware')==firmware,
+         'same_boot_gfsk250_capability_required')
+    return radio
+
+
 def review(path,pin):
     raw=read(path,2000000);need(sha(raw)==pin,'operation_pin_changed');op=json.loads(raw)
     need(op['schema']==SCHEMA and op['runner_sha256']==sha(read(Path(__file__),100000)), 'wrong_batch_operation')
@@ -246,7 +275,6 @@ def main():
     from lantern_meshticulum.bench.pilot_controller import Controller
     from lantern_meshticulum.bench.pilot_bundle import BundleContext,BundleCampaign,context_value,public_context_commitment,COMMITTED_CONTRACTS
     from lantern_meshticulum.bench.profiles import GFSK250_MB1_BUNDLE_KIND as KIND
-    from lantern_meshticulum.bench.gfsk_bundle import fresh_boot_status
     from lantern_meshticulum.bench.profiles import profile_for,profile_record,GFSK250_NAME as GFSK_NAME
     from meshticulum.contracts.identity import PeerID
     from run_public_sf5_c_bulk_8k import retained_controller_caps
@@ -308,14 +336,9 @@ def main():
     try:
         operator=SSHOperator(cfg,provision_source=provision,runtime_source=bootstrap,passwords={'unit-a':password,'unit-b':password},parallel_preparation=True,
             native_phase_timing=phase_timing_mode(op));password=None;operator.open_connections()
-        inspection=operator._action('unit-a','inspect',schema='meshticulum.native-bench-inspection.v1');radio=inspection['radio'];expected=op['radio_status_expected']
-        capability=inspection.get('radio_capability',{})
-        need(capability.get('verified') is True and capability.get('radio_modem')==GFSK_NAME
-            and capability.get('record_version')==2 and capability.get('mcu_boot')==radio['mcu_boot']
-            and capability.get('firmware')==radio['firmware'],'same_boot_gfsk250_capability_required')
-        need(radio['disarmed'] is True and radio['firmware']==manifest['firmware_by_unit']['unit-a'] and radio['usb_serial']=='F8:5B:1B:A5:F6:08'
-            and all(radio[k]==expected[k] for k in ('mcu_boot','boot_attempts','boot_reserved_estimated_airtime_us'))
-            and 256-radio['boot_attempts']==256 and inspection['arm_commands']==inspection['tx_commands']==0,'batch_A_fresh_status_changed');result['pre_run_radio_status']=inspection;fresh_boot_status(radio)
+        inspection=operator._action('unit-a','inspect',schema='meshticulum.native-bench-inspection.v1')
+        require_fresh_radio(inspection,op['radio_status_expected'],manifest['firmware_by_unit']['unit-a'])
+        result['pre_run_radio_status']=inspection
         import base64
         f=piece['fixture'];wanted=[p['chunk_sha256'] for p in piece['whole']['parts']]
         public=dict(manifest=base64.b64encode(mraw).decode(),signature=base64.b64encode(sraw).decode(),
