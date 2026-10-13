@@ -93,7 +93,9 @@ class BoundStoragePair:
         def matches(current_native_probe, current_store):
             nonlocal fenced
             try:
-                check()
+                # Availability compares structural identity only. Live storage
+                # observations retain both probes' binding callbacks around IO.
+                pins()
                 require(current_native_probe is native_probe and current_store is store)
                 return True
             except BaseException as error:
