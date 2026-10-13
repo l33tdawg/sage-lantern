@@ -85,8 +85,13 @@ def test_new_kind_cannot_relabel_whole_or_renew_clock(gfdata,field,value):
 
 
 def test_pending_scope_stays_closed_and_fresh_boot_does_not_refund_debt(gfdata,monkeypatch):
+    from lantern_meshticulum.bench import profiles
+    monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256',None)
+    with pytest.raises(Exception,match='pending_gfsk_firmware_source_and_history_bindings'):
+        mode.require_bundle_bindings()
+    monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256','e'*64)
     monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256',None)
-    with pytest.raises(Exception):mode.require_bundle_bindings()
+    with pytest.raises(Exception,match='pending_gfsk_whole_bundle_scope'):mode.require_bundle_bindings()
     monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256','f'*64)
     assert mode.require_bundle_bindings()=='f'*64
     status=dict(firmware='mtb1-b433927ba6',usb_serial='F8:5B:1B:A5:F6:08',disarmed=True,
