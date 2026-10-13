@@ -173,7 +173,8 @@ class ForwardNativeProvider:
                 access_check=self._access_check, storage_check=self._storage_check,
                 native_check=self._purpose_check, enrollment_check=self._enrollment_check,
                 remote_pin_check=self._peer_check, boot_reader=boot_reader, clock=clock_reader,
-                exchange_enrollment_check=self._exchange_enrollment_check)
+                exchange_enrollment_check=self._exchange_enrollment_check,
+                workflow_access_check=self._access_check)
             self._components['_purpose'] = self._purpose
             self._guard()
         except BaseException:

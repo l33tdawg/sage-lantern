@@ -94,6 +94,30 @@ def put(setup, **changes):
     return setup.store.put(**args)
 
 
+@pytest.mark.parametrize('method', ['get', 'put'])
+@pytest.mark.parametrize('field', ['instance_id', 'vault_generation'])
+def test_original_expected_epoch_blocks_dispatch_even_when_both_fresh_snapshots_would_match(setup, method, field):
+    original = setup.probe.snapshot().epoch
+    setup.records[FIRST] = setup.record()
+    def change_before_first_snapshot():
+        setup.storage[field] = 'f' * 64 if field == 'instance_id' else '2'
+        return True
+    with pytest.raises(WorkflowUnavailable):
+        if method == 'put':
+            put(setup, access_check=change_before_first_snapshot, expected_epoch=original)
+        else:
+            setup.store.get(FIRST, kind='mesh_outbound', access_check=change_before_first_snapshot,
+                            expected_epoch=original)
+    assert not any(path.startswith('/v1/workflows') for _, path, _ in setup.calls)
+
+
+@pytest.mark.parametrize('invalid', ['', True, 1, {}, 'x' * 129])
+def test_malformed_expected_epoch_is_refused_before_any_sdk_call(setup, invalid):
+    with pytest.raises(WorkflowUnavailable):
+        put(setup, expected_epoch=invalid)
+    assert setup.calls == []
+
+
 def test_real_sdk_put_get_list_scan(setup):
     result = put(setup)
     assert result["revision"] == 1 and result["trust"] == "untrusted_auxiliary"

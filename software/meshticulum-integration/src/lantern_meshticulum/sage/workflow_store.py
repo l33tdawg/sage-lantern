@@ -171,12 +171,15 @@ class WorkflowStore:
             raise WorkflowUnavailable()
         return {**value, "items": items}
 
-    def get(self, record_id, *, kind, access_check):
+    def get(self, record_id, *, kind, access_check, expected_epoch=None):
         try:
             _identifier(record_id)
-            if type(kind) is not str or kind not in KINDS:
+            if (type(kind) is not str or kind not in KINDS
+                or expected_epoch is not None and (type(expected_epoch) is not str
+                    or not expected_epoch or len(expected_epoch) > 128)):
                 raise WorkflowUnavailable()
-            value, epoch = self._invoke("workflow_get", {"record_id": record_id}, access_check, missing=True)
+            value, epoch = self._invoke("workflow_get", {"record_id": record_id}, access_check,
+                                       missing=True, epoch=expected_epoch)
             if value is None:
                 capability, _ = self._invoke("workflow_list", {"limit": 1}, access_check, epoch=epoch)
                 self._page(capability, None, 1)
@@ -190,12 +193,15 @@ class WorkflowStore:
         except Exception:
             raise WorkflowUnavailable() from None
 
-    def put(self, record_id, kind, expected_revision, payload, *, access_check, guard=_GUARD_UNSET):
+    def put(self, record_id, kind, expected_revision, payload, *, access_check, guard=_GUARD_UNSET,
+            expected_epoch=None):
         returned = False
         try:
             _identifier(record_id)
             if (type(kind) is not str or kind not in KINDS or type(expected_revision) is not int
-                    or not 0 <= expected_revision < MAX_REVISION):
+                    or not 0 <= expected_revision < MAX_REVISION
+                    or expected_epoch is not None and (type(expected_epoch) is not str
+                        or not expected_epoch or len(expected_epoch) > 128)):
                 raise WorkflowUnavailable()
             detached, canonical = _payload(payload)
             arguments = dict(record_id=record_id, kind=kind,
@@ -210,7 +216,8 @@ class WorkflowStore:
                         or not 1 <= revision <= MAX_REVISION):
                     raise WorkflowUnavailable()
                 arguments["guard"] = dict(record_id=control_id, expected_revision=revision)
-            value, _ = self._invoke("workflow_put", arguments, access_check, writing=True)
+            value, _ = self._invoke("workflow_put", arguments, access_check,
+                                    writing=True, epoch=expected_epoch)
             returned = True
             result = self._record(value, record_id=record_id, kind=kind)
             if result["revision"] != expected_revision + 1 or _payload(result["payload"])[1] != canonical:

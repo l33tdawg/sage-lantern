@@ -125,14 +125,15 @@ class NoisePurpose:
                  signing_key, issued_epoch_us, approval_digest, owner_lease,
                  access_check, storage_check, native_check, enrollment_check,
                  remote_pin_check, boot_reader, clock, generation_id=None,
-                 exchange_enrollment_check=None):
+                 exchange_enrollment_check=None, workflow_access_check=None):
         _require(type(store) is WorkflowStore and type(local) is Peer and type(remote) is Peer
                  and local != remote and local.public_key != remote.public_key
                  and type(local_initiator) is bool and type(intention) is ReceiveIntention
                  and isinstance(signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease, access_check, storage_check,
                      native_check, enrollment_check, remote_pin_check, boot_reader, clock))
-                 and (exchange_enrollment_check is None or callable(exchange_enrollment_check)))
+                 and (exchange_enrollment_check is None or callable(exchange_enrollment_check))
+                 and (workflow_access_check is None or callable(workflow_access_check)))
         _integer(issued_epoch_us)
         _require(issued_epoch_us < intention.application_expires_epoch_us
                  and bytes(signing_key.verify_key) == local.public_key
@@ -152,6 +153,7 @@ class NoisePurpose:
         self._lease, self._access, self._storage = owner_lease, access_check, storage_check
         self._native, self._enrollment, self._pin = native_check, enrollment_check, remote_pin_check
         self._exchange_enrollment = self._exchange_enrollment_ref = exchange_enrollment_check
+        self._workflow_access = self._workflow_access_ref = workflow_access_check
         self._boot, self._clock = boot_reader, clock
         self._owner = (os.getpid(), threading.get_ident())
         self._busy = None
@@ -178,6 +180,7 @@ class NoisePurpose:
     def _available(self):
         _require(self._owner == (os.getpid(), threading.get_ident()))
         _require(self._exchange_enrollment is self._exchange_enrollment_ref)
+        _require(self._workflow_access is self._workflow_access_ref)
         store, storage, client, signer, binding = self._refs
         _require(self.store is store and store.storage is storage and store.client is client
                  and self._signer is signer and self.binding is binding
@@ -267,6 +270,23 @@ class NoisePurpose:
         self._guard()
         self._time()
         self._guard()
+        return True
+
+    def _workflow_allowed(self):
+        """Fresh workflow access; WorkflowStore owns each HTTP epoch bracket.
+
+        The optional native access observer checks the original live approvals
+        without recursively rereading purpose/enrollment records. Full purpose,
+        storage and accounting guards remain at key, crypto and handoff boundaries.
+        No access result survives this callback or authorizes a later operation.
+        """
+        if self._workflow_access is None:
+            return self._allowed()
+        self._time()
+        self._checked(self._workflow_access)
+        self._time()
+        self._checked(self._workflow_access)
+        self._time()
         return True
 
     def _run(self, name, action, *, lease=True, fresh=True):
@@ -372,7 +392,8 @@ class NoisePurpose:
         return body
 
     def _read(self, epoch):
-        body = self._validate(self.store.get(self.record_id, kind=KIND, access_check=self._allowed))
+        body = self._validate(self.store.get(self.record_id, kind=KIND,
+            access_check=self._workflow_allowed, expected_epoch=epoch))
         _require(body['storage_epoch'] == epoch)
         self._epoch = epoch
         return body
@@ -389,7 +410,7 @@ class NoisePurpose:
         signature = self._signer.sign(SIGNATURE_DOMAIN + _canonical(body)).signature
         result = self.store.put(self.record_id, KIND, body['revision'] - 1,
             dict(schema=SCHEMA, body=body, signature=base64.b64encode(signature).decode('ascii')),
-            access_check=self._allowed)
+            access_check=self._workflow_allowed, expected_epoch=epoch)
         checked = self._validate(result)
         _require(_canonical(checked) == _canonical(body))
         self._epoch = epoch
@@ -400,7 +421,8 @@ class NoisePurpose:
         def generate(epoch):
             _require(self._key is None and self._public is None and self._handle is None)
             try:
-                self.store.get(self.record_id, kind=KIND, access_check=self._allowed)
+                self.store.get(self.record_id, kind=KIND, access_check=self._workflow_allowed,
+                               expected_epoch=epoch)
             except WorkflowNotFound:
                 pass
             else:

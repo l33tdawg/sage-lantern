@@ -22,6 +22,7 @@ from lantern_meshticulum.sage.forward_native_provider import (
     NativeAccountingObservation, SETUP_SCOPES, setup_approval_binding,
 )
 from lantern_meshticulum.sage.mesh_inbox import _canonical
+from lantern_meshticulum.sage.noise_purpose import NoisePurposeError
 
 LIMITS = Cost(2000, 300000000, 2000, 100000, 100000)
 DEBT = Cost(17, 200000, 5, 100, 200)
@@ -407,3 +408,86 @@ def test_split_guard_rechecks_drift_inside_actual_storage_callback(field, monkey
         with pytest.raises(ForwardNativeProviderError):
             p._purpose._guard()
         assert source.closed and source.close_calls == 1 and not r.state.rows
+
+
+def test_workflow_observer_rechecks_access_without_caching_or_granting_a_key():
+    with fixture() as (r, p, source, bind):
+        observations = source.observations
+        assert p._purpose._workflow_allowed() is True
+        assert p._purpose._workflow_allowed() is True
+        # Metadata access is separate from the full guard that must freshly
+        # verify retained native accounting before key generation/handoff.
+        assert source.observations == observations and p._purpose._key is None
+        r.state.owner_live = False
+        with pytest.raises(Exception):
+            p._purpose._workflow_allowed()
+        assert source.closed and not r.state.rows
+
+
+@pytest.mark.parametrize('replacement', [None, lambda: True])
+def test_optional_workflow_observer_identity_is_pinned_including_none(replacement):
+    with fixture() as (r, p, source, bind):
+        p._purpose._workflow_access = replacement
+        with pytest.raises(Exception):
+            p.generate()
+        assert p._purpose._key is None and not r.state.rows
+
+
+@pytest.mark.parametrize('field', ['authority', 'consent', 'storage', 'boot', 'expiry', 'debt', 'closed'])
+def test_workflow_callback_drift_cannot_publish_a_native_noise_observation(field):
+    with fixture() as (r, p, source, bind):
+        context, info = bind()
+        original = r.client.workflow_get
+        applied = []
+        def get(**arguments):
+            result = original(**arguments)
+            if not applied:
+                applied.append(True)
+                if field == 'authority': r.state.owner_live = False
+                elif field == 'consent': r.hardware.config['dispatch_enabled'] = False
+                elif field == 'storage': r.state.instance_id = 'f' * 64
+                elif field == 'boot': r.state.boot = str(uuid.uuid4())
+                elif field == 'expiry': r.state.now = (r.intention.application_expires_epoch_us, r.state.now[1])
+                elif field == 'debt': source.evidence = 'f' * 64
+                else: assert p.close() is False
+            return result
+        r.client.workflow_get = get
+        # Use the public provider action so its finally block can release the
+        # accounting source only after the busy purpose observer has unwound.
+        with pytest.raises(ForwardNativeProviderError):
+            p.start(r.packet)
+        assert applied and p._purpose._key is None and source.closed
+
+
+def test_purpose_metadata_put_cannot_move_to_a_new_epoch_after_outer_guard():
+    with fixture() as (r, p, source, bind):
+        original = p._store.put
+        writes = []
+        sdk_put = r.client.workflow_put
+        def dispatched(**arguments):
+            writes.append(True)
+            return sdk_put(**arguments)
+        r.client.workflow_put = dispatched
+        def before_first_snapshot(*args, **kwargs):
+            assert kwargs['expected_epoch'] == p.storage_epoch
+            r.state.instance_id = 'f' * 64
+            return original(*args, **kwargs)
+        p._store.put = before_first_snapshot
+        with pytest.raises(ForwardNativeProviderError):
+            p.generate()
+        assert not writes and not r.state.rows and p._purpose._key is None
+
+
+def test_purpose_workflow_guard_checks_time_after_last_live_access_callback():
+    with fixture() as (r, p, source, bind):
+        original = p._check_access
+        calls = []
+        def access():
+            original()
+            calls.append(True)
+            if len(calls) == 2:
+                r.state.now = (r.intention.application_expires_epoch_us, r.state.now[1])
+        p._check_access = access
+        with pytest.raises(NoisePurposeError):
+            p._purpose._workflow_allowed()
+        assert len(calls) == 2 and not r.state.rows

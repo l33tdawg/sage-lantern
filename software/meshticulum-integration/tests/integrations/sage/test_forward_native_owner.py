@@ -170,6 +170,37 @@ def test_scope_expiry_after_actual_authority_context_exit_refuses_reads():
     with setup() as r:owner=r.create()
     with pytest.raises(ForwardNativeOwnerError):owner.access_check()
 
+
+def test_timing_and_storage_observations_do_not_reenter_noise_enrollment_or_grant_dispatch():
+    calls=[];purpose_live=[True]
+    def peer(*arguments):
+        calls.append(arguments)
+        return purpose_live[0]
+    with setup(peer_observer=peer) as r:
+        owner=r.create();calls.clear()
+        assert owner.time()==r.state.now
+        assert owner.storage_check() is True
+        assert calls==[]
+        purpose_live[0]=False
+        # The observation itself grants no cryptographic or traffic action.
+        # An action still freshly observes, and refuses, the revoked purpose.
+        with pytest.raises(ForwardNativeOwnerError):
+            owner.dispatch_check(r.context,r.intention)
+        assert calls and not r.state.rows
+
+
+@pytest.mark.parametrize('method', ['time', 'storage_check'])
+@pytest.mark.parametrize('drift', ['authority', 'storage', 'expiry', 'boot'])
+def test_observation_only_checks_still_refuse_native_permission_or_epoch_drift(method,drift):
+    with setup() as r:
+        owner=r.create()
+        if drift=='authority':r.state.owner_live=False
+        elif drift=='storage':r.state.instance_id='f'*64
+        elif drift=='expiry':r.state.now=(r.intention.application_expires_epoch_us,r.state.now[1])
+        else:r.state.boot=str(uuid.uuid4())
+        with pytest.raises(ForwardNativeOwnerError):getattr(owner,method)()
+        assert not r.state.rows
+
 def test_native_callback_caught_reentry_fences_owner_before_publication():
     holder={}
     def purpose(*args):

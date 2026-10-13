@@ -60,6 +60,32 @@ def test_actual_signed_store_gets_verify_pins_without_creating_record_or_second_
         r.hardware.capture_lease=original
 
 
+def test_enrollment_metadata_put_keeps_original_epoch_before_dispatch():
+    with fixture(scopes=(*SCOPES, ENROLL_SCOPE)) as (r,p,info,record):
+        original=p.store.put;writes=[];sdk_put=r.client.workflow_put
+        def dispatched(**arguments):
+            writes.append(True);return sdk_put(**arguments)
+        r.client.workflow_put=dispatched
+        def before_first_snapshot(*args,**kwargs):
+            assert kwargs['expected_epoch']==p.storage_epoch
+            r.state.instance_id='f'*64
+            return original(*args,**kwargs)
+        p.store.put=before_first_snapshot
+        with pytest.raises(NativeNoiseEnrollmentError):p.enroll()
+        assert not writes and not r.state.rows
+
+
+def test_workflow_guard_checks_time_after_last_native_access_callback():
+    with fixture() as (r,p,info,record):
+        original=p._access;calls=[]
+        def access():
+            original();calls.append(True)
+            if len(calls)==2:r.state.now=(r.intention.application_expires_epoch_us,r.state.now[1])
+        p._access=access
+        with pytest.raises(NativeNoiseEnrollmentError):p._workflow_guard()
+        assert len(calls)==2 and not r.state.rows
+
+
 @pytest.mark.parametrize('attack',['missing','bad_signature','revoked','remote_pin','local_pin','generation','context',
                                  'setup_approval','exchange_approval','deadline','storage_epoch','schema'])
 def test_signed_record_and_exact_root_binding_refuse_without_registration(attack):

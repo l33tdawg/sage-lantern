@@ -124,7 +124,7 @@ class NativeNoiseEnrollment:
     def _checked(self,callback,*args):
         self._available();value=callback(*args);self._available();return value
 
-    def _guard(self):
+    def _access(self):
         h=self.resource;self._available()
         require(self._checked(h.configured) is True and self._checked(h.active) is True
             and self._checked(h.consent)==self.consent
@@ -133,20 +133,32 @@ class NativeNoiseEnrollment:
             and h.supervisor.broker_id==self.broker_id
             and self._checked(h.supervisor.resource_lifecycle_check) is True
             and self._checked(h.supervisor.verified_epoch)==self.storage_epoch
-            and self._checked(h.probe.snapshot).epoch==self.storage_epoch
-            and self._checked(self.store.storage.snapshot).epoch==self.storage_epoch
             and self._checked(h._epoch)==self.native_context.epoch
             and self._checked(self._boot)==self.intention.host_boot_id)
         for scope in SCOPES:
             require(self._checked(self.authority.authorized,self.native_context,scope,None) is True)
         require(any(p['chain_id']==self.remote.chain_id and p['agent_id']==self.remote.public_key.hex()
                     for p in h.config['peers']))
+
+    def _time(self):
         now=self._checked(self._clock)
         require(type(now) is tuple and len(now)==2 and all(type(n) is int and n>=0 for n in now)
             and (self._last is None or all(a>=b for a,b in zip(now,self._last)))
             and self.context.issued_epoch_us<=now[0]<self.intention.application_expires_epoch_us
             and now[1]<self.intention.application_deadline_monotonic_us)
-        self._last=now;return True
+        self._last=now
+
+    def _workflow_guard(self):
+        # Every invocation rechecks the original live root grant and lifetime.
+        # WorkflowStore independently takes fresh HTTP epochs before and after
+        # its SDK call; full outer guards still fence this signed observation.
+        self._access();self._time();self._access();self._time();return True
+
+    def _guard(self):
+        self._workflow_guard()
+        require(self._checked(self.resource.probe.snapshot).epoch==self.storage_epoch
+            and self._checked(self.store.storage.snapshot).epoch==self.storage_epoch)
+        self._workflow_guard();return True
 
     def _validate(self,record):
         value=record['payload']
@@ -170,7 +182,8 @@ class NativeNoiseEnrollment:
             self._available()
             if self._busy:self._uncertain=True;raise NativeNoiseEnrollmentError()
             self._busy=entered=True;self._guard()
-            record=self.store.get(self.record_id,kind=KIND,access_check=self._guard)
+            record=self.store.get(self.record_id,kind=KIND,access_check=self._workflow_guard,
+                                  expected_epoch=self.storage_epoch)
             self._validate(record);self._guard();return True
         except BaseException as error:
             if entered:self._uncertain=True
@@ -183,6 +196,11 @@ class NativeNoiseEnrollment:
         self._guard()
         require(self._checked(self.authority.authorized,self.native_context,ENROLL_SCOPE,None) is True)
         self._guard();return True
+
+    def _enroll_workflow_guard(self):
+        self._workflow_guard()
+        require(self._checked(self.authority.authorized,self.native_context,ENROLL_SCOPE,None) is True)
+        self._workflow_guard();return True
 
     def enroll(self):
         """Create-only signed public enrollment under explicit original approval.
@@ -197,7 +215,8 @@ class NativeNoiseEnrollment:
             self._available()
             if self._busy:self._uncertain=True;raise NativeNoiseEnrollmentError()
             self._busy=entered=True;self._enroll_guard()
-            try:self.store.get(self.record_id,kind=KIND,access_check=self._enroll_guard)
+            try:self.store.get(self.record_id,kind=KIND,access_check=self._enroll_workflow_guard,
+                               expected_epoch=self.storage_epoch)
             except WorkflowNotFound:pass
             else:raise NativeNoiseEnrollmentError()
             self._enroll_guard()
@@ -206,9 +225,11 @@ class NativeNoiseEnrollment:
             signed=self._checked(self._refs[9].sign,SIGNATURE_DOMAIN+_canonical(body))
             payload=dict(schema=SCHEMA,body=body,signature=base64.b64encode(signed.signature).decode('ascii'))
             self._enroll_guard()
-            returned=self.store.put(self.record_id,KIND,0,payload,access_check=self._enroll_guard)
+            returned=self.store.put(self.record_id,KIND,0,payload,access_check=self._enroll_workflow_guard,
+                                    expected_epoch=self.storage_epoch)
             self._validate(returned);require(self._body==_canonical(body));self._enroll_guard()
-            observed=self.store.get(self.record_id,kind=KIND,access_check=self._enroll_guard)
+            observed=self.store.get(self.record_id,kind=KIND,access_check=self._enroll_workflow_guard,
+                                    expected_epoch=self.storage_epoch)
             self._validate(observed);require(self._body==_canonical(body));self._enroll_guard()
             return True
         except BaseException as error:

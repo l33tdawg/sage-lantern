@@ -133,7 +133,7 @@ class ForwardNativeOwner:
             and hashlib.sha256(_canonical(h.config)).hexdigest()==self.config_revision)
     def _checked(self,callback,*args):
         self._available();v=callback(*args);self._available();return v
-    def _observe(self,*,live=True):
+    def _observe(self,*,live=True,keys=True):
         h=self.resource;self._available()
         require(self._checked(h.configured) is True and self._checked(h.active) is True
             and self._checked(h.consent)==self.consent
@@ -150,13 +150,14 @@ class ForwardNativeOwner:
         require(self.consent.messaging_enabled is True and self.consent.dispatch_enabled is True)
         peers=h.config['peers']
         require(any(p['chain_id']==self.remote.chain_id and p['agent_id']==self.remote.public_key.hex() for p in peers))
-        local_key=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
-        remote_key=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
-        if self._exchange_key_check is None:
-            require(self._checked(self._key_check,local_key,self.context.digest) is True)
-            require(self._checked(self._peer_key_check,self.remote,remote_key,self.context.digest) is True)
-        else:
-            require(self._checked(self._exchange_key_check,local_key,self.remote,remote_key,self.context.digest) is True)
+        if keys:
+            local_key=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
+            remote_key=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
+            if self._exchange_key_check is None:
+                require(self._checked(self._key_check,local_key,self.context.digest) is True)
+                require(self._checked(self._peer_key_check,self.remote,remote_key,self.context.digest) is True)
+            else:
+                require(self._checked(self._exchange_key_check,local_key,self.remote,remote_key,self.context.digest) is True)
         now=self._checked(self._clock)
         require(type(now) is tuple and len(now)==2 and all(type(n) is int and n>=0 for n in now)
             and (self._last_time is None or all(a>=b for a,b in zip(now,self._last_time))))
@@ -178,7 +179,11 @@ class ForwardNativeOwner:
         finally:
             if entered:self._busy=False
     def access_check(self):return self._run(lambda:(self._observe(),True)[1])
-    storage_check=access_check
+    def storage_check(self):
+        # A fresh native/Vault fence supplies no key or dispatch permission.
+        # Access, dispatch, read, phase and crypto checks still reread both
+        # signed purpose/enrollment records at their own action boundary.
+        return self._run(lambda:(self._observe(keys=False),True)[1])
     def peer_check(self,peer):
         require(peer==self.remote);return self.access_check()
     def dispatch_check(self,context,intention):
@@ -195,7 +200,7 @@ class ForwardNativeOwner:
             self._observe();require(self._checked(self._key_check,public_key,context_digest) is True)
             self._observe();return True
         return self._run(check)
-    def time(self):return self._run(self._observe)
+    def time(self):return self._run(lambda:self._observe(keys=False))
     @contextmanager
     def _lease(self):
         from sage_lantern.storage_supervisor_socket import CaptureLease
