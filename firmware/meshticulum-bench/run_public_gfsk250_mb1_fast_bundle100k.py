@@ -13,6 +13,7 @@ import json
 import lzma
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import struct
@@ -308,11 +309,36 @@ def cleanup_current(current,result,*,completed=False):
 
 
 def native_callback_seconds(action,phase_end_epoch_us,now_epoch_us):
-    """Capture/final audit include full history; the original phase never moves."""
-    cap=120 if action in ('capture','audit') else 45
+    """Capture/enrollment/final audit verify history within the original phase."""
+    cap=120 if action in ('capture','enroll','audit') else 45
     left=min(cap,max(0,(phase_end_epoch_us-now_epoch_us)//1000000-8))
     need(left>0,'batch_original_remote_window_expired')
     return left
+
+
+def rpc_failure_diagnostic(output,returncode):
+    """Retain bounded callback evidence without echoing metadata or messages.
+
+    A timeout does not prove whether enrollment committed. A late receipt after
+    local termination cannot turn an unproved callback into a successful one.
+    """
+    diagnostic=dict(output_sha256=sha(output),failure_kind=
+        'remote_callback_timeout' if returncode==124 else
+        'remote_callback_failed' if returncode is not None else
+        'callback_outcome_unproved',remote_error_type=None,remote_reason=None)
+    records=[]
+    for line in output.splitlines():
+        if len(line)>1024:continue
+        try:value=json.loads(line)
+        except (ValueError,UnicodeError):continue
+        if type(value) is dict and value.get('schema')=='meshticulum.management-file-RPC-error.v1':
+            records.append(value)
+    if len(records)==1:
+        value=records[0]
+        if set(value)=={'schema','error_type','reason'} and value['reason']=='management_file_RPC_refused' \
+                and type(value['error_type']) is str and re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,63}',value['error_type']):
+            diagnostic.update(remote_error_type=value['error_type'],remote_reason=value['reason'])
+    return diagnostic
 
 
 def parallel_captures(native,payloads):
@@ -415,19 +441,30 @@ def main():
         bundle_capture_commitment=commitment,handoff_end_epoch_us=end)
     operator=parent=current=None;owned=[];owners={};priors={};preparations={u:{} for u in histories};facts={}
     def native(u,action,payload):
-        left=native_callback_seconds(action,end,time.time_ns()//1000)
+        started_epoch_us=time.time_ns()//1000;started_monotonic_ns=time.monotonic_ns()
+        left=native_callback_seconds(action,end,started_epoch_us)
         command=rpc_command(operator,cfg,op,u,action,payload,left,operation_sha256=args.operation_sha256)
-        job=None;audit=dict(unit=u,action=action,remote_terminal=False,local_terminal=False);result['rpc_clients'].append(audit)
+        job=None;audit=dict(unit=u,action=action,remote_terminal=False,local_terminal=False,
+            started_epoch_us=started_epoch_us,callback_budget_seconds=left,
+            original_callback_end_epoch_us=command.original_end_epoch_us,
+            original_local_callback_deadline_monotonic_us=int(command.local_deadline*1000000));result['rpc_clients'].append(audit)
         try:
             argv=operator._argv(u,command,root=True);need(len(argv[-1].encode())<125000,'batch_native_argv_bound')
             job=Job(argv,password=operator.passwords.get(u),deadline=min(command.local_deadline,operator.deadline),clock=operator.clock);owned.append(job)
-            need(job.wait()==0,'batch_native_RPC_failed');value=one_record(bytes(job.output),'meshticulum.private-resume-native-rpc.v1')
+            code=job.wait();audit['output_sha256']=sha(bytes(job.output))
+            if code!=0:audit['failure']=rpc_failure_diagnostic(bytes(job.output),code)
+            need(code==0,'batch_native_RPC_failed');value=one_record(bytes(job.output),'meshticulum.private-resume-native-rpc.v1')
             need(value['unit']==u and value['action']==action and value['radio_opened'] is False and value['private_production'] is False,'batch_native_scope_changed');audit['remote_terminal']=True;return value
         finally:
             try:
                 if job is not None:
                     job.close();audit['local_terminal']=job.process.poll() is not None;audit['returncode']=job.process.returncode
+                    if not audit['remote_terminal'] and 'failure' not in audit:
+                        audit['failure']=rpc_failure_diagnostic(bytes(job.output),None)
             finally:
+                # Inclusive of staging/setup and owned process termination;
+                # management-input cleanup below has its separate audit.
+                audit['callback_elapsed_us']=(time.monotonic_ns()-started_monotonic_ns)//1000
                 original=sys.exc_info()[1]
                 try:
                     cleanup=cleanup_rpc_input(operator,cfg,op,command.staged)

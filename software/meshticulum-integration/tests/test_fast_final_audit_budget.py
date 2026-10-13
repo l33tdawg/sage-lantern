@@ -15,10 +15,11 @@ def runner(monkeypatch):
     value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
 
 
-def test_full_history_audit_gets120_but_existing_controls_keep45(runner):
+def test_full_history_callbacks_get120_but_light_controls_keep45(runner):
     assert runner.native_callback_seconds('audit',200000000,0)==120
     assert runner.native_callback_seconds('capture',200000000,0)==120
-    for action in ('guard','enroll','observe-cache'):
+    assert runner.native_callback_seconds('enroll',200000000,0)==120
+    for action in ('guard','observe-cache'):
         assert runner.native_callback_seconds(action,200000000,0)==45
 
 
@@ -36,7 +37,8 @@ def test_exhausted_original_audit_window_refuses_before_staging(runner,remaining
         runner.native_callback_seconds('audit',remaining*1000000,0)
 
 
-def test_audit_budget_reaches_real_file_command_and_staging_cannot_refresh_it(runner,monkeypatch):
+@pytest.mark.parametrize('action',['audit','enroll'])
+def test_history_budget_reaches_real_file_command_and_staging_cannot_refresh_it(runner,monkeypatch,action):
     import management_file_rpc as file_rpc
     from lantern_meshticulum.bench.management_input import SCHEMA
     now=[1791878000000000,10.0];calls=[]
@@ -56,15 +58,15 @@ def test_audit_budget_reaches_real_file_command_and_staging_cannot_refresh_it(ru
     op=Operator();start=tuple(now);phase=start[0]+135000000;cfg=dict(handoff_end_epoch_us=phase,
         bundle_parent_id='a'*32,units={'unit-c':dict(python='/usr/bin/python3')})
     packet=dict(runtime_sha256='f'*64,manifest_sha256='f'*64,native_adapter_sha256='b'*64)
-    command=runner.rpc_command(op,cfg,packet,'unit-c','audit',dict(source_only_model=True),
-        runner.native_callback_seconds('audit',phase,now[0]),operation_sha256='b'*64)
+    command=runner.rpc_command(op,cfg,packet,'unit-c',action,dict(source_only_model=True),
+        runner.native_callback_seconds(action,phase,now[0]),operation_sha256='b'*64)
     assert command[2]=='117s' and command.original_end_epoch_us==start[0]+120000000
     assert command.local_deadline==130.0 and op.deadline==145.0 and cfg['handoff_end_epoch_us']==phase
     assert calls[0]['original_end_epoch_us']==command.original_end_epoch_us
     now[0]+=60000000;now[1]+=60
     assert now[1]<command.local_deadline and now[0]<command.original_end_epoch_us
     # A separately evaluated callback never moves the original phase end.
-    assert runner.native_callback_seconds('audit',phase,now[0])==64
+    assert runner.native_callback_seconds(action,phase,now[0])==64
     assert cfg['handoff_end_epoch_us']==phase
 
 
