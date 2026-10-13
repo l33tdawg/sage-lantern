@@ -75,6 +75,7 @@ class ForwardNativeOwner:
         self._observer_refs=(key_check,peer_key_check,boot_reader,clock_reader,exchange_key_check)
         self._composition=None;self._composition_ref=None;self._constructing=False
         self._budget=self._session=self._operation=None;self._budget_refs=None;self._registry=None
+        self._operation_observing=False;self._operation_refs=None;self._operation_methods=None
         self._owner=(os.getpid(),threading.get_ident());self._busy=self._closed=self._uncertain=False
         self._held=False;self._last_time=None
         self._native_refs=(resource,authority,native_context,context,intention,local_initiator,self.local,self.remote)
@@ -120,6 +121,10 @@ class ForwardNativeOwner:
         if self._operation is not None:
             require(self._operation.session is self._session and self._operation.budget is self._budget
                 and self._operation.receiver is (None if self.local_initiator else self._composition))
+            operation,session,receiver,budget,authorize,clock,native,action=self._operation_refs
+            require(self._operation is operation and self._session is session and self._composition is receiver
+                and self._budget is budget and session.authorize is authorize and session.clock is clock
+                and operation._native is native and operation._operation_action is action)
         if self._operation is not None and self._operation.active is not None:
             self._registry.active_owned(self,self._operation.active)
         h=self.resource
@@ -251,6 +256,51 @@ class ForwardNativeOwner:
                 require(self._checked(self._exchange_key_check,local_key,self.remote,remote_key,self.context.digest) is True)
             self._observe(keys=False);bindings();return True
         return self._run(check)
+    def operation_action_check(self,context,intention,kind,sends,session,authorize):
+        """Combine phase approval with the original full crypto authorizer.
+
+        Each existing operation boundary still calls this independently. The
+        receiver observes both current key records; the final native check
+        covers callback-side drift without reading or retaining those keys.
+        """
+        entered=False
+        def bindings():
+            self._available()
+            from .forward_operation import ForwardOperation
+            operation,original,receiver,budget,callback,clock,native,action=self._operation_refs
+            require(type(operation) is ForwardOperation and operation is self._operation
+                and operation._action_observing and operation._busy
+                and context is self.context and intention is self.intention
+                and type(kind) is int and kind in (H1,H2,CONFIRM_I,CONFIRM_R,DATA)
+                and type(sends) is bool and sends==((kind%2==1)==self.local_initiator)
+                and session is original is self._session and authorize is callback is session.authorize
+                and type(receiver) is ForwardReceiver and receiver is self._composition
+                and receiver.session is session and receiver.context is context and receiver.intention is intention
+                and receiver.local_initiator is self.local_initiator and receiver.journal is session.counters
+                and receiver.store is budget.store and operation.budget is budget
+                and getattr(authorize,'__self__',None) is receiver
+                and getattr(authorize,'__func__',None) is self._operation_methods[0]
+                and type(receiver)._authorize_crypto is self._operation_methods[0]
+                and type(self).operation_action_check is self._operation_methods[1]
+                and '_authorize_crypto' not in receiver.__dict__ and 'operation_action_check' not in self.__dict__)
+            operation._action_bound()
+        try:
+            if self._operation_observing or self._busy:
+                self._uncertain=True;raise ForwardNativeOwnerError()
+            bindings();self._operation_observing=entered=True
+            # This original callback enters crypto_action_check._run itself;
+            # an outer native _run would be incorrect self-reentry.
+            require(authorize() is True);bindings()
+            self._busy=True
+            try:self._observe(keys=False);bindings()
+            finally:self._busy=False
+            return True
+        except BaseException as error:
+            self._uncertain=True
+            if not isinstance(error,Exception):raise
+            raise ForwardNativeOwnerError() from None
+        finally:
+            if entered:self._operation_observing=False
     def time(self):return self._run(lambda:self._observe(keys=False))
     def workflow_access_check(self):
         """Fresh original native access inside one held metadata operation.
@@ -326,8 +376,11 @@ class ForwardNativeOwner:
             self._session=session
             require(session.counters is receiver.journal and receiver.journal.store is budget.store
                 and receiver.journal._lease is budget._lease and receiver.journal.intention==budget.intention)
+            native=self.phase_check;action=self.operation_action_check
             operation=ForwardOperation(session,budget,sealed_record=sealed_record,
-                receiver=None if self.local_initiator else receiver,native_check=self.phase_check)
+                receiver=None if self.local_initiator else receiver,native_check=native,operation_action_check=action)
+            self._operation_refs=(operation,session,receiver,budget,session.authorize,session.clock,native,action)
+            self._operation_methods=(type(receiver)._authorize_crypto,type(self).operation_action_check)
             self._operation=operation
             self.access_check();self._available();return operation
         except BaseException:
@@ -363,11 +416,11 @@ class ForwardNativeOwner:
         budget_joined=self._budget is None or self._budget.close()
         joined=self._composition is None or self._composition.close()
         return (operation_joined and budget_joined and joined and not self._constructing
-            and not self._held and not self._busy and not self._uncertain)
+            and not self._held and not self._busy and not self._operation_observing and not self._uncertain)
     def _registry_close(self,registry):
         """One-use same-process drain delegation after the registry idle barrier."""
         require(registry is self._registry and os.getpid()==self._owner[0] and self._closed
-            and not self._held and not self._busy and not self._constructing)
+            and not self._held and not self._busy and not self._operation_observing and not self._constructing)
         require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
             self.context,self.intention,self.local_initiator,self.local,self.remote))))
         if self._composition is not None:require(self._composition is self._composition_ref)

@@ -57,10 +57,10 @@ def describe_child(transfer,*,slot,kind,live=True):
 
 class ForwardOperation:
     """One non-resumable crypto exchange; carrier retry reuses cached records."""
-    def __init__(self,session,budget,*,sealed_record=None,receiver=None,native_check):
+    def __init__(self,session,budget,*,sealed_record=None,receiver=None,native_check,operation_action_check=None):
         require(type(session) is ForwardSession and type(budget) is ForwardBudget
             and session.context==budget.context and session.deadline==budget.intention.application_deadline_monotonic_us
-            and callable(native_check))
+            and callable(native_check) and (operation_action_check is None or callable(operation_action_check)))
         local=session.context.initiator if session.initiator else session.context.responder
         require(budget.store.storage.actor.agent_id==local.public_key.hex()
             and budget.store.storage.actor.chain_id==local.chain_id)
@@ -74,6 +74,12 @@ class ForwardOperation:
                 and receiver.intention==budget.intention)
         self.session,self.budget,self.receiver=session,budget,receiver
         self._sealed,self._native=sealed_record,native_check
+        self._operation_action=self._operation_action_ref=operation_action_check
+        self._action_refs=(session,budget,receiver,session.context,budget.intention,native_check,
+                           session.authorize,session.clock,session.counters,budget.context)
+        self._action_value=(session.context.digest,budget.context.digest,_canonical(budget.intention.to_dict()),
+                            session.initiator,session.deadline)
+        self._action_observing=False
         self.position=0;self.cached=None;self.active=None;self._busy=self._closed=self._uncertain=False
         self._owner=(os.getpid(),threading.get_ident())
         self._last_clock=None
@@ -84,8 +90,48 @@ class ForwardOperation:
         sends=(self.position%2==0)==self.session.initiator
         return kind,sends
     def _available(self):require(not self._closed and not self._uncertain and not self.session._closed
-        and self._owner==(os.getpid(),threading.get_ident()))
+        and self._owner==(os.getpid(),threading.get_ident())
+        and self._operation_action is self._operation_action_ref)
+    def _action_bound(self):
+        self._available()
+        require(all(a is b for a,b in zip(self._action_refs,
+            (self.session,self.budget,self.receiver,self.session.context,self.budget.intention,self._native,
+             self.session.authorize,self.session.clock,self.session.counters,self.budget.context)))
+            and type(self.session.initiator) is bool and self.session.initiator is self._action_value[3]
+            and type(self.session.deadline) is int and type(self.position) is int
+            and self._action_value==(self.session.context.digest,self.budget.context.digest,
+                                    _canonical(self.budget.intention.to_dict()),
+                                    self.session.initiator,self.session.deadline))
+    def _check_action(self,kind,sends):
+        """One fresh combined observation at this boundary, never across it."""
+        if self._action_observing:
+            self._uncertain=True;raise ForwardOperationError()
+        was_busy=self._busy
+        try:
+            self._action_bound()
+            require(type(kind) is int and kind in SEQUENCE and type(sends) is bool
+                and sends==((kind%2==1)==self.session.initiator))
+            phase=(self.position,self.active,self.cached)
+            self._action_observing=self._busy=True
+            allowed=self._operation_action(self.session.context,self.budget.intention,kind,sends,
+                                           self.session,self.session.authorize)
+            self._action_bound();require(allowed is True)
+            require(self.position==phase[0] and self.active is phase[1] and self.cached is phase[2])
+            now=self.session.clock();self._action_bound()
+            require(self.position==phase[0] and self.active is phase[1] and self.cached is phase[2]
+                and type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
+                and self.session.context.issued_epoch_us<=now[0]<self.session.context.expires_epoch_us
+                and 0<=now[1]<self.session.deadline
+                and (self._last_clock is None or all(a>=b for a,b in zip(now,self._last_clock))))
+            self._last_clock=now
+        except BaseException:
+            self._uncertain=self._closed=True
+            self._action_refs[0].close()
+            raise
+        finally:
+            self._action_observing=False;self._busy=was_busy
     def _check(self,kind,sends):
+        if self._operation_action_ref is not None:return self._check_action(kind,sends)
         self._available();allowed=self._native(self.session.context,kind,sends);self._available()
         require(allowed is True)
         self._available()
