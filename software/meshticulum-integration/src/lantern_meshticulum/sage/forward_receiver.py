@@ -41,11 +41,12 @@ class ForwardReceiver:
     """
     def __init__(self, client, *, context, local_initiator, intention, boot_id,
                  endpoint, signing_key, owner_lease, access_check, storage_check,
-                 peer_check, dispatch_check, read_check, key_check, clock):
+                 peer_check, dispatch_check, read_check, key_check, clock, workflow_access_check=None):
         _require(type(context) is ForwardContext and type(local_initiator) is bool
                  and type(intention) is ReceiveIntention and isinstance(signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease,access_check,storage_check,
-                     peer_check,dispatch_check,read_check,key_check,clock)))
+                     peer_check,dispatch_check,read_check,key_check,clock))
+                 and (workflow_access_check is None or callable(workflow_access_check)))
         local=context.initiator if local_initiator else context.responder
         remote=context.responder if local_initiator else context.initiator
         _require(bytes(signing_key.verify_key)==local.public_key
@@ -55,6 +56,7 @@ class ForwardReceiver:
         self.local,self.remote,self.local_initiator=local,remote,local_initiator
         self._lease,self._access,self._storage,self._peer=owner_lease,access_check,storage_check,peer_check
         self._dispatch,self._read,self._purpose,self._clock=dispatch_check,read_check,key_check,clock
+        self._workflow_access=self._workflow_access_ref=workflow_access_check
         self._key=signing_key
         self._closed,self._uncertain,self._session_created=False,False,False
         self.session=None
@@ -76,7 +78,8 @@ class ForwardReceiver:
     def __repr__(self):return '<ForwardReceiver>'
 
     def _available(self):
-        _require(not self._closed and not self._uncertain and (os.getpid(),threading.get_ident())==self._owner)
+        _require(not self._closed and not self._uncertain and (os.getpid(),threading.get_ident())==self._owner
+                 and self._workflow_access is self._workflow_access_ref)
         # Handshake operations may not touch storage; still verify that the
         # borrowed identity/endpoint/transport has not been structurally replaced.
         self.probe._binding()
@@ -114,7 +117,8 @@ class ForwardReceiver:
         return ForwardReceiveJournal(self.store,context=self.context,local_initiator=self.local_initiator,
             local_signing_key=self._key,intention=self.intention,boot_id=self.boot_id,
             owner_lease=self._lease,access_check=self._access_allowed,storage_check=self._storage_allowed,
-            peer_check=self._peer_allowed,permission_check=self._dispatch_allowed,clock=self._time)
+            peer_check=self._peer_allowed,permission_check=self._dispatch_allowed,clock=self._time,
+            workflow_access_check=self._workflow_access)
 
     def _authorize_crypto(self):
         if self._busy and not self._constructing:

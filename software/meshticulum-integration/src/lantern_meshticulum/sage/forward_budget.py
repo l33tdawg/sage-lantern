@@ -82,14 +82,15 @@ class Admission:
 
 class ForwardBudget:
     def __init__(self,store,*,context,intention,signing_key,boot_id,limits,prior_debt,
-                 slots,owner_lease,access_check,storage_check,native_check,clock):
+                 slots,owner_lease,access_check,storage_check,native_check,clock,workflow_access_check=None):
         require(type(store) is WorkflowStore and type(context) is ForwardContext
                 and type(intention) is ReceiveIntention and isinstance(signing_key,SigningKey)
                 and type(limits) is Cost and type(prior_debt) is Cost and prior_debt.within(limits)
                 and type(slots) is tuple and 1<=len(slots)<=16
                 and all(type(v) is tuple and len(v)==2 and type(v[0]) is int and v[0] in KINDS
                         and type(v[1]) is bool for v in slots)
-                and all(callable(c) for c in (owner_lease,access_check,storage_check,native_check,clock)))
+                and all(callable(c) for c in (owner_lease,access_check,storage_check,native_check,clock))
+                and (workflow_access_check is None or callable(workflow_access_check)))
         _uuid(boot_id)
         require(store.storage.actor.agent_id==bytes(signing_key.verify_key).hex()
                 and intention.host_boot_id==boot_id
@@ -98,6 +99,8 @@ class ForwardBudget:
         self.store,self.context,self.intention,self.boot_id=store,context,intention,boot_id
         self.key,self.limits,self.prior,self.slots=signing_key,limits,prior_debt,slots
         self._lease,self._access,self._storage,self._native,self._clock=owner_lease,access_check,storage_check,native_check,clock
+        self._workflow_access=self._workflow_access_ref=workflow_access_check
+        self._workflow_epoch=self._workflow_run=None
         actor=dict(chain_id=store.storage.actor.chain_id,agent_id=store.storage.actor.agent_id)
         # Never include mutable context, lifetime, boot or limits in identity.
         self.record_id=_id(SCHEMA,[actor,intention.operation_id])
@@ -107,7 +110,9 @@ class ForwardBudget:
         self._busy=self._closed=self._uncertain=False
         self._permits={};self._epoch=None;self._last_time=None;self._revision=0;self._body=None
     def __repr__(self):return '<ForwardBudget>'
-    def _available(self):require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident()))
+    def _available(self):
+        require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident())
+            and self._workflow_access is self._workflow_access_ref)
     def _checked(self,check,*args):
         self._available();v=check(*args);self._available();require(v is True);return True
     def _guard(self,plan):
@@ -123,6 +128,15 @@ class ForwardBudget:
             and v[1]<self.intention.application_deadline_monotonic_us);return v
     def _allowed(self):
         self._guard(self._active_plan);self._live();return True
+    def _workflow_allowed(self,epoch,run):
+        # Only an active action's epoch crosses this callback. Full action and
+        # native spending guards remain outside each fresh HTTP epoch bracket.
+        self._available();require(self._busy and type(epoch) is str and self._workflow_epoch==epoch
+            and run is not None and self._workflow_run is run)
+        if self._workflow_access is None:self._allowed()
+        else:
+            self._live();self._checked(self._workflow_access);self._live()
+        require(self._workflow_epoch==epoch and self._workflow_run is run);return True
     def _snapshot(self):
         self._available();v=self.store.storage.snapshot().epoch;self._available();return v
     def _run(self,plan,action):
@@ -136,7 +150,10 @@ class ForwardBudget:
             with _Lease(lease):
                 self._guard(plan);epoch=self._snapshot();self._live()
                 require(self._epoch is None or self._epoch==epoch)
+                require(self._workflow_epoch is None and self._workflow_run is None)
+                self._workflow_epoch=epoch;self._workflow_run=run=object()
                 result=action(epoch)
+                require(self._workflow_epoch==epoch and self._workflow_run is run)
                 require(self._snapshot()==epoch);self._live();self._guard(plan)
             require(self._snapshot()==epoch);self._live();require(self._snapshot()==epoch)
             self._guard(plan);require(self._snapshot()==epoch);self._available();return result
@@ -145,7 +162,7 @@ class ForwardBudget:
             if not isinstance(e,Exception):raise
             raise ForwardBudgetError() from None
         finally:
-            if entered:self._busy=False
+            if entered:self._workflow_epoch=self._workflow_run=None;self._busy=False
     def _validate(self,record):
         p=record['payload'];require(type(p) is dict and set(p)=={'schema','body','signature'} and p['schema']==SCHEMA)
         signature=base64.b64decode(p['signature'],validate=True);require(len(signature)==64
@@ -173,7 +190,9 @@ class ForwardBudget:
         self._revision,self._body=b['revision'],encoded
         return b
     def _read(self,epoch):
-        try:r=self.store.get(self.record_id,kind='mesh_outbound',access_check=self._allowed)
+        run=self._workflow_run
+        try:r=self.store.get(self.record_id,kind='mesh_outbound',
+            access_check=lambda:self._workflow_allowed(epoch,run),expected_epoch=epoch)
         except WorkflowNotFound:
             now=self._live()
             b=dict(record_id=self.record_id,revision=0,binding=self.binding,storage_epoch=epoch,
@@ -188,8 +207,10 @@ class ForwardBudget:
             and now[0]>=b['last_epoch_us'] and now[1]>=b['last_monotonic_us'])
         b={**b,'revision':b['revision']+1,'last_epoch_us':now[0],'last_monotonic_us':now[1]}
         signature=base64.b64encode(self.key.sign(DOMAIN+_canonical(b)).signature).decode()
+        run=self._workflow_run
         r=self.store.put(self.record_id,'mesh_outbound',b['revision']-1,
-            dict(schema=SCHEMA,body=b,signature=signature),access_check=self._allowed)
+            dict(schema=SCHEMA,body=b,signature=signature),
+            access_check=lambda:self._workflow_allowed(epoch,run),expected_epoch=epoch)
         checked=self._validate(r);require(_canonical(checked)==_canonical(b));self._epoch=epoch;return checked
     def prepare(self):return self._run(None,lambda epoch:self._read(epoch)['revision'])
     def pre_admit(self,plan):

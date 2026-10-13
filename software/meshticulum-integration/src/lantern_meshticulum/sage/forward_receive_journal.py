@@ -111,12 +111,13 @@ class ForwardReceiveJournal:
     """
     def __init__(self, store, *, context, local_initiator, local_signing_key,
                  intention, boot_id, owner_lease, access_check, storage_check,
-                 peer_check, permission_check, clock):
+                 peer_check, permission_check, clock, workflow_access_check=None):
         _require(type(store) is WorkflowStore and type(context) is ForwardContext
                  and type(local_initiator) is bool and type(intention) is ReceiveIntention
                  and isinstance(local_signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease, access_check, storage_check,
-                                               peer_check, permission_check, clock)))
+                                               peer_check, permission_check, clock))
+                 and (workflow_access_check is None or callable(workflow_access_check)))
         _uuid(boot_id)
         local = context.initiator if local_initiator else context.responder
         remote = context.responder if local_initiator else context.initiator
@@ -134,6 +135,8 @@ class ForwardReceiveJournal:
         self._context_value = json.loads(context.prologue[len(FORWARD_DOMAIN):])
         self._lease, self._access, self._storage = owner_lease, access_check, storage_check
         self._peer, self._permission, self._clock = peer_check, permission_check, clock
+        self._workflow_access = self._workflow_access_ref = workflow_access_check
+        self._workflow_epoch = self._workflow_run = None
         self._owner = (os.getpid(), threading.get_ident())
         self._busy = self._closed = self._uncertain = self._claimed = False
         self._epoch = None
@@ -147,7 +150,8 @@ class ForwardReceiveJournal:
 
     def _available(self):
         _require(not self._closed and not self._uncertain
-                 and self._owner == (os.getpid(), threading.get_ident()))
+                 and self._owner == (os.getpid(), threading.get_ident())
+                 and self._workflow_access is self._workflow_access_ref)
 
     def _checked(self, callback, *args):
         self._available()
@@ -166,13 +170,29 @@ class ForwardReceiveJournal:
         if fresh:
             self._checked(self._permission, self.intention)
 
-    def _store_allowed(self):
+    def _store_allowed(self, epoch, run):
         # WorkflowStore invokes this immediately before each backend dispatch,
         # including its storage-status probes. Recheck native permission and
         # original lifetime, not only storage availability.
-        self._guard(fresh=self._fresh)
+        self._available()
+        _require(self._busy and type(epoch) is str and self._workflow_epoch == epoch
+                 and run is not None and self._workflow_run is run)
+        if self._workflow_access is None or not self._fresh:
+            self._guard(fresh=self._fresh)
+        else:
+            self._live()
+            self._checked(self._workflow_access)
         if self._fresh:
             self._live()
+        _require(self._workflow_epoch == epoch and self._workflow_run is run)
+        return True
+
+    def _borrowed_read_allowed(self):
+        # BinaryCapture owns this separate read-only lease. No optional live
+        # workflow observer or fresh spending action is admitted by this path.
+        self._available()
+        _require(self._busy and not self._fresh and self._workflow_epoch is None and self._workflow_run is None)
+        self._guard(fresh=False)
         return True
 
     def _time(self):
@@ -220,7 +240,11 @@ class ForwardReceiveJournal:
                     self._live()
                     if self._epoch is not None:
                         _require(epoch == self._epoch)
+                _require(self._workflow_epoch is None and self._workflow_run is None)
+                self._workflow_epoch = epoch
+                self._workflow_run = run = object()
                 result = action(epoch)
+                _require(self._workflow_epoch == epoch and self._workflow_run is run)
                 self._guard(fresh=fresh)
                 _require(self._snapshot() == epoch)
                 if fresh:
@@ -245,6 +269,7 @@ class ForwardReceiveJournal:
             raise ForwardJournalError() from None
         finally:
             if entered:
+                self._workflow_epoch = self._workflow_run = None
                 self._busy = False
 
     def _validate(self, record):
@@ -298,8 +323,16 @@ class ForwardReceiveJournal:
         self._highest_revision, self._highest_body = body['revision'], encoded
         return body
 
-    def _read(self):
-        record = self.store.get(self.record_id,kind='mesh_inbound',access_check=self._store_allowed)
+    def _read(self, epoch=None):
+        if epoch is None:
+            self._borrowed_read_allowed()
+            epoch = self._snapshot()
+            allowed = self._borrowed_read_allowed
+        else:
+            run = self._workflow_run
+            allowed = lambda:self._store_allowed(epoch,run)
+        record = self.store.get(self.record_id,kind='mesh_inbound',
+            access_check=allowed,expected_epoch=epoch)
         body = self._validate(record)
         return self._observe(body)
 
@@ -310,9 +343,10 @@ class ForwardReceiveJournal:
                  and now[0] >= body['last_epoch_us'] and now[1] >= body['last_monotonic_us'])
         body = {**body,'revision':body['revision']+1,'last_epoch_us':now[0],'last_monotonic_us':now[1]}
         signature = self._key.sign(SIGNATURE_DOMAIN + _canonical(body)).signature
+        run = self._workflow_run
         record = self.store.put(self.record_id,'mesh_inbound',body['revision']-1,
             dict(schema=SCHEMA,body=body,signature=base64.b64encode(signature).decode('ascii')),
-            access_check=self._store_allowed)
+            access_check=lambda:self._store_allowed(epoch,run),expected_epoch=epoch)
         checked = self._validate(record)
         _require(checked == body)
         return self._observe(checked)
@@ -320,8 +354,10 @@ class ForwardReceiveJournal:
     def claim(self, binding):
         def claim(epoch):
             _require(type(binding) is bytes and binding == self.binding and not self._claimed)
+            run = self._workflow_run
             try:
-                self.store.get(self.record_id,kind='mesh_inbound',access_check=self._store_allowed)
+                self.store.get(self.record_id,kind='mesh_inbound',
+                    access_check=lambda:self._store_allowed(epoch,run),expected_epoch=epoch)
             except WorkflowNotFound:
                 now = self._live()
                 body = dict(record_id=self.record_id,revision=0,binding=self.binding.hex(),
@@ -340,7 +376,7 @@ class ForwardReceiveJournal:
 
     def _active(self, epoch):
         _require(self._claimed and self._epoch == epoch)
-        body = self._read()
+        body = self._read(epoch)
         _require(body['storage_epoch'] == epoch)
         return body
 
@@ -396,7 +432,7 @@ class ForwardReceiveJournal:
         A fresh owner supplies the exact original context and intention.
         """
         def recover(epoch):
-            body = self._read()
+            body = self._read(epoch)
             now = self._time()
             _require(now[0] >= body['last_epoch_us'])
             if self.boot_id == self.intention.host_boot_id:
