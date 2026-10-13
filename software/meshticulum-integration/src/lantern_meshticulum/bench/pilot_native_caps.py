@@ -507,6 +507,7 @@ class NativeCaps:
         row=timed_call(profile,'sql_enrollment',lambda:self.db.execute('SELECT body FROM enrollment WHERE id=1').fetchone())
         require(row==(self._enrollment_bytes,))
         used=self.unit.prior_debt;rows=timed_call(profile,'sql_claims',lambda:self.db.execute('SELECT id,body,run_id FROM claims').fetchall());require(len(rows)<=4096)
+        stage_checks={};campaign_paths={}
         for claim_id,raw,run in rows:
             # Every call selects complete current rows. Only pure interpretation
             # of an exact immutable row/context key is reused; changed/new rows
@@ -520,10 +521,20 @@ class NativeCaps:
                 declared=self._approve.bundle.value['stages']
                 matches=[stage['index'] for stage in declared if stage['campaign_id']==value['campaign_id']]
                 require(len(matches)==1)
-                raw_stage=self._approve.reader.read_held(self.path.parent/('fast-stage-'+str(matches[0])+'.json'),8192)
-                require(hashlib.sha256(raw_stage).hexdigest()==value['fast_stage_sha256'])
+                path=self.path.parent/('fast-stage-'+str(matches[0])+'.json')
+                campaign=value['campaign_id'];expected=value['fast_stage_sha256'];digest(expected)
+                require(path not in stage_checks or stage_checks[path]==(campaign,expected))
+                require(campaign not in campaign_paths or campaign_paths[campaign]==(path,expected))
+                stage_checks[path]=(campaign,expected);campaign_paths[campaign]=(path,expected)
             used=used.plus(Cost(*cost))
-        require(used.within(self.unit.limits));return rows,used
+        require(used.within(self.unit.limits))
+        # All current SQL rows and costs are still observed above. Permission
+        # returns only after each distinct stage is freshly checked here. This
+        # map is local to this synchronous pass, never a retained approval.
+        for path,(_,expected) in stage_checks.items():
+            raw_stage=self._approve.reader.read_held(path,8192)
+            require(hashlib.sha256(raw_stage).hexdigest()==expected)
+        return rows,used
     def _run(self,phase,action,verify):
         entered=False
         try:
