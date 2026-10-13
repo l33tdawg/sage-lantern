@@ -26,6 +26,8 @@ import os
 from pathlib import Path
 import re
 import stat
+import threading
+from types import FunctionType
 
 from .history_identity_seal import _Ancestry, SealedHistory, MAX_SEAL
 from .history_metadata_fence import FenceError, _FLAGS, _need, _stamp
@@ -197,6 +199,65 @@ def record_prepared(state, caps, preparation, held_staging_fd):
     return record
 
 
+class _FastManagementApproval:
+    """Compose the unchanged management callback with held protected stage data.
+
+    This exact adapter is not _Public32Approval and cannot pass the native
+    runtime's public32_owner_current gate. It admits only management checks.
+    The independent protected approval owns the verified bundle/Reader; caller
+    attributes or context DTOs never supply the resource-validation inputs.
+    """
+    __slots__ = ('_approve','_protected','_reader_ref','_bundle_ref','_owner',
+                 '_code','_defaults','_closure','_closure_values')
+
+    def __init__(self, approve, protected):
+        from .pilot_native_caps import _Public32Approval
+        _need(type(approve) is FunctionType and type(protected) is _Public32Approval,
+              'invalid_fast_management_approval')
+        for key, value in dict(_approve=approve, _protected=protected,
+                _reader_ref=protected.reader, _bundle_ref=protected.bundle,
+                _owner=(os.getpid(),threading.get_ident()), _code=approve.__code__,
+                _defaults=approve.__defaults__, _closure=approve.__closure__,
+                _closure_values=tuple(cell.cell_contents for cell in (approve.__closure__ or ()))).items():
+            object.__setattr__(self,key,value)
+        self._check()
+
+    def __setattr__(self, name, value):
+        raise FenceError('fast_management_approval_immutable')
+
+    def _check(self):
+        from .pilot_native_caps import _Public32Approval
+        _need(type(self) is _FastManagementApproval
+              and self._owner==(os.getpid(),threading.get_ident())
+              and type(self._approve) is FunctionType and self._approve.__code__ is self._code
+              and self._approve.__defaults__ is self._defaults
+              and self._approve.__closure__ is self._closure
+              and all(cell.cell_contents is original for cell,original in
+                      zip(self._closure or (),self._closure_values))
+              and type(self._protected) is _Public32Approval
+              and self._protected.reader is self._reader_ref
+              and self._protected.bundle is self._bundle_ref,
+              'fast_management_approval_rebound')
+        _need(self._protected.check() is True, 'fast_management_protected_approval_refused')
+        return True
+
+    @property
+    def bundle(self):
+        self._check(); return self._bundle_ref
+
+    @property
+    def reader(self):
+        self._check(); return self._reader_ref
+
+    def __call__(self, raw):
+        self._check()
+        _need(_parse(raw)['phase'] in ('enroll','current'), 'fast_management_phase_not_admission')
+        _need(self._approve(raw) is True, 'fast_management_original_approval_refused')
+        self._check()
+        _need(self._protected(raw) is True, 'fast_management_protected_approval_refused')
+        self._check(); return True
+
+
 class ResumeParentGuard:
     """PRELAUNCH or POSTTERMINAL management guard. Never supplies ARM/start.
 
@@ -239,6 +300,19 @@ class ResumeParentGuard:
                   'protected_binding_scope_changed')
             self._binding = binding
             _need(runtime_check() is True, 'runtime_source_refused')
+            from .profiles import GFSK250_FAST_BUNDLE_KIND
+            if policy.qualification_kind == GFSK250_FAST_BUNDLE_KIND:
+                from .pilot_native_caps import _Public32Approval
+                protected = _Public32Approval(self.state/'parents'/policy.parent_id, policy, unit,
+                    _parse(self._own_raw['owner'])['facts'][unit], clock)
+                # Register ownership before comparison/adapter construction so
+                # any refused source, context or callback closes all held FDs.
+                self._stack.callback(protected.close)
+                for key, name in (('owner','owner.json'),('prior','prior.json'),('binding','history-binding.json')):
+                    _need(protected.reader.read(self.state/'parents'/policy.parent_id/name,
+                          16384 if key=='binding' else 200000) == self._own_raw[key],
+                          'fast_management_protected_records_changed')
+                approve = _FastManagementApproval(approve, protected)
             self.caps = NativeCaps.open(self.state/'parents'/policy.parent_id/'native.sqlite', policy,
                 unit=unit, clock=clock, facts=facts, approve=approve)
             def close_caps(): _need(self.caps.close() is True, 'own_caps_close_uncertain')
