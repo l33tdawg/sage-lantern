@@ -41,12 +41,14 @@ class ForwardReceiver:
     """
     def __init__(self, client, *, context, local_initiator, intention, boot_id,
                  endpoint, signing_key, owner_lease, access_check, storage_check,
-                 peer_check, dispatch_check, read_check, key_check, clock, workflow_access_check=None):
+                 peer_check, dispatch_check, read_check, key_check, clock, workflow_access_check=None,
+                 crypto_action_check=None):
         _require(type(context) is ForwardContext and type(local_initiator) is bool
                  and type(intention) is ReceiveIntention and isinstance(signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease,access_check,storage_check,
                      peer_check,dispatch_check,read_check,key_check,clock))
-                 and (workflow_access_check is None or callable(workflow_access_check)))
+                 and (workflow_access_check is None or callable(workflow_access_check))
+                 and (crypto_action_check is None or callable(crypto_action_check)))
         local=context.initiator if local_initiator else context.responder
         remote=context.responder if local_initiator else context.initiator
         _require(bytes(signing_key.verify_key)==local.public_key
@@ -57,6 +59,10 @@ class ForwardReceiver:
         self._lease,self._access,self._storage,self._peer=owner_lease,access_check,storage_check,peer_check
         self._dispatch,self._read,self._purpose,self._clock=dispatch_check,read_check,key_check,clock
         self._workflow_access=self._workflow_access_ref=workflow_access_check
+        self._crypto_action=self._crypto_action_ref=crypto_action_check
+        self._crypto_refs=(context,intention,local_initiator,local,remote)
+        self._crypto_value=(context.digest,intention.to_dict())
+        self._crypto_observing=False
         self._key=signing_key
         self._closed,self._uncertain,self._session_created=False,False,False
         self.session=None
@@ -79,7 +85,8 @@ class ForwardReceiver:
 
     def _available(self):
         _require(not self._closed and not self._uncertain and (os.getpid(),threading.get_ident())==self._owner
-                 and self._workflow_access is self._workflow_access_ref)
+                 and self._workflow_access is self._workflow_access_ref
+                 and self._crypto_action is self._crypto_action_ref)
         # Handshake operations may not touch storage; still verify that the
         # borrowed identity/endpoint/transport has not been structurally replaced.
         self.probe._binding()
@@ -121,9 +128,23 @@ class ForwardReceiver:
             workflow_access_check=self._workflow_access)
 
     def _authorize_crypto(self):
-        if self._busy and not self._constructing:
+        if self._crypto_observing or self._busy and not self._constructing:
             self._uncertain=True
             raise ForwardReceiverError()
+        if self._crypto_action is not None:
+            def bound():
+                self._available()
+                _require(all(a is b for a,b in zip(self._crypto_refs,
+                    (self.context,self.intention,self.local_initiator,self.local,self.remote)))
+                    and self._crypto_value==(self.context.digest,self.intention.to_dict()))
+            bound();self._crypto_observing=True
+            try:
+                expected=(self.context.initiator_noise_public_key if self.local_initiator
+                          else self.context.responder_noise_public_key)
+                self._checked(self._crypto_action,self.context,self.intention,self.remote,
+                              expected,self.context.digest)
+                bound();return True
+            finally:self._crypto_observing=False
         self._access_allowed();self._storage_allowed();self._peer_allowed(self.remote)
         self._dispatch_allowed(self.intention)
         expected=(self.context.initiator_noise_public_key if self.local_initiator
@@ -135,7 +156,7 @@ class ForwardReceiver:
         entered=False
         try:
             self._available()
-            if self._busy or self.session is not None and self.session._busy:
+            if self._busy or self._crypto_observing or self.session is not None and self.session._busy:
                 self._uncertain=True
                 raise ForwardReceiverError()
             self._busy=entered=True
@@ -201,4 +222,4 @@ class ForwardReceiver:
         capture_joined=self.capture.close(0)
         crypto_joined=self.session is None or not self.session._busy
         return (journal_joined and capture_joined and crypto_joined
-                and not self._busy and not self._uncertain)
+                and not self._busy and not self._crypto_observing and not self._uncertain)
