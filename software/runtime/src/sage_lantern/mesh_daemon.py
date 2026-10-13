@@ -206,6 +206,14 @@ class HardwareRuntime:
                 and self._radio_observer is None and self._forward_radio is None)
         return adoption.adopt(self)
 
+    def adopt_forward_relay_radio(self, adoption):
+        """Explicit adjacent-hop relay adoption under its separate native owner."""
+        from lantern_meshticulum.sage.forward_native_relay_radio import RelayRadioAdoption
+        require(type(adoption) is RelayRadioAdoption and adoption.owner.resource is self)
+        require(self._provider is None and self._coordinator is None and not self._initializing
+                and self._radio_observer is None and self._forward_radio is None)
+        return adoption.adopt(self)
+
     def active(self):
         if self._provider is not None and not self._provider._runtime.admission_safe():
             self._uncertain = True
