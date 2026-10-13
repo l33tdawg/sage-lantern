@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from meshticulum.privacy.forward_session import ForwardContext,public
 from meshticulum.privacy.mesh_binary_envelope import to_binary
 from lantern_meshticulum.sage.forward_receive_journal import ReceiveIntention
-from lantern_meshticulum.sage.forward_budget import Cost
+from lantern_meshticulum.sage.forward_budget import Cost,ChildPlan
 from lantern_meshticulum.sage.forward_native_owner import ForwardNativeOwner,ForwardNativeOwnerError,SCOPES,approval_binding
 from lantern_meshticulum.sage.mesh_inbox import _canonical
 from tests.integrations.sage.test_forward_operation import backend
@@ -289,6 +289,67 @@ def test_aggregate_crypto_action_fences_drift_inside_exact_key_observer(drift):
         with pytest.raises(ForwardNativeOwnerError):
             owner.crypto_action_check(r.context,r.intention,r.context.responder,
                 r.context.initiator_noise_public_key,r.context.digest)
+        assert not r.state.rows
+
+
+def budget_plan(r):
+    return ChildPlan(0,1,True,'a'*64,'b'*64,128,'lora','c'*64,r.intention.host_boot_id,
+        r.context.expires_epoch_us,r.intention.application_deadline_monotonic_us,Cost(1,1000),32)
+
+
+@pytest.mark.parametrize('change',['slot','direction','boot','expiry','deadline'])
+def test_budget_action_refuses_changed_original_descriptor(change):
+    from dataclasses import replace
+    with setup() as r:
+        owner=r.create();plan=budget_plan(r)
+        if change=='slot':plan=replace(plan,slot=1)
+        elif change=='direction':plan=replace(plan,sends=False)
+        elif change=='boot':plan=replace(plan,host_boot_id=str(uuid.uuid4()))
+        elif change=='expiry':plan=replace(plan,application_expires_epoch_us=r.context.expires_epoch_us+1)
+        else:plan=replace(plan,application_deadline_monotonic_us=r.intention.application_deadline_monotonic_us+1)
+        with pytest.raises(ForwardNativeOwnerError):owner.budget_action_check(r.context,r.intention,plan)
+        assert not r.state.rows
+
+
+def test_budget_action_checks_keys_again_for_each_boundary():
+    observed=[];live=[True]
+    def peer(*args):observed.append(args);return live[0]
+    with setup(peer_observer=peer) as r:
+        owner=r.create();observed.clear();plan=budget_plan(r)
+        assert owner.budget_action_check(r.context,r.intention,None) is True
+        assert owner.budget_action_check(r.context,r.intention,plan) is True
+        assert len(observed)==2
+        live[0]=False
+        with pytest.raises(ForwardNativeOwnerError):owner.budget_action_check(r.context,r.intention,plan)
+        assert len(observed)==3 and not r.state.rows
+
+
+@pytest.mark.parametrize('field,value', [('kind',True),('kind',1.0),('slot',False),('slot',0.0),
+    ('sends',1),('application_expires_epoch_us',180000000.0),
+    ('application_deadline_monotonic_us',130000000.0)])
+def test_budget_action_refuses_equality_equivalent_mutated_descriptor_types(field,value):
+    with setup() as r:
+        owner=r.create();plan=budget_plan(r)
+        object.__setattr__(plan,field,value)
+        with pytest.raises(ForwardNativeOwnerError):owner.budget_action_check(r.context,r.intention,plan)
+        assert not r.state.rows
+
+
+@pytest.mark.parametrize('change',['packet','cost','authority','storage','expiry'])
+def test_budget_action_rechecks_descriptor_and_native_state_after_key_callback(change):
+    holder={};active=[False]
+    def peer(*args):
+        if active[0]:
+            r=holder['fixture'];plan=holder['plan']
+            if change=='packet':object.__setattr__(plan,'packet_sha256','f'*64)
+            elif change=='cost':object.__setattr__(plan.cost,'radio_attempts',2)
+            elif change=='authority':r.state.owner_live=False
+            elif change=='storage':r.state.instance_id='f'*64
+            else:r.state.now=(r.intention.application_expires_epoch_us,r.state.now[1])
+        return True
+    with setup(peer_observer=peer) as r:
+        owner=r.create();plan=budget_plan(r);holder.update(fixture=r,plan=plan);active[0]=True
+        with pytest.raises(ForwardNativeOwnerError):owner.budget_action_check(r.context,r.intention,plan)
         assert not r.state.rows
 
 def test_native_callback_caught_reentry_fences_owner_before_publication():

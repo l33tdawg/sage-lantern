@@ -223,6 +223,34 @@ class ForwardNativeOwner:
                 require(self._checked(self._exchange_key_check,local_public_key,remote,remote_key,context_digest) is True)
             self._observe(keys=False);bindings();return True
         return self._run(check)
+    def budget_action_check(self,context,intention,plan):
+        """Fresh complete action approval at each existing budget boundary."""
+        from .forward_budget import ChildPlan
+        original=None if plan is None else _canonical(plan.to_dict()) if type(plan) is ChildPlan else None
+        def bindings():
+            require(context is self.context and intention is self.intention)
+            if plan is not None:
+                require(type(plan) is ChildPlan and type(plan.kind) is int
+                    and type(plan.slot) is int and type(plan.sends) is bool
+                    and plan.kind in (H1,H2,CONFIRM_I,CONFIRM_R,DATA)
+                    and plan.slot==plan.kind-1 and plan.sends==((plan.kind%2==1)==self.local_initiator)
+                    and plan.host_boot_id==self.intention.host_boot_id
+                    and type(plan.application_expires_epoch_us) is int
+                    and type(plan.application_deadline_monotonic_us) is int
+                    and plan.application_expires_epoch_us==self.context.expires_epoch_us
+                    and plan.application_deadline_monotonic_us<=self.intention.application_deadline_monotonic_us
+                    and _canonical(plan.to_dict())==original)
+        def check():
+            bindings();self._observe(keys=False)
+            local_key=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
+            remote_key=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
+            if self._exchange_key_check is None:
+                require(self._checked(self._key_check,local_key,self.context.digest) is True)
+                require(self._checked(self._peer_key_check,self.remote,remote_key,self.context.digest) is True)
+            else:
+                require(self._checked(self._exchange_key_check,local_key,self.remote,remote_key,self.context.digest) is True)
+            self._observe(keys=False);bindings();return True
+        return self._run(check)
     def time(self):return self._run(lambda:self._observe(keys=False))
     def workflow_access_check(self):
         """Fresh original native access inside one held metadata operation.
@@ -283,7 +311,8 @@ class ForwardNativeOwner:
                 signing_key=self._refs[4],boot_id=self.intention.host_boot_id,limits=limits,prior_debt=prior_debt,
                 slots=slots,owner_lease=self.owner_lease,access_check=self.access_check,storage_check=self.storage_check,
                 native_check=lambda c,i,p:self.dispatch_check(c,i) if p is None else self.phase_check(c,p.kind,p.sends),
-                clock=self.time,workflow_access_check=self.workflow_access_check)
+                clock=self.time,workflow_access_check=self.workflow_access_check,
+                budget_action_check=self.budget_action_check)
             self._budget=budget;self._budget_refs=(receiver,receiver.store,receiver.journal,budget)
             budget.prepare()
             # Observe the actual shared signed quarantine while original read
