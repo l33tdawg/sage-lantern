@@ -293,7 +293,8 @@ class SSHOperator:
         if sudo:command=['sudo','-p',PROMPT.decode(),*(['-n'] if self.passwords.get(unit) is None else []),'--',*command]
         return self._ssh(unit,pty=sudo,use_connections=use_connections)+[shlex.join(command)]
 
-    def _command(self,unit,command,schema,*,root=True,cleanup=False,cleanup_transport_headroom=0):
+    def _command(self,unit,command,schema,*,root=True,cleanup=False,cleanup_transport_headroom=0,
+                 bundle_management_expires_epoch_us=None):
         require(type(cleanup_transport_headroom) is int and cleanup_transport_headroom in (0,2),
                 'invalid_management_cleanup_headroom')
         require(not cleanup_transport_headroom or (cleanup and root
@@ -307,6 +308,41 @@ class SSHOperator:
                 output=None,output_sha256=None,error_type=None)
             self.management_cleanup_audits.append(audit)
         deadline=min(self.clock()+5,self.deadline)
+        if bundle_management_expires_epoch_us is not None:
+            from .profiles import GFSK250_FAST_BUNDLE_KIND
+            commitment=self.config.get('bundle_capture_commitment',{})
+            actions={
+                'pilot-verify':('meshticulum.pilot-verified-piece.v1',('unit-a',)),
+                'pilot-fast-admit':('meshticulum.native-fast-stage-admitted.v1',('unit-a','unit-c')),
+                'pilot-bundle-status':('meshticulum.native-public100k-bundle-status.v1',('unit-a',)),
+                'pilot-bundle-finish':('meshticulum.native-public100k-bundle-finish.v1',('unit-a',)),
+            }
+            action=command[7] if len(command)>8 else None
+            require(root and not cleanup and not cleanup_transport_headroom and action in actions
+                and schema==actions[action][0] and unit in actions[action][1]
+                and command[1:5]==['-I','-B','-c',INVOKE] and command[8]==unit
+                and commitment.get('qualification_kind')==GFSK250_FAST_BUNDLE_KIND,
+                'extended_bundle_management_scope')
+            epoch,mono=self.epoch(),self.clock()
+            require(type(bundle_management_expires_epoch_us) is int
+                and epoch<bundle_management_expires_epoch_us<=commitment['expires_epoch_us']
+                and bundle_management_expires_epoch_us<=self.config['handoff_end_epoch_us'],
+                'original_bundle_management_window_expired_or_changed')
+            if action!='pilot-verify':
+                require(command[9:11]==['--parent-id',self.config['bundle_parent_id']],
+                    'bundle_management_parent_changed')
+                if action=='pilot-fast-admit':
+                    require(command[11:13] in [['--part-index',str(i)] for i in range(5)]
+                        and command[15:17]==['--expires-epoch-us',str(bundle_management_expires_epoch_us)],
+                        'bundle_management_part_window_changed')
+                else:
+                    require(bundle_management_expires_epoch_us==commitment['expires_epoch_us'],
+                        'bundle_management_whole_window_changed')
+            # Publisher acceptance, progress proof and whole-file verification
+            # retain their native checks. Only these fast-bundle process waits
+            # differ from the five-second status/metadata default.
+            # Capture this monotonic end once, before argument/SSH validation.
+            deadline=min(mono+30,self.deadline,mono+(bundle_management_expires_epoch_us-epoch)/1000000)
         require(self.clock()<deadline or cleanup,'ssh_pilot_window_expired')
         if cleanup:deadline=self.clock()+5
         try:argv=self._argv(unit,command,root=root)
@@ -358,11 +394,12 @@ class SSHOperator:
                         and audit['local_terminal'] and audit['closed'] and audit['returncode']==0)
                     self.events.append(dict(audit))
 
-    def _action(self,unit,action,run_id=None,*extra,cleanup=False,schema):
+    def _action(self,unit,action,run_id=None,*extra,cleanup=False,schema,bundle_management_expires_epoch_us=None):
         row=self.config['units'][unit]
         launcher='/opt/meshticulum-bench/runtime-'+self.config['runtime_sha256'][:16]+'/bench_node.py'
         args=[action,unit,*(['--run-id',identifier(run_id)] if run_id is not None else []),*extra]
-        return self._command(unit,[row['python'],'-I','-B','-c',INVOKE,launcher,self.config['manifest_sha256'],*args],schema,cleanup=cleanup)
+        options={} if bundle_management_expires_epoch_us is None else dict(bundle_management_expires_epoch_us=bundle_management_expires_epoch_us)
+        return self._command(unit,[row['python'],'-I','-B','-c',INVOKE,launcher,self.config['manifest_sha256'],*args],schema,cleanup=cleanup,**options)
 
     def endpoints(self,sender,receiver):
         require(self.clock()<self.deadline and self.next_port<=65534,'ssh_pilot_port_or_window_exhausted')
@@ -509,20 +546,29 @@ class SSHOperator:
     def stop(self,unit,run):return self._action(unit,'pilot-stop',run,cleanup=True,schema='meshticulum.native-public-job-status.v1')
     def revoke(self,unit,run,transport):return self._action(unit,'pilot-retire',run,cleanup=True,schema='meshticulum.retired-public-pilot.v1')
     def collect(self,unit,run):return self._action(unit,'pilot-result',run,schema='meshticulum.public-pilot-result-record.v1')['result']
-    def verify(self,unit,campaign,request,response):
+    def verify(self,unit,campaign,request,response,*,application_expires_epoch_us=None):
+        options={} if application_expires_epoch_us is None else dict(bundle_management_expires_epoch_us=application_expires_epoch_us)
         return self._action(unit,'pilot-verify',response,'--campaign-id',identifier(campaign),'--request-run-id',identifier(request),
-                            schema='meshticulum.pilot-verified-piece.v1')
+                            schema='meshticulum.pilot-verified-piece.v1',**options)
     def fast_complete(self,unit,run,proof):
         return self._action(unit,'pilot-fast-complete',identifier(run),'--proof-base64',
             base64.b64encode(canonical(proof)).decode(),schema='meshticulum.native-fast-completion-delivered.v1')
     def fast_admit(self,unit,parent_id,index,issued,expires,proof):
         return self._action(unit,'pilot-fast-admit',None,'--parent-id',identifier(parent_id),
             '--part-index',str(index),'--issued-epoch-us',str(issued),'--expires-epoch-us',str(expires),
-            '--proof-base64',base64.b64encode(canonical(proof)).decode(),schema='meshticulum.native-fast-stage-admitted.v1')
+            '--proof-base64',base64.b64encode(canonical(proof)).decode(),schema='meshticulum.native-fast-stage-admitted.v1',
+            **self._fast_bundle_wait(expires))
+    def _fast_bundle_wait(self,expires=None):
+        from .profiles import GFSK250_FAST_BUNDLE_KIND
+        commitment=self.config.get('bundle_capture_commitment',{})
+        if commitment.get('qualification_kind')!=GFSK250_FAST_BUNDLE_KIND:return {}
+        return dict(bundle_management_expires_epoch_us=commitment['expires_epoch_us'] if expires is None else expires)
     def bundle_status(self,unit,parent_id):
-        return self._action(unit,'pilot-bundle-status',None,'--parent-id',identifier(parent_id),schema='meshticulum.native-public100k-bundle-status.v1')
+        return self._action(unit,'pilot-bundle-status',None,'--parent-id',identifier(parent_id),
+            schema='meshticulum.native-public100k-bundle-status.v1',**self._fast_bundle_wait())
     def bundle_finish(self,unit,parent_id):
-        return self._action(unit,'pilot-bundle-finish',None,'--parent-id',identifier(parent_id),schema='meshticulum.native-public100k-bundle-finish.v1')
+        return self._action(unit,'pilot-bundle-finish',None,'--parent-id',identifier(parent_id),
+            schema='meshticulum.native-public100k-bundle-finish.v1',**self._fast_bundle_wait())
     def facts(self,unit):
         value=self._action(unit,'pilot-facts',schema='meshticulum.native-pilot-facts.v1')
         require(value['unit']==unit and value['host_boot_id']==self.config['units'][unit]['host_boot_id'],'native_host_boot_changed')

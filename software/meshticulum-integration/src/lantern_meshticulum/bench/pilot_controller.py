@@ -425,7 +425,9 @@ class Controller:
                 source=dict(kind='served_public_chunk',request_run_id=first),test_rx_cutoff=test_rx_cutoff)
             if test_rx_cutoff is not None:return dict(interrupted=True,request_run_id=first,response_run_id=second)
             self.current()
-            verified=self.operator.verify(requester,self.campaign_id,first,second)
+            options=(dict(application_expires_epoch_us=self.expires_epoch_us)
+                if self.parent.policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND else {})
+            verified=self.operator.verify(requester,self.campaign_id,first,second,**options)
             self.current()
             require(verified['schema']=='meshticulum.pilot-verified-piece.v1'
                     and verified['publisher_verified'] is True and verified['private_admission'] is False

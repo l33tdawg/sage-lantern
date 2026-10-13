@@ -113,7 +113,7 @@ class ModelOperator:
         self.events.append(('revoke',unit,run));return dict(unit=unit,run_id=run,retired=True)
     def stop(self,unit,run):self.events.append(('stop',unit,run));return dict(live=False,safe_handoff_proven=False)
     def reap(self,handle):self.events.append(('reap',))
-    def verify(self,unit,campaign,request,response):
+    def verify(self,unit,campaign,request,response,*,application_expires_epoch_us=None):
         self.events.append(('verify',unit,request,response))
         return dict(schema='meshticulum.pilot-verified-piece.v1',private_admission=False,sage_imported=False,
             unit=unit,campaign_id=campaign,response_run_id=response,manifest_sha256=MANIFEST,
