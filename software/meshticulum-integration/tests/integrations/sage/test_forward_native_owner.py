@@ -240,6 +240,57 @@ def test_held_metadata_access_is_fresh_and_refuses_original_native_drift(drift):
                 owner.workflow_access_check()
         assert not r.state.rows and not r.hardware._mutex.locked()
 
+
+@pytest.mark.parametrize('changed',['context','intention','peer','key','digest'])
+def test_aggregate_crypto_action_refuses_any_foreign_binding(changed):
+    with setup() as r:
+        owner=r.create()
+        args=[r.context,r.intention,r.context.responder,r.context.initiator_noise_public_key,r.context.digest]
+        if changed=='context':args[0]=copy.copy(r.context)
+        elif changed=='intention':args[1]=copy.copy(r.intention)
+        elif changed=='peer':args[2]=r.context.initiator
+        elif changed=='key':args[3]=r.context.responder_noise_public_key
+        else:args[4]=b'x'*32
+        with pytest.raises(ForwardNativeOwnerError):owner.crypto_action_check(*args)
+        assert not r.state.rows
+
+
+def test_aggregate_crypto_action_rereads_keys_and_native_authority_on_every_call():
+    observed=[];live=[True]
+    def peer(*args):observed.append(args);return live[0]
+    with setup(peer_observer=peer) as r:
+        owner=r.create();observed.clear()
+        args=(r.context,r.intention,r.context.responder,r.context.initiator_noise_public_key,r.context.digest)
+        assert owner.crypto_action_check(*args) is True
+        assert owner.crypto_action_check(*args) is True
+        assert len(observed)==2
+        live[0]=False
+        with pytest.raises(ForwardNativeOwnerError):owner.crypto_action_check(*args)
+        assert len(observed)==3 and not r.state.rows
+
+
+@pytest.mark.parametrize('drift',['authority','consent','storage','boot','expiry','reentry','close'])
+def test_aggregate_crypto_action_fences_drift_inside_exact_key_observer(drift):
+    holder={};enabled=[False]
+    def peer(*args):
+        if enabled[0]:
+            r=holder['fixture'];owner=holder['owner']
+            if drift=='authority':r.state.owner_live=False
+            elif drift=='consent':r.hardware.config['dispatch_enabled']=False
+            elif drift=='storage':r.state.instance_id='f'*64
+            elif drift=='boot':r.state.boot=str(uuid.uuid4())
+            elif drift=='expiry':r.state.now=(r.intention.application_expires_epoch_us,r.state.now[1])
+            elif drift=='reentry':
+                with pytest.raises(ForwardNativeOwnerError):owner.access_check()
+            else:assert owner.close() is False
+        return True
+    with setup(peer_observer=peer) as r:
+        owner=r.create();holder.update(fixture=r,owner=owner);enabled[0]=True
+        with pytest.raises(ForwardNativeOwnerError):
+            owner.crypto_action_check(r.context,r.intention,r.context.responder,
+                r.context.initiator_noise_public_key,r.context.digest)
+        assert not r.state.rows
+
 def test_native_callback_caught_reentry_fences_owner_before_publication():
     holder={}
     def purpose(*args):

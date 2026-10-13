@@ -200,6 +200,29 @@ class ForwardNativeOwner:
             self._observe();require(self._checked(self._key_check,public_key,context_digest) is True)
             self._observe();return True
         return self._run(check)
+    def crypto_action_check(self,context,intention,remote,local_public_key,context_digest):
+        """One fresh full native authorization for this exact crypto action.
+
+        The complete local/remote key observer runs on every invocation, fenced
+        by fresh native/Vault/authority/lifetime observations on both sides.
+        Its result is never reused by another action or transport boundary.
+        """
+        def bindings():
+            expected=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
+            require(context is self.context and intention is self.intention and remote==self.remote
+                and type(remote) is type(self.remote) and type(local_public_key) is bytes
+                and local_public_key==expected and type(context_digest) is bytes
+                and context_digest==self.context.digest)
+        def check():
+            bindings();self._observe(keys=False)
+            remote_key=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
+            if self._exchange_key_check is None:
+                require(self._checked(self._key_check,local_public_key,context_digest) is True)
+                require(self._checked(self._peer_key_check,remote,remote_key,context_digest) is True)
+            else:
+                require(self._checked(self._exchange_key_check,local_public_key,remote,remote_key,context_digest) is True)
+            self._observe(keys=False);bindings();return True
+        return self._run(check)
     def time(self):return self._run(lambda:self._observe(keys=False))
     def workflow_access_check(self):
         """Fresh original native access inside one held metadata operation.
@@ -239,7 +262,7 @@ class ForwardNativeOwner:
             signing_key=self._refs[4],owner_lease=self.owner_lease,access_check=self.access_check,
             storage_check=self.storage_check,peer_check=self.peer_check,dispatch_check=self.dispatch_check,
             read_check=self.read_check,key_check=self.key_check,clock=self.time,
-            workflow_access_check=self.workflow_access_check)
+            workflow_access_check=self.workflow_access_check,crypto_action_check=self.crypto_action_check)
         self.access_check();self._composition=self._composition_ref=result;return result
     def operation(self,noise_static_key,*,limits,prior_debt,sealed_record=None):
         """Prebind parent and both-role durable counters; creates no wire child.
