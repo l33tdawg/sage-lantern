@@ -41,11 +41,14 @@ def factory250(tmp_path,monkeypatch,*,mode='gfsk250',damage=None):
     with model(tmp_path) as r:
         started=time.monotonic()
         monkeypatch.setattr(ExclusiveSerial,'monotonic',staticmethod(lambda:r.state.now[1]/1000000+time.monotonic()-started))
-        def device(observer):
-            observer._bound();assert observer.adoption.current();observer._bound();return True
+        def device_facts(observer):
+            observer._bound()
+            assert all(os.fstat(fd).st_ino==identity[1]
+                       for _,fd,identity in observer.adoption._fd_refs)
+            observer._bound();return True
         # Only OS/device facts are modeled; signed scopes, enrollment, grants,
         # prepayment, selected worker capability and framed replies are real.
-        monkeypatch.setattr(NativeRadioObserver,'device',device)
+        monkeypatch.setattr(NativeRadioObserver,'_device_facts',device_facts)
         p=plan250(r);(r.directory/'grant.json').write_bytes(_canonical(p))
         profile=plan_stage(r.owner,p,b's'*32,slot=0,kind=1)
         observer=NativeRadioObserver(r.owner,profile,r.transport)

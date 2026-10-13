@@ -26,9 +26,14 @@ def factory_model(tmp_path,monkeypatch,*,damage=None,context_box=None):
     with model(tmp_path) as r:
         # Source-only clock and sysfs model; authority/client/root scopes remain actual.
         monkeypatch.setattr(ExclusiveSerial,'monotonic',staticmethod(lambda:r.state.now[1]/1000000))
-        def device(observer):
-            observer._bound();assert observer.adoption.current();observer._bound();return True
-        monkeypatch.setattr(NativeRadioObserver,'device',device)
+        def device_facts(observer):
+            observer._bound()
+            assert all(os.fstat(fd).st_ino==identity[1]
+                       for _,fd,identity in observer.adoption._fd_refs)
+            observer._bound();return True
+        # Model only OS identity facts; keep the production authorization
+        # bookends in device/current and the actual signed adoption observer.
+        monkeypatch.setattr(NativeRadioObserver,'_device_facts',device_facts)
         p=json.loads((r.directory/'grant.json').read_bytes());p['profile']['lease_ms']=10000
         (r.directory/'grant.json').write_bytes(_canonical(p))
         profile=plan_stage(r.owner,p,b's'*32,slot=0,kind=1)

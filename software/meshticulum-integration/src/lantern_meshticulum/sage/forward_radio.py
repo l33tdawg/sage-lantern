@@ -16,6 +16,7 @@ from pathlib import Path
 import struct
 import threading
 import time
+from types import MethodType
 
 from meshticulum.bench.authority import RunAuthority, canonical
 from meshticulum.bench.attempts import AttemptJournal
@@ -104,7 +105,7 @@ class NativeRadioObserver:
         self.last_status=None;self.physical_disarmed=None;self._used=False
         self._armed_record=self._armed_ref=None
         self._methods=tuple((name,getattr(type(self),name)) for name in
-            ('device','discovered','armed','status','_status250','owned','current','disarmed','bind'))
+            ('device','_device_facts','_worker_current','discovered','armed','status','_status250','owned','current','disarmed','bind'))
 
     def _bound(self):
         require(all(a is b for a,b in zip(self._refs,(self.owner,self.profile,self.transport))))
@@ -124,6 +125,12 @@ class NativeRadioObserver:
 
     def device(self):
         self._bound();require(self.adoption is not None and self.adoption.current())
+        require(self._device_facts() is True)
+        self._bound();require(self.adoption.current());return True
+
+    def _device_facts(self):
+        """Fresh native facts only; callers separately bracket live authority."""
+        self._bound()
         if type(self.transport) is ExclusiveSerial:
             radio=self.owner.resource.config['radio'];path=Path(radio['stable_path']).resolve(strict=True)
             named=path.stat();held=os.fstat(self.transport.fd)
@@ -139,7 +146,7 @@ class NativeRadioObserver:
                     and (node/'spi-max-frequency').read_bytes()==struct.pack('>I',1000000))
             named=Path('/dev/spidev0.0').stat();held=os.fstat(self.transport.spi_fd)
             require((named.st_dev,named.st_ino,named.st_rdev)==(held.st_dev,held.st_ino,held.st_rdev))
-        self._bound();require(self.adoption.current());return True
+        self._bound();return True
 
     def discovered(self,worker):
         serial_type,_,firmware=_radio_types(self.profile.radio)
@@ -225,7 +232,10 @@ class NativeRadioObserver:
         return True
 
     def current(self,worker):
-        self.device();require(worker is self.worker)
+        self.device();return self._worker_current(worker)
+
+    def _worker_current(self,worker):
+        require(worker is self.worker)
         serial_type,hat_type,_=_radio_types(self.profile.radio)
         if type(worker) is serial_type:require(worker.identity is self.identity and not worker.fenced)
         else:require(type(worker) is hat_type and worker.io is self.transport
@@ -259,6 +269,14 @@ class ForwardRadioFactory:
         self._authorize_callback=self._authorize
         self._arm_started=False
         self._authority_refs=self._journal_refs=self._store_ref=None
+        self._native_observing=False;self._native_adoption=None
+        self._native_methods=tuple((obj,name,getattr(type(obj),name)) for obj,names in (
+            (self,('_bound','_native','_native_current')),
+            (observer,('_bound','device','current','_device_facts','_worker_current')),
+            (owner,('_available','phase_check')),
+            (owner._registry,('_child','available')),
+        ) for name in names)
+        self._native_method_refs=self._native_methods
 
     def _bound(self):
         require(self._thread==(os.getpid(),threading.get_ident()) and all(a is b for a,b in zip(self._refs,
@@ -305,7 +323,11 @@ class ForwardRadioFactory:
         require(self._busy and child is self.profile.child)
         with self.owner.owner_lease():
             self.adoption=NativeRadioAdoption(self.owner,child,self.directory,self.transport);self._handles['adoption']=self.adoption
-            self.owner.resource.adopt_forward_radio(self.adoption);self.observer.bind(self.adoption)
+            self.owner.resource.adopt_forward_radio(self.adoption)
+            a=self.adoption;registry=self.owner._registry
+            self._native_adoption=(a,a._child,registry,registry._condition,
+                tuple((a,name,getattr(type(a),name)) for name in ('_bound','_guard','_assets','_observe','current')))
+            self.observer.bind(self.adoption)
             self.authority=RunAuthority(self.directory,expected_unit=json.loads(self.profile.plan_bytes)['unit'],
                 host_boot_id=child.host_boot_id,clock=self.owner._clock,owner_probe=self._owned,radio_admission=admission_for(self.profile.radio))
             self._handles['authority']=self.authority;self._live()
@@ -361,13 +383,70 @@ class ForwardRadioFactory:
         finally:self._busy=False
 
     def _native(self,context,child,transfer):
+        if self._native_observing:self._unknown=True;raise ForwardRadioError()
         self._bound();require(context is self.owner.context and child is self.profile.child and transfer is self.transfer)
         if self._retired:
             require(self._terminal(child,None));self.owner.phase_check(context,child.kind,child.sends)
-        else:self._live();self.observer.current(self.worker)
+        else:self._native_current(context,child,transfer)
         self._bound();return True
 
+    def _native_current(self,context,plan,transfer):
+        """Three full signed observations around both original factual probes.
+
+        Adjacent wrapper observations are one boundary, not reusable authority.
+        SDK guards, source/grant reads and physical probes remain fresh per call.
+        """
+        acquired=False;original=self._native_adoption
+        require(type(original) is tuple and len(original)==5)
+        a,child,registry,condition,methods=original
+        worker=self.worker;native_methods=self._native_method_refs
+        def references():
+            require(self._native_adoption is original and self._native_methods is self._native_method_refs is native_methods
+                and type(native_methods) is tuple and len(native_methods)==12
+                and type(methods) is tuple and len(methods)==5
+                and self.adoption is a and a._child is child and self.owner._registry is registry
+                and registry._condition is condition and child.owner is self.owner and child.plan is plan
+                and self.observer.adoption is a and self.worker is worker
+                and context is self.owner.context and plan is self.profile.child and transfer is self.transfer
+                and not self._unknown and not self._retired and not a._closed and not a._uncertain
+                and not registry._closing and not registry._uncertain and not child.unknown and not child.retired
+                and not self.owner._closed and not self.owner._uncertain
+                and not self.owner.resource._closed and not self.owner.resource._closing)
+            for obj,name,method in native_methods+methods:
+                bound=getattr(obj,name)
+                require(type(bound) is MethodType and bound.__self__ is obj and bound.__func__ is method
+                    and name not in obj.__dict__ and getattr(type(obj),name) is method)
+            if acquired:require(self._native_observing and child.observing and child.observe_thread==threading.get_ident())
+        def bindings():
+            references();self._bound();references()
+            self.owner._available();references();registry._child(child);references()
+        def checked(callback,*args):
+            bindings();value=callback(*args);bindings();require(value is True)
+        try:
+            bindings()
+            with condition:
+                require(not child.observing and not self._native_observing and not registry._closing)
+                child.observing=True;child.observe_thread=threading.get_ident()
+                self._native_observing=acquired=True
+            checked(a.current)
+            checked(self.observer._device_facts)
+            checked(a.current)
+            checked(self.observer._device_facts)
+            checked(a.current)
+            checked(self.observer._worker_current,worker)
+        except BaseException as error:
+            self._unknown=True
+            if acquired:a._uncertain=True;child.unknown=True
+            if not isinstance(error,Exception):raise
+            raise ForwardRadioError() from None
+        finally:
+            if acquired:
+                with condition:
+                    child.observing=False;child.observe_thread=None;self._native_observing=False
+                    condition.notify_all()
+
     def _cleanup(self,deadline):
+        if self._native_observing:self._unknown=True;return False
         errors=[]
         def attempt(action):
             try:require(time.monotonic()<deadline);action()
@@ -423,6 +502,7 @@ class ForwardRadioFactory:
         return self._retired and not self._unknown
 
     def _retire(self,transfer):
+        if self._native_observing:self._unknown=True;raise ForwardRadioError()
         self._bound();require(transfer is self.transfer and self.flow.flow.complete)
         if not self.profile.child.sends:
             end=self.owner._clock()[1]+ACK_GRACE_US
@@ -432,6 +512,7 @@ class ForwardRadioFactory:
         return self._cleanup(min(time.monotonic()+3,self.profile.child.application_deadline_monotonic_us/1000000))
 
     def _contain(self,child,runner,deadline):
+        if self._native_observing:self._unknown=True;return False
         require(child is self.profile.child and not self._busy);return self._cleanup(deadline)
 
     def _terminal(self,child,runner):

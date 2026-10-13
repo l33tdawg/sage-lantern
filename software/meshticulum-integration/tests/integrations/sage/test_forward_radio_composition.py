@@ -171,13 +171,18 @@ def shared_process_peer_scheduling(request):
 @pytest.mark.parametrize('fault',['none','loss'])
 def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path,monkeypatch,fault,shared_process_peer_scheduling):
     values=original();commands=[queue.Queue(),queue.Queue()];replies=queue.Queue();reports=[[],[]];pairs=[];active=[];counters=([0,0],[0,0])
-    def device(observer):
-        observer._bound();assert observer.adoption.current();observer._bound();return True
+    def device_facts(observer):
+        observer._bound()
+        assert all(os.fstat(fd).st_ino==identity[1]
+                   for _,fd,identity in observer.adoption._fd_refs)
+        observer._bound();return True
     def discovered(observer,worker):
         observer.device();assert worker.identity.board_id==1 and worker.identity.version==FIRMWARE
         assert worker.identity.boot in [boot for pair in pairs for boot in pair.boots]
         observer.worker,observer.identity=worker,worker.identity;observer.status(disarmed=True)
-    monkeypatch.setattr(NativeRadioObserver,'device',device);monkeypatch.setattr(NativeRadioObserver,'discovered',discovered)
+    # Only OS identity facts and MCU identity are modeled. The production
+    # device/current authority bookends and signed adoption reads remain real.
+    monkeypatch.setattr(NativeRadioObserver,'_device_facts',device_facts);monkeypatch.setattr(NativeRadioObserver,'discovered',discovered)
     original_read=Path.read_text
     def kernel(path,*args,**kwargs):
         if str(path)!='/proc/locks':return original_read(path,*args,**kwargs)
