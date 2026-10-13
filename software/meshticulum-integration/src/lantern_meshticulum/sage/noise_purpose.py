@@ -124,13 +124,15 @@ class NoisePurpose:
     def __init__(self, store, *, local, remote, local_initiator, intention,
                  signing_key, issued_epoch_us, approval_digest, owner_lease,
                  access_check, storage_check, native_check, enrollment_check,
-                 remote_pin_check, boot_reader, clock, generation_id=None):
+                 remote_pin_check, boot_reader, clock, generation_id=None,
+                 exchange_enrollment_check=None):
         _require(type(store) is WorkflowStore and type(local) is Peer and type(remote) is Peer
                  and local != remote and local.public_key != remote.public_key
                  and type(local_initiator) is bool and type(intention) is ReceiveIntention
                  and isinstance(signing_key, SigningKey)
                  and all(callable(c) for c in (owner_lease, access_check, storage_check,
-                     native_check, enrollment_check, remote_pin_check, boot_reader, clock)))
+                     native_check, enrollment_check, remote_pin_check, boot_reader, clock))
+                 and (exchange_enrollment_check is None or callable(exchange_enrollment_check)))
         _integer(issued_epoch_us)
         _require(issued_epoch_us < intention.application_expires_epoch_us
                  and bytes(signing_key.verify_key) == local.public_key
@@ -149,6 +151,7 @@ class NoisePurpose:
         self._refs = (store, store.storage, store.client, signing_key, self.binding)
         self._lease, self._access, self._storage = owner_lease, access_check, storage_check
         self._native, self._enrollment, self._pin = native_check, enrollment_check, remote_pin_check
+        self._exchange_enrollment = self._exchange_enrollment_ref = exchange_enrollment_check
         self._boot, self._clock = boot_reader, clock
         self._owner = (os.getpid(), threading.get_ident())
         self._busy = None
@@ -174,6 +177,7 @@ class NoisePurpose:
 
     def _available(self):
         _require(self._owner == (os.getpid(), threading.get_ident()))
+        _require(self._exchange_enrollment is self._exchange_enrollment_ref)
         store, storage, client, signer, binding = self._refs
         _require(self.store is store and store.storage is storage and store.client is client
                  and self._signer is signer and self.binding is binding
@@ -421,10 +425,14 @@ class NoisePurpose:
 
     def _enrolled(self):
         _require(self._public is not None and self._context is not None)
-        self._checked(self._enrollment, self._public, self._context.digest)
         remote_key = (self._context.responder_noise_public_key if self.binding.local_initiator
                       else self._context.initiator_noise_public_key)
-        self._checked(self._pin, self.binding.remote, remote_key, self._context.digest)
+        if self._exchange_enrollment is None:
+            self._checked(self._enrollment, self._public, self._context.digest)
+            self._checked(self._pin, self.binding.remote, remote_key, self._context.digest)
+        else:
+            self._checked(self._exchange_enrollment, self._public, self.binding.remote,
+                          remote_key, self._context.digest)
 
     def bind(self, context):
         """Bind once after both pins have independent current enrollment."""
@@ -512,6 +520,19 @@ class NoisePurpose:
             expected = (self._context.responder_noise_public_key if self.binding.local_initiator
                         else self._context.initiator_noise_public_key)
             _require(public_key == expected)
+        return self._observer(check)
+
+    def exchange_check(self, local_public_key, remote_peer, remote_public_key, context_digest):
+        """Observe both exact purpose pins at one native owner boundary."""
+        def check():
+            _require(type(local_public_key) is bytes and self._public is not None
+                     and local_public_key == self._public.public_key
+                     and type(remote_peer) is Peer and remote_peer == self.binding.remote
+                     and type(remote_public_key) is bytes and self._context is not None
+                     and type(context_digest) is bytes and context_digest == self._context.digest)
+            expected = (self._context.responder_noise_public_key if self.binding.local_initiator
+                        else self._context.initiator_noise_public_key)
+            _require(remote_public_key == expected)
         return self._observer(check)
 
     def _start(self, handle, factory, abort):

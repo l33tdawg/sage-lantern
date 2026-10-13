@@ -57,20 +57,22 @@ class ForwardNativeOwner:
     Permissions must be granted by the original authenticated root request.
     """
     def __init__(self,resource,authority,native_context,*,context,intention,local_initiator,
-                 key_check,peer_key_check,boot_reader=host_boot,clock_reader=clock):
+                 key_check,peer_key_check,boot_reader=host_boot,clock_reader=clock,exchange_key_check=None):
         from sage_lantern.mesh_daemon import HardwareRuntime
         from sage_lantern.mesh_community import MeshActionAuthority
         from sage_lantern.mesh_runtime import MeshUserContext
         require(type(resource) is HardwareRuntime and type(authority) is MeshActionAuthority
             and type(native_context) is MeshUserContext and type(context) is ForwardContext
             and type(intention) is ReceiveIntention and type(local_initiator) is bool
-            and all(callable(f) for f in (key_check,peer_key_check,boot_reader,clock_reader)))
+            and all(callable(f) for f in (key_check,peer_key_check,boot_reader,clock_reader))
+            and (exchange_key_check is None or callable(exchange_key_check)))
         self.resource,self.authority,self.native_context=resource,authority,native_context
         self.context,self.intention,self.local_initiator=context,intention,local_initiator
         self.local=context.initiator if local_initiator else context.responder
         self.remote=context.responder if local_initiator else context.initiator
         self._key_check,self._peer_key_check,self._boot,self._clock=key_check,peer_key_check,boot_reader,clock_reader
-        self._observer_refs=(key_check,peer_key_check,boot_reader,clock_reader)
+        self._exchange_key_check=exchange_key_check
+        self._observer_refs=(key_check,peer_key_check,boot_reader,clock_reader,exchange_key_check)
         self._composition=None;self._composition_ref=None;self._constructing=False
         self._budget=self._session=self._operation=None;self._budget_refs=None;self._registry=None
         self._owner=(os.getpid(),threading.get_ident());self._busy=self._closed=self._uncertain=False
@@ -100,7 +102,7 @@ class ForwardNativeOwner:
     def _available(self):
         require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident()))
         observers_bound=all(a is b for a,b in zip(self._observer_refs,
-            (self._key_check,self._peer_key_check,self._boot,self._clock)))
+            (self._key_check,self._peer_key_check,self._boot,self._clock,self._exchange_key_check)))
         if not observers_bound or self.owner_lease is not self._lease_ref:
             self._uncertain=True;raise ForwardNativeOwnerError()
         require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
@@ -149,9 +151,12 @@ class ForwardNativeOwner:
         peers=h.config['peers']
         require(any(p['chain_id']==self.remote.chain_id and p['agent_id']==self.remote.public_key.hex() for p in peers))
         local_key=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
-        require(self._checked(self._key_check,local_key,self.context.digest) is True)
         remote_key=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
-        require(self._checked(self._peer_key_check,self.remote,remote_key,self.context.digest) is True)
+        if self._exchange_key_check is None:
+            require(self._checked(self._key_check,local_key,self.context.digest) is True)
+            require(self._checked(self._peer_key_check,self.remote,remote_key,self.context.digest) is True)
+        else:
+            require(self._checked(self._exchange_key_check,local_key,self.remote,remote_key,self.context.digest) is True)
         now=self._checked(self._clock)
         require(type(now) is tuple and len(now)==2 and all(type(n) is int and n>=0 for n in now)
             and (self._last_time is None or all(a>=b for a,b in zip(now,self._last_time))))

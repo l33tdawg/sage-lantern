@@ -172,7 +172,8 @@ class ForwardNativeProvider:
                 approval_digest=self._setup_approval, owner_lease=self._lease,
                 access_check=self._access_check, storage_check=self._storage_check,
                 native_check=self._purpose_check, enrollment_check=self._enrollment_check,
-                remote_pin_check=self._peer_check, boot_reader=boot_reader, clock=clock_reader)
+                remote_pin_check=self._peer_check, boot_reader=boot_reader, clock=clock_reader,
+                exchange_enrollment_check=self._exchange_enrollment_check)
             self._components['_purpose'] = self._purpose
             self._guard()
         except BaseException:
@@ -360,6 +361,13 @@ class ForwardNativeProvider:
         self._guard()
         return result
 
+    def _exchange_enrollment_check(self, info, remote_peer, remote_public_key, context_digest):
+        self._guard()
+        require(self._enrollment is not None)
+        result = self._enrollment.exchange_check(info, remote_peer, remote_public_key, context_digest)
+        self._guard()
+        return result
+
     def _run(self, action):
         if self._busy:
             self._uncertain = True
@@ -428,7 +436,8 @@ class ForwardNativeProvider:
                 self._owner.__init__(self.resource, self.authority, self._exchange,
                     context=self._context, intention=self.intention, local_initiator=self.local_initiator,
                     key_check=self._purpose.key_check, peer_key_check=self._purpose.peer_key_check,
-                    boot_reader=self._boot, clock_reader=self._clock)
+                    boot_reader=self._boot, clock_reader=self._clock,
+                    exchange_key_check=self._purpose.exchange_check)
                 return self._owner.operation(key, limits=self.limits,
                     prior_debt=self._retained_debt, sealed_record=sealed_record)
             self._operation = self._handle.start(create, abort=self._abort)

@@ -232,6 +232,13 @@ class NativeNoiseEnrollment:
         require(peer==self.remote and public_key==expected and context_digest==self.context.digest)
         return self._observe()
 
+    def exchange_check(self,info,remote_peer,remote_public_key,context_digest):
+        """Validate both approved pins with one fresh signed enrollment read."""
+        expected=self.context.responder_noise_public_key if self.local_initiator else self.context.initiator_noise_public_key
+        require(type(info) is NoisePublic and _canonical(info.to_dict())==_canonical(self.local_public.to_dict())
+            and remote_peer==self.remote and remote_public_key==expected and context_digest==self.context.digest)
+        return self._observe()
+
     def close(self):
         self._closed=True
         return self._pid_thread==(os.getpid(),threading.get_ident()) and not self._busy and not self._uncertain
