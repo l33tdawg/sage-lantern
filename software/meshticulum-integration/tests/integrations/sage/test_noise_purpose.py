@@ -48,6 +48,9 @@ class NoExportKey(X25519PrivateKey):
     def __copy__(self):
         raise AssertionError('private key copying forbidden')
 
+    def __deepcopy__(self, memo):
+        raise AssertionError('private key copying forbidden')
+
     def __repr__(self):
         return '<NoExportKey>'
 
