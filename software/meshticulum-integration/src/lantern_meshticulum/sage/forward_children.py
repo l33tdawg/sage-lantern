@@ -38,9 +38,10 @@ class ForwardChildren:
             and getattr(self.resource,'_forward_children',None) is self)
     def register(self,owner):
         from lantern_meshticulum.sage.forward_native_owner import ForwardNativeOwner
+        from lantern_meshticulum.sage.forward_native_relay import ForwardNativeRelay
         self._bound()
         with self._condition:
-            require(not self._closing and not self._uncertain and not self.resource._closing and type(owner) is ForwardNativeOwner
+            require(not self._closing and not self._uncertain and not self.resource._closing and type(owner) in (ForwardNativeOwner,ForwardNativeRelay)
                 and owner.resource is self.resource and len(self._owners)<32 and id(owner) not in self._owners)
             self._owners[id(owner)]=owner
     def available(self,owner):
@@ -49,11 +50,15 @@ class ForwardChildren:
             require(not self._closing and not self._uncertain and self._owners.get(id(owner)) is owner)
         return True
     def begin(self,owner,plan,*,contain,terminal):
+        from lantern_meshticulum.sage.forward_native_relay import ForwardNativeRelay
         self.available(owner)
-        op=owner._operation
-        require(type(plan) is ChildPlan and callable(contain) and callable(terminal)
-            and op is not None and op._busy and op.expected()==(plan.kind,plan.sends)
-            and any(a.plan==plan and not a.bound for a in op.budget._permits.values()))
+        require(type(plan) is ChildPlan and callable(contain) and callable(terminal))
+        if type(owner) is ForwardNativeRelay:
+            require(owner._registry_prepaid(plan) is True)
+        else:
+            op=owner._operation
+            require(op is not None and op._busy and op.expected()==(plan.kind,plan.sends)
+                and any(a.plan==plan and not a.bound for a in op.budget._permits.values()))
         with self._condition:
             require(not self._closing and not self._uncertain and not self.resource._closing and len(self._children)<160
                 and not any(c.owner is owner and c.plan.slot==plan.slot for c in self._children))
@@ -63,10 +68,14 @@ class ForwardChildren:
             and all(a is b for a,b in zip(child.bindings,(child.owner,child.plan,child.contain,child.terminal))))
     def bind(self,child,runner):
         from lantern_meshticulum.sage.forward_operation import ForwardStageRunner
+        from lantern_meshticulum.sage.forward_native_relay import ForwardNativeRelay,RelayChild
         self._child(child)
-        require(type(runner) is ForwardStageRunner and runner.operation is child.owner._operation
-            and runner.plan==child.plan and runner.admission.owner is runner.operation.budget
-            and runner.admission.bound and runner.operation.active is runner)
+        if type(child.owner) is ForwardNativeRelay:
+            require(type(runner) is RelayChild and child.owner._registry_bind(child.plan,runner) is True)
+        else:
+            require(type(runner) is ForwardStageRunner and runner.operation is child.owner._operation
+                and runner.plan==child.plan and runner.admission.owner is runner.operation.budget
+                and runner.admission.bound and runner.operation.active is runner)
         with self._condition:
             require(child.opening and child.open_thread==threading.get_ident() and child.runner is None)
             child.runner=runner
@@ -138,6 +147,8 @@ class ForwardChildren:
             # recreated to finish an ACK or send application data during drain.
             for owner in owners:owner.fence()
             def active(owner):
+                from lantern_meshticulum.sage.forward_native_relay import ForwardNativeRelay
+                if type(owner) is ForwardNativeRelay:return owner._draining_busy()
                 composition=owner._composition;op=owner._operation;budget=owner._budget
                 return (owner._held or owner._busy or owner._constructing
                     or budget is not None and budget._busy or op is not None and op._busy
@@ -180,6 +191,12 @@ class ForwardChildren:
                 finally:
                     child.observing=False;child.observe_thread=None
                 if child.unknown:result=False
+            from lantern_meshticulum.sage.forward_native_relay import ForwardNativeRelay
+            for owner in owners:
+                if type(owner) is ForwardNativeRelay:
+                    try:
+                        if owner._registry_finish_close(self) is not True:result=False
+                    except BaseException:result=False
             return result and not self._uncertain and time.monotonic()<deadline
         finally:
             with self._condition:
