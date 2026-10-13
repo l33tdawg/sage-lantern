@@ -60,7 +60,8 @@ def protected_source(tmp_path,monkeypatch,synthetic_a658_capture):
     sources['provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json']=(lantern_root/'software/meshticulum-integration/meshticulum-source-lock.json').read_bytes()
     for name,raw in sources.items():
         target=runtime/name;target.parent.mkdir(mode=0o700,parents=True,exist_ok=True);target.parent.chmod(0o700);_write(target,raw)
-    manifest=canonical(dict(private_services_enabled=False,public_parent_claims_required=True,
+    manifest=canonical(dict(schema='meshticulum.bench-runtime-bundle.v1',
+        private_services_enabled=False,public_parent_claims_required=True,
         files={name:hashlib.sha256(raw).hexdigest() for name,raw in sources.items()}))
     _write(runtime/'manifest.json',manifest)
     # Execute the ACTUAL Runtime constructor and Reader. Its fixed deployment
@@ -69,6 +70,28 @@ def protected_source(tmp_path,monkeypatch,synthetic_a658_capture):
     monkeypatch.setattr(rpc,'__file__',str(runtime/'lantern_meshticulum/bench/pilot_resume_rpc.py'))
     monkeypatch.setattr(native,'__file__',str(runtime/'lantern_meshticulum/bench/pilot_native_caps.py'))
     return runtime,hashlib.sha256(manifest).hexdigest()
+
+
+@pytest.mark.parametrize('fault',[None,'schema_absent','schema_unknown','private_services',
+                                 'parent_claims','members_below','members_above'])
+def test_protected_directory_runtime_requires_explicit_public_manifest(protected_source,fault):
+    from lantern_meshticulum.bench import pilot_resume_rpc as rpc
+    root,pin=protected_source
+    if fault is None:
+        with rpc.Runtime(root,pin) as runtime:
+            assert runtime.manifest['schema']=='meshticulum.bench-runtime-bundle.v1'
+            assert 75<=len(runtime.manifest['files'])<=150 and runtime.check()
+        return
+    path=root/'manifest.json';manifest=json.loads(path.read_bytes())
+    if fault=='schema_absent':manifest.pop('schema')
+    elif fault=='schema_unknown':manifest['schema']='meshticulum.bench-runtime-bundle.unknown'
+    elif fault=='private_services':manifest['private_services_enabled']=True
+    elif fault=='parent_claims':manifest['public_parent_claims_required']=False
+    elif fault=='members_below':manifest['files']=dict(list(manifest['files'].items())[:74])
+    else:manifest['files']={'uninstalled-%d.py'%i:'0'*64 for i in range(151)}
+    raw=canonical(manifest);path.write_bytes(raw)
+    with pytest.raises(RuntimeError,match='wrong_public_runtime'):
+        rpc.Runtime(root,hashlib.sha256(raw).hexdigest())
 
 
 def protected_records(root,p,unit):

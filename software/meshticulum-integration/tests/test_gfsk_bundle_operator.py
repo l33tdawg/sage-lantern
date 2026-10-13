@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from tests.test_public32_pilot import tmp_path
+from tests.test_sf5_batch_metadata_bound import metadata_decoder
 
 
 @pytest.fixture
@@ -168,7 +169,7 @@ def test_whole_file_entry_only_extends_compressed_transport_envelope(operator):
 def test_exact_bundle_decoder_refuses_oversize_wrong_hash_and_trailing_data(operator):
     runner,_=operator
     entry=runner.BUNDLE_RPC_ENTRY
-    decoder=entry[entry.index('need(len(blob)<=121336'):entry.index('sys.path.insert(0,str(root))')]
+    decoder=metadata_decoder(entry)
     raw=b'{"public_metadata":true}';compressed=lzma.compress(raw)
     def decode(blob,expected=raw,pin=None):
         env=dict(base64=base64,lzma=lzma,hashlib=hashlib,need=runner.need,

@@ -13,8 +13,20 @@ ROOT=Path(__file__).resolve().parents[3]
 source=ROOT/'firmware/meshticulum-bench/run_public_sf5_c_bulk_8k.py'
 entry=next(ast.literal_eval(n.value) for n in ast.parse(source.read_bytes()).body
            if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='RPC_ENTRY' for t in n.targets))
+def metadata_decoder(entry):
+    # Retain the exact input statements through the final size/EOF/hash check.
+    # Runtime bootstrap branches begin afterwards and are never executed here.
+    reasons=('RPC_encoded_bound','RPC_input_bound_or_pin')
+    bounds=[node for node in ast.parse(entry).body if isinstance(node,ast.Expr)
+        and isinstance(node.value,ast.Call) and isinstance(node.value.func,ast.Name)
+        and node.value.func.id=='need' and len(node.value.args)==2
+        and isinstance(node.value.args[1],ast.Constant) and node.value.args[1].value in reasons]
+    assert tuple(node.value.args[1].value for node in bounds)==reasons
+    return '\n'.join(entry.splitlines()[bounds[0].lineno-1:bounds[1].end_lineno])+'\n'
+
+
 # Execute the exact production input decoder without runtime or dispatch I/O.
-decoder=entry[entry.index('need(len(blob)<=112000'):entry.index('sys.path.insert(0,str(root))')]
+decoder=metadata_decoder(entry)
 
 def decode(blob,raw,pin=None):
     def need(ok,reason):
