@@ -82,7 +82,8 @@ class Admission:
 
 class ForwardBudget:
     def __init__(self,store,*,context,intention,signing_key,boot_id,limits,prior_debt,
-                 slots,owner_lease,access_check,storage_check,native_check,clock,workflow_access_check=None):
+                 slots,owner_lease,access_check,storage_check,native_check,clock,workflow_access_check=None,
+                 budget_action_check=None):
         require(type(store) is WorkflowStore and type(context) is ForwardContext
                 and type(intention) is ReceiveIntention and isinstance(signing_key,SigningKey)
                 and type(limits) is Cost and type(prior_debt) is Cost and prior_debt.within(limits)
@@ -90,7 +91,8 @@ class ForwardBudget:
                 and all(type(v) is tuple and len(v)==2 and type(v[0]) is int and v[0] in KINDS
                         and type(v[1]) is bool for v in slots)
                 and all(callable(c) for c in (owner_lease,access_check,storage_check,native_check,clock))
-                and (workflow_access_check is None or callable(workflow_access_check)))
+                and (workflow_access_check is None or callable(workflow_access_check))
+                and (budget_action_check is None or callable(budget_action_check)))
         _uuid(boot_id)
         require(store.storage.actor.agent_id==bytes(signing_key.verify_key).hex()
                 and intention.host_boot_id==boot_id
@@ -100,22 +102,47 @@ class ForwardBudget:
         self.key,self.limits,self.prior,self.slots=signing_key,limits,prior_debt,slots
         self._lease,self._access,self._storage,self._native,self._clock=owner_lease,access_check,storage_check,native_check,clock
         self._workflow_access=self._workflow_access_ref=workflow_access_check
+        self._budget_action=self._budget_action_ref=budget_action_check
+        self._guarding=False
         self._workflow_epoch=self._workflow_run=None
         actor=dict(chain_id=store.storage.actor.chain_id,agent_id=store.storage.actor.agent_id)
         # Never include mutable context, lifetime, boot or limits in identity.
         self.record_id=_id(SCHEMA,[actor,intention.operation_id])
         self.binding=dict(actor=actor,context_digest=context.digest.hex(),intention=intention.to_dict(),
             limits=asdict(limits),prior_debt=asdict(prior_debt),slots=[[k,s] for k,s in slots])
+        self._action_refs=(store,context,intention,signing_key,limits,prior_debt,slots)
+        self._action_value=(context.digest,intention.to_dict(),boot_id,asdict(limits),asdict(prior_debt),
+                            _canonical(self.binding),self.record_id)
         self._owner=(os.getpid(),threading.get_ident())
         self._busy=self._closed=self._uncertain=False
         self._permits={};self._epoch=None;self._last_time=None;self._revision=0;self._body=None
     def __repr__(self):return '<ForwardBudget>'
     def _available(self):
         require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident())
-            and self._workflow_access is self._workflow_access_ref)
+            and self._workflow_access is self._workflow_access_ref
+            and self._budget_action is self._budget_action_ref)
     def _checked(self,check,*args):
         self._available();v=check(*args);self._available();require(v is True);return True
     def _guard(self,plan):
+        if self._budget_action is not None:
+            self._available()
+            if self._guarding:self._uncertain=True;raise ForwardBudgetError()
+            require(self._busy and (plan is None or type(plan) is ChildPlan))
+            value=None if plan is None else _canonical(plan.to_dict())
+            active=getattr(self,'_active_plan',None)
+            def bound():
+                self._available()
+                require(all(a is b for a,b in zip(self._action_refs,
+                    (self.store,self.context,self.intention,self.key,self.limits,self.prior,self.slots)))
+                    and self._action_value==(self.context.digest,self.intention.to_dict(),self.boot_id,
+                        asdict(self.limits),asdict(self.prior),_canonical(self.binding),self.record_id)
+                    and (None if plan is None else _canonical(plan.to_dict()))==value
+                    and getattr(self,'_active_plan',None) is active)
+            bound();self._guarding=True
+            try:
+                self._checked(self._budget_action,self.context,self.intention,plan)
+                bound();return
+            finally:self._guarding=False
         self._checked(self._access);self._checked(self._storage)
         self._checked(self._native,self.context,self.intention,plan)
     def _time(self):
