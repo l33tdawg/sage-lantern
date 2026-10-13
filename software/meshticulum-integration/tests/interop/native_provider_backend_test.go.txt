@@ -53,19 +53,35 @@ func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
 	seconds, err := strconv.Atoi(os.Getenv("MESHTICULUM_NATIVE_BACKEND_CHILD_SECONDS"))
 	require.NoError(t, err)
 	require.True(t, seconds >= 15 && seconds <= 1200, "bounded fixture execution required")
-	first, second := newWorkflowTestFixture(t), newWorkflowTestFixture(t)
-	firstDatabase, err := filepath.EvalSymlinks(first.databasePath)
-	require.NoError(t, err)
-	secondDatabase, err := filepath.EvalSymlinks(second.databasePath)
-	require.NoError(t, err)
-	firstHTTP, secondHTTP := httptest.NewServer(first.server.Router()), httptest.NewServer(second.server.Router())
-	defer firstHTTP.Close()
-	defer secondHTTP.Close()
+	var firstURL, secondURL, firstDatabase, secondDatabase string
+	seeds := [][]byte{appV23LookupVaultKey("workflow-first").Seed(), appV23LookupVaultKey("workflow-second").Seed()}
+	independent := os.Getenv("MESHTICULUM_NATIVE_BACKEND_INDEPENDENT") == "1"
+	if independent {
+		// testing.T.Context is canceled before T.Cleanup. Keep a separately
+		// bounded owner context until both children have joined their cleanup.
+		endpointContext, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+20)*time.Second)
+		t.Cleanup(cancel)
+		first := startNativeEndpoint(t, endpointContext, "first", seconds+15)
+		second := startNativeEndpoint(t, endpointContext, "second", seconds+15)
+		require.NotEqual(t, first.Ready.PID, second.Ready.PID)
+		firstURL, secondURL = first.Ready.URL, second.Ready.URL
+		firstDatabase, secondDatabase = first.Ready.Database, second.Ready.Database
+	} else {
+		first, second := newWorkflowTestFixture(t), newWorkflowTestFixture(t)
+		firstDatabase, err = filepath.EvalSymlinks(first.databasePath)
+		require.NoError(t, err)
+		secondDatabase, err = filepath.EvalSymlinks(second.databasePath)
+		require.NoError(t, err)
+		firstHTTP, secondHTTP := httptest.NewServer(first.server.Router()), httptest.NewServer(second.server.Router())
+		defer firstHTTP.Close()
+		defer secondHTTP.Close()
+		firstURL, secondURL = firstHTTP.URL, secondHTTP.URL
+	}
 	configuration, err := json.Marshal(map[string]any{
 		"schema":    "lantern.meshticulum.native-provider-backend-input.v1",
-		"first_url": firstHTTP.URL, "second_url": secondHTTP.URL,
-		"first_seed":            hex.EncodeToString(first.keys["first"].Seed()),
-		"second_seed":           hex.EncodeToString(second.keys["second"].Seed()),
+		"first_url": firstURL, "second_url": secondURL,
+		"first_seed":            hex.EncodeToString(seeds[0]),
+		"second_seed":           hex.EncodeToString(seeds[1]),
 		"databases":             []string{firstDatabase, secondDatabase},
 		"child_timeout_seconds": seconds,
 	})
@@ -128,20 +144,19 @@ func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
 		require.Equal(t, true, outcome[name], "fixture coverage incorrectly described")
 	}
 	require.Equal(t, float64(4), outcome["scan_file_count"])
-	seeds := [][]byte{first.keys["first"].Seed(), second.keys["second"].Seed()}
 	secrets := [][]byte{[]byte("MESHTICULUM-GENERATED-CANARY-")}
 	for _, seed := range seeds {
 		secrets = append(secrets, seed, []byte(hex.EncodeToString(seed)), []byte(base64.StdEncoding.EncodeToString(seed)))
 	}
-	for _, fixture := range []workflowTestFixture{first, second} {
+	for _, database := range []string{firstDatabase, secondDatabase} {
 		for _, suffix := range []string{"", "-wal"} {
-			info, err := os.Stat(fixture.databasePath + suffix)
+			info, err := os.Stat(database + suffix)
 			require.NoError(t, err)
 			require.True(t, info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= 32*1024*1024)
 			if suffix == "-wal" {
 				require.Greater(t, info.Size(), int64(32), "populated WAL required")
 			}
-			body, err := os.ReadFile(fixture.databasePath + suffix)
+			body, err := os.ReadFile(database + suffix)
 			require.NoError(t, err)
 			for _, secret := range secrets {
 				require.False(t, bytes.Contains(body, secret), "fixture plaintext or signing seed persisted")
@@ -149,6 +164,7 @@ func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
 		}
 	}
 	outcome["independent_go_main_wal_scan"] = true
+	outcome["independent_endpoint_processes"] = independent
 	encoded, err := json.Marshal(outcome)
 	require.NoError(t, err)
 	for _, secret := range secrets {

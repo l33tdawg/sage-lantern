@@ -49,6 +49,7 @@ def sanitized_environment(core,runtime,child_seconds):
 def source_inputs(sage,core,runtime):
     files=[Path(__file__).resolve(),Path(__file__).with_name('native_provider_backend.py'),
         Path(__file__).with_name('native_provider_backend_test.go.txt'),
+        Path(__file__).with_name('native_provider_endpoint_helper_test.go.txt'),
         PROJECT/'tests/integrations/sage/native_canary_helpers.py',
         PROJECT/'tests/integrations/sage/test_forward_operation.py',
         PROJECT/'tests/integrations/sage/test_mesh_inbox.py',PROJECT/'tests/__init__.py',
@@ -87,12 +88,14 @@ def parse_outcome(raw):
     return value
 
 
-def execute(sage,out,inputs,env,child_seconds,diagnose_replay=False):
+def execute(sage,out,inputs,env,child_seconds,diagnose_replay=False,independent=False):
     os.umask(0o077);out.mkdir(mode=0o700,exist_ok=False)
     started_epoch_us=time.time_ns()//1000;started_monotonic_ns=time.monotonic_ns()
     overlay=out/'overlay.json'
-    overlay.write_text(json.dumps({'Replace':{str(sage/'api/rest/meshticulum_native_provider_backend_test.go'):
-        str(Path(__file__).with_name('native_provider_backend_test.go.txt'))}},sort_keys=True,indent=2)+'\n')
+    overlay.write_text(json.dumps({'Replace':{
+        str(sage/'api/rest/meshticulum_native_provider_backend_test.go'):str(Path(__file__).with_name('native_provider_backend_test.go.txt')),
+        str(sage/'api/rest/meshticulum_native_provider_endpoint_helper_test.go'):str(Path(__file__).with_name('native_provider_endpoint_helper_test.go.txt'))}},sort_keys=True,indent=2)+'\n')
+    env=dict(env);env['MESHTICULUM_NATIVE_BACKEND_INDEPENDENT']='1' if independent else '0'
     selected='TestMeshticulumNativeProviderReplayWindowBoundary' if diagnose_replay else TEST_NAME
     command=['go','test','-overlay',str(overlay),'./api/rest','-run','^'+selected+'$','-count=1','-v',
         '-timeout',str(child_seconds+60)+'s']
@@ -120,6 +123,7 @@ def execute(sage,out,inputs,env,child_seconds,diagnose_replay=False):
     record=dict(schema='lantern.meshticulum.native-provider-backend-fixture-run.v1',
         complete=code==0 and not timed_out and unchanged and outcome is not None and not diagnose_replay,
         diagnostic_only=diagnose_replay,diagnostic_completed=diagnose_replay and code==0 and unchanged,
+        independent_endpoint_processes_requested=independent,
         returncode=code,test_execution_timed_out=timed_out,test_execution_interrupted=interrupted,
         owned_process_group_reaped=True,
         started_epoch_us=started_epoch_us,finished_epoch_us=time.time_ns()//1000,
@@ -142,6 +146,7 @@ def main():
     parser.add_argument('--child-timeout-seconds',type=int,required=True)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--diagnose-replay-window',action='store_true')
+    parser.add_argument('--independent-endpoints',action='store_true')
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check',action='store_true');mode.add_argument('--run',action='store_true')
     args=parser.parse_args()
@@ -154,7 +159,7 @@ def main():
             input_manifest_sha256=hashlib.sha256(json.dumps(inputs,sort_keys=True,separators=(',',':')).encode()).hexdigest()),sort_keys=True))
         return 0
     need(args.output is not None,'new_output_directory_required')
-    return execute(sage,args.output.resolve(),inputs,env,args.child_timeout_seconds,args.diagnose_replay_window)
+    return execute(sage,args.output.resolve(),inputs,env,args.child_timeout_seconds,args.diagnose_replay_window,args.independent_endpoints)
 
 
 if __name__=='__main__':raise SystemExit(main())

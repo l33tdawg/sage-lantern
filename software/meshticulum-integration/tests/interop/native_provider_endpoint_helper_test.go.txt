@@ -1,0 +1,243 @@
+package rest
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+const endpointReadyPrefix = "NATIVE_PROVIDER_ENDPOINT_READY "
+
+type nativeEndpointInput struct {
+	Schema  string `json:"schema"`
+	Actor   string `json:"actor"`
+	Seed    string `json:"seed"`
+	Seconds int    `json:"seconds"`
+}
+
+type nativeEndpointReady struct {
+	Schema   string `json:"schema"`
+	URL      string `json:"url"`
+	Database string `json:"database"`
+	ActorID  string `json:"actor_id"`
+	PID      int    `json:"pid"`
+}
+
+type nativeEndpointOwned struct {
+	Ready                nativeEndpointReady
+	Command              *exec.Cmd
+	Input                io.WriteCloser
+	Done                 chan struct{}
+	WaitError            error
+	CancellationExpected bool
+	ReaderDone           chan struct{}
+	TempRoot             string
+}
+
+// Selected only by a test-binary reexec. Each process owns its normal SAGE
+// replay cache, rate limits, authenticated Router and temporary SQLite/vault.
+func TestMeshticulumNativeProviderEndpointHelper(t *testing.T) {
+	if os.Getenv("MESHTICULUM_NATIVE_ENDPOINT_HELPER") != "1" {
+		t.Skip("owned reexec helper only")
+	}
+	reader := bufio.NewReaderSize(os.Stdin, 16384)
+	line, err := reader.ReadSlice('\n')
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(line), 16384)
+	var input nativeEndpointInput
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	decoder.DisallowUnknownFields()
+	require.NoError(t, decoder.Decode(&input))
+	var extra any
+	require.Equal(t, io.EOF, decoder.Decode(&extra), "single input record required")
+	require.Equal(t, "lantern.meshticulum.endpoint-input.v1", input.Schema)
+	require.True(t, input.Actor == "first" || input.Actor == "second")
+	require.True(t, input.Seconds >= 15 && input.Seconds <= 1215)
+	fixture := newWorkflowTestFixture(t)
+	seed, err := hex.DecodeString(input.Seed)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(seed, fixture.keys[input.Actor].Seed()), "fixture identity mismatch")
+	database, err := filepath.EvalSymlinks(fixture.databasePath)
+	require.NoError(t, err)
+	server := httptest.NewServer(fixture.server.Router())
+	defer server.Close()
+	ready := nativeEndpointReady{Schema: "lantern.meshticulum.endpoint-ready.v1", URL: server.URL,
+		Database: database, ActorID: appV23LookupVaultID(fixture.keys[input.Actor]), PID: os.Getpid()}
+	encoded, err := json.Marshal(ready)
+	require.NoError(t, err)
+	fmt.Println(endpointReadyPrefix + string(encoded))
+	// EOF is the owner's cleanup request. The finite lifetime also closes the
+	// helper after parent loss; no server or ledger state survives this fixture.
+	closed := make(chan struct{})
+	go func() { _, _ = io.Copy(io.Discard, reader); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Duration(input.Seconds) * time.Second):
+	}
+}
+
+func startNativeEndpoint(t *testing.T, ctx context.Context, actor string, seconds int) *nativeEndpointOwned {
+	t.Helper()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	tempRoot, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	command := exec.CommandContext(ctx, executable, "-test.run=^TestMeshticulumNativeProviderEndpointHelper$",
+		"-test.v", "-test.timeout="+fmt.Sprint(seconds+10)+"s")
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "TMPDIR=") && !strings.HasPrefix(entry, "MESHTICULUM_NATIVE_ENDPOINT_HELPER=") {
+			command.Env = append(command.Env, entry)
+		}
+	}
+	command.Env = append(command.Env, "TMPDIR="+tempRoot, "MESHTICULUM_NATIVE_ENDPOINT_HELPER=1")
+	command.WaitDelay = 5 * time.Second
+	input, err := command.StdinPipe()
+	require.NoError(t, err)
+	output, err := command.StdoutPipe()
+	require.NoError(t, err)
+	command.Stderr = io.Discard // No child exception/seed text reaches logs.
+	owned := &nativeEndpointOwned{Command: command, Input: input, Done: make(chan struct{}), ReaderDone: make(chan struct{}), TempRoot: tempRoot}
+	ready := make(chan nativeEndpointReady, 1)
+	var once sync.Once
+	go func() {
+		defer close(owned.ReaderDone)
+		scanner := bufio.NewScanner(output)
+		scanner.Buffer(make([]byte, 4096), 32768)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, endpointReadyPrefix) {
+				var value nativeEndpointReady
+				if json.Unmarshal([]byte(strings.TrimPrefix(line, endpointReadyPrefix)), &value) == nil {
+					once.Do(func() { ready <- value })
+				}
+			}
+		}
+	}()
+	if err := command.Start(); err != nil {
+		_ = input.Close()
+		_ = output.Close()
+		t.Fatal("owned endpoint process did not start")
+	}
+	go func() { owned.WaitError = command.Wait(); close(owned.Done) }()
+	t.Cleanup(func() {
+		_ = input.Close()
+		select {
+		case <-owned.Done:
+			if owned.WaitError != nil && !owned.CancellationExpected {
+				t.Error("owned endpoint cleanup failed")
+			}
+		case <-time.After(5 * time.Second):
+			_ = command.Process.Kill()
+			select {
+			case <-owned.Done:
+			case <-time.After(5 * time.Second):
+				t.Error("owned endpoint not reaped")
+			}
+		}
+		select {
+		case <-owned.ReaderDone:
+		case <-time.After(5 * time.Second):
+			t.Error("endpoint reader not terminal")
+		}
+	})
+	request := nativeEndpointInput{Schema: "lantern.meshticulum.endpoint-input.v1", Actor: actor,
+		Seed: hex.EncodeToString(appV23LookupVaultKey("workflow-" + actor).Seed()), Seconds: seconds}
+	encoded, err := json.Marshal(request)
+	require.NoError(t, err)
+	_, err = input.Write(append(encoded, '\n'))
+	require.NoError(t, err)
+	select {
+	case value := <-ready:
+		require.Equal(t, "lantern.meshticulum.endpoint-ready.v1", value.Schema)
+		require.True(t, strings.HasPrefix(value.URL, "http://127.0.0.1:"))
+		require.Equal(t, appV23LookupVaultID(appV23LookupVaultKey("workflow-"+actor)), value.ActorID)
+		require.Equal(t, command.Process.Pid, value.PID)
+		require.True(t, filepath.IsAbs(value.Database) && filepath.Base(value.Database) == "workflows.db")
+		canonical, err := filepath.EvalSymlinks(value.Database)
+		require.NoError(t, err)
+		require.Equal(t, value.Database, canonical)
+		require.True(t, strings.HasPrefix(value.Database, tempRoot+string(os.PathSeparator)), "endpoint database outside owned temp root")
+		owned.Ready = value
+		return owned
+	case <-ctx.Done():
+		t.Fatal("owned endpoint readiness deadline")
+	case <-time.After(15 * time.Second):
+		t.Fatal("owned endpoint readiness missing")
+	}
+	return nil
+}
+
+func TestMeshticulumNativeProviderEndpointEarlyOwnerExit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	t.Cleanup(cancel)
+	node := startNativeEndpoint(t, ctx, "first", 20)
+	require.NoError(t, node.Input.Close())
+	select {
+	case <-node.Done:
+		require.NoError(t, node.WaitError)
+	case <-time.After(5 * time.Second):
+		t.Fatal("endpoint did not join early owner cleanup")
+	}
+	select {
+	case <-node.ReaderDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("endpoint metadata reader not terminal")
+	}
+}
+
+func TestMeshticulumNativeProviderEndpointContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	t.Cleanup(cancel)
+	node := startNativeEndpoint(t, ctx, "first", 20)
+	node.CancellationExpected = true
+	cancel()
+	select {
+	case <-node.Done:
+		require.Error(t, node.WaitError)
+	case <-time.After(5 * time.Second):
+		t.Fatal("endpoint cancellation not reaped")
+	}
+	select {
+	case <-node.ReaderDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled endpoint reader not terminal")
+	}
+}
+
+// Opt-in lightweight process-isolation control; no provider canary runs.
+func TestMeshticulumNativeProviderIndependentEndpointProcesses(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	first := startNativeEndpoint(t, ctx, "first", 20)
+	second := startNativeEndpoint(t, ctx, "second", 20)
+	require.NotEqual(t, first.Ready.PID, second.Ready.PID)
+	require.NotEqual(t, first.Ready.Database, second.Ready.Database)
+	for _, node := range []*nativeEndpointOwned{first, second} {
+		request := signedGovernanceRequestAs(t, appV23LookupVaultKey("workflow-"+map[bool]string{true: "first", false: "second"}[node == first]),
+			node.Ready.ActorID, http.MethodGet, "/v1/messages/storage", nil)
+		request.URL, _ = url.Parse(node.Ready.URL + "/v1/messages/storage")
+		request.RequestURI = ""
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Do(request)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		_, _ = io.Copy(io.Discard, response.Body)
+		require.NoError(t, response.Body.Close())
+	}
+}

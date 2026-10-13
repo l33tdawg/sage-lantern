@@ -33,10 +33,11 @@ class RequestDiagnostics:
     def boundary(self,name,index=-1):
         self.phase=name;self.endpoint=index
         self.boundaries.append(dict(phase=name,endpoint=index,request_count=sum(self.counts.values())))
-    def response(self,response):
+    def response(self,response,actual_endpoint=None):
         path=response.request.url.path
         route=path if path in ('/v1/messages/storage','/v1/workflows') else '/v1/workflows/{record}'
-        key=(self.phase,self.endpoint,self.stage,response.request.method,route,response.status_code)
+        endpoint=self.endpoint if actual_endpoint is None else actual_endpoint
+        key=(self.phase,endpoint,self.stage,response.request.method,route,response.status_code)
         self.counts[key]=self.counts.get(key,0)+1
         if response.status_code>=500:
             # Classify only exact static server titles; never retain a body.
@@ -46,9 +47,11 @@ class RequestDiagnostics:
             allowed=('Replay window saturated','Message storage unavailable','Access control unavailable')
             self.last_failure=dict(status=response.status_code,route=route,
                 gate=title if title in allowed else 'unclassified_server_refusal',phase=self.phase,
-                endpoint=self.endpoint,stage=self.stage)
+                endpoint=endpoint,stage=self.stage)
     def snapshot(self):
-        return dict(request_count=sum(self.counts.values()),rows=[dict(phase=k[0],endpoint=k[1],stage=k[2],
+        per_endpoint={str(index):sum(count for key,count in self.counts.items() if key[1]==index) for index in (0,1)}
+        return dict(request_count=sum(self.counts.values()),per_endpoint_request_count=per_endpoint,
+            rows=[dict(phase=k[0],endpoint=k[1],stage=k[2],
             method=k[3],route=k[4],status=k[5],count=v) for k,v in sorted(self.counts.items())],
             boundaries=list(self.boundaries),last_failure=self.last_failure)
 
@@ -110,7 +113,8 @@ def real_backend_factory(config,diagnostics):
     def backend(key):
         endpoint=urls[key.encode().hex()]
         client=SageClient(endpoint,AgentIdentity(key),timeout=2,trust_env=False)
-        client._client.event_hooks['response'].append(diagnostics.response)
+        index=0 if endpoint==config['first_url'] else 1
+        client._client.event_hooks['response'].append(lambda response:diagnostics.response(response,index))
         try:
             # The new path uses ordinary socket HTTP, never MockTransport.
             need(type(client._client._transport) is httpx.HTTPTransport)
