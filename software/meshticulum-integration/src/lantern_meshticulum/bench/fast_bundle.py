@@ -19,8 +19,11 @@ from meshticulum.bench.wire import BenchGrant, require
 from .pilot_parent_caps import canonical, identifier, digest
 from .profiles import GFSK250_FAST_BUNDLE_KIND as KIND, GFSK250_NAME, GFSK250_FAST_CORE_COMMIT, profile_for, profile_record
 
-PHYSICAL_BINDINGS = MappingProxyType(dict(scope_sha256=None, core_commit=GFSK250_FAST_CORE_COMMIT,
-    history_receipt_sha256=None, preceding_parent=None))
+PHYSICAL_BINDINGS = MappingProxyType(dict(
+    scope_sha256='0b02997bd6e118af967f9a0acd20d6b3a618ab520c86f7ed827cd4f9d2a6cefd',
+    core_commit=GFSK250_FAST_CORE_COMMIT,
+    history_receipt_sha256='0d9dd9910c9aa7bcb1f890963649e7c850cea8450b6d94ee9be108a3f52fc0c9',
+    preceding_parent='27563497b7f6d89526f7249f2bf9005a'))
 FINAL_ACK = 'meshticulum.native-fast-final-ack.v1'
 VERIFIED_PART = 'meshticulum.native-fast-verified-part.v1'
 STAGE = 'meshticulum.native-fast-part-admission.v1'
