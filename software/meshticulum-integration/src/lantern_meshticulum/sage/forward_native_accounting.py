@@ -8,6 +8,7 @@ must separately establish full historical coverage and approve private limits.
 No Snapshot DTO, caller cost, grant, database writer or transport is accepted.
 """
 from dataclasses import asdict
+from functools import wraps
 import hashlib
 import os
 from pathlib import Path
@@ -39,6 +40,19 @@ def require(value):
         raise NativeAccountingUnavailable()
 
 
+def _accounting_operation(method):
+    @wraps(method)
+    def using(self, *args, **kwargs):
+        require(self._gate is self._gate_ref)
+        with self._gate:
+            self._busy += 1
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                self._busy -= 1
+    return using
+
+
 class HeldParentAccounting(NativeAccountingSource):
     """Own a held metadata reader until endpoint/key cleanup releases it.
 
@@ -65,7 +79,10 @@ class HeldParentAccounting(NativeAccountingSource):
         self._clock, self._boot = clock_reader, boot_reader
         self._owner = os.getpid(), threading.get_ident()
         self._closed = self._uncertain = False
+        self._gate = self._gate_ref = threading.RLock()
+        self._busy = 0
         self._reader = self._reader_ref = None
+        self._reader_close = None
         self._observation = parent._Observation(scope, clock_reader, boot_reader)
         self._refs = (resource, intention, scope, self.state, self.directory,
                       clock_reader, boot_reader, self._observation)
@@ -117,6 +134,8 @@ class HeldParentAccounting(NativeAccountingSource):
             self._evidence_sha256 = hashlib.sha256(_DOMAIN + encoded).hexdigest()
             self._prepared = (self._debt, _canonical(asdict(self._debt)), encoded, self._evidence_sha256)
             self.observe(resource, intention)
+            token = self._reader.prepare_close_delegation()
+            self._reader_close = self._reader, type(self._reader).close_delegated, token
         except BaseException:
             self._uncertain = True
             self.close()
@@ -165,6 +184,7 @@ class HeldParentAccounting(NativeAccountingSource):
         self._reader.check()
         self._bound()
 
+    @_accounting_operation
     def read(self, name, limit, *, lock=False):
         """Fixed-basename facade for the existing bounded native SQL parser."""
         require(name in _BASENAMES and name != 'native.sqlite.pending')
@@ -173,6 +193,7 @@ class HeldParentAccounting(NativeAccountingSource):
         self._sample()
         return value
 
+    @_accounting_operation
     def observe(self, resource, intention):
         try:
             self._bound()
@@ -191,20 +212,31 @@ class HeldParentAccounting(NativeAccountingSource):
             self._uncertain = True
             raise
 
+    @_accounting_operation
     def evidence(self):
         self._bound()
         # Read-only explanatory data, with its limitations retained.
         import json
         return json.loads(self._evidence)
 
-    def close(self):
-        if self._owner != (os.getpid(), threading.get_ident()):
-            return False
+    def _close_retained(self):
         if self._closed:
             return not self._uncertain
         self._closed = True
         reader = self._reader_ref
         if reader is not None:
+            if self._reader_close is not None:
+                retained, close, token = self._reader_close
+                if (retained is not reader or retained is not self._reader
+                    or type(retained) is not Reader or close is not Reader.close_delegated):
+                    self._uncertain = True
+                try:
+                    if close(retained, token) is not True:
+                        self._uncertain = True
+                except BaseException:
+                    self._uncertain = True
+                    raise
+                return not self._uncertain
             try:
                 # Never run a live clock/permission check while containing an
                 # expired observer. Reader closes only its retained OFDs.
@@ -220,3 +252,36 @@ class HeldParentAccounting(NativeAccountingSource):
                     self._uncertain = True
                     raise
         return not self._uncertain
+
+    def close(self):
+        if (self._owner != (os.getpid(), threading.get_ident())
+            or self._gate is not self._gate_ref or not self._gate.acquire(blocking=False)):
+            return False
+        try:
+            if self._busy:
+                return False
+            return self._close_retained()
+        finally:
+            self._gate.release()
+
+    def close_from_registry(self, permit):
+        """Cleanup under one idle registry permit after both native legs close.
+
+        The creator-prepared Reader token grants only descriptor cleanup. The
+        registry separately proves the original owner is fenced, all producers
+        have unwound and every tracked child has terminal cleanup. Neither token
+        authorizes observing files, renewing the scope or dispatching traffic.
+        """
+        from .forward_children import ForwardClosePermit
+        if (type(permit) is not ForwardClosePermit
+            or permit.original_owner != self._owner or os.getpid() != self._owner[0]
+            or permit.resource is not self.resource or self.resource is not self._refs[0]
+            or self._gate is not self._gate_ref or not self._gate.acquire(blocking=False)):
+            return False
+        try:
+            if self._busy:
+                return False
+            require(permit.consume(self) is True)
+            return self._close_retained()
+        finally:
+            self._gate.release()

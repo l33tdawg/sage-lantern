@@ -187,3 +187,24 @@ def test_closed_metadata_descriptor_is_not_reported_as_known_successful_cleanup(
     _, fd, _, _ = source._reader.held[0]
     os.close(fd)
     assert source.close() is False and source.close() is False
+
+
+def test_reentrant_cleanup_cannot_release_descriptors_during_observation(held, monkeypatch):
+    source, endpoint, _, _, _ = held
+    original = os.pread
+    results = []
+    def observing(fd, count, offset):
+        if not results:
+            results.append(source.close())
+        return original(fd, count, offset)
+    monkeypatch.setattr(os, 'pread', observing)
+    assert source.observe(endpoint.hardware, endpoint.intention).actual_usage is None
+    assert results == [False] and source._closed is False
+    assert source.close() is True
+
+
+def test_cleanup_from_arbitrary_foreign_permit_retains_held_source(held):
+    source, endpoint, _, _, _ = held
+    assert source.close_from_registry(object()) is False
+    assert source.observe(endpoint.hardware, endpoint.intention).actual_usage is None
+    assert source.close() is True

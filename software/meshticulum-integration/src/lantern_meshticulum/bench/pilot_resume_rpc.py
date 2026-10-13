@@ -10,6 +10,7 @@ Returned dictionaries are comparison receipts, never in-process Snapshots.
 import base64
 from contextlib import ExitStack
 from dataclasses import asdict
+from functools import wraps
 import fcntl
 import hashlib
 import json
@@ -346,6 +347,30 @@ def parse(raw):
     return json.loads(raw, object_pairs_hook=unique)
 
 
+def _reader_operation(method):
+    @wraps(method)
+    def using(self, *args, **kwargs):
+        need(self._gate is self._gate_ref, 'rpc_reader_gate_changed')
+        with self._gate:
+            self._available(full=False)
+            self._in_use += 1
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                self._in_use -= 1
+    return using
+
+
+class ReaderCloseDelegation:
+    """One creator-prepared cleanup capability; it grants no reader access."""
+    __slots__ = ('_reader', '_owner', '_refs', '_used')
+
+    def __init__(self, reader):
+        self._reader, self._owner = reader, reader._owner_ref
+        self._refs = reader._refs, reader._gate_ref
+        self._used = False
+
+
 class Reader:
     """Held protected metadata/locks and immutable bytes, no SQLite path open.
 
@@ -366,10 +391,16 @@ class Reader:
         self._owner_ref = self._owner
         self._refs = (self.stack, self.held, self.directories, self._nodes, self._tokens, self._named, self._file_index)
         self._closed = False
-    def _available(self, *, full=True):
+        self._gate = self._gate_ref = threading.RLock()
+        self._in_use = 0
+        self._close_delegation = None
+        self._delegation_prepared = False
+    def _available(self, *, full=True, cleanup=False):
         need(not self._closed and self._owner is self._owner_ref
              and self._file_index_state is self._file_index_state_ref
-             and self._owner == (os.getpid(), threading.get_ident(), os.geteuid())
+             and (self._owner == (os.getpid(), threading.get_ident(), os.geteuid())
+                  or cleanup and self._owner_ref[::2] == (os.getpid(), os.geteuid()))
+             and self._gate is self._gate_ref
              and len(self._refs) == 7
              and all(a is b for a,b in zip((self.stack,self.held,self.directories,self._nodes,self._tokens,self._named,self._file_index),self._refs))
              and len(self._nodes)==len(self._node_state) and len(self.held)==len(self._held_state)
@@ -410,6 +441,7 @@ class Reader:
                  == tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False))[:4])
                  and os.lseek(fd,0,os.SEEK_CUR) == token, 'rpc_ancestry_changed')
         self._available()
+    @_reader_operation
     def directory(self, path):
         self._available()
         absolute = Path(os.path.abspath(path)); names = ('/',*absolute.parts[1:])
@@ -432,6 +464,7 @@ class Reader:
         self.directories[path] = identity
         self._directory_state = tuple((path,tuple(value)) for path,value in self.directories.items())
         return parent
+    @_reader_operation
     def read(self, path, maximum, *, lock=False):
         parent = self.directory(path.parent)
         retained = self._file_index.get(path)
@@ -476,6 +509,7 @@ class Reader:
             self._file_index_state = tuple(self._file_index.items())
             self._file_index_state_ref = self._file_index_state
         return raw
+    @_reader_operation
     def read_held(self, path, maximum, *, lock=False):
         """Freshly reread an exact held name without repeating directory setup.
 
@@ -512,6 +546,7 @@ class Reader:
              and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd]
              and raw==retained[3],'rpc_metadata_changed_after_check')
         self._available();return raw
+    @_reader_operation
     def check(self):
         self._check_nodes()
         for path, fd, identity, expected in self._held_state:
@@ -527,9 +562,65 @@ class Reader:
                  and raw == expected, 'held_rpc_metadata_changed_after_read')
         self._check_nodes()
         return True
+    def prepare_close_delegation(self):
+        """Creator-thread-only preparation; ordinary reads remain owner-bound."""
+        need(self._gate is self._gate_ref, 'rpc_reader_gate_changed')
+        with self._gate:
+            self._available()
+            need(not self._in_use and not self._delegation_prepared,
+                 'rpc_reader_delegation_unavailable')
+            token = ReaderCloseDelegation(self)
+            self._delegation_prepared = True
+            self._close_delegation = token
+            return token
+
+    def close_delegated(self, token):
+        """Consume an exact token while idle, closing only retained descriptions.
+
+        This is logical descriptor cleanup, not native retirement evidence. No
+        current permission, clock or new file is consulted during shutdown.
+        Busy cleanup is refused without spending the token.
+        """
+        if (type(token) is not ReaderCloseDelegation or token is not self._close_delegation
+            or token._reader is not self or token._used or self._closed
+            or token._owner is not self._owner_ref
+            or token._owner[::2] != (os.getpid(), os.geteuid())
+            or token._refs[1] is not self._gate_ref or self._gate is not self._gate_ref
+            or not self._gate.acquire(blocking=False)):
+            return False
+        try:
+            if self._in_use:
+                return False
+            token._used = True
+            self._close_delegation = None
+            good = True
+            try:
+                self._available(cleanup=True)
+                need(self._refs is token._refs[0]
+                     and all(os.lseek(fd, 0, os.SEEK_CUR) == offset
+                             for fd, offset in self._token_state),
+                     'rpc_reader_descriptor_changed')
+            except Exception:
+                good = False
+            self._closed = True
+            # The original stack callbacks independently compare inode and OFD
+            # offset tokens, so a reused descriptor is never closed here.
+            try:
+                token._refs[0][0].close()
+            except BaseException:
+                good = False
+            return good
+        finally:
+            self._gate.release()
+
     def close(self):
         if self._closed or self._owner_ref[:2] != (os.getpid(),threading.get_ident()): return
-        self._closed = True; self._refs[0].close()
+        if self._gate is not self._gate_ref or not self._gate.acquire(blocking=False): return
+        try:
+            if self._in_use: return
+            self._closed = True; self._refs[0].close()
+        finally:
+            self._gate.release()
     def __enter__(self): return self
     def __exit__(self, *_): self.close()
 
