@@ -90,6 +90,8 @@ def test_pending_scope_stays_closed_and_fresh_boot_does_not_refund_debt(gfdata,m
     with pytest.raises(Exception,match='pending_gfsk_firmware_source_and_history_bindings'):
         mode.require_bundle_bindings()
     monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256','e'*64)
+    from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
+    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',PAID_HISTORY[-1])
     monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256',None)
     with pytest.raises(Exception,match='pending_gfsk_whole_bundle_scope'):mode.require_bundle_bindings()
     monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256','f'*64)

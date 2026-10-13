@@ -149,6 +149,7 @@ def synthetic_deployment_bindings(monkeypatch):
     monkeypatch.setattr(profiles,'GFSK_FIRMWARE','mtb1-0000000000')
     monkeypatch.setattr(profiles,'GFSK_CORE_COMMIT','a'*40)
     monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256','b'*64)
+    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',retained_capture.PAID_HISTORY[-1])
     monkeypatch.setattr(retained_capture,'PAID_HISTORY',tuple(retained_capture.PAID_HISTORY))
 
 

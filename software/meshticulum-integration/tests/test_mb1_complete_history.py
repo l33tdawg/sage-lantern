@@ -16,7 +16,7 @@ def original():
 
 def test_declared_full_reservations_preserve_every_H35_byte(original):
     value,policy=original;rows=history.declared_partition(policy)
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==38
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==39
     assert retained.PAID_HISTORY[:36]==history.H36_PREFIX and retained.PAID_HISTORY[35]=='3195cff3fc8fc8ee0b81694fe8f9e389'
     assert history.PARENT==retained.PAID_HISTORY[36] and rpc.GUARDED_PAID[history.PARENT]==policy.digest
     for unit,row in rows.items():
