@@ -68,6 +68,27 @@ assert all(len(v)<=65536 for v in files.values()) and sum(map(len,files.values()
 assert value['role']!='recipient' or set(files)=={'manifest.json','manifest.sig.json'}
 root=Path.home()''')
 
+# Archived argv evidence only: these exact v1 bytes belong to retained native
+# command hashes. New commands use INVOKE below.
+HISTORICAL_INVOKE_V1 = '''import hashlib,json,os,runpy,stat,sys
+from pathlib import Path
+path,pin,*args=sys.argv[1:]
+root=Path(path).parent
+for parent in (root,*root.parents):
+ s=parent.lstat();assert stat.S_ISDIR(s.st_mode) and s.st_uid==0 and not s.st_mode&0o022
+def read(p):
+ fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+ try:
+  s=os.fstat(fd);assert stat.S_ISREG(s.st_mode) and s.st_uid==0 and s.st_nlink==1 and not s.st_mode&0o022 and s.st_size<=2000000
+  return os.read(fd,2000001)
+ finally:os.close(fd)
+raw=read(root/'manifest.json');assert hashlib.sha256(raw).hexdigest()==pin
+m=json.loads(raw);assert m['schema']=='meshticulum.bench-runtime-bundle.v1' and m['private_services_enabled'] is False
+assert hashlib.sha256(read(Path(path))).hexdigest()==m['files']['bench_node.py']
+sys.argv=[path,*args]
+runpy.run_path(path,run_name='__main__')
+'''
+
 # The fixed root launcher is checked against the operator's manifest pin, not
 # merely against a potentially changed manifest's own source map.
 INVOKE = '''import hashlib,json,os,runpy,stat,sys

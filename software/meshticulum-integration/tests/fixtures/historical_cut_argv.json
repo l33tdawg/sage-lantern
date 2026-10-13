@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "command_sha256": "f93ccb1b0bad4118fa6862c5050d09da528b0725ce845ab6df1e904f3c822486",
+      "owner": {
+        "manifest_sha256": "eba2817d051ff5776385ce6c68f348863cdfa4477048a54e9ecf873b30992b08",
+        "runtime_sha256": "219515f3663f932fc67f173d512db8900fee547b7e42a0f7c9fa1c0fed3bbdea"
+      },
+      "parent_id": "d60d8308326314a7753e651fa43a99e3",
+      "result_path": "work/meshticulum-native-window-20261011/resume-public-20261011T025250Z-d60d8308/RESULT.json",
+      "result_sha256": "ca8752a9c6a314463b9bcd7b7e1267ad1cf28ac001d598645a04e527013327c5",
+      "run_id": "01ab075dd06d1399fe2dc27c4a9331d3"
+    },
+    {
+      "command_sha256": "018d5cedff06611965f85dd1408bf3ca2b01b149010fbc9101f96174631eed49",
+      "owner": {
+        "manifest_sha256": "323879124c6fedebb5cca9f09c17fe0dc7e10ba98b100832272ec5fe9d82df8a",
+        "native_python": {
+          "unit-c": "/usr/bin/python3"
+        },
+        "runtime_sha256": "3f669761d7b4b6029fe882551e66d89058fddba2da9ea9165eea0213fe0aa911"
+      },
+      "parent_id": "4559277fa43913ce3935b078d6744a55",
+      "result_path": "work/meshticulum-native-window-20261011/resume-public-20261011T034548Z-4559277f/RESULT.json",
+      "result_sha256": "10d361eb8ffb39e791042975b79fc0727836d6923377539fc187539312a472dd",
+      "run_id": "55dffd06faee2ca08ccfc61d816a34ef"
+    }
+  ],
+  "history_payload_path": "work/meshticulum-history38-inputs-20261013/resume-history-preparation-38/unit-c.json",
+  "history_payload_sha256": "1dbe16b40d005a435b920370853b520c0e21be280c1012d3c16e96699505ccde",
+  "history_receipt_sha256": "1b74160d43fbac95a959db04a3d731592384c20d24d8c10cb17fc468be9ff0f5"
+}

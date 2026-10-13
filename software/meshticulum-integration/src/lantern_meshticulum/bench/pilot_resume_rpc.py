@@ -1985,11 +1985,12 @@ def qualify_known_cut(reader,unit,policy,owner,observed,row,expected_run):
     plan=parse(reader.read(target/'grant.json',16384))
     need(sha(canonical(plan))==receipt['native_plan_sha256'] and plan['format']=='MR1.response'
          and plan['session']['session_id']==run,'fenced_cut_plan_changed')
-    from .pilot_ssh import INVOKE
+    from .pilot_ssh import HISTORICAL_INVOKE_V1, INVOKE
+    invoke=HISTORICAL_INVOKE_V1 if KNOWN_CUTS.get(policy.parent_id)==run else INVOKE
     python=owner.get('native_python',{}).get(unit)
     if python is None and KNOWN_CUTS.get(policy.parent_id)==run: python='/usr/bin/python3'
     need(type(python) is str and python.startswith('/'),'fenced_cut_native_python_unbound')
-    argv=[python,'-I','-B','-c',INVOKE,'/opt/meshticulum-bench/runtime-'+owner['runtime_sha256'][:16]+'/bench_node.py',
+    argv=[python,'-I','-B','-c',invoke,'/opt/meshticulum-bench/runtime-'+owner['runtime_sha256'][:16]+'/bench_node.py',
           owner['manifest_sha256'],'ip-service-run',unit,'--run-id',run,'--test-rx-cutoff','512']
     command=sha(b'\0'.join(a.encode() for a in argv)+b'\0')
     need(row['terminal_metadata']['command_sha256']==command
