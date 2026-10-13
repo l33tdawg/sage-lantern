@@ -520,7 +520,7 @@ class NativeCaps:
                 declared=self._approve.bundle.value['stages']
                 matches=[stage['index'] for stage in declared if stage['campaign_id']==value['campaign_id']]
                 require(len(matches)==1)
-                raw_stage=self._approve.reader.read(self.path.parent/('fast-stage-'+str(matches[0])+'.json'),8192)
+                raw_stage=self._approve.reader.read_held(self.path.parent/('fast-stage-'+str(matches[0])+'.json'),8192)
                 require(hashlib.sha256(raw_stage).hexdigest()==value['fast_stage_sha256'])
             used=used.plus(Cost(*cost))
         require(used.within(self.unit.limits));return rows,used

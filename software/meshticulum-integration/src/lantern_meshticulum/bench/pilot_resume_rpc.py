@@ -475,6 +475,42 @@ class Reader:
             self._file_index_state = tuple(self._file_index.items())
             self._file_index_state_ref = self._file_index_state
         return raw
+    def read_held(self, path, maximum, *, lock=False):
+        """Freshly reread an exact held name without repeating directory setup.
+
+        The complete ancestry gate remains before and after the read. A missing
+        held name follows ordinary read(), with its original create-free checks.
+        No permission, byte observation, lock or field value is cached here.
+        """
+        self._available()
+        retained=self._file_index.get(path)
+        if retained is None:return self.read(path,maximum,lock=lock)
+        parent,name=self._named[path]
+        need(path.parent in self.directories and self._nodes[path.parent][0]==parent
+             and name==path.name,'rpc_named_parent_rebound')
+        self._check_nodes()
+        directory=os.fstat(parent)
+        need(stat.S_ISDIR(directory.st_mode) and directory.st_uid==os.geteuid()
+             and stat.S_IMODE(directory.st_mode)==0o700
+             and list(_stamp(directory)[:4])==self.directories[path.parent],'rpc_directory_rebound')
+        fd=retained[1];first=os.fstat(fd);identity=tuple(_stamp(first))
+        need(stat.S_ISREG(first.st_mode) and first.st_uid==os.geteuid()
+             and stat.S_IMODE(first.st_mode)==0o600 and first.st_nlink==1
+             and 0<=first.st_size<=maximum,'unsafe_rpc_metadata')
+        need(identity==retained[2]==tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)))
+             and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd],'rpc_repeated_metadata_changed')
+        need(fcntl.fcntl(fd,fcntl.F_GETFL)&(os.O_ACCMODE|os.O_NONBLOCK)==os.O_RDONLY|os.O_NONBLOCK
+             and fcntl.fcntl(fd,fcntl.F_GETFD)&fcntl.FD_CLOEXEC,'rpc_metadata_descriptor_flags_changed')
+        if lock:fcntl.flock(fd,fcntl.LOCK_SH|fcntl.LOCK_NB)
+        raw=os.pread(fd,maximum+1,0)
+        need(len(raw)==first.st_size and identity==tuple(_stamp(os.fstat(fd)))
+             ==tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False))),'rpc_metadata_changed')
+        self._check_nodes()
+        need(identity==tuple(_stamp(os.fstat(fd)))
+             ==tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)))
+             and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd]
+             and raw==retained[3],'rpc_metadata_changed_after_check')
+        self._available();return raw
     def check(self):
         self._check_nodes()
         for path, fd, identity, expected in self._held_state:
