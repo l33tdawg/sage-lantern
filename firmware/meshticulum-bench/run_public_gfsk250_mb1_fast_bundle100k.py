@@ -308,8 +308,8 @@ def cleanup_current(current,result,*,completed=False):
 
 
 def native_callback_seconds(action,phase_end_epoch_us,now_epoch_us):
-    """Setup capture gets room for both seals; the original phase never moves."""
-    cap=120 if action=='capture' else 45
+    """Capture/final audit include full history; the original phase never moves."""
+    cap=120 if action in ('capture','audit') else 45
     left=min(cap,max(0,(phase_end_epoch_us-now_epoch_us)//1000000-8))
     need(left>0,'batch_original_remote_window_expired')
     return left
