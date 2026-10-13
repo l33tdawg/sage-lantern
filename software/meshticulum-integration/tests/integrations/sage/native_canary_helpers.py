@@ -8,6 +8,7 @@ import copy
 import hashlib
 import os
 from pathlib import Path
+import re
 import secrets
 import sys
 import threading
@@ -50,6 +51,9 @@ class SharedClock:
 def resource_fixture(key,local,remote,clock,backend_factory=backend):
     state,client,endpoint=backend_factory(key)
     state.owner_live=True;state.epoch=secrets.token_hex(16);state.boot=BOOT
+    expected_storage_epoch=getattr(state,'expected_storage_epoch',state.instance_id+':1')
+    assert type(expected_storage_epoch) is str and re.fullmatch(r'[0-9a-f]{64}:[1-9][0-9]{0,19}',expected_storage_epoch)
+    assert 0<int(expected_storage_epoch.rsplit(':',1)[1])<2**64
     resource=HardwareRuntime.__new__(HardwareRuntime) # Explicit modeled lifecycle; no daemon/radio init.
     resource.identity=client._identity;resource.actor=RecipientID(local.chain_id,local.public_key.hex())
     resource.probe=MessageStorageProbe(client,actor=resource.actor,endpoint=endpoint)
@@ -60,7 +64,7 @@ def resource_fixture(key,local,remote,clock,backend_factory=backend):
         peers=[dict(chain_id=remote.chain_id,agent_id=remote.public_key.hex(),radio_public_key='a'*64)])
     resource._config_reader=lambda:copy.deepcopy(resource.config)
     resource.supervisor=SimpleNamespace(phase='active',broker_id=secrets.token_hex(16),_resource=resource,
-        resource_lifecycle_check=lambda:state.live,verified_epoch=lambda:state.instance_id+':1')
+        resource_lifecycle_check=lambda:state.live,verified_epoch=lambda:expected_storage_epoch)
     return SimpleNamespace(state=state,client=client,resource=resource,authority=MeshActionAuthority(),
         clock=clock,key=key,local=local,remote=remote)
 

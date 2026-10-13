@@ -1,0 +1,111 @@
+package rest
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
+	python, script := os.Getenv("MESHTICULUM_NATIVE_BACKEND_PYTHON"), os.Getenv("MESHTICULUM_NATIVE_BACKEND_SCRIPT")
+	require.NotEmpty(t, python)
+	require.NotEmpty(t, script)
+	seconds, err := strconv.Atoi(os.Getenv("MESHTICULUM_NATIVE_BACKEND_CHILD_SECONDS"))
+	require.NoError(t, err)
+	require.True(t, seconds >= 15 && seconds <= 1200, "bounded fixture execution required")
+	first, second := newWorkflowTestFixture(t), newWorkflowTestFixture(t)
+	firstDatabase, err := filepath.EvalSymlinks(first.databasePath)
+	require.NoError(t, err)
+	secondDatabase, err := filepath.EvalSymlinks(second.databasePath)
+	require.NoError(t, err)
+	firstHTTP, secondHTTP := httptest.NewServer(first.server.Router()), httptest.NewServer(second.server.Router())
+	defer firstHTTP.Close()
+	defer secondHTTP.Close()
+	configuration, err := json.Marshal(map[string]any{
+		"schema":    "lantern.meshticulum.native-provider-backend-input.v1",
+		"first_url": firstHTTP.URL, "second_url": secondHTTP.URL,
+		"first_seed":            hex.EncodeToString(first.keys["first"].Seed()),
+		"second_seed":           hex.EncodeToString(second.keys["second"].Seed()),
+		"databases":             []string{firstDatabase, secondDatabase},
+		"child_timeout_seconds": seconds,
+	})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Duration(seconds)*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, python, "-B", script)
+	child.Stdin = bytes.NewReader(configuration)
+	child.WaitDelay = 5 * time.Second
+	output, childErr := child.CombinedOutput()
+	// Child errors and output are not echoed: stdin contains fixture seeds.
+	if childErr != nil {
+		var failure struct {
+			Schema    string `json:"schema"`
+			ErrorType string `json:"error_type"`
+		}
+		if len(output) <= 32768 && json.Unmarshal(output, &failure) == nil &&
+			failure.Schema == "lantern.meshticulum.native-provider-backend-canary.v1" {
+			// Report only a static exception class, never SDK error text.
+			valid := len(failure.ErrorType) > 0 && len(failure.ErrorType) <= 80
+			for _, c := range failure.ErrorType {
+				valid = valid && (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_')
+			}
+			if valid {
+				t.Log("native provider fixture refusal class=" + failure.ErrorType)
+			}
+		}
+	}
+	require.NoError(t, childErr, "native provider fixture child did not complete")
+	require.LessOrEqual(t, len(output), 32768, "bounded aggregate result required")
+	var outcome map[string]any
+	require.NoError(t, json.Unmarshal(output, &outcome), "aggregate fixture result invalid")
+	require.Equal(t, "lantern.meshticulum.native-provider-backend-canary.v1", outcome["schema"])
+	require.Equal(t, true, outcome["complete"])
+	for _, name := range []string{"private_transport_qualified", "native_accounting_qualified",
+		"native_owner_consent_qualified", "private_production_enabled", "radio_opened", "memory_erasure_qualified",
+		"noise_key_encodings_scanned", "noise_key_disk_persistence_qualified"} {
+		require.Equal(t, false, outcome[name], "qualification must remain false")
+	}
+	for _, name := range []string{"modeled_lifecycle", "modeled_accounting", "modeled_clock", "modeled_transport",
+		"real_rest_backend", "real_temporary_vault"} {
+		require.Equal(t, true, outcome[name], "fixture coverage incorrectly described")
+	}
+	require.Equal(t, float64(4), outcome["scan_file_count"])
+	seeds := [][]byte{first.keys["first"].Seed(), second.keys["second"].Seed()}
+	secrets := [][]byte{[]byte("MESHTICULUM-GENERATED-CANARY-")}
+	for _, seed := range seeds {
+		secrets = append(secrets, seed, []byte(hex.EncodeToString(seed)), []byte(base64.StdEncoding.EncodeToString(seed)))
+	}
+	for _, fixture := range []workflowTestFixture{first, second} {
+		for _, suffix := range []string{"", "-wal"} {
+			info, err := os.Stat(fixture.databasePath + suffix)
+			require.NoError(t, err)
+			require.True(t, info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= 32*1024*1024)
+			if suffix == "-wal" {
+				require.Greater(t, info.Size(), int64(32), "populated WAL required")
+			}
+			body, err := os.ReadFile(fixture.databasePath + suffix)
+			require.NoError(t, err)
+			for _, secret := range secrets {
+				require.False(t, bytes.Contains(body, secret), "fixture plaintext or signing seed persisted")
+			}
+		}
+	}
+	outcome["independent_go_main_wal_scan"] = true
+	encoded, err := json.Marshal(outcome)
+	require.NoError(t, err)
+	for _, secret := range secrets {
+		require.False(t, bytes.Contains(encoded, secret), "aggregate result contains fixture secret")
+	}
+	t.Log("NATIVE_PROVIDER_BACKEND_OUTCOME " + string(encoded))
+}
