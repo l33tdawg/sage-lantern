@@ -20,9 +20,9 @@ from .pilot_parent_caps import canonical, identifier, digest
 from .profiles import GFSK250_FAST_BUNDLE_KIND as KIND, GFSK250_NAME, GFSK250_FAST_CORE_COMMIT, profile_for, profile_record
 
 PHYSICAL_BINDINGS = MappingProxyType(dict(
-    scope_sha256=None,
+    scope_sha256='060f4b18a9744ed0c621dc1b9f7e5bbd00ef9b1ab95b3d4a2cf28fb5fab24f8c',
     core_commit=GFSK250_FAST_CORE_COMMIT,
-    history_receipt_sha256=None,
+    history_receipt_sha256='68f7a680452b111ba6f826ff4566dd7a25e8299d7682e7979bd095730e87f489',
     preceding_parent='60d9ca2aa760cb4460d0af637101c997'))
 FINAL_ACK = 'meshticulum.native-fast-final-ack.v1'
 VERIFIED_PART = 'meshticulum.native-fast-verified-part.v1'
