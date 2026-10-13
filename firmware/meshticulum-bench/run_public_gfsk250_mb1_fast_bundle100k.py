@@ -5,6 +5,7 @@ No installation/flash/reset/private activation. One immutable operation permits
 one parent, one signed100000-byte file, five original part scopes and twenty prepared endpoints.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 import getpass
 import importlib.util
@@ -272,6 +273,23 @@ def native_callback_seconds(action,phase_end_epoch_us,now_epoch_us):
     return left
 
 
+def parallel_captures(native,payloads):
+    """Capture independent units, then join every bounded callback before return.
+
+    Each native call retains its own staged input, nonce, original deadline and
+    cleanup. Enrollment remains on the controller thread after all three pass.
+    """
+    units=('unit-c','unit-b','unit-a')
+    need(type(payloads) is dict and set(payloads)==set(units),'capture_units_changed')
+    for key in ('parent_id','phase_start_epoch_us','phase_end_epoch_us','review_sha256'):
+        need(len({payloads[u][key] for u in units})==1,'capture_original_scope_changed')
+    with ThreadPoolExecutor(max_workers=3,thread_name_prefix='native-capture') as pool:
+        pending={u:pool.submit(native,u,'capture',payloads[u]) for u in units}
+        # The executor joins the other callbacks even when one result raises.
+        # Their existing per-call deadlines and cleanup bounds remain in force.
+        return {u:pending[u].result() for u in units}
+
+
 def rpc_command(operator,cfg,op,unit,action,payload,seconds,*,operation_sha256=None):
     """Explicit MB1 management-file lane; existing JSON/argv runners stay unchanged."""
     from management_file_rpc import command as file_command
@@ -398,9 +416,12 @@ def main():
         need(not absent['verified_present'] and absent['absent']==sorted(wanted),'whole_fixture_already_present')
         for unit,role in (('unit-c','source'),('unit-a','recipient')):
             operator.seed(helpers.seed_package(cfg,unit,role,piece['path']/'pack',piece['trust'],f['manifest_sha256'],piece['cache'].value))
-        facts={u:stable(operator.facts(u)) for u in histories};captures={}
+        facts={u:stable(operator.facts(u)) for u in histories}
+        capture_payloads={u:dict(parent_id=parent_id,history=histories[u],facts=facts[u],phase_start_epoch_us=epoch,phase_end_epoch_us=end,review_sha256=args.operation_sha256,qualification_kind=KIND,bundle_context=bundle_context,bundle_capture_commitment=commitment) for u in ('unit-c','unit-b','unit-a')}
+        capture_started=time.monotonic_ns();result['capture_units_parallel']=True
+        try:captures=parallel_captures(native,capture_payloads)
+        finally:result['capture_elapsed_us']=(time.monotonic_ns()-capture_started)//1000
         for u in ('unit-c','unit-b','unit-a'):
-            captures[u]=native(u,'capture',dict(parent_id=parent_id,history=histories[u],facts=facts[u],phase_start_epoch_us=epoch,phase_end_epoch_us=end,review_sha256=args.operation_sha256,qualification_kind=KIND,bundle_context=bundle_context,bundle_capture_commitment=commitment))
             cap=captures[u];need(cap['actual_history_verified'] is True and cap['refunds']==0,'batch_capture_unqualified')
             priors[u]=dict(schema='meshticulum.public-resume-conservative-prior.v1',history_binding_sha256=cap['history_binding_sha256'],legacy_inventory=histories[u]['legacy_inventory'],previous_parent_ids=op['history_parent_ids'],full_caps=histories[u]['previous'][-1]['paid_caps'],complete_global_debt=False,actual_cost=None,refunds=0)
         result['captures']=captures
