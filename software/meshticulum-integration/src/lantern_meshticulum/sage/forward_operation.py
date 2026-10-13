@@ -80,7 +80,7 @@ class ForwardOperation:
         self._action_value=(session.context.digest,budget.context.digest,_canonical(budget.intention.to_dict()),
                             session.initiator,session.deadline)
         self._action_observing=False
-        self.position=0;self.cached=None;self.active=None;self._busy=self._closed=self._uncertain=False
+        self.position=0;self.cached=None;self.active=None;self._cancelled=None;self._busy=self._closed=self._uncertain=False
         self._owner=(os.getpid(),threading.get_ident())
         self._last_clock=None
     def __repr__(self):return '<ForwardOperation>'
@@ -202,6 +202,18 @@ class ForwardOperation:
         self._closed=True;self.session.close()
         if self.active is not None:self.active.transfer.cancel()
         return self.active is None and not self._busy and not self._uncertain
+    def acknowledge_cancelled(self,permit,runner):
+        """Join an exact contained child; never complete a protocol stage."""
+        from .forward_children import ForwardClosePermit
+        require(type(permit) is ForwardClosePermit and permit.original_owner==self._owner
+            and os.getpid()==self._owner[0] and self._closed and self.session._closed
+            and not self._busy and not self._action_observing and self._cancelled is None
+            and type(runner) is ForwardStageRunner and self.active is runner
+            and runner.operation is self and not runner._executing and not runner._accepting
+            and not runner.retired and runner.transfer.cancelled and runner.transfer.flow.closed)
+        require(permit.consume(self) is True)
+        self._cancelled=runner;self.active=None;self.cached=None;runner.payload=None
+        return True
 
 def prepare_stage(operation,plan,*,open_child,native_check,retire_child,payload=None):
     """Prepay before the trusted native factory can open/ARM the child.

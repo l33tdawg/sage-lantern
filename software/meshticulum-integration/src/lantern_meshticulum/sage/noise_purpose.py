@@ -168,6 +168,7 @@ class NoisePurpose:
         self._public_ref = self._context_ref = self._context_digest = self._context_canonical = None
         self._abort = None
         self._abort_called = False
+        self._abort_pending = None
         self._sessions = []
         self._epoch = self._last_clock = None
         self._highest_revision = 0
@@ -203,7 +204,7 @@ class NoisePurpose:
         else:
             _require(not self._disabled and not self._uncertain)
 
-    def _fence(self):
+    def _fence(self, *, abort=True):
         self._disabled = True
         self._cancel_serial += 1
         self._key = None
@@ -220,10 +221,15 @@ class NoisePurpose:
             # A callback may fence during construction and the factory may
             # catch that refusal. Run cleanup only once it has fully exited,
             # so later retained construction cannot escape an early abort.
-            if self._abort is not None and not self._abort_called and not self._factory_active:
+            if abort and self._abort is not None and not self._abort_called and not self._factory_active:
                 self._abort_called = True
                 try:
-                    _require(self._abort() is True)
+                    result = self._abort()
+                    if result is not True:
+                        from .forward_children import ForwardCancellationPending
+                        _require(type(result) is ForwardCancellationPending
+                                 and result.accept(self, self._abort) is True)
+                        self._abort_pending = result
                 except BaseException:
                     self._close_failed = self._uncertain = True
         finally:
@@ -609,4 +615,21 @@ class NoisePurpose:
         """Local cancellation only; never claims a durable retirement or drain."""
         self._fence()
         return (self._owner == (os.getpid(), threading.get_ident()) and self._busy is None
-                and not self._observing and not self._uncertain and not self._close_failed)
+                and not self._observing and not self._uncertain and not self._close_failed
+                and self._abort_pending is None)
+
+    def close_from_registry(self, permit):
+        """Finish only the original provider's contained endpoint cleanup."""
+        from .forward_children import ForwardClosePermit
+        _require(type(permit) is ForwardClosePermit and permit.original_owner == self._owner
+                 and os.getpid() == self._owner[0] and self._busy is None
+                 and not self._observing and not self._factory_active and not self._closing_sessions)
+        pending, abort = self._abort_pending, self._abort
+        _require(permit.consume(self) is True)
+        # The permit proves the exact registered abort target has joined. Do
+        # not invoke a creator-thread callback from the delegated drain thread.
+        self._fence(abort=False)
+        _require(self._abort_pending is pending and self._abort is abort)
+        self._abort_called = True
+        self._abort_pending = None
+        return not self._uncertain and not self._close_failed

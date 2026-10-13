@@ -287,3 +287,11 @@ class NativeNoiseEnrollment:
     def close(self):
         self._closed=True
         return self._pid_thread==(os.getpid(),threading.get_ident()) and not self._busy and not self._uncertain
+
+    def close_from_registry(self,permit):
+        from .forward_children import ForwardClosePermit
+        require(type(permit) is ForwardClosePermit and permit.original_owner==self._pid_thread
+            and os.getpid()==self._pid_thread[0] and not self._busy)
+        require(permit.consume(self) is True)
+        self._closed=True
+        return not self._uncertain

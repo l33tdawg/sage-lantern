@@ -79,6 +79,7 @@ class ForwardNativeOwner:
         self._journal_action_ref=self._journal_action_method=None
         self._journal_receiver_available=self._journal_receiver_method=None
         self._journal_receiver_refs=None
+        self._cleanup_component_methods=();self._cleanup_joined=None
         self._owner=(os.getpid(),threading.get_ident());self._busy=self._closed=self._uncertain=False
         self._held=False;self._last_time=None
         self._native_refs=(resource,authority,native_context,context,intention,local_initiator,self.local,self.remote)
@@ -455,6 +456,11 @@ class ForwardNativeOwner:
             self._operation_refs=(operation,session,receiver,budget,session.authorize,session.clock,native,action)
             self._operation_methods=(type(receiver)._authorize_crypto,type(self).operation_action_check)
             self._operation=operation
+            self._cleanup_component_methods=tuple((obj,name,getattr(type(obj),name))
+                for obj,names in ((operation,('close','acknowledge_cancelled')),
+                    (operation.session,('close',)),(self._budget,('close',)),
+                    (receiver,('close',)),(receiver.journal,('close',)),(receiver.capture,('close',)))
+                for name in names)
             self.access_check();self._available();return operation
         except BaseException:
             self._uncertain=True
@@ -484,16 +490,19 @@ class ForwardNativeOwner:
     def fence(self):
         """Stop new work without touching resources still used by a producer."""
         self._closed=True
-    def _close_components(self):
+    def _close_components(self,pending=None):
         operation_joined=self._operation is None or self._operation.close()
         budget_joined=self._budget is None or self._budget.close()
         joined=self._composition is None or self._composition.close()
-        return (operation_joined and budget_joined and joined and not self._constructing
+        self._cleanup_joined=(operation_joined,budget_joined,joined)
+        idle=(not self._constructing
             and not self._held and not self._busy and not self._operation_observing and not self._uncertain)
-    def _registry_close(self,registry):
-        """One-use same-process drain delegation after the registry idle barrier."""
-        require(registry is self._registry and os.getpid()==self._owner[0] and self._closed
-            and not self._held and not self._busy and not self._operation_observing and not self._constructing)
+        if pending is not None:
+            require(self._registry.cancellation_pending(self) is pending)
+            return pending if idle and budget_joined and joined else False
+        return operation_joined and budget_joined and joined and idle
+    def _cleanup_bound(self):
+        require(os.getpid()==self._owner[0])
         require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
             self.context,self.intention,self.local_initiator,self.local,self.remote))))
         if self._composition is not None:require(self._composition is self._composition_ref)
@@ -503,8 +512,38 @@ class ForwardNativeOwner:
                 and receiver.journal is journal and journal.store is store and budget.store is store)
         if self._session is not None:require(self._composition.session is self._session
             and self._session.counters is self._budget_refs[2])
+        if self._operation is not None:
+            operation,session,receiver,budget,authorize,clock,native,action=self._operation_refs
+            require(self._operation is operation and self._session is session and self._composition is receiver
+                and self._budget is budget and operation.session is session and operation.budget is budget
+                and session.authorize is authorize and session.clock is clock
+                and operation._native is native and operation._operation_action is action)
+        for obj,name,method in self._cleanup_component_methods:
+            require(name not in obj.__dict__ and getattr(type(obj),name) is method)
+    def _registry_close(self,registry):
+        """Fence before containment; a known active cancellation stays pending."""
+        require(registry is self._registry and self._closed
+            and not self._held and not self._busy and not self._operation_observing and not self._constructing)
+        self._cleanup_bound()
         require(registry.consume_close_permit(self) is True)
-        return self._close_components()
+        pending=(registry.cancellation_pending(self)
+                 if self._operation is not None and self._operation.active is not None else None)
+        return self._close_components(pending)
+    def _registry_finish_close(self,registry):
+        require(registry is self._registry and self._closed)
+        self._cleanup_bound()
+        if self._operation is not None and self._operation.active is not None:
+            runner=self._operation.active
+            require(self._operation.acknowledge_cancelled(registry.cleanup_permit(self,self._operation),runner))
+        joined=self._close_components()
+        require(joined is True)
+        registry.endpoint_joined(self)
+        bundle=registry._endpoint(self)
+        if bundle is not None:
+            provider=bundle.refs[1]
+            provider_joined=provider._registry_finish_close(registry.cleanup_permit(self,provider))
+            joined=joined and provider_joined
+        return joined
     def close(self):
         self._closed=True
         owner=self._owner==(os.getpid(),threading.get_ident())

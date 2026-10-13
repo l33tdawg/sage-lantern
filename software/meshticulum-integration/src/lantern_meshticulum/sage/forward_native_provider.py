@@ -155,6 +155,9 @@ class ForwardNativeProvider:
         self._source_methods = (type(accounting).observe, type(accounting).close)
         self._source_observe, self._source_close = accounting.observe, accounting.close
         self._source_cleanup = (accounting, self._source_methods[1])
+        self._source_registry_close = getattr(type(accounting), 'close_from_registry', None)
+        self._abort_callback = self._abort
+        self._registry_finishing = False
         self._refs = (resource, authority, setup_context, remote, local_initiator, intention,
                       limits, accounting, boot_reader, clock_reader, storage_pair_factory)
         try:
@@ -208,7 +211,9 @@ class ForwardNativeProvider:
         require(all(a is b for a, b in zip(self._native_refs, (h.supervisor, h.probe, h.probe.client,
             h.identity, h.identity._signing_key, h._mutex))))
         require(self._source_methods == (type(self.accounting).observe, type(self.accounting).close)
-                and 'observe' not in self.accounting.__dict__ and 'close' not in self.accounting.__dict__)
+                and 'observe' not in self.accounting.__dict__ and 'close' not in self.accounting.__dict__
+                and 'close_from_registry' not in self.accounting.__dict__
+                and getattr(type(self.accounting), 'close_from_registry', None) is self._source_registry_close)
         require(self._source_observe.__self__ is self.accounting
                 and self._source_observe.__func__ is self._source_methods[0]
                 and self._source_close.__self__ is self.accounting
@@ -456,6 +461,13 @@ class ForwardNativeProvider:
     def _abort(self):
         if self._owner is None:
             return True
+        if getattr(self._owner,'_registry',None) is not None:
+            self._owner._registry._endpoint(self._owner)
+            self._owner._cleanup_bound()
+        operation = getattr(self._owner, '_operation', None)
+        if operation is not None and operation.active is not None:
+            self._owner.fence()
+            return self._owner._registry.cancellation_pending(self._owner)
         if any(getattr(self._owner, name, False) for name in ('_busy', '_held', '_constructing')):
             self._owner.fence()
             return False
@@ -473,9 +485,10 @@ class ForwardNativeProvider:
                     key_check=self._purpose.key_check, peer_key_check=self._purpose.peer_key_check,
                     boot_reader=self._boot, clock_reader=self._clock,
                     exchange_key_check=self._purpose.exchange_check)
+                self._owner._registry.bind_endpoint(self._owner, self)
                 return self._owner.operation(key, limits=self.limits,
                     prior_debt=self._retained_debt, sealed_record=sealed_record)
-            self._operation = self._handle.start(create, abort=self._abort)
+            self._operation = self._handle.start(create, abort=self._abort_callback)
             self._components['_operation'] = self._operation
             return self._operation
         return self._run(start)
@@ -508,6 +521,9 @@ class ForwardNativeProvider:
         drains a transport, renews permission or deletes durable debt/claims.
         """
         self._closed = True
+        if self._registry_finishing:
+            self._uncertain = True
+            return False
         try:
             purpose_ok = self._purpose is None or self._purpose.close()
         except Exception:
@@ -516,7 +532,7 @@ class ForwardNativeProvider:
         if self._busy or self._observing or self._held:
             return False
         try:
-            endpoint_ok = self._abort()
+            endpoint_ok = self._abort() is True
         except Exception:
             endpoint_ok = False
             self._uncertain = True
@@ -529,12 +545,18 @@ class ForwardNativeProvider:
                 for c in self._owner._registry._children)
         enrollment_busy = self._enrollment is not None and self._enrollment._busy
         enrollment_ok = self._enrollment is None
-        if not endpoint_busy and not key_busy and not enrollment_busy:
+        cancellation_owned = (self._owner is not None and self._owner._registry is not None
+            and id(self._owner) in self._owner._registry._cancellations)
+        # Ordinary failed actions still release already fenced local resources.
+        # A registered child cancellation must first join through its permits.
+        cleanup_ready = (not endpoint_busy and not key_busy and not enrollment_busy
+            and (not cancellation_owned or purpose_ok and endpoint_ok))
+        if cleanup_ready:
             try:
                 enrollment_ok = self._enrollment is None or self._enrollment.close() is True
             except Exception:
                 self._uncertain = True
-        if not endpoint_busy and not key_busy and not enrollment_busy and not self._source_closed:
+        if cleanup_ready and (enrollment_ok or not cancellation_owned) and not self._source_closed:
             self._source_closed = True
             try:
                 source_ok = self._source_cleanup[1](self._source_cleanup[0]) is True
@@ -543,3 +565,52 @@ class ForwardNativeProvider:
             self._uncertain = self._uncertain or not source_ok
         return (purpose_ok and endpoint_ok and enrollment_ok and not key_busy and self._source_closed
                 and not self._uncertain and self._process == (os.getpid(), threading.get_ident()))
+
+    def _cleanup_busy(self):
+        source_busy = getattr(self.accounting, '_busy', False)
+        return (self._busy or self._observing or self._held
+            or self._purpose is not None and (self._purpose._busy is not None or self._purpose._observing
+                or self._purpose._factory_active or self._purpose._closing_sessions)
+            or self._enrollment is not None and self._enrollment._busy
+            or type(source_busy) not in (bool, int) or source_busy != 0)
+
+    def _registry_finish_close(self, permit):
+        """Only local cleanup under the original idle, contained owner."""
+        from .forward_children import ForwardClosePermit
+        if self._registry_finishing:
+            self._uncertain = True
+            raise ForwardNativeProviderError()
+        require(type(permit) is ForwardClosePermit and permit.original_owner == self._process
+            and permit.resource is self.resource and os.getpid() == self._process[0]
+            and not self._cleanup_busy() and not self._registry_finishing)
+        registry = self._owner._registry
+        bundle = registry._endpoint(self._owner)
+        require(bundle is not None and bundle.refs[1] is self and permit.consume(self) is True)
+        self._closed = self._registry_finishing = True
+        try:
+            require(self._purpose.close_from_registry(registry.cleanup_permit(self._owner, self._purpose)) is True)
+            require(registry._endpoint(self._owner) is bundle)
+            registry._cleanup_current(self._owner,self)
+            require(self._enrollment.close_from_registry(registry.cleanup_permit(self._owner, self._enrollment)) is True)
+            require(registry._endpoint(self._owner) is bundle and not self._cleanup_busy() and not self._uncertain)
+            registry._cleanup_current(self._owner,self)
+            if not self._source_closed:
+                source = bundle.refs[4]
+                own_thread=self._process == (os.getpid(), threading.get_ident())
+                require(own_thread or self._source_registry_close is not None)
+                source_permit=registry.cleanup_permit(self._owner,source)
+                if own_thread:require(source_permit.consume(source) is True)
+                self._source_closed = True # One attempt; a failed return stays uncertain.
+                if own_thread:
+                    result = self._source_cleanup[1](source)
+                else:
+                    result = self._source_registry_close(source, source_permit)
+                require(result is True)
+            require(registry._endpoint(self._owner) is bundle and not self._uncertain)
+            registry._cleanup_current(self._owner,self)
+            return not self._uncertain
+        except BaseException:
+            self._uncertain = True
+            raise
+        finally:
+            self._registry_finishing = False
