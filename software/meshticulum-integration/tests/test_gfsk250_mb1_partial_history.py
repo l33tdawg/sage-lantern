@@ -1,8 +1,11 @@
 """Source-only exact MB1 failed scope; actual expiry/native pins stay mandatory."""
 from copy import deepcopy
 from dataclasses import replace
+import hashlib
+import importlib.util
 import json
 from pathlib import Path
+import sys
 
 import pytest
 from meshticulum.bench.wire import WireError
@@ -10,6 +13,23 @@ from lantern_meshticulum.bench import gfsk250_mb1_partial_history as history,ret
 from lantern_meshticulum.bench.pilot_parent_caps import ParentPolicy,Cost,canonical
 from lantern_meshticulum.bench.profiles import GFSK_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND
 DATA=Path(__file__).with_name('fixtures')/'current4675-gfsk250-mb1-partial-inputs.json'
+
+def test_shared_prefix_preserves_original_37_parent_bytes():
+    assert len(history.H37_PREFIX)==37
+    assert hashlib.sha256(canonical(history.H37_PREFIX)).hexdigest()=='31babc50f88e2c0a651435631564d08c4d27eef02f92ef2efa245979cc09ebb1'
+
+@pytest.mark.parametrize('fault',['first_identifier','last_identifier','order','truncated'])
+def test_module_import_refuses_changed_original_37_prefix(monkeypatch,fault):
+    parents=list(retained.PAID_HISTORY)
+    if fault=='first_identifier':parents[0]='f'*32
+    elif fault=='last_identifier':parents[36]='f'*32
+    elif fault=='order':parents[0],parents[1]=parents[1],parents[0]
+    else:parents=parents[:36]
+    monkeypatch.setattr(retained,'PAID_HISTORY',tuple(parents))
+    spec=importlib.util.spec_from_file_location(history.__package__+'._H37_prefix_control',history.__file__)
+    module=importlib.util.module_from_spec(spec);monkeypatch.setitem(sys.modules,spec.name,module)
+    with pytest.raises(WireError,match='original_H37_prefix_changed'):spec.loader.exec_module(module)
+
 @pytest.fixture
 def original():
     value=json.loads(DATA.read_bytes());return value,ParentPolicy.from_dict(value['policy'])
