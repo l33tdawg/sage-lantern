@@ -162,7 +162,8 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
                       == _stamp(os.stat(name,dir_fd=parent.fds[-1],follow_symlinks=False)),
                       'retained_capture_file_changed')
                 raw_files[name] = (raw, _stamp(first), fd)
-            record = _parse(raw_files['capture.json'][0]); binding = _parse(raw_files['history-binding.json'][0])
+            from .capture_storage import decode
+            record = _parse(decode(raw_files['capture.json'][0])); binding = _parse(raw_files['history-binding.json'][0])
             _need(record['schema'] == expected_schema
                   and record['unit'] == binding['unit'] == unit
                   and record['parent_id'] == binding['parent_id'] == parent_id

@@ -185,7 +185,8 @@ class _Public32Approval:
             require(self.runtime.root.name=='runtime-'+owner['runtime_sha256'][:16]);digest(owner['runtime_sha256'])
             prior_raw=self.reader.read(directory/'prior.json',200000);prior=parse(prior_raw)
             require(self.reader.read(directory/'policy.json',20000)==canonical(policy.to_dict()))
-            captured_raw=self.reader.read(directory/'capture.json',RAW_MAX);captured=parse(captured_raw)
+            from .capture_storage import decode
+            captured_raw=decode(self.reader.read(directory/'capture.json',RAW_MAX));captured=parse(captured_raw)
             binding_raw=self.reader.read(directory/'history-binding.json',16384);binding=parse(binding_raw)
             require(sha(self.reader.read(directory/'history-identity-seal.json',2000000))==binding['strict_sha256']
                     and sha(self.reader.read(directory/'legacy-grant-seal.json',2000000))==binding['legacy_sha256'])

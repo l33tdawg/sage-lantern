@@ -1733,14 +1733,16 @@ def capture_history(unit, p, runtime):
     parent = p['parent_id']; need(SID.fullmatch(parent) and parent not in HISTORY
                                  and parent not in CAPTURE_ONLY_PARENTS, 'invalid_own_parent')
     need(HEX.fullmatch(p['review_sha256']) and p['facts']['unit'] == unit, 'invalid_capture_review')
+    from .capture_storage import selection,encode
+    storage=selection(p)
     commitment=capture_request_commitment(p)
     original_capture=canonical({k:p.get(k) for k in ('qualification_kind','bundle_context','bundle_capture_commitment',
-        'parent_id','phase_start_epoch_us','phase_end_epoch_us')})
+        'parent_id','phase_start_epoch_us','phase_end_epoch_us','capture_storage')})
     first = clock(); phase = dict(epoch_us=first[0],monotonic_us=first[1],
         deadline_monotonic_us=first[1]+p['phase_end_epoch_us']-first[0])
     def guard():
         need(canonical({k:p.get(k) for k in ('qualification_kind','bundle_context','bundle_capture_commitment',
-            'parent_id','phase_start_epoch_us','phase_end_epoch_us')})==original_capture,'capture_original_context_changed')
+            'parent_id','phase_start_epoch_us','phase_end_epoch_us','capture_storage')})==original_capture,'capture_original_context_changed')
         runtime.check(); phase_check(unit,p['facts'],p['phase_start_epoch_us'],p['phase_end_epoch_us'],phase,commitment=commitment)
         return dict(phase_end_epoch_us=p['phase_end_epoch_us'])
     with Reader() as reader:
@@ -1769,7 +1771,8 @@ def capture_history(unit, p, runtime):
             from .pilot_bundle import COMMITTED_CONTRACTS
             record['schema']=COMMITTED_CONTRACTS[commitment['qualification_kind']][6]
             record['bundle_capture_commitment']=commitment
-        raw = canonical(record); write_new(target,'capture.json',raw); runtime.check()
+        raw = canonical(record); stored=encode(raw,storage);guard()
+        write_new(target,'capture.json',stored);guard()
         return dict(actual_history_verified=True,history_binding_sha256=binding_pin,
             capture_record_sha256=sha(raw),native_phase=phase,original_unknown_actual_cost=None,refunds=0,
             full_caps=reports[-1]['paid_caps'],global_debt_complete=False)
@@ -1787,7 +1790,8 @@ def enrolled_action(action, unit, p, runtime):
          'wrong_runtime_or_review_scope')
     with Reader() as reader:
         history_reader = reader.stack.enter_context(Reader()) if action == 'enroll' else None
-        capture_raw = reader.read(target/'capture.json',RAW_MAX)
+        from .capture_storage import decode
+        capture_raw = decode(reader.read(target/'capture.json',RAW_MAX))
         need(sha(capture_raw) == owner['capture_record_sha256'], 'actual_capture_record_changed')
         saved = parse(capture_raw); binding = owner['history_binding_sha256']
         need(saved['unit'] == unit and saved['parent_id'] == policy.parent_id
