@@ -89,6 +89,7 @@ def image_members(raw, manifest):
 
 
 def members(data, digest):
+    require(type(data) is bytes and 0 < len(data) <= 2000000, 'runtime_archive_input_limit')
     require(hashlib.sha256(data).hexdigest() == digest, 'runtime_archive_hash_mismatch')
     result = {}
     total = 0
@@ -102,12 +103,16 @@ def members(data, digest):
             require(entry.name not in result and len(result) < 128 and 0 <= entry.size <= maximum,
                     'runtime_archive_member_limit')
             total += entry.size
-            require(total <= 2000000, 'runtime_archive_total_limit')
+            require(total <= 2500000, 'runtime_archive_total_limit')
             result[entry.name] = archive.extractfile(entry).read(entry.size + 1)
             require(len(result[entry.name]) == entry.size, 'truncated_runtime_member')
     require({'manifest.json', 'bench_node.py'} <= result.keys(), 'incomplete_runtime_archive')
     manifest = json.loads(result['manifest.json'])
     image_layout = manifest.get('schema') == 'meshticulum.bench-runtime-bundle.v2'
+    # The sealed image has its own 2 MB limit; notices and loader need a
+    # separate, bounded allowance. Legacy directory archives stay at 2 MB.
+    require(total - len(result.get('execution.zip', b'')) <= 500000 if image_layout
+            else total <= 2000000, 'runtime_archive_packaging_limit')
     require(manifest['schema'] in ('meshticulum.bench-runtime-bundle.v1', 'meshticulum.bench-runtime-bundle.v2')
             and set(manifest['files']) == set(result) - {'manifest.json'}, 'wrong_runtime_manifest')
     for name, expected in manifest['files'].items():

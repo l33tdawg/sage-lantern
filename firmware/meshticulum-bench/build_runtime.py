@@ -18,6 +18,17 @@ FLOW_PINS = {'flow.py': '9a8d4bb3bea2f69581d80ecd31fda7692c2435fe1363be53564d528
              'flow_port.py': '57596421d916f0c49d61599653b5ab75154d64e5bc806ba1444fa5905ad025ca'}
 
 
+def validate_package(files, *, sealed):
+    """Match installer bounds before publishing any build artifact."""
+    if len(files) > 128 or any(len(raw) > (2000000 if name == 'execution.zip' else 500000)
+                               for name, raw in files.items()):
+        raise SystemExit('Runtime member exceeds its reviewed byte or count limit.')
+    total = sum(map(len, files.values()))
+    packaging = total - len(files.get('execution.zip', b''))
+    if total > (2500000 if sealed else 2000000) or sealed and packaging > 500000:
+        raise SystemExit('Runtime container exceeds its reviewed packaging limit.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-test-report', type=Path)
@@ -121,12 +132,15 @@ def main():
                 separators=(',',':'),allow_nan=False).encode()).hexdigest())
         if deflated:manifest['execution_layout']['expanded_bytes'] = expanded_bytes
     files['manifest.json'] = json.dumps(manifest, sort_keys=True, indent=2).encode() + b'\n'
+    validate_package(files, sealed=manifest['schema'] == 'meshticulum.bench-runtime-bundle.v2')
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode='w', format=tarfile.USTAR_FORMAT) as archive:
         for name, data in sorted(files.items()):
             entry = tarfile.TarInfo(name); entry.size = len(data); entry.mode = 0o600
             archive.addfile(entry, io.BytesIO(data))
     data = gzip.compress(raw.getvalue(), mtime=0)
+    if len(data) > 2000000:
+        raise SystemExit('Compressed runtime archive exceeds its reviewed byte limit.')
     digest = hashlib.sha256(data).hexdigest()
     directory = work / ('runtime-' + digest[:16]); directory.mkdir(exist_ok=True)
     archive = directory / 'runtime.tar.gz'

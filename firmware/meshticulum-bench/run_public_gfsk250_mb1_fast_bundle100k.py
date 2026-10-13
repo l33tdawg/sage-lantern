@@ -77,6 +77,7 @@ def deflated_member(raw, row, cursor, central):
 def archive_source_members(archive,manifest_pin):
     """Check physical and logical source rosters without running image code."""
     import io,tarfile,zipfile,stat,hashlib
+    need(type(archive) is bytes and 0<len(archive)<=2000000,'batch_archive_input_bound')
     physical={};total=0
     with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tar:
         rows=tar.getmembers();names=[row.name for row in rows]
@@ -85,11 +86,14 @@ def archive_source_members(archive,manifest_pin):
             need(row.isfile() and not Path(row.name).is_absolute() and '..' not in Path(row.name).parts
                 and str(Path(row.name))==row.name and 0<=row.size<=
                 (2000000 if row.name=='execution.zip' else 500000),'batch_archive_member_bound')
-            total+=row.size;need(total<=2000000,'batch_archive_total_bound')
+            total+=row.size;need(total<=2500000,'batch_archive_total_bound')
             data=tar.extractfile(row).read(row.size+1)
             need(len(data)==row.size,'batch_archive_truncated');physical[row.name]=data
     need('manifest.json' in physical and sha(physical['manifest.json'])==manifest_pin,'batch_manifest_changed')
     manifest=json.loads(physical.pop('manifest.json'));files=manifest['files']
+    need(total-len(physical.get('execution.zip',b''))<=500000
+        if manifest['schema']=='meshticulum.bench-runtime-bundle.v2' else total<=2000000,
+        'batch_archive_packaging_bound')
     need(type(files) is dict and set(physical)==set(files)
         and all(sha(data)==files[name] for name,data in physical.items()),'batch_member_changed')
     if manifest['schema']=='meshticulum.bench-runtime-bundle.v1':

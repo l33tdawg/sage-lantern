@@ -20,17 +20,19 @@ from tests.test_lantern_meshticulum_bench_runtime import helper
 def packaged_image(request):
     root = Path(__file__).resolve().parents[3]
     anchor = Path(tempfile.mkdtemp(prefix='sealed-image-', dir=Path(__file__).parent)); anchor.chmod(0o700)
-    output = anchor / 'output'
-    result = subprocess.run([sys.executable, str(root / 'firmware/meshticulum-bench/build_runtime.py'),
-        '--execution-layout', request.param, '--radio-profile', 'gfsk250', '--output-dir', str(output)],
-        cwd=root, capture_output=True, text=True, timeout=20)
-    assert result.returncode == 0, result.stderr
-    record = json.loads((output / 'RUNTIME_BUNDLE.json').read_bytes())
-    raw = Path(record['archive']).read_bytes()
-    files = helper('runtime_bootstrap').members(raw, record['sha256'])
-    assert files['execution.zip'] and record['manifest']['schema'] == 'meshticulum.bench-runtime-bundle.v2'
-    try: yield anchor, files, record
-    finally: shutil.rmtree(anchor)
+    try:
+        output = anchor / 'output'
+        result = subprocess.run([sys.executable, str(root / 'firmware/meshticulum-bench/build_runtime.py'),
+            '--execution-layout', request.param, '--radio-profile', 'gfsk250', '--output-dir', str(output)],
+            cwd=root, capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0, result.stderr
+        record = json.loads((output / 'RUNTIME_BUNDLE.json').read_bytes())
+        raw = Path(record['archive']).read_bytes()
+        files = helper('runtime_bootstrap').members(raw, record['sha256'])
+        assert files['execution.zip'] and record['manifest']['schema'] == 'meshticulum.bench-runtime-bundle.v2'
+        yield anchor, files, record
+    finally:
+        shutil.rmtree(anchor)
 
 
 def extract(packaged_image, label):
@@ -148,7 +150,8 @@ def test_v2_archive_and_source_correspondence_are_exact(packaged_image):
     assert set(files) == set(manifest['files']) | {'manifest.json'}
     assert 'lantern_meshticulum/bench/pilot_resume_rpc.py' in manifest['source_files']
     assert not any(name.startswith(('meshticulum/','lantern_meshticulum/')) for name in files)
-    assert manifest['execution_layout']['bytes'] <= 2000000 and sum(map(len, files.values())) <= 2000000
+    assert manifest['execution_layout']['bytes'] <= 2000000 and sum(map(len, files.values())) <= 2500000
+    assert sum(len(raw) for name, raw in files.items() if name != 'execution.zip') <= 500000
     assert 'meshticulum/flow/flow.py' in manifest['source_files']
     assert manifest['source_files']['meshticulum/flow/flow.py'] == '9a8d4bb3bea2f69581d80ecd31fda7692c2435fe1363be53564d5281485cb857'
 
