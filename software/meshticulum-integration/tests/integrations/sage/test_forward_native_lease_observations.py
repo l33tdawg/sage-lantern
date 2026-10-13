@@ -42,12 +42,14 @@ def test_empty_lease_keeps_native_observations_and_one_post_close_signed_key_pai
     with fixture() as (r, provider, source, bind):
         bind(); operation = provider.start(r.packet); owner = provider.owner
         reads = []; events = []; scope_calls = []
-        get = r.client.workflow_get; status = r.client.message_storage_status
         authorized = r.authority.authorized; capture = r.hardware.capture_lease
-        def read(**arguments):
-            reads.append(arguments['record_id']); events.append('key_record'); return get(**arguments)
-        def storage():
-            events.append('storage'); return status()
+        # Observe actual signed responses without changing authority-bound SDK methods.
+        def replied(response):
+            request = response.request
+            if request.url.path == '/v1/messages/storage':
+                events.append('storage')
+            elif request.method == 'GET' and request.url.path.startswith('/v1/workflows/'):
+                reads.append(request.url.path.rsplit('/', 1)[1]); events.append('key_record')
         def scopes(*arguments):
             scope_calls.append(arguments[1]); return authorized(*arguments)
         def acquire(consent):
@@ -58,7 +60,7 @@ def test_empty_lease_keeps_native_observations_and_one_post_close_signed_key_pai
                 events.append('close'); close()
             lease.check, lease.close = current, finish
             return lease
-        r.client.workflow_get = read; r.client.message_storage_status = storage
+        r.client._client.event_hooks['response'].append(replied)
         r.authority.authorized = scopes; r.hardware.capture_lease = acquire
         # The previous lease schedule performed six full key observations.
         # Compare that signed-read component, not a whole transport rate.

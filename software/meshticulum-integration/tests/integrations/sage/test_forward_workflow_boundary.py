@@ -246,12 +246,19 @@ def test_modeled_native_startup_and_first_stage_requests_decrease_without_change
         def counted_backend(key):
             state, client, endpoint = backend(key)
             counter = Counter(); counts.append(counter)
-            for name in ('message_storage_status', 'workflow_get', 'workflow_put', 'workflow_list'):
-                original = getattr(client, name)
-                def invoke(*args, _method=original, _name=name, **kwargs):
-                    counter[_name] += 1
-                    return _method(*args, **kwargs)
-                setattr(client, name, invoke)
+            # Observe actual signed responses without replacing SDK methods.
+            def replied(response):
+                request = response.request
+                if request.url.path == '/v1/messages/storage':
+                    counter['message_storage_status'] += 1
+                elif request.url.path == '/v1/workflows' and request.method == 'GET':
+                    counter['workflow_list'] += 1
+                elif request.url.path.startswith('/v1/workflows/'):
+                    if request.method == 'GET':
+                        counter['workflow_get'] += 1
+                    elif request.method == 'PUT':
+                        counter['workflow_put'] += 1
+            client._client.event_hooks['response'].append(replied)
             return state, client, endpoint
         with monkeypatch.context() as patch:
             if not optimized:
