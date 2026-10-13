@@ -9,7 +9,7 @@ from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK_NAME,profile_for,profile_record
 PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256=None,
     core_commit='15a81deb405463eb8c0e0dbda0f7499ce0864a6c',
     history_receipt_sha256=None,
-    preceding_parent='515c662fae6cc761c83e7fdef44cbda0'))
+    preceding_parent='4675a437918764d62ddc53d288685367'))
 
 
 def require_bindings():

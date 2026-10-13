@@ -4,9 +4,9 @@ from types import MappingProxyType
 from .profiles import (GFSK250_MB1_BUNDLE_KIND,GFSK250_NAME,GFSK250_CORE_COMMIT,
     GFSK250_FIRMWARE,GFSK250_FIRMWARE_SHA256,profile_for,profile_record)
 
-PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256='791fb4c61b08734ee58830f6bd94d8b9c6db4e995be7d99962934df4e7341a45',core_commit=GFSK250_CORE_COMMIT,
-    history_receipt_sha256='238cc3c36c83540418da14a5b59b0901cdd24e4c7bce5c55e689ce6884762ceb',
-    preceding_parent='515c662fae6cc761c83e7fdef44cbda0'))
+PHYSICAL_BINDINGS=MappingProxyType(dict(scope_sha256=None,core_commit=GFSK250_CORE_COMMIT,
+    history_receipt_sha256=None,
+    preceding_parent='4675a437918764d62ddc53d288685367'))
 
 
 def require_bindings():

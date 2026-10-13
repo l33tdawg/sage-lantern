@@ -168,12 +168,12 @@ def test_accepted_part_cannot_be_rebound_or_counted_as_whole(typed_rows,fault):
     with pytest.raises((RuntimeError,TypeError,KeyError)):rpc.qualify_partial_bundle_costs(unit,p,o,v)
 
 
-@pytest.mark.parametrize('count',[30,31,32,33,34,35,36,37])
+@pytest.mark.parametrize('count',[30,31,32,33,34,35,36,37,38])
 def test_next_checkpoint_owner_requires_exact_twenty_four(count):
     from lantern_meshticulum.bench import bundle_checkpoint_adapter as adapter
     policy=ParentPolicy.from_dict(DATA['policy']);owner=deepcopy(OWNER_PHASE['unit-a'])
     owner['bundle_radio_checkpoint']=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=count,maximum_checkpoints=4,producer_sha256='a'*64)
-    if count==37:
+    if count==38:
         context,_=adapter.context_for('unit-a',policy,owner,1);assert context.policy is policy
     else:
         with pytest.raises(RuntimeError):adapter.context_for('unit-a',policy,owner,1)

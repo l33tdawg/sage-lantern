@@ -16,9 +16,9 @@ def original():
 
 def test_declared_full_reservations_preserve_every_H35_byte(original):
     value,policy=original;rows=history.declared_partition(policy)
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==37
-    assert retained.PAID_HISTORY[:-1]==history.H36_PREFIX and retained.PAID_HISTORY[-2]=='3195cff3fc8fc8ee0b81694fe8f9e389'
-    assert history.PARENT==retained.PAID_HISTORY[-1] and rpc.GUARDED_PAID[history.PARENT]==policy.digest
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==38
+    assert retained.PAID_HISTORY[:36]==history.H36_PREFIX and retained.PAID_HISTORY[35]=='3195cff3fc8fc8ee0b81694fe8f9e389'
+    assert history.PARENT==retained.PAID_HISTORY[36] and rpc.GUARDED_PAID[history.PARENT]==policy.digest
     for unit,row in rows.items():
         added=row['declared_new_reservation']
         assert added['radio_attempts']==(0 if unit=='unit-b' else 2560)
@@ -72,7 +72,7 @@ def test_actual_expired_native_MB1_costs_and_typed_context_qualify(original,unit
     assert context.transport is not None
     rpc.qualify_mb1_complete_bundle_costs(unit,policy,observed,row)
     assert row['require_result_complete'] is True and row['retired_unstarted']==[]
-    assert history.pending_next_roster()==retained.PAID_HISTORY
+    assert history.pending_next_roster()==retained.PAID_HISTORY[:37]
 
 
 @pytest.mark.parametrize('fault',['kind','unit','epoch','mono','database','unused','actual_credit','failed_partition','raw_wire','descriptor'])

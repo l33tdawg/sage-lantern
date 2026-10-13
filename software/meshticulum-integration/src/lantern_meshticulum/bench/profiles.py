@@ -60,7 +60,7 @@ def require_gfsk250_bindings():
 GFSK_FIRMWARE='mtb1-b433927ba6'
 GFSK_CORE_COMMIT='aec97045d945535deb95075a303a59bb975d21bd'
 GFSK_HISTORY_RECEIPT_SHA256 = None
-GFSK_PRECEDING_PARENT='515c662fae6cc761c83e7fdef44cbda0'
+GFSK_PRECEDING_PARENT='4675a437918764d62ddc53d288685367'
 
 
 def require_gfsk_bindings():
@@ -71,7 +71,7 @@ def require_gfsk_bindings():
         and all(c in '0123456789abcdef' for c in GFSK_CORE_COMMIT)
         and type(GFSK_HISTORY_RECEIPT_SHA256) is str and len(GFSK_HISTORY_RECEIPT_SHA256)==64
         and all(c in '0123456789abcdef' for c in GFSK_HISTORY_RECEIPT_SHA256)
-        and len(PAID_HISTORY)==37 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
+        and len(PAID_HISTORY)==38 and PAID_HISTORY[-1]==GFSK_PRECEDING_PARENT,
         'pending_gfsk_firmware_source_and_history_bindings')
     return True
 
