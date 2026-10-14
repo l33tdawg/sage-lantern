@@ -30,6 +30,7 @@ from .legacy_grant_fence import capture as legacy_capture, LegacyGrantFence
 from .legacy_grant_fence import MAX_RUNS, OWNERS
 from .pilot_parent_snapshot import Scope, collect, _child_ref
 from .pilot_debt_snapshot import Scope as DebtScope
+from .pilot_ip_schema import IP_SCHEMAS, IP_V2, RADIO_SCHEMAS, ip_metadata_grant
 from .pilot_parent_caps import BUNDLE_KINDS, PUBLIC32_KINDS, ParentPolicy, Cost, canonical
 from .pilot_native_caps import NativeCaps, NativeFacts
 from .pilot_manage import facts as native_facts
@@ -756,7 +757,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
              and g['expires_epoch_us'] == row['original_expires_epoch_us']
              and g.get('host_boot_id') == row['host_boot_id'] == boot()
              and row['actual_cost'] is None, 'old_original_binding_changed')
-        if g['schema'] == 'meshticulum.ip-service-run.v1':
+        if g['schema'] in IP_SCHEMAS:
+            if g['schema']==IP_V2:ip_metadata_grant(g)
             need(g['session']['session_id'] == run, 'old_IP_session_changed'); limits = g['limits']
             cost = dict(ip_frames=limits['max_frames'],tx_stream_bytes=limits['max_tx_stream_bytes'],
                         rx_stream_bytes=limits['max_rx_stream_bytes'],radio_attempts=0,radio_estimated_airtime_us=0)
@@ -1739,7 +1741,7 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
     provision=parse(public(target/'provision.json',32768));receipt=provision['parent']
     need(_child_ref(receipt['child_caps'])==claim['child'],'retired_unstarted_child_projection_changed')
     meta=receipt['child_caps']['metadata']
-    need(meta['transport']=='tcp' and plan['schema']=='meshticulum.ip-service-run.v1'
+    need(meta['transport']=='tcp' and plan['schema'] in IP_SCHEMAS
          and provision['schema']=='meshticulum.provisioned-public-pilot.v2'
          and provision['unit']==unit and provision['run_id']==run and provision['transport']=='tcp'
          and sha(grant_raw)==row['grant_sha256'] and sha(canonical(receipt))==claim['prepared_row_sha256']
@@ -1749,6 +1751,9 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
          and receipt['host_boot_id']==policy.unit(unit).host_boot_id==boot()
          and sha(canonical(plan))==receipt['native_plan_sha256']==claim['native_plan_sha256'],
          'retired_unstarted_provision_rebound')
+    if plan['schema']==IP_V2:
+        need(ip_metadata_grant(plan).digest.hex()==receipt['grant_context_sha256'],
+             'retired_unstarted_ip_context_rebound')
     normalized=dict(plan,application_deadline_monotonic_us=None)
     need(sha(canonical(normalized))==meta['plan_sha256']==receipt['original_plan_sha256']
          and canonical(plan['limits'])==canonical(meta['profile'])
@@ -2047,7 +2052,11 @@ def terminal_observation(reader, unit, policy, owner, preparations, expected_cut
         provision = parse(reader.read(target/'provision.json',32768))
         result = parse(reader.read(target/'result.json',300000))
         context = provision['parent']['grant_context_sha256']
-        tcp = grant['schema'] == 'meshticulum.ip-service-run.v1'; binding = context
+        tcp = grant['schema'] in IP_SCHEMAS; binding = context
+        need(provision['transport']==('tcp'if tcp else'lora') and
+             (tcp or grant['schema'] in RADIO_SCHEMAS),'own_terminal_transport_rebound')
+        if grant['schema']==IP_V2:
+            need(ip_metadata_grant(grant).digest.hex()==context,'own_terminal_ip_context_rebound')
         need(result['parent']['parent_id'] == policy.parent_id and result['parent']['run_id'] == run
              and result['parent']['started'] is True, 'own_terminal_parent_rebound')
         if not tcp:

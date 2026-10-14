@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 from .history_metadata_fence import FenceError, _need, _stamp, _FLAGS
+from .pilot_ip_schema import IP_SCHEMAS, IP_V2, ip_metadata_grant
 
 SCHEMA = 'meshticulum.private-legacy-grant-fence.v1'
 MAX_RUNS, MAX_ENTRIES, MAX_GRANT, MAX_SEAL = 128, 4096, 16384, 2 * 1024 * 1024
@@ -235,7 +236,8 @@ class LegacyGrantFence:
               g['issued_epoch_us'] == row['original_issued_epoch_us'] and
               g['expires_epoch_us'] == row['original_expires_epoch_us'] < self._clock(),
               'grant_binding_or_expiry_changed')
-        if g['schema'] == 'meshticulum.ip-service-run.v1':
+        if g['schema'] in IP_SCHEMAS:
+            if g['schema']==IP_V2:ip_metadata_grant(g)
             _need(g['session']['session_id'] == sid, 'grant_run_rebound')
             limits = g['limits']
             caps = dict(radio_attempts=0, radio_estimated_airtime_us=0,

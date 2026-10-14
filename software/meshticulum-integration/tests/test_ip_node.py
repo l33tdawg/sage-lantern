@@ -25,7 +25,7 @@ def facts(unit):
     return dict(unit=unit, host_boot_id=BOOT, services={'source_model_only': 'no_hardware'}, service_lifetimes={})
 
 
-def prepare(tmp_path, payload, format='MR1.request', *, qualified=True):
+def prepare(tmp_path, payload, format='MR1.request', *, qualified=True, startup_mode=None):
     sockets = [socket.socket(), socket.socket()]
     for channel in sockets:
         channel.bind(('127.0.0.1', 0))
@@ -36,7 +36,7 @@ def prepare(tmp_path, payload, format='MR1.request', *, qualified=True):
     peers = [PeerID('ip-node-source', x * 64) for x in ('a', 'b')]
     grant = IpGrant(SessionKey(*peers, b'n' * 16, b'g' * 16), format, len(payload),
         hashlib.sha256(payload).digest(), b'r' * 32, epoch - 1000000, epoch + 30000000,
-        epoch + 20000000, *endpoints, IpLimits(), b'k' * 32)
+        epoch + 20000000, *endpoints, IpLimits(), b'k' * 32, startup_mode)
     directories = []
     for index, peer in enumerate(peers):
         directory = tmp_path / str(index)
@@ -49,6 +49,7 @@ def prepare(tmp_path, payload, format='MR1.request', *, qualified=True):
             expires_epoch_us=grant.expires_epoch_us, application_expires_epoch_us=grant.application_expires_epoch_us,
             application_deadline_monotonic_us=mono + 19000000,
             initiator_address=list(endpoints[0]), responder_address=list(endpoints[1]), limits=asdict(grant.limits))
+        if startup_mode is not None:plan.update(schema='meshticulum.ip-service-run.v2',startup_mode=startup_mode)
         for name, raw in [('grant.json', json.dumps(plan).encode()), ('secret.bin', grant.secret), ('active', b'active\n')]:
             node._write(directory / name, raw)
         if index == 0:

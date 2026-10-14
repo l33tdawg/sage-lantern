@@ -53,7 +53,7 @@ def database(path,sql,rows):
     path.chmod(0o600)
 
 
-def fixture(tmp_path,transport='tcp',parent=None):
+def fixture(tmp_path,transport='tcp',parent=None,*,startup_mode=None):
     state=tmp_path/'state';state.mkdir(mode=0o700);runs=state/'runs';runs.mkdir(mode=0o700)
     directory=runs/RUN;directory.mkdir(mode=0o700)
     shared=dict(host_boot_id=BOOT,local_peer=asdict(PEERS[0]),issued_epoch_us=100000000,expires_epoch_us=180000000,
@@ -64,6 +64,7 @@ def fixture(tmp_path,transport='tcp',parent=None):
             session_id=RUN,generation='2'*32),format='MR1.request',object=obj,route_binding_digest='c'*64,
             application_expires_epoch_us=180000000,initiator_address=['127.0.0.1',35001],
             responder_address=['127.0.0.1',35002],limits=asdict(IpLimits()))
+        if startup_mode is not None:p.update(schema='meshticulum.ip-service-run.v2',startup_mode=startup_mode)
         grant=grant_from_plan(p,b'x'*32,local_peer=PEERS[0],host_boot_id=BOOT)
         binding=grant.digest.hex();name='bytes.sqlite'
         database(directory/name,[

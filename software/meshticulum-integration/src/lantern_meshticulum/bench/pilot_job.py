@@ -15,6 +15,7 @@ import signal
 
 from meshticulum.bench.authority import _open, _private_info
 from meshticulum.bench.wire import require
+from .pilot_ip_schema import IP_SCHEMAS, IP_V2, ip_metadata_grant
 
 
 def kernel(pid):
@@ -92,8 +93,12 @@ def retire(directory, *, unit, run_id, boot):
                 and parent.get('native_plan_sha256') == native_digest,
                 'pilot_retire_parent_binding_changed')
     if provision['transport']=='tcp':
-        require(plan['schema']=='meshticulum.ip-service-run.v1' and plan['session']['session_id']==run_id
+        require(plan['schema'] in IP_SCHEMAS and plan['session']['session_id']==run_id
                 and plan['format'] in ('MR1.request','MR1.response'), 'pilot_retire_private_or_wrong_session')
+        if plan['schema']==IP_V2:
+            grant=ip_metadata_grant(plan)
+            require(parent is None or parent.get('grant_context_sha256')==grant.digest.hex(),
+                'pilot_retire_parent_binding_changed')
         from meshticulum.ip.authority import revoke
     else:
         require(provision['transport']=='lora' and plan['schema']=='meshticulum.service-run.v1'

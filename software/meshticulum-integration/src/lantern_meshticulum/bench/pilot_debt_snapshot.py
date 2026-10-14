@@ -22,8 +22,9 @@ import uuid
 from meshticulum.contracts.identity import PeerID, SessionKey
 from meshticulum.bench.serial_protocol import RadioProfile
 from meshticulum.bench.public_block import PUBLIC32_MARKER, REPRESENTATION_MARKER, TRANSPORT_DESCRIPTOR_MARKER, public_mb1_service, public32_service, object_limit
-from meshticulum.ip.wire import IpLimits, address
+from meshticulum.ip.wire import IpLimits, address, READY_MODE
 from .pilot_parent_caps import Cost
+from .pilot_ip_schema import IP_SCHEMAS, IP_V2, ip_metadata_grant
 from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSION,GFSK_NAME,GFSK250_NAME,profile_from_plan,admission_for,radio_route
 
 MAX = 2**63-1
@@ -272,7 +273,8 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
         keys={'schema','host_boot_id','local_peer','session','format','object','route_binding_digest','issued_epoch_us',
               'expires_epoch_us','application_expires_epoch_us','application_deadline_monotonic_us',
               'initiator_address','responder_address','limits'}
-        need(set(p)==keys and p['schema']=='meshticulum.ip-service-run.v1' and p['format']in FORMATS)
+        if p.get('schema')==IP_V2:keys.add('startup_mode')
+        need(set(p)==keys and p['schema'] in IP_SCHEMAS and p['format']in FORMATS)
         s=p['session'];need(type(s)is dict and set(s)=={'initiator','responder','session_id','generation'})
         a,b=_peer(s['initiator']),_peer(s['responder']);local=_peer(p['local_peer'])
         session=SessionKey(a,b,bytes.fromhex(identifier(s['session_id'])),bytes.fromhex(identifier(s['generation'])))
@@ -288,12 +290,14 @@ def _public_grant(p,scope,run,*,historical_parent=None,observed_epoch_us=None):
             format=p['format'],object_bytes=obj['bytes'],object_sha256=obj['sha256'],route_binding_digest=p['route_binding_digest'],
             issued_epoch_us=issued,expires_epoch_us=expires,application_expires_epoch_us=app,
             initiator_address=ia,responder_address=ra,limits=asdict(limits))
+        if p['schema']==IP_V2:context=json.loads(ip_metadata_grant(p).context())
         caps=Cost(ip_frames=frames,tx_stream_bytes=limits.max_tx_stream_bytes,rx_stream_bytes=limits.max_rx_stream_bytes);fmt=p['format']
     need(session.session_id.hex()==run.run_id)
     context_hash=sha(canonical(context))
     if run.grant_context_sha256 is not None:need(run.grant_context_sha256==context_hash,'grant_context_changed')
     output=dict(context_sha256=context_hash,caps=asdict(caps),direction=direction,format=fmt,
                 application_expires_epoch_us=app,application_deadline_monotonic_us=deadline,max_frames=frames)
+    if run.transport=='tcp' and p['schema']==IP_V2:output['startup_mode']=p['startup_mode']
     if run.transport=='lora' and public32:
         # The512-frame cipher budget includes control/retry counters. Core's
         # inner service Shape separately caps marked responses at256 frames.
@@ -344,7 +348,9 @@ def _journal(reader,run,grant):
             integer(owner[4],0,1);rows=_rows(db,'SELECT id,hex(digest),bytes,lane,written,state FROM attempts ORDER BY id');result=[]
             for token,packet,size,lane,written,state in rows:
                 integer(token,1);hex_value(packet.lower(),64);integer(size,1,4100);integer(written,0,size)
-                need(lane in('DATA','ACK')and state in('RESERVED','KERNEL_ACCEPTED','NOT_SENT','UNKNOWN'))
+                need((lane in('DATA','ACK')or(lane=='READY'and grant.get('startup_mode')==READY_MODE
+                      and grant['direction']==0 and size==83))
+                     and state in('RESERVED','KERNEL_ACCEPTED','NOT_SENT','UNKNOWN'))
                 need(state!='KERNEL_ACCEPTED'or written==size);need(state!='NOT_SENT'or written==0)
                 result.append(dict(attempt_id=token,packet_sha256=packet.lower(),reserved_bytes=size,lane=lane,written_bytes=written,state=state))
             cost=Cost(ip_frames=len(rows),tx_stream_bytes=sum(r[2]for r in rows),rx_stream_bytes=sum(owner[1:4]));fenced=owner[4]

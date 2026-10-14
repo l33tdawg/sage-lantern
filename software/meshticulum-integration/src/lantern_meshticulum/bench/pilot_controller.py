@@ -14,7 +14,7 @@ import time
 import uuid
 
 from meshticulum.contracts.identity import PeerID
-from meshticulum.ip.wire import IpLimits
+from meshticulum.ip.wire import IpLimits, READY_MODE
 from meshticulum.resources import resource
 from lantern_meshticulum.bench.pilot_provision import identifier
 from lantern_meshticulum.bench.profiles import MODES, RADIO_ADMISSION, profile_for,PROFILE_NAMES,GFSK_NAME,GFSK250_NAME,GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND,profile_name_for_kind,require_gfsk250_bindings,admission_for,profile_record
@@ -31,9 +31,11 @@ RADIO_SETUP_RESERVE_MS = 15000
 def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                   sender, receiver, transport, format, descriptor, source,
                   request, peers, boots, now_epoch_us, endpoints=None, profile='sf7-500', radio_permission=None, public32=False,
-                  mb1_descriptor_sha256=None):
+                  mb1_descriptor_sha256=None, ip_startup_mode=None):
     """Fresh independent adjacent-link sessions; receiver never gets a body."""
     identifier(campaign_id)
+    require(ip_startup_mode is None or (transport=='tcp' and type(ip_startup_mode) is str
+        and ip_startup_mode==READY_MODE),'invalid_pilot_ip_startup_mode')
     require(type(public32) is bool and (not public32 or transport == 'lora'), 'invalid_public32_pilot')
     require(mb1_descriptor_sha256 is None or (public32 and profile in (GFSK_NAME,GFSK250_NAME)
         and type(mb1_descriptor_sha256) is str and len(mb1_descriptor_sha256)==64
@@ -80,6 +82,8 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                 application_expires_epoch_us=application_expires_epoch_us,
                 application_deadline_monotonic_us=None,initiator_address=list(endpoints[sender]),
                 responder_address=list(endpoints[receiver]),limits=asdict(IpLimits()))
+            if ip_startup_mode is not None:
+                grant.update(schema='meshticulum.ip-service-run.v2',startup_mode=ip_startup_mode)
         else:
             grant = dict(shared,schema='meshticulum.service-run.v1',unit=unit,host_boot_id=boots[unit],
                 local_peer=peers[unit],initiator=peers[sender],responder=peers[receiver],
@@ -108,8 +112,11 @@ class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
                  clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None,
-                 radio_profile='sf7-500', batch_context=None):
+                 radio_profile='sf7-500', batch_context=None, ip_startup_mode=None):
         self.operator,self.clock,self.sleep=operator,clock,sleep
+        require(ip_startup_mode is None or (type(ip_startup_mode) is str and ip_startup_mode==READY_MODE
+            and not public32),'invalid_pilot_ip_startup_mode')
+        self.ip_startup_mode=self._ip_startup_mode=ip_startup_mode
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
@@ -170,6 +177,7 @@ class Controller:
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
+        require(self.ip_startup_mode is self._ip_startup_mode,'pilot_ip_startup_mode_changed')
         require(self.batch_context is self._batch_context_ref, 'batch_controller_context_rebound')
         if self.batch_context is not None:self.batch_context.check()
         require(self.radio_profile == self._radio_profile, 'pilot_radio_profile_changed')
@@ -192,6 +200,7 @@ class Controller:
             request=payload if source is None else None,peers=self.peers,boots=self.boots,
             now_epoch_us=self.epoch(),endpoints=self.operator.endpoints(sender,receiver) if transport=='tcp' else None,
             radio_permission=self.radio_permission,public32=self.public32,profile=self.radio_profile,
+            ip_startup_mode=self.ip_startup_mode if transport=='tcp'else None,
             mb1_descriptor_sha256=self.bundle_context.value['transport_descriptor_sha256']
                 if self.bundle_context is not None and self.bundle_context.transport is not None else None)
         if self.bundle_context is not None:
