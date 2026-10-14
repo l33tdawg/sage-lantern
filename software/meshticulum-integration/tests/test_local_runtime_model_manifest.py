@@ -54,6 +54,7 @@ def selected_manifest(runtime):
     value.update(mcu_artifact=mcu.artifact(),firmware=mcu.FIRMWARE,
         firmware_by_unit={'unit-a':mcu.FIRMWARE},radio_profile_name='gfsk250',
         native_operation_kind=mcu.KIND)
+    value['source_files']['provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json'] = mcu.artifact()['source_lock_sha256']
     return value
 
 
