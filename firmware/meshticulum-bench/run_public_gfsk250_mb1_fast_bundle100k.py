@@ -386,6 +386,36 @@ def native_callback_seconds(action,phase_end_epoch_us,now_epoch_us):
     return left
 
 
+def rpc_error_detail(value):
+    """Accept bounded public field/source labels, never exception messages."""
+    if type(value) is not dict or set(value)!={'key_error_field','source_frames'}:return None
+    field=value['key_error_field'];frames=value['source_frames']
+    if not (field is None or type(field) is str and re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,63}',field)):return None
+    if type(frames) is not list or len(frames)>3:return None
+    for row in frames:
+        if type(row) is not dict or set(row)!={'file','line','function'}:return None
+        name,function,line=row['file'],row['function'],row['line']
+        if not (type(name) is str and (name=='<string>' or re.fullmatch('[A-Za-z0-9_.-]{1,64}',name))
+                and type(function) is str and (function=='<module>' or re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,63}',function))
+                and type(line) is int and 0<line<=1000000):return None
+    return dict(key_error_field=field,source_frames=[dict(row) for row in frames])
+
+
+def error_context_chain(error):
+    """Retain the local masking chain without messages, paths or locals."""
+    chain=[];seen=set()
+    for _ in range(3):
+        if error is None or id(error) in seen:break
+        seen.add(id(error));kind=type(error).__name__
+        row=dict(error_type=kind if re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,63}',kind) else 'Exception')
+        if type(error) is KeyError and len(error.args)==1 and type(error.args[0]) is str \
+                and re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,63}',error.args[0]):
+            row['key_error_field']=error.args[0]
+        chain.append(row)
+        error=error.__cause__ if error.__cause__ is not None else error.__context__
+    return chain
+
+
 def rpc_failure_diagnostic(output,returncode):
     """Retain bounded callback evidence without echoing metadata or messages.
 
@@ -405,9 +435,14 @@ def rpc_failure_diagnostic(output,returncode):
             records.append(value)
     if len(records)==1:
         value=records[0]
-        if set(value)=={'schema','error_type','reason'} and value['reason']=='management_file_RPC_refused' \
+        base={'schema','error_type','reason'};detail=None
+        if set(value)==base|{'error_detail'} and value.get('error_type')=='KeyError':
+            detail=rpc_error_detail(value['error_detail'])
+        if (set(value)==base or detail is not None) and value['reason']=='management_file_RPC_refused' \
                 and type(value['error_type']) is str and re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,63}',value['error_type']):
             diagnostic.update(remote_error_type=value['error_type'],remote_reason=value['reason'])
+            if detail is not None:
+                diagnostic.update(remote_key_error_field=detail['key_error_field'],remote_source_frames=detail['source_frames'])
     return diagnostic
 
 
@@ -631,7 +666,7 @@ def main():
         for u in ('unit-c','unit-b','unit-a'):
             result['native_final'][u]=guarded(u,'audit');s=result['native_final'][u]['snapshot'];need(s['claims']==s['prepared']==s['starts']==(0 if u=='unit-b' else 10) and s['debt']==asdict(policy.unit(u).limits) and not s['uncertain'],'batch_final_accounting_changed')
         result['complete']=len(result['bundle_parts'])==5 and not result.get('cleanup_error')
-    except BaseException as e:result.update(error_type=type(e).__name__,error=str(e)[:200])
+    except BaseException as e:result.update(error_type=type(e).__name__,error=str(e)[:200],error_chain=error_context_chain(e))
     finally:
         password=None
         if current is not None:

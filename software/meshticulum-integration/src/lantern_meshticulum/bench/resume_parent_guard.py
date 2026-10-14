@@ -55,6 +55,17 @@ def _parse(raw):
         raise FenceError('invalid_metadata_json') from error
 
 
+def _owner_view(raw, policy):
+    """Interpret fields without changing the protected owner's envelope bytes."""
+    owner = _parse(raw)
+    from .mcu_artifact import OWNER_SCHEMA, KIND, decode_owner
+    if owner.get('schema') == OWNER_SCHEMA:
+        owner, _ = decode_owner(owner)
+        _need(policy.qualification_kind == KIND and owner['policy_digest'] == policy.digest,
+              'mcu_guard_owner_policy_changed')
+    return owner
+
+
 def _read(parent, name, maximum):
     """Read no opaque key/payload paths; caller supplies a held safe parent FD."""
     _need(name in ('owner.json', 'prior.json', 'policy.json', 'provision.json',
@@ -304,7 +315,7 @@ class ResumeParentGuard:
             if policy.qualification_kind == GFSK250_FAST_BUNDLE_KIND:
                 from .pilot_native_caps import _Public32Approval
                 protected = _Public32Approval(self.state/'parents'/policy.parent_id, policy, unit,
-                    _parse(self._own_raw['owner'])['facts'][unit], clock)
+                    _owner_view(self._own_raw['owner'], policy)['facts'][unit], clock)
                 # Register ownership before comparison/adapter construction so
                 # any refused source, context or callback closes all held FDs.
                 self._stack.callback(protected.close)
@@ -345,9 +356,10 @@ class ResumeParentGuard:
                [('owner','owner.json',200000), ('prior','prior.json',200000),
                 ('binding','history-binding.json',16384)]}
         _need(all(_hash(raw[key]) == digest for key, digest in self._pins.items()), 'own_guard_pin_changed')
-        _need(_parse(raw['owner'])['history_binding_sha256'] == self._pins['binding']
+        owner = _owner_view(raw['owner'], self.policy)
+        _need(owner['history_binding_sha256'] == self._pins['binding']
               == _parse(raw['prior'])['history_binding_sha256'], 'owner_prior_seal_not_bound')
-        owner = _parse(raw['owner']); local = self.policy.unit(self.unit)
+        local = self.policy.unit(self.unit)
         _need(owner['policy_digest'] == self.policy.digest
               and _hash(raw['prior']) == local.prior_snapshot_sha256
               and _hash(canonical(owner['prior_registry'])) == self.policy.prior_snapshot_sha256
@@ -359,7 +371,7 @@ class ResumeParentGuard:
 
     def _own_relations(self):
         receipts = _actual_prepared(self.caps)
-        owner = _parse(self._own_raw['owner'])
+        owner = _owner_view(self._own_raw['owner'], self.policy)
         if owner.get('radio_profile_name') == 'sf5-500':
             expected = dict(owner['rf_profile']); expected.pop('lease_ms')
             _need((owner.get('qualification_kind')=='c-bulk-8k-v1' and self.policy.qualification_kind is None)

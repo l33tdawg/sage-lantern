@@ -58,9 +58,22 @@ RPC_FILE_ENTRY=r'''try:
 except BaseException as error:
  # The transport reports no input bytes or exception message excerpts.
  kind=type(error).__name__
- print(json.dumps(dict(schema='meshticulum.management-file-RPC-error.v1',
+ diagnostic=dict(schema='meshticulum.management-file-RPC-error.v1',
   error_type=kind if re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,63}',kind) else 'Exception',
-  reason='management_file_RPC_refused')),flush=True)
+  reason='management_file_RPC_refused')
+ if type(error) is KeyError:
+  field=error.args[0] if len(error.args)==1 and type(error.args[0]) is str else None
+  if field is not None and not re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,63}',field):field=None
+  frames=[];tb=error.__traceback__
+  for _ in range(32):
+   if tb is None:break
+   code=tb.tb_frame.f_code;name=os.path.basename(code.co_filename);function=code.co_name
+   if (name=='<string>' or re.fullmatch('[A-Za-z0-9_.-]{1,64}',name)) and \
+      (function=='<module>' or re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,63}',function)) and 0<tb.tb_lineno<=1000000:
+    frames.append(dict(file=name,line=tb.tb_lineno,function=function));frames=frames[-3:]
+   tb=tb.tb_next
+  diagnostic['error_detail']=dict(key_error_field=field,source_frames=frames)
+ print(json.dumps(diagnostic),flush=True)
  raise SystemExit(1) from None
 '''
 
