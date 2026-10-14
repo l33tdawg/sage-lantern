@@ -356,6 +356,24 @@ class ForwardNativeProvider:
             self._check_native()
         return self._observe(all_predicates)
 
+    def _radio_native_check(self,owner,adoption,child,epoch):
+        """Fresh held accounting and root/native permission for metadata only."""
+        run=owner._radio_read
+        def bound():
+            require(type(owner) is ForwardNativeOwner and owner is self._owner
+                and owner.resource is self.resource and owner.authority is self.authority
+                and owner.native_context is self._exchange and owner.context is self._context
+                and owner.intention is self.intention and owner.storage_epoch==epoch==self.storage_epoch
+                and owner._busy and run is not None and owner._radio_read is run
+                and adoption._read_run is run and adoption.owner is owner and adoption.child is child
+                and adoption.store is owner._composition.store
+                and owner._radio_native_check.__self__ is self
+                and owner._radio_native_check.__func__ is _RADIO_NATIVE_CHECK)
+            require(all(name not in self.__dict__ and getattr(type(self),name) is original
+                        for name,original in _RADIO_PROVIDER_METHODS))
+            self._available()
+        bound();self._guard();bound();return True
+
     @contextmanager
     def _lease(self):
         from sage_lantern.storage_supervisor_socket import CaptureLease
@@ -409,7 +427,7 @@ class ForwardNativeProvider:
         return result
 
     def _run(self, action):
-        if self._busy:
+        if self._busy or self._owner is not None and self._owner._radio_read is not None:
             self._uncertain = True
             self.close()
             raise ForwardNativeProviderError()
@@ -484,7 +502,8 @@ class ForwardNativeProvider:
                     context=self._context, intention=self.intention, local_initiator=self.local_initiator,
                     key_check=self._purpose.key_check, peer_key_check=self._purpose.peer_key_check,
                     boot_reader=self._boot, clock_reader=self._clock,
-                    exchange_key_check=self._purpose.exchange_check)
+                    exchange_key_check=self._purpose.exchange_check,
+                    radio_native_check=self._radio_native_check)
                 self._owner._registry.bind_endpoint(self._owner, self)
                 return self._owner.operation(key, limits=self.limits,
                     prior_debt=self._retained_debt, sealed_record=sealed_record)
@@ -614,3 +633,8 @@ class ForwardNativeProvider:
             raise
         finally:
             self._registry_finishing = False
+
+_RADIO_NATIVE_CHECK=ForwardNativeProvider._radio_native_check
+_RADIO_PROVIDER_METHODS=tuple((name,getattr(ForwardNativeProvider,name)) for name in
+    ('_available','_checked','_guard','_observe','_check_access','_check_storage',
+     '_check_native','_permissions','_time','_radio_native_check'))

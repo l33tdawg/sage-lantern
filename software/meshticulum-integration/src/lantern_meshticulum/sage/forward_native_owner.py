@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import threading
 import time
+from types import MethodType
 import uuid
 
 from meshticulum.privacy.forward_session import ForwardContext,H1,H2,CONFIRM_I,CONFIRM_R,DATA
@@ -57,7 +58,8 @@ class ForwardNativeOwner:
     Permissions must be granted by the original authenticated root request.
     """
     def __init__(self,resource,authority,native_context,*,context,intention,local_initiator,
-                 key_check,peer_key_check,boot_reader=host_boot,clock_reader=clock,exchange_key_check=None):
+                 key_check,peer_key_check,boot_reader=host_boot,clock_reader=clock,exchange_key_check=None,
+                 radio_native_check=None):
         from sage_lantern.mesh_daemon import HardwareRuntime
         from sage_lantern.mesh_community import MeshActionAuthority
         from sage_lantern.mesh_runtime import MeshUserContext
@@ -72,7 +74,13 @@ class ForwardNativeOwner:
         self.remote=context.responder if local_initiator else context.initiator
         self._key_check,self._peer_key_check,self._boot,self._clock=key_check,peer_key_check,boot_reader,clock_reader
         self._exchange_key_check=exchange_key_check
-        self._observer_refs=(key_check,peer_key_check,boot_reader,clock_reader,exchange_key_check)
+        self._radio_native_check=radio_native_check;self._radio_read=None
+        if radio_native_check is not None:
+            from .forward_native_provider import ForwardNativeProvider, _RADIO_NATIVE_CHECK
+            require(type(radio_native_check) is MethodType
+                and type(radio_native_check.__self__) is ForwardNativeProvider
+                and radio_native_check.__func__ is _RADIO_NATIVE_CHECK)
+        self._observer_refs=(key_check,peer_key_check,boot_reader,clock_reader,exchange_key_check,radio_native_check)
         self._composition=None;self._composition_ref=None;self._constructing=False
         self._budget=self._session=self._operation=None;self._budget_refs=None;self._registry=None
         self._operation_observing=False;self._operation_refs=None;self._operation_methods=None
@@ -106,8 +114,8 @@ class ForwardNativeOwner:
     def __repr__(self):return '<ForwardNativeOwner>'
     def _available(self):
         require(not self._closed and not self._uncertain and self._owner==(os.getpid(),threading.get_ident()))
-        observers_bound=all(a is b for a,b in zip(self._observer_refs,
-            (self._key_check,self._peer_key_check,self._boot,self._clock,self._exchange_key_check)))
+        observers_bound=type(self._observer_refs) is tuple and len(self._observer_refs)==6 and all(a is b for a,b in zip(self._observer_refs,
+            (self._key_check,self._peer_key_check,self._boot,self._clock,self._exchange_key_check,self._radio_native_check)))
         if not observers_bound or self.owner_lease is not self._lease_ref:
             self._uncertain=True;raise ForwardNativeOwnerError()
         require(all(a is b for a,b in zip(self._native_refs,(self.resource,self.authority,self.native_context,
@@ -202,6 +210,73 @@ class ForwardNativeOwner:
         require(context==self.context and type(kind) is int and kind in (H1,H2,CONFIRM_I,CONFIRM_R,DATA)
             and type(sends) is bool and sends==((kind%2==1)==self.local_initiator))
         return self.access_check()
+    def observe_radio_adoption(self,adoption):
+        """One read-only signed-adoption action, independent of CaptureLease.
+
+        Key authorization brackets the complete read. Every internal SDK fence
+        freshly observes native permission, Vault and held accounting instead;
+        this busy interval cannot dispatch, encrypt or open another child.
+        """
+        from .radio_native_adoption import NativeRadioAdoption, _ADOPTION_READ_BODY, _ADOPTION_GUARD_TAIL
+        from .forward_native_provider import ForwardNativeProvider, _RADIO_NATIVE_CHECK
+        require(type(adoption) is NativeRadioAdoption)
+        callback=self._radio_native_check
+        require(type(callback) is MethodType and type(callback.__self__) is ForwardNativeProvider
+            and callback.__func__ is _RADIO_NATIVE_CHECK)
+        provider=callback.__self__;child=adoption.child;epoch=self.storage_epoch
+        methods=((self,'observe_radio_adoption',_RADIO_ADOPTION_OBSERVER),
+            (provider,'_radio_native_check',_RADIO_NATIVE_CHECK),
+            (adoption,'_read_record',_ADOPTION_READ_BODY),(adoption,'_guard_tail',_ADOPTION_GUARD_TAIL)
+            )+tuple((self,name,original) for name,original in _RADIO_OWNER_METHODS)
+        refs=(adoption,child,adoption.store,adoption._child,callback,epoch)
+        value=_canonical(child.to_dict());run=object()
+        def bindings():
+            self._available();adoption._bound()
+            require(self._busy and self._radio_read is run and adoption._read_run is run
+                and adoption._busy and not adoption._closed and not adoption._uncertain
+                and adoption.owner is self and self._radio_native_check is callback
+                and all(a is b for a,b in zip(refs,(adoption,adoption.child,adoption.store,
+                    adoption._child,self._radio_native_check,self.storage_epoch)))
+                and _canonical(child.to_dict())==value and type(child.kind) is int
+                and type(child.sends) is bool and child.sends==((child.kind%2==1)==self.local_initiator)
+                and child.kind in (H1,H2,CONFIRM_I,CONFIRM_R,DATA)
+                and adoption.store is self._composition.store
+                and type(provider)._radio_native_check is _RADIO_NATIVE_CHECK
+                and '_radio_native_check' not in provider.__dict__)
+            require(all(name not in obj.__dict__ and getattr(type(obj),name) is original
+                        for obj,name,original in methods))
+            children=[c for c in self._registry._children if c.owner is self and c.plan is child
+                and not c.retired and not c.unknown]
+            require(len(children)==1)
+            tracked=children[0];self._registry._child(tracked)
+            require(adoption._child is tracked if adoption._adopted else
+                adoption._child is None and tracked.opening and tracked.open_thread==threading.get_ident())
+            if tracked.opening:
+                require(any(a.plan is child and not a.bound for a in self._budget._permits.values()))
+            else:self._registry._paid_bound(tracked)
+        def guard():
+            bindings();self._observe(keys=False);bindings()
+            require(callback(self,adoption,child,epoch) is True);bindings()
+            self._observe(keys=False);bindings()
+            _ADOPTION_GUARD_TAIL(adoption);bindings()
+            return True
+        def read():
+            require(self._radio_read is None and adoption._read_run is None)
+            self._radio_read=adoption._read_run=run
+            try:
+                bindings();self._observe();bindings();_ADOPTION_GUARD_TAIL(adoption);bindings()
+                adoption._assets();bindings()
+                revision,record=_ADOPTION_READ_BODY(adoption,guard,epoch)
+                bindings();adoption._assets();bindings()
+                self._observe();bindings();_ADOPTION_GUARD_TAIL(adoption);bindings()
+                adoption._highest,adoption._record=revision,record
+                return True
+            finally:
+                if self._radio_read is run:self._radio_read=None
+                else:self._uncertain=True
+                if adoption._read_run is run:adoption._read_run=None
+                else:adoption._uncertain=True
+        return self._run(read)
     def key_check(self,public_key,context_digest):
         expected=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
         require(public_key==expected and context_digest==self.context.digest)
@@ -548,3 +623,7 @@ class ForwardNativeOwner:
         self._closed=True
         owner=self._owner==(os.getpid(),threading.get_ident())
         return self._close_components() and owner
+
+_RADIO_ADOPTION_OBSERVER=ForwardNativeOwner.observe_radio_adoption
+_RADIO_OWNER_METHODS=tuple((name,getattr(ForwardNativeOwner,name))
+    for name in ('_run','_available','_observe','_checked'))

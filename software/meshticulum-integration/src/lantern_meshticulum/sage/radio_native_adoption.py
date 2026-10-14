@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import stat
 import threading
+from types import MethodType
 
 from nacl.signing import VerifyKey
 from meshticulum.bench.authority import canonical as radio_canonical
@@ -161,6 +162,9 @@ class NativeRadioAdoption:
                       self.directory, owner.resource, owner.authority, owner.native_context)
         self._process = os.getpid(), threading.get_ident()
         self._busy = self._adopted = self._closed = self._uncertain = False
+        self._read_run=None
+        self._read_action=(owner.observe_radio_adoption if owner._radio_native_check is not None else None)
+        self._read_action_ref=self._read_action
         self._child = None;self._highest = 0;self._record = None;self._files = {};self._directory_fd = None
         self._last_time=None;self._child_value=_canonical(child.to_dict())
         self._names = ('fd','lock_fd') if type(transport) is ExclusiveSerial else ('spi_fd','chip_fd','lines_fd','lock_fd')
@@ -195,6 +199,11 @@ class NativeRadioAdoption:
     def _guard(self):
         self._bound();o=self.owner;h=o.resource
         o.phase_check(o.context,self.child.kind,self.child.sends);self._bound()
+        self._guard_tail()
+        return True
+
+    def _guard_tail(self):
+        self._bound();o=self.owner;h=o.resource
         require(o.authority.authorized(o.native_context,SCOPE,None) is True);self._bound();o._available()
         require(h._provider is None and getattr(h,'_coordinator',None) is None
                 and not getattr(h,'_initializing',False) and getattr(h,'_radio_observer',None) is None
@@ -291,12 +300,26 @@ class NativeRadioAdoption:
         require(source_pins()==json.loads(self._binding)['sources'])
 
     def _observe(self):
+        require(self._read_action is self._read_action_ref)
+        if self._read_action is not None:
+            from .forward_native_owner import _RADIO_ADOPTION_OBSERVER
+            require(type(self._read_action) is MethodType and self._read_action.__self__ is self.owner
+                and self._read_action.__func__ is _RADIO_ADOPTION_OBSERVER
+                and type(self.owner).observe_radio_adoption is _RADIO_ADOPTION_OBSERVER
+                and 'observe_radio_adoption' not in self.owner.__dict__)
+            return self._read_action(self)
+        require(self.owner._radio_native_check is None)
         _read_return_fence(self)
         self._guard();self._assets()
+        revision,raw=self._read_record(self._read_guard)
+        self._highest,self._record=revision,raw;self._assets();self._guard();return True
+
+    def _read_record(self,check,epoch=None):
+        """Decode only the exact signed public adoption row; never a grant."""
         _read_return_fence(self)
-        record=self.store.get(self.record_id,kind='mesh_outbound',access_check=self._read_guard)
-        # The original get already completed its final full access guard. Its
-        # sealed comparison/return tail introduces no further authority callback.
+        record=self.store.get(self.record_id,kind='mesh_outbound',access_check=check,expected_epoch=epoch)
+        # The original get completed its final access callback. The scoped
+        # path still needs its caller's final complete phase/key observation.
         _read_return_fence(self);value=record['payload'];body=value['body']
         require(set(value)=={'schema','body','signature'} and value['schema']==SCHEMA)
         VerifyKey(self.owner.local.public_key).verify(DOMAIN+_canonical(body),base64.b64decode(value['signature'],validate=True))
@@ -305,9 +328,11 @@ class NativeRadioAdoption:
                 and _canonical(body['binding'])==self._binding and body['state']=='active')
         raw=_canonical(body)
         require(body['revision']>=self._highest and (body['revision']!=self._highest or raw==self._record))
-        self._highest,self._record=body['revision'],raw;self._assets();self._guard();return True
+        return body['revision'],raw
 
     def adopt(self,resource):
+        if self._read_run is not None or self._read_action_ref is not None and self.owner._busy:
+            self._uncertain=True;raise RadioAdoptionError()
         require(resource is self.owner.resource and not self._busy and not self._adopted)
         self._busy=True
         try:
@@ -335,6 +360,8 @@ class NativeRadioAdoption:
     def release(self):
         """Close only retained owned FDs; no RF-disarm or completion inference."""
         if self._process!=(os.getpid(),threading.get_ident()):return False
+        if self._read_run is not None or self._read_action_ref is not None and self.owner._busy:
+            self._uncertain=True;return False
         if self._closed:return not self._uncertain
         ok=True
         if self._adopted:
@@ -372,7 +399,7 @@ _READ_ABSENT = object()
 _HELD_RADIO_BINDING = _held_radio_binding
 _STORE_READ_METHODS = ('get', '_invoke', '_snapshot', '_access', '_record')
 _PROBE_READ_METHODS = ('snapshot', '_binding')
-_ADOPTION_READ_METHODS = ('_guard', '_read_guard', '_bound', '_observe', '_assets')
+_ADOPTION_READ_METHODS = ('_guard', '_guard_tail', '_read_guard', '_read_record', '_bound', '_observe', '_assets')
 _READ_RETURN_LAYOUTS = tuple((cls, tuple((name, vars(cls).get(name, _READ_ABSENT)) for name in names))
     for cls, names in (
         (WorkflowStore, _STORE_READ_METHODS + ('__dict__', '__getattribute__', '__getattr__',
@@ -382,7 +409,10 @@ _READ_RETURN_LAYOUTS = tuple((cls, tuple((name, vars(cls).get(name, _READ_ABSENT
         (RecipientID, ('__getattribute__', '__getattr__', '__dict__', '__class__', '__eq__', '__ne__',
             'chain_id', 'agent_id')),
         (NativeRadioAdoption, _ADOPTION_READ_METHODS + ('__dict__', '__getattribute__', '__getattr__',
-            'store', '_read_return', '_read_return_ref', '_closed', '_uncertain')),
+            'store', '_read_return', '_read_return_ref', '_closed', '_uncertain',
+            '_read_action', '_read_action_ref', '_read_run')),
     ))
 _ACTOR_CHAIN = vars(RecipientID)['chain_id']
 _ACTOR_AGENT = vars(RecipientID)['agent_id']
+_ADOPTION_READ_BODY=NativeRadioAdoption._read_record
+_ADOPTION_GUARD_TAIL=NativeRadioAdoption._guard_tail
