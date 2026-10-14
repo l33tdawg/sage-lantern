@@ -9,6 +9,7 @@ from application acceptance and never refunds paid maxima.
 """
 from dataclasses import dataclass, replace, fields
 from contextlib import contextmanager
+from enum import Enum
 import fcntl
 import hashlib
 import json
@@ -54,6 +55,13 @@ KINDS = (1,2,3,4,5)
 FIRMWARE = 'mtb1-9816f92488'
 ACK_GRACE_US = 20000000
 
+
+class _RadioFactsMode(Enum):
+    DEVICE = 'device'
+    LIVE = 'live'
+    NATIVE = 'native'
+
+_RADIO_FACTS_MODES=(_RadioFactsMode.DEVICE,_RadioFactsMode.LIVE,_RadioFactsMode.NATIVE)
 
 class ForwardRadioError(RuntimeError):
     def __init__(self):super().__init__('forward_radio_unavailable')
@@ -221,11 +229,17 @@ class NativeRadioObserver:
         self._refs=(owner,profile,transport);self.adoption=None;self.worker=None;self.identity=None
         self.last_status=None;self.physical_disarmed=None;self._used=False
         self._armed_record=self._armed_ref=None
+        self._factory=self._factory_ref=None
         self._methods=tuple((name,getattr(type(self),name)) for name in
             ('device','_device_facts','_worker_current','discovered','armed','status','_status250','owned','current','disarmed','bind'))
 
     def _bound(self):
         require(all(a is b for a,b in zip(self._refs,(self.owner,self.profile,self.transport))))
+        require(self._factory is self._factory_ref)
+        if self._factory is not None:
+            require(type(self._factory) is ForwardRadioFactory and self._factory.observer is self
+                and self._factory.owner is self.owner and self._factory.profile is self.profile
+                and self._factory.transport is self.transport)
         require(self._armed_record is self._armed_ref)
         if self._armed_record is not None:
             worker,profile,lease,_=self._armed_record
@@ -241,6 +255,8 @@ class NativeRadioObserver:
         self._used=True;self.adoption=adoption;self._bound();self.device()
 
     def device(self):
+        if self._factory is not None and self._factory._facts_action is not None:
+            return self._factory._facts(_RadioFactsMode.DEVICE)
         self._bound();require(self.adoption is not None and self.adoption.current())
         require(self._device_facts() is True)
         self._bound();require(self.adoption.current());return True
@@ -395,8 +411,14 @@ class ForwardRadioFactory:
         self._authority_refs=self._journal_refs=self._store_ref=None
         self._authority_binding=self._authority_binding_ref=None
         self._native_observing=False;self._native_adoption=None
+        from .forward_native_owner import _RADIO_FACTS_OBSERVER
+        require(observer._factory is None and observer._factory_ref is None)
+        self._facts_action=(owner.observe_radio_facts if owner._radio_native_check is not None else None)
+        self._facts_action_ref=self._facts_action
+        self._facts_method=_RADIO_FACTS_OBSERVER
+        observer._factory=observer._factory_ref=self
         self._native_methods=tuple((obj,name,getattr(type(obj),name)) for obj,names in (
-            (self,('_bound','_native','_native_current','_live','_authorize','_owned','_observed')),
+            (self,('_bound','_native','_native_current','_live','_authorize','_owned','_observed','_facts')),
             (observer,('_bound','device','current','_device_facts','_worker_current')),
             (owner,('_available','phase_check')),
             (owner._registry,('_child','available')),
@@ -408,6 +430,14 @@ class ForwardRadioFactory:
             and self._thread==(os.getpid(),threading.get_ident()) and all(a is b for a,b in zip(self._refs,
                 (self.owner,self.profile,self.directory,self.transport,self.observer,self._descriptor,self._descriptor_method,self._descriptor_code))))
         self.observer._bound()
+        require(self.observer._factory is self and self._facts_action is self._facts_action_ref)
+        if self._facts_action is None:require(self.owner._radio_native_check is None)
+        else:
+            from .forward_native_owner import _RADIO_FACTS_OBSERVER
+            require(type(self._facts_action) is MethodType and self._facts_action.__self__ is self.owner
+                and self._facts_action.__func__ is self._facts_method is _RADIO_FACTS_OBSERVER
+                and type(self.owner).observe_radio_facts is _RADIO_FACTS_OBSERVER
+                and 'observe_radio_facts' not in self.owner.__dict__)
         method=self._descriptor_current
         require(type(method) is MethodType and method.__self__ is self and method.__func__ is self._descriptor_method
             and '_descriptor_current' not in self.__dict__ and type(self)._descriptor_current is self._descriptor_method
@@ -457,10 +487,19 @@ class ForwardRadioFactory:
                     or (type(self.worker) is hat_type and (not hasattr(self.worker,'io') or self.worker.io is self._refs[3])))
 
     def _live(self):
+        if self._facts_action is not None:return self._facts(_RadioFactsMode.LIVE)
         with self._observed(self.owner.context,self.profile.child,self.transfer,first_current=True) as checked:
             checked(self.observer._device_facts)
             checked(self.adoption.current)
         return True
+
+    def _facts(self,mode):
+        if self._native_observing:self._unknown=True;raise ForwardRadioError()
+        self._bound();require(type(mode) is _RadioFactsMode and any(mode is m for m in _RADIO_FACTS_MODES)
+            and self._facts_action is not None)
+        try:require(self._facts_action(self,mode) is True)
+        except Exception:raise ForwardRadioError() from None
+        self._bound();return True
 
     def _descriptor_current(self):
         """Compare original typed preparation inputs; supplies no live authority."""
@@ -591,6 +630,9 @@ class ForwardRadioFactory:
         Adjacent wrapper observations are one boundary, not reusable authority.
         SDK guards, source/grant reads and physical probes remain fresh per call.
         """
+        if self._facts_action is not None:
+            require(context is self.owner.context and plan is self.profile.child and transfer is self.transfer)
+            return self._facts(_RadioFactsMode.NATIVE)
         with self._observed(context,plan,transfer) as checked:
             checked(self.adoption.current)
             checked(self.observer._device_facts)
@@ -600,9 +642,13 @@ class ForwardRadioFactory:
             checked(self.observer._worker_current,self.worker)
 
     @contextmanager
-    def _observed(self,context,plan,transfer,*,first_current=False):
+    def _observed(self,context,plan,transfer,*,first_current=False,initial_error=None):
         """One callback bracket; holds references/ownership, never live results."""
         require(type(first_current) is bool)
+        require(initial_error is None or type(initial_error) is ForwardRadioError and not first_current
+            and self.owner._busy and self.owner._radio_read is self.adoption._read_run
+            and self.owner._radio_read is not None and self.owner._radio_facts==
+                (self,_RadioFactsMode.LIVE,self.owner._radio_read))
         acquired=initial_refusal=False;original=self._native_adoption
         require(type(original) is tuple and len(original)==5)
         a,child,registry,condition,methods=original
@@ -611,7 +657,7 @@ class ForwardRadioFactory:
         handles=self._handles;handle_refs=tuple(handles.items())
         def references(*,refused=False):
             require(self._native_adoption is original and self._native_methods is self._native_method_refs is native_methods
-                and type(native_methods) is tuple and len(native_methods)==16
+                and type(native_methods) is tuple and len(native_methods)==17
                 and type(methods) is tuple and len(methods)==5
                 and self._authority_binding is self._authority_binding_ref is authority_binding
                 and self._handles is handles and tuple(handles.items())==handle_refs
@@ -655,6 +701,13 @@ class ForwardRadioFactory:
             yield checked
             bindings()
         except BaseException as error:
+            if error is initial_error and acquired and a._uncertain is True and not self._unknown and not registry._closing:
+                try:
+                    bindings(refused=True)
+                    require(self.observer.owned() is True);bindings(refused=True)
+                    a._assets();bindings(refused=True)
+                    initial_refusal=True
+                except Exception:pass
             if not initial_refusal:
                 self._unknown=True
                 if acquired:a._uncertain=True;child.unknown=True

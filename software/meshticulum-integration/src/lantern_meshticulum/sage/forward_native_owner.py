@@ -6,7 +6,7 @@ The root caller must grant the four exact forward scopes over the full original
 approval digest. Existing receive grants and unlocked state cannot supply them.
 Activation additionally requires native child tracking/drain and key enrollment.
 """
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import hashlib
 import os
 from pathlib import Path
@@ -74,7 +74,7 @@ class ForwardNativeOwner:
         self.remote=context.responder if local_initiator else context.initiator
         self._key_check,self._peer_key_check,self._boot,self._clock=key_check,peer_key_check,boot_reader,clock_reader
         self._exchange_key_check=exchange_key_check
-        self._radio_native_check=radio_native_check;self._radio_read=None
+        self._radio_native_check=radio_native_check;self._radio_read=None;self._radio_facts=None
         if radio_native_check is not None:
             from .forward_native_provider import ForwardNativeProvider, _RADIO_NATIVE_CHECK
             require(type(radio_native_check) is MethodType
@@ -217,23 +217,57 @@ class ForwardNativeOwner:
         freshly observes native permission, Vault and held accounting instead;
         this busy interval cannot dispatch, encrypt or open another child.
         """
+        return self._observe_radio(adoption)
+
+    def observe_radio_facts(self,factory,mode):
+        """A finite factual read, never a transport or private-key permission."""
+        from .forward_radio import ForwardRadioFactory, _RadioFactsMode
+        require(type(factory) is ForwardRadioFactory and type(mode) is _RadioFactsMode
+            and factory.owner is self and self._radio_native_check is not None)
+        adoption=factory.adoption
+        if adoption._busy:
+            adoption._uncertain=self._uncertain=True;raise ForwardNativeOwnerError()
+        adoption._busy=True
+        try:return self._observe_radio(adoption,factory,mode)
+        except BaseException:
+            adoption._uncertain=True;raise
+        finally:adoption._busy=False
+
+    def _observe_radio(self,adoption,factory=None,mode=None):
         from .radio_native_adoption import NativeRadioAdoption, _ADOPTION_READ_BODY, _ADOPTION_GUARD_TAIL
         from .forward_native_provider import ForwardNativeProvider, _RADIO_NATIVE_CHECK
+        from .forward_radio import ForwardRadioFactory, ForwardRadioError, _RadioFactsMode
+        from . import forward_radio as radio
+        modes=radio._RADIO_FACTS_MODES
         require(type(adoption) is NativeRadioAdoption)
+        require(factory is None and mode is None or type(factory) is ForwardRadioFactory
+            and type(mode) is _RadioFactsMode and any(mode is m for m in modes)
+            and factory.owner is self and factory.adoption is adoption)
         callback=self._radio_native_check
         require(type(callback) is MethodType and type(callback.__self__) is ForwardNativeProvider
             and callback.__func__ is _RADIO_NATIVE_CHECK)
         provider=callback.__self__;child=adoption.child;epoch=self.storage_epoch
         methods=((self,'observe_radio_adoption',_RADIO_ADOPTION_OBSERVER),
+            (self,'observe_radio_facts',_RADIO_FACTS_OBSERVER),(self,'_observe_radio',_RADIO_OBSERVER),
             (provider,'_radio_native_check',_RADIO_NATIVE_CHECK),
             (adoption,'_read_record',_ADOPTION_READ_BODY),(adoption,'_guard_tail',_ADOPTION_GUARD_TAIL)
             )+tuple((self,name,original) for name,original in _RADIO_OWNER_METHODS)
         refs=(adoption,child,adoption.store,adoption._child,callback,epoch)
+        read_action=adoption._read_action
         value=_canonical(child.to_dict());run=object()
-        def bindings():
+        facts=None if factory is None else (factory,mode,run)
+        original_record=(adoption._highest,adoption._record)
+        initial_error=ForwardRadioError() if mode is _RadioFactsMode.LIVE else None
+        def bindings(*,observed=True):
+            require(radio._RADIO_FACTS_MODES is modes and type(modes) is tuple and len(modes)==3
+                and all(a is b for a,b in zip(modes,(_RadioFactsMode.DEVICE,_RadioFactsMode.LIVE,_RadioFactsMode.NATIVE))))
             self._available();adoption._bound()
             require(self._busy and self._radio_read is run and adoption._read_run is run
+                and self._radio_facts is facts
                 and adoption._busy and not adoption._closed and not adoption._uncertain
+                and adoption._read_action is adoption._read_action_ref is read_action
+                and type(read_action) is MethodType and read_action.__self__ is self
+                and read_action.__func__ is _RADIO_ADOPTION_OBSERVER
                 and adoption.owner is self and self._radio_native_check is callback
                 and all(a is b for a,b in zip(refs,(adoption,adoption.child,adoption.store,
                     adoption._child,self._radio_native_check,self.storage_epoch)))
@@ -241,10 +275,19 @@ class ForwardNativeOwner:
                 and type(child.sends) is bool and child.sends==((child.kind%2==1)==self.local_initiator)
                 and child.kind in (H1,H2,CONFIRM_I,CONFIRM_R,DATA)
                 and adoption.store is self._composition.store
+                and (adoption._highest,adoption._record)==original_record
                 and type(provider)._radio_native_check is _RADIO_NATIVE_CHECK
                 and '_radio_native_check' not in provider.__dict__)
             require(all(name not in obj.__dict__ and getattr(type(obj),name) is original
                         for obj,name,original in methods))
+            if factory is not None:
+                factory._bound()
+                require(factory.owner is self and factory.adoption is adoption
+                    and factory.observer.adoption is adoption and factory.observer._factory is factory
+                    and adoption._adopted is True and self.resource._forward_radio is adoption
+                    and (factory._native_observing and adoption._child.observing
+                        and adoption._child.observe_thread==threading.get_ident() if observed else
+                        not factory._native_observing and not adoption._child.observing))
             children=[c for c in self._registry._children if c.owner is self and c.plan is child
                 and not c.retired and not c.unknown]
             require(len(children)==1)
@@ -260,18 +303,45 @@ class ForwardNativeOwner:
             self._observe(keys=False);bindings()
             _ADOPTION_GUARD_TAIL(adoption);bindings()
             return True
+        def full():
+            bindings();self._observe();bindings();_ADOPTION_GUARD_TAIL(adoption);bindings()
+        pending=original_record
+        def row(before,after):
+            nonlocal pending
+            before();adoption._assets();bindings()
+            revision,record=_ADOPTION_READ_BODY(adoption,guard,epoch)
+            bindings();adoption._assets();bindings();after()
+            require(revision>=pending[0] and (revision!=pending[0] or record==pending[1]))
+            pending=revision,record
         def read():
-            require(self._radio_read is None and adoption._read_run is None)
+            require(self._radio_read is None and adoption._read_run is None and self._radio_facts is None)
             self._radio_read=adoption._read_run=run
+            self._radio_facts=facts
             try:
-                bindings();self._observe();bindings();_ADOPTION_GUARD_TAIL(adoption);bindings()
-                adoption._assets();bindings()
-                revision,record=_ADOPTION_READ_BODY(adoption,guard,epoch)
-                bindings();adoption._assets();bindings()
-                self._observe();bindings();_ADOPTION_GUARD_TAIL(adoption);bindings()
-                adoption._highest,adoption._record=revision,record
+                observed=(nullcontext() if factory is None else factory._observed(
+                    self.context,child,factory.transfer,initial_error=initial_error))
+                with observed as checked:
+                    if factory is None:row(full,full)
+                    else:
+                        try:row(full,guard)
+                        except Exception:
+                            if initial_error is None:raise
+                            adoption._uncertain=True;raise initial_error from None
+                        checked(factory.observer._device_facts)
+                        if mode is _RadioFactsMode.NATIVE:
+                            row(guard,guard);checked(factory.observer._device_facts)
+                            # The original worker predicate is pure, but still
+                            # inside the last full authorization bookend.
+                            def finish():
+                                checked(factory.observer._worker_current,factory.worker);full()
+                            row(guard,finish)
+                        else:row(guard,full)
+                    bindings()
+                bindings(observed=False);adoption._highest,adoption._record=pending
                 return True
             finally:
+                if self._radio_facts is facts:self._radio_facts=None
+                else:self._uncertain=True
                 if self._radio_read is run:self._radio_read=None
                 else:self._uncertain=True
                 if adoption._read_run is run:adoption._read_run=None
@@ -625,5 +695,7 @@ class ForwardNativeOwner:
         return self._close_components() and owner
 
 _RADIO_ADOPTION_OBSERVER=ForwardNativeOwner.observe_radio_adoption
+_RADIO_FACTS_OBSERVER=ForwardNativeOwner.observe_radio_facts
+_RADIO_OBSERVER=ForwardNativeOwner._observe_radio
 _RADIO_OWNER_METHODS=tuple((name,getattr(ForwardNativeOwner,name))
     for name in ('_run','_available','_observe','_checked'))

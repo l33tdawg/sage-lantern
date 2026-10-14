@@ -359,6 +359,7 @@ class ForwardNativeProvider:
     def _radio_native_check(self,owner,adoption,child,epoch):
         """Fresh held accounting and root/native permission for metadata only."""
         run=owner._radio_read
+        facts=owner._radio_facts
         def bound():
             require(type(owner) is ForwardNativeOwner and owner is self._owner
                 and owner.resource is self.resource and owner.authority is self.authority
@@ -368,7 +369,16 @@ class ForwardNativeProvider:
                 and adoption._read_run is run and adoption.owner is owner and adoption.child is child
                 and adoption.store is owner._composition.store
                 and owner._radio_native_check.__self__ is self
-                and owner._radio_native_check.__func__ is _RADIO_NATIVE_CHECK)
+                and owner._radio_native_check.__func__ is _RADIO_NATIVE_CHECK
+                and owner._radio_facts is facts)
+            if facts is not None:
+                from .forward_radio import ForwardRadioFactory, _RadioFactsMode
+                require(type(facts) is tuple and len(facts)==3
+                    and type(facts[0]) is ForwardRadioFactory and type(facts[1]) is _RadioFactsMode
+                    and facts[2] is run and facts[0].owner is owner and facts[0].adoption is adoption
+                    and adoption._adopted is True and self.resource._forward_radio is adoption
+                    and facts[0]._native_observing and adoption._child.observing
+                    and adoption._child.observe_thread==threading.get_ident())
             require(all(name not in self.__dict__ and getattr(type(self),name) is original
                         for name,original in _RADIO_PROVIDER_METHODS))
             self._available()
