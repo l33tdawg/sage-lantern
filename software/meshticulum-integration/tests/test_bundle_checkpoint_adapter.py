@@ -89,8 +89,30 @@ def test_missing_original_optin_refuses_before_loading_source_or_opening_device(
     with pytest.raises(RuntimeError):adapter.open_serial('unit-a',policy,{'bundle_context':context},1)
 
 
+@pytest.fixture
+def historical_h42_checkpoint(monkeypatch):
+    """Exercise the expired H42 contract under an explicit source-only model."""
+    actual = adapter.checkpoint_api.HISTORY
+    assert len(actual) == 43
+    assert actual[-1] == 'bea52c6aa6a5a95501997a46247b514f'
+    monkeypatch.setattr(adapter.checkpoint_api, 'HISTORY', actual[:42])
+    return actual[:42]
+
+
+@pytest.mark.parametrize('count',(42,43))
+def test_original_h42_checkpoint_contract_stays_closed_with_current_h43(data,count,monkeypatch):
+    _,_,value,policy=data
+    assert len(adapter.checkpoint_api.HISTORY) == 43
+    owner=dict(bundle_context=value,bundle_radio_checkpoint=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',
+        producer_sha256='a'*64,primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,
+        retained_history_count=count,maximum_checkpoints=4))
+    monkeypatch.setattr(adapter.checkpoint_api,'load_primitives',lambda _:pytest.fail('primitives reached'))
+    with pytest.raises(RuntimeError,match='original_checkpoint_owner_optin_required'):
+        adapter.open_serial('unit-a',policy,owner,1)
+
+
 @pytest.mark.parametrize('mutation',('old_count','previous_count','wrong_hash','wrong_limit','bool_count'))
-def test_original_owner_checkpoint_descriptor_is_explicit_and_typed(data,mutation):
+def test_original_owner_checkpoint_descriptor_is_explicit_and_typed(data,mutation,historical_h42_checkpoint):
     _,_,value,policy=data
     owner=dict(bundle_context=value,bundle_radio_checkpoint=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',
         producer_sha256='a'*64,primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=42,maximum_checkpoints=4))
@@ -181,7 +203,7 @@ def test_real_timeout_kills_owned_term_ignoring_process_and_releases_its_fd(tmp_
 
 
 @pytest.mark.parametrize('fault',('extended_epoch','extended_mono','mono_expired','epoch_expired','mutated_phase','mutated_payload'))
-def test_native_clipped_guard_binds_original_phase_and_never_extends_handoff(data,fault):
+def test_native_clipped_guard_binds_original_phase_and_never_extends_handoff(data,fault,historical_h42_checkpoint):
     _,_,value,policy=data;now=[(101000000,802000000)]
     owner=dict(bundle_context=value,native_phase={'unit-a':dict(epoch_us=100000000,monotonic_us=801000000,deadline_monotonic_us=1101000000)},
         bundle_radio_checkpoint=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',producer_sha256='a'*64,

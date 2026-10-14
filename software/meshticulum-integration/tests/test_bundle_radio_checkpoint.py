@@ -100,8 +100,13 @@ def root_record(data,tmp_path,monkeypatch,root_observation):
     observation=snapshot.collect(directory,snapshot.Scope('meshticulum.public-parent-snapshot-scope.v1','controller',os.geteuid(),
         policy.parent_id,policy.digest,module.sha(raw),None,BOOT,130000000),clock=now,boot_reader=lambda:BOOT).to_dict()
     assert observation['status']=='scoped_rows_observed' and observation['detail']['allocation_count']==2
-    # Use the actual H19 source whitelist. Peer STATUS/projections are modeled.
-    history=tuple(module.HISTORY);assert len(history)==42
+    # The original H42 checkpoint contract remains closed on the active H43
+    # roster. Exercise its historical checks under an explicit local model;
+    # peer STATUS/projections remain modeled and confer no current permission.
+    actual_history=tuple(module.HISTORY)
+    assert len(actual_history)==43 and actual_history[-1]=='bea52c6aa6a5a95501997a46247b514f'
+    history=actual_history[:42]
+    monkeypatch.setattr(module,'HISTORY',history)
     natives={};terminal=[]
     for unit in ('unit-a','unit-c'):
         rows=[];claims=[]
