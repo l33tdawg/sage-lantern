@@ -122,6 +122,22 @@ def one_record(raw, schema):
     return records[0]
 
 
+def preparation_schema(config,package):
+    """Pure exact receipt dispatch; selection itself supplies no permission."""
+    from .mcu_artifact import SSH_SCHEMA, PAID_SCHEMA, PROVISION_SCHEMA, validate_artifact, validate_metadata
+    require(type(config) is dict and type(package) is dict,'invalid_pilot_preparation')
+    if config.get('schema')==SSH_SCHEMA:
+        selected=validate_artifact(config['mcu_artifact'])
+        require(package.get('schema')==PAID_SCHEMA and package['unit'] in ('unit-a','unit-c')
+            and validate_artifact(package['mcu_artifact'])==selected
+            and validate_metadata(package['parent']['child']['metadata'])==selected
+            and package['grant'].get('radio_modem')=='gfsk250','ssh_mcu_original_package_changed')
+        return PROVISION_SCHEMA
+    require('mcu_artifact' not in config and package.get('schema')=='meshticulum.public-pilot-package.v2',
+            'pilot_parent_package_required')
+    return 'meshticulum.provisioned-public-pilot.v2'
+
+
 class Job:
     """An owned local SSH process; native liveness is checked separately."""
     def __init__(self,argv,*,password=None,deadline,clock=time.monotonic,popen=subprocess.Popen):
@@ -183,18 +199,25 @@ class SSHOperator:
         self.native_phase_timing=native_phase_timing
         require(type(config) is dict,'invalid_ssh_pilot_config')
         from .pilot_bundle import SSH_SCHEMA_V2, SSH_SCHEMA_V3, COMMITTED_CONTRACTS, public_context_commitment
+        from .mcu_artifact import SSH_SCHEMA as MCU_SSH_SCHEMA, KIND as MCU_KIND, validate_artifact, require_selector_scope
         schemas=tuple(v[5] for v in COMMITTED_CONTRACTS.values())
-        versioned=config.get('schema') in schemas
+        selected_mcu=config.get('schema')==MCU_SSH_SCHEMA
+        versioned=config.get('schema') in schemas or selected_mcu
         fields={'schema','runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256',
                 'handoff_end_epoch_us','port_base','units'}
-        require(set(config)==(fields|{'bundle_parent_id','bundle_context','bundle_capture_commitment'} if versioned else fields)
-            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',*schemas),'invalid_ssh_pilot_config')
+        expected=fields|{'bundle_parent_id','bundle_context','bundle_capture_commitment'} if versioned else fields
+        if selected_mcu:expected|={'mcu_artifact'}
+        require(set(config)==expected
+            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',*schemas,MCU_SSH_SCHEMA),'invalid_ssh_pilot_config')
         commitment=None
         if versioned:
             commitment=public_context_commitment(config['bundle_context'],parent_id=config['bundle_parent_id'])
-            require(config['schema']==COMMITTED_CONTRACTS[commitment['qualification_kind']][5]
+            require(config['schema']==(MCU_SSH_SCHEMA if selected_mcu else COMMITTED_CONTRACTS[commitment['qualification_kind']][5])
                     and config['bundle_capture_commitment']==commitment
                     and config['handoff_end_epoch_us']==commitment['phase_end_epoch_us'],'ssh_v2_original_context_changed')
+        if selected_mcu:
+            validate_artifact(config['mcu_artifact']);require_selector_scope(MCU_KIND)
+            require(commitment['qualification_kind']==MCU_KIND,'ssh_mcu_original_kind_changed')
         for key in ('runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256'):
             require(type(config[key]) is str and re.fullmatch('[0-9a-f]{64}',config[key]),'invalid_ssh_pilot_pin')
         require(hashlib.sha256(provision_source).hexdigest()==config['provision_sha256'], 'pilot_provision_source_changed')
@@ -468,9 +491,11 @@ class SSHOperator:
         require(package['grant']['host_boot_id']==row['host_boot_id']
                 and package['application_expires_epoch_us']<=self.config['handoff_end_epoch_us']-10000000,
                 'pilot_package_outside_boot_or_cleanup_window')
-        require(package.get('schema') == 'meshticulum.public-pilot-package.v2',
-                'pilot_parent_package_required')
-        return self._package(package,'meshticulum.provisioned-public-pilot.v2')
+        from .mcu_artifact import SSH_SCHEMA, KIND, require_selector_scope
+        schema=preparation_schema(self.config,package)
+        if self.config.get('schema')==SSH_SCHEMA:
+            require_selector_scope(KIND)
+        return self._package(package,schema)
 
     def prepare_pair(self,packages):
         """Explicit two-unit preparation; drain both callbacks before returning.

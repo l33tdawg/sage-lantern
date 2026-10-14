@@ -25,6 +25,7 @@ import zlib
 from run_public_sf5_c_bulk_8k import read,write,sha,canonical,stable,need,RPC_ENTRY
 
 SCHEMA='meshticulum.public-gfsk250-mb1-fast-bundle100k-operation.v1'
+MCU_SCHEMA='meshticulum.public-gfsk250-usb-rx2048-mb1-fast-bundle100k-operation.v1'
 # Full H34 C metadata plus the signed five-part schedule exceeds the old
 # 84k envelope. Only this explicit whole-file entry uses the bounded 91k cap.
 need(RPC_ENTRY.count("need(len(blob)<=112000,'RPC_encoded_bound')")==1
@@ -51,6 +52,51 @@ def capture_storage_mode(op):
     need(type(value) is str and value in ('plain-json-v1','zlib-json-v1'),
         'invalid_capture_storage_mode')
     return value
+
+
+def operation_selection(op, manifest=None):
+    """Original reviewed opt-in; no later default or firmware relabelling."""
+    from lantern_meshticulum.bench.mcu_artifact import OPERATION_SCHEMA, SELECTOR, validate_artifact, select_runtime
+    if op['schema']==SCHEMA:
+        need('mcu_artifact_selector' not in op and 'mcu_artifact' not in op,
+             'mcu_selection_requires_original_versioned_operation')
+        if manifest is not None:need(select_runtime(manifest) is None,'legacy_operation_selected_mcu_runtime')
+        return None
+    need(op['schema']==OPERATION_SCHEMA and op.get('mcu_artifact_selector')==SELECTOR,
+         'wrong_original_mcu_operation')
+    selected=validate_artifact(op['mcu_artifact'])
+    need(op['core_commit']==selected['core_revision'],'mcu_operation_core_changed')
+    if manifest is not None:
+        need(select_runtime(manifest)==selected and manifest['firmware_by_unit']['unit-b']=='mtb1-9816f92488',
+             'mcu_operation_runtime_changed')
+    return selected
+
+
+def operation_bindings(op):
+    """Refuse unresolved scope/history before credentials or native work."""
+    selected=operation_selection(op)
+    if selected is None:
+        from lantern_meshticulum.bench.fast_bundle import require_bindings
+        return require_bindings()
+    from lantern_meshticulum.bench.mcu_artifact import require_selector_scope, KIND
+    pins=require_selector_scope(KIND)
+    return dict(pins,core_commit=selected['core_revision'])
+
+
+def original_owners_for(op, owner, captures, policy, manifest):
+    """Pure original-owner construction; the caller separately admits scope."""
+    selected=operation_selection(op,manifest)
+    owners={u:dict(owner,history_binding_sha256=cap['history_binding_sha256'],
+        capture_record_sha256=cap['capture_record_sha256'])for u,cap in captures.items()}
+    if selected is None:return owners,None
+    from lantern_meshticulum.bench.mcu_artifact import owner_envelope, KIND
+    need(owner['runtime_sha256']==op['runtime_sha256'] and owner['manifest_sha256']==op['manifest_sha256']
+         and owner['core_commit']==op['core_commit'] and owner['mb1_bundle_scope_sha256']==op['mb1_bundle_scope_sha256']
+         and owner['history_receipt_sha256']==op['history_receipt_sha256']
+         and owner['policy_digest']==policy.digest and owner['qualification_kind']==policy.qualification_kind==KIND,
+         'mcu_original_operation_owner_changed')
+    original=owner_envelope(owner,selected['selector'])
+    return {u:owner_envelope(value,selected['selector'])for u,value in owners.items()},original
 
 
 def capture_payloads_for(op, *, parent_id, histories, facts, epoch, end, review_sha256,
@@ -166,7 +212,7 @@ def archive_source_members(archive,manifest_pin):
 
 def review(path,pin):
     raw=read(path,2000000);need(sha(raw)==pin,'operation_pin_changed');op=json.loads(raw)
-    need(op['schema']==SCHEMA and op['runner_sha256']==sha(read(Path(__file__),100000)), 'wrong_batch_operation')
+    need(op['schema'] in (SCHEMA,MCU_SCHEMA) and op['runner_sha256']==sha(read(Path(__file__),100000)), 'wrong_batch_operation')
     phase_timing_mode(op)
     capture_storage_mode(op)
     need(op.get('require_same_boot_gfsk250_capability') is True
@@ -179,9 +225,8 @@ def review(path,pin):
              and not subprocess.check_output(['git','-C',str(folder),'status','--porcelain'],text=True),'batch_source_changed')
     sys.path[:0]=[str(core/'src'),str(lantern/'software/meshticulum-integration/src')]
     from lantern_meshticulum.bench import retained_capture
-    from lantern_meshticulum.bench.fast_bundle import require_bindings
     from lantern_meshticulum.bench.profiles import GFSK250_FIRMWARE as GFSK_FIRMWARE
-    bindings=require_bindings()
+    selected=operation_selection(op);bindings=operation_bindings(op)
     need(op['core_commit']==bindings['core_commit'],'mb1_exact_core_required')
     # Exact caller-supplied runtime/manifest pins are authenticated below by
     # the preflight and archive. They cannot be constants inside that archive.
@@ -213,7 +258,9 @@ def review(path,pin):
         need(type(loader_pin) is str and manifest['execution_layout']['loader_sha256']==loader_pin
             ==sha(read(lantern/'firmware/meshticulum-bench/execution_runtime.py',500000)),
             'batch_image_loader_source_changed')
-    need(manifest['firmware_by_unit']['unit-a']==GFSK_FIRMWARE and manifest['firmware_by_unit']['unit-b']=='mtb1-9816f92488','gfsk_firmware_manifest_required')
+    operation_selection(op,manifest)
+    need(manifest['firmware_by_unit']['unit-a']==(selected['firmware'] if selected is not None else GFSK_FIRMWARE)
+         and manifest['firmware_by_unit']['unit-b']=='mtb1-9816f92488','gfsk_firmware_manifest_required')
     need(manifest.get('native_operation_kind')=='c-gfsk250-mb1-fast-bundle100k-v1','fast_runtime_kind_required')
     need(manifest['private_services_enabled'] is False and manifest['public_parent_claims_required'] is True,'batch_public_runtime_required')
     for name,data in logical.items():
@@ -420,7 +467,9 @@ def cleanup_rpc_input(operator,cfg,op,staged):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--operation',type=Path,required=True);parser.add_argument('--operation-sha256',required=True);parser.add_argument('--check',action='store_true');args=parser.parse_args();os.umask(0o077)
-    op,core,lantern,manifest,receipt,helpers=review(args.operation,args.operation_sha256);piece=fixture(op)
+    op,core,lantern,manifest,receipt,helpers=review(args.operation,args.operation_sha256)
+    selected=operation_selection(op,manifest);operation_bindings(op)
+    piece=fixture(op)
     from lantern_meshticulum.bench.pilot_parent_caps import ParentPolicy,ParentCaps,UnitCaps,Cost
     from lantern_meshticulum.bench.pilot_parent_snapshot import Scope,collect
     from lantern_meshticulum.bench.pilot_ssh import SSHOperator,Job,one_record
@@ -462,6 +511,9 @@ def main():
     commitment=public_context_commitment(bundle_context,parent_id=parent_id)
     cfg.update(schema=COMMITTED_CONTRACTS[KIND][5],bundle_parent_id=parent_id,bundle_context=bundle_context,
         bundle_capture_commitment=commitment,handoff_end_epoch_us=end)
+    if selected is not None:
+        from lantern_meshticulum.bench.mcu_artifact import SSH_SCHEMA
+        cfg.update(schema=SSH_SCHEMA,mcu_artifact=selected)
     operator=parent=current=None;owned=[];owners={};priors={};preparations={u:{} for u in histories};facts={}
     def native(u,action,payload):
         started_epoch_us=time.time_ns()//1000;started_monotonic_ns=time.monotonic_ns()
@@ -540,7 +592,11 @@ def main():
         for unit in units:aggregate=aggregate.plus(unit.limits)
         policy=ParentPolicy(parent_id,helpers.controller_boot(),epoch,end-5000000,mono,mono+1350000000,tuple(units),aggregate,sha(canonical(registry)),KIND,bundle_context_sha256=sha(canonical(bundle_context)))
         owner=dict(schema='meshticulum.finite-public-resume-owner.v1',qualification_kind=KIND,policy_digest=policy.digest,authorization=op['authorization'],review_sha256=args.operation_sha256,prior_registry=registry,facts=facts,phase_start_epoch_us=epoch,phase_end_epoch_us=end,native_phase={u:captures[u]['native_phase'] for u in histories},runtime_sha256=op['runtime_sha256'],manifest_sha256=op['manifest_sha256'],rf_record=json.loads(read(op['rf_confirmation_path'],20000)),rf_record_sha256='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9',rf_profile=profile_record(profile_for(GFSK_NAME)),radio_profile_name=GFSK_NAME,radio_modem=GFSK_NAME,mb1_bundle_scope_sha256=op['mb1_bundle_scope_sha256'],core_commit=op['core_commit'],history_receipt_sha256=op['history_receipt_sha256'],bundle_context=bundle_context,bundle_capture_commitment=commitment,complete_global_debt=False,actual_cost=None)
-        context=BundleContext(bundle_context,policy);owners={u:dict(owner,history_binding_sha256=captures[u]['history_binding_sha256'],capture_record_sha256=captures[u]['capture_record_sha256']) for u in histories}
+        context=BundleContext(bundle_context,policy)
+        owners,mcu_owner=original_owners_for(op,owner,captures,policy,manifest)
+        if mcu_owner is not None:
+            from lantern_meshticulum.bench.mcu_artifact import require_native_scope
+            require_native_scope(mcu_owner,policy,manifest)
         write(out/'POLICY.json',policy.to_dict());write(out/'OWNER_APPROVAL.json',owners);write(out/'PRIOR.json',priors);write(out/'CONFIG.json',cfg);write(out/'OPERATION.json',op)
         parent=ParentCaps.enroll(out/'caps.sqlite',policy,clock=helpers.parent_clock,boot_reader=helpers.controller_boot)
         for u in ('unit-c','unit-b','unit-a'):native(u,'enroll',dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u]))
@@ -556,7 +612,8 @@ def main():
         load('batch_launch_guard',lantern/'firmware/meshticulum-bench/pair_launch_guard_sender_first.py').install(operator,guarded,lora_sender_first=True)
         current=BundleCampaign(operator,parent,bundle_context,peers=peers,boots={u:v['host_boot_id'] for u,v in cfg['units'].items()},
             handoff_deadline_monotonic=min(operator.deadline,policy.deadline_monotonic_us/1000000),clock=operator.clock,
-            epoch=lambda:helpers.parent_clock()[0],sleep=time.sleep,lora_sender_first=True)
+            epoch=lambda:helpers.parent_clock()[0],sleep=time.sleep,lora_sender_first=True,
+            **({'mcu_owner':mcu_owner} if mcu_owner is not None else {}))
         result['original_whole']=dict(epoch_us=epoch,monotonic_us=mono,expires_epoch_us=policy.expires_epoch_us,deadline_monotonic_us=policy.deadline_monotonic_us)
         for index,response in enumerate(piece['responses']):
             result['bundle_parts'].append(current.transfer_part(index,response))

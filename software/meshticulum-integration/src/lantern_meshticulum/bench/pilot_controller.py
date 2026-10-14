@@ -118,6 +118,14 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 
 
 class Controller:
+    __slots__=('__mcu_owner','__dict__','__weakref__')
+    def __setattr__(self,name,value):
+        if name=='_Controller__mcu_owner' and hasattr(self,name):
+            raise RuntimeError('mcu_controller_constructor_choice_rebound')
+        object.__setattr__(self,name,value)
+    def __delattr__(self,name):
+        if name=='_Controller__mcu_owner':raise RuntimeError('mcu_controller_constructor_choice_rebound')
+        object.__delattr__(self,name)
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
                  clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None,
@@ -138,6 +146,7 @@ class Controller:
             self._mcu_owner_bytes=canonical(mcu_owner)
             self.mcu_artifact_selector=self._mcu_artifact_selector=selected['selector']
         self._mcu_owner_ref=self._mcu_owner_bytes
+        self.__mcu_owner=self._mcu_owner_bytes
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
@@ -145,7 +154,11 @@ class Controller:
         require(type(radio_profile) is str and radio_profile in PROFILE_NAMES
                 and (not public32 or radio_profile == (profile_name_for_kind(parent.policy.qualification_kind) or 'sf7-500')), 'invalid_pilot_radio_profile')
         require((radio_profile==GFSK250_NAME)==(parent.policy.qualification_kind in (GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND)),'gfsk250_parent_kind_mismatch')
-        if radio_profile==GFSK250_NAME:require_gfsk250_bindings(parent.policy.qualification_kind)
+        if radio_profile==GFSK250_NAME:
+            if mcu_owner is None:require_gfsk250_bindings(parent.policy.qualification_kind)
+            else:
+                from .mcu_artifact import require_selector_scope
+                require_selector_scope(parent.policy.qualification_kind)
         require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
         require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME,GFSK250_NAME)),
@@ -200,10 +213,11 @@ class Controller:
     def current(self):
         require(self.mcu_artifact_selector is self._mcu_artifact_selector,
                 'mcu_original_controller_selection_changed')
-        require(self._mcu_owner_bytes is self._mcu_owner_ref,'mcu_controller_owner_rebound')
+        require(self._mcu_owner_bytes is self._mcu_owner_ref is self.__mcu_owner,'mcu_controller_owner_rebound')
         if self._mcu_owner_bytes is not None:
-            from .mcu_artifact import decode_owner
+            from .mcu_artifact import decode_owner, require_selector_scope
             original,selected=decode_owner(json.loads(self._mcu_owner_bytes))
+            require_selector_scope(self.parent.policy.qualification_kind)
             require(original['policy_digest']==self.parent.policy.digest
                 and selected['selector']==self.mcu_artifact_selector,'mcu_controller_owner_rebound')
         require(self.ip_startup_mode is self._ip_startup_mode,'pilot_ip_startup_mode_changed')
@@ -283,7 +297,15 @@ class Controller:
                 else:receipt=receipts[unit]
                 require(canonical(package) == frozen_packages[unit], 'pilot_prepare_package_mutated')
                 claim = receipt.get('parent') if type(receipt) is dict else None
-                require(type(receipt) is dict and receipt.get('schema') == 'meshticulum.provisioned-public-pilot.v2'
+                expected_schema='meshticulum.provisioned-public-pilot.v2'
+                if self.__mcu_owner is not None:
+                    from .mcu_artifact import PROVISION_SCHEMA, validate_artifact, validate_metadata
+                    expected_schema=PROVISION_SCHEMA
+                    require(type(receipt) is dict and type(claim) is dict
+                        and validate_artifact(receipt['mcu_artifact'])==package['mcu_artifact']
+                        and validate_metadata(claim['child_caps']['metadata'])==package['mcu_artifact'],
+                        'mcu_native_parent_receipt_changed')
+                require(type(receipt) is dict and receipt.get('schema') == expected_schema
                         and receipt.get('unit') == unit and receipt.get('run_id') == pair['run_id']
                         and type(claim) is dict and claim.get('schema') == 'meshticulum.native-parent-claim.v1'
                         and claim.get('prepared') is True and claim.get('parent_id') == self.parent.policy.parent_id

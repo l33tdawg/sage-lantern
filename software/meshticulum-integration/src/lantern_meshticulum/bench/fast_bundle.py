@@ -43,7 +43,11 @@ def require_bindings():
 
 def require_owner(owner, policy):
     from .pilot_bundle import BundleContext
-    pins = require_bindings()
+    from .mcu_artifact import OWNER_SCHEMA, decode_owner, require_selector_scope
+    if owner.get('schema')==OWNER_SCHEMA:
+        owner,selected=decode_owner(owner)
+        pins=dict(require_selector_scope(KIND),core_commit=selected['core_revision'])
+    else:pins = require_bindings()
     require(policy.qualification_kind == owner.get('qualification_kind') == KIND
         and owner.get('radio_modem') == owner.get('radio_profile_name') == GFSK250_NAME
         and owner.get('mb1_bundle_scope_sha256') == pins['scope_sha256']
@@ -147,7 +151,7 @@ def deliver_final_ack(unit, run, proof, *, state, clock, facts):
     marks a result complete, revokes a grant or dispatches RF. It verifies exact
     private plan/provision bytes and session MAC before publishing the proof.
     """
-    from .pilot_resume_rpc import Reader, parse
+    from .pilot_resume_rpc import Reader, Runtime, parse
     from .pilot_parent_caps import ParentPolicy
     from meshticulum.contracts.identity import PeerID, SessionKey
     from .profiles import radio_route
@@ -159,6 +163,19 @@ def deliver_final_ack(unit, run, proof, *, state, clock, facts):
         policy = ParentPolicy.from_dict(parse(reader.read(Path(state)/'parents'/parent/'policy.json',20000)))
         owner = parse(reader.read(Path(state)/'parents'/parent/'owner.json',200000))
         context = require_owner(owner, policy)
+        runtime=None
+        from .mcu_artifact import OWNER_SCHEMA, decode_owner, require_native_scope, validate_original_claim, validate_artifact, PROVISION_SCHEMA
+        if owner.get('schema')==OWNER_SCHEMA:
+            import sys
+            original,selected=decode_owner(owner)
+            helper=sys.modules.get('_lantern_execution_runtime')
+            root=helper.module_root(__name__) if helper is not None else Path(__file__).absolute().parents[2]
+            runtime=reader.stack.enter_context(Runtime(root,original['manifest_sha256']))
+            require_native_scope(owner,policy,runtime.manifest)
+            require(runtime.root.name=='runtime-'+original['runtime_sha256'][:16]
+                and provision['schema']==PROVISION_SCHEMA
+                and validate_artifact(provision['mcu_artifact'])==selected,'fast_completion_mcu_provision_changed')
+            validate_original_claim(claim,plan,selected)
         require(unit == provision['unit'] == plan['unit'] and plan['sender_unit'] != unit
             and facts['host_boot_id'] == plan['host_boot_id'] == policy.unit(unit).host_boot_id
             and plan['session_id'] == provision['run_id'] == run and claim['prepared'] is True
@@ -181,9 +198,11 @@ def deliver_final_ack(unit, run, proof, *, state, clock, facts):
         require(first[0] < meta['application_expires_epoch_us'] and first[1] < claim['application_deadline_monotonic_us'],
             'fast_completion_original_deadline_expired')
         reader.check()
+        if runtime is not None:runtime.check();require_native_scope(owner,policy,runtime.manifest)
         from lantern_meshticulum.ip.node import _write
         _write(directory/'fast-final-ack.json', canonical(proof))
         after = clock(); context.current(after); reader.check()
+        if runtime is not None:runtime.check();require_native_scope(owner,policy,runtime.manifest)
         require(all(a >= b for a,b in zip(after,first)) and after[0] < meta['application_expires_epoch_us']
             and after[1] < claim['application_deadline_monotonic_us'], 'fast_completion_original_deadline_expired')
     return dict(schema='meshticulum.native-fast-completion-delivered.v1', unit=unit, run_id=run,
@@ -400,10 +419,35 @@ from .pilot_bundle import BundleCampaign
 
 class FastBundleCampaign(BundleCampaign):
     """Progress-driven controller; no fixed inter-part sleeps or renewed clocks."""
-    def __init__(self,*args,**kwargs):
+    __slots__=('__mcu_owner',)
+    def __setattr__(self,name,value):
+        if name=='_FastBundleCampaign__mcu_owner' and hasattr(self,name):
+            raise RuntimeError('fast_mcu_constructor_choice_rebound')
+        object.__setattr__(self,name,value)
+    def __delattr__(self,name):
+        if name=='_FastBundleCampaign__mcu_owner':raise RuntimeError('fast_mcu_constructor_choice_rebound')
+        object.__delattr__(self,name)
+    def __init__(self,*args,mcu_owner=None,**kwargs):
+        self._mcu_owner_bytes=self._mcu_owner_ref=None
+        if mcu_owner is not None:
+            from .mcu_artifact import decode_owner, require_selector_scope
+            decode_owner(mcu_owner);require_selector_scope(KIND)
+            self._mcu_owner_bytes=self._mcu_owner_ref=canonical(mcu_owner)
+        self.__mcu_owner=self._mcu_owner_bytes
         super().__init__(*args,**kwargs)
         require(self.parent.policy.qualification_kind==KIND,'fast_bundle_kind_required')
-        require_bindings()
+        if mcu_owner is None:require_bindings()
+        else:self._mcu_current()
+
+    def _mcu_current(self):
+        require(self._mcu_owner_bytes is self._mcu_owner_ref is self.__mcu_owner,'fast_mcu_original_owner_rebound')
+        if self._mcu_owner_bytes is not None:
+            original=json.loads(self._mcu_owner_bytes)
+            context=require_owner(original,self.parent.policy)
+            require(canonical(context.value)==canonical(self.context.value),'fast_mcu_original_context_changed')
+
+    def current(self):
+        self._mcu_current();super().current();self._mcu_current()
 
     def transfer_part(self,index,response):
         from .pilot_controller import Controller
@@ -435,7 +479,8 @@ class FastBundleCampaign(BundleCampaign):
             expires_epoch_us=expires,handoff_deadline_monotonic=min(self.handoff,original_handoff/1000000),
             peers=self.peers,boots=self.boots,parent=self.parent,radio_permission={'country':'MY','antenna_confirmed':True},
             clock=self.clock,epoch=self.epoch,sleep=self.sleep,public32=True,lora_sender_first=self.lora_sender_first,
-            bundle_context=self.context.value,radio_profile=GFSK250_NAME)
+            bundle_context=self.context.value,radio_profile=GFSK250_NAME,
+            **({'mcu_owner':json.loads(self._mcu_owner_bytes)} if self._mcu_owner_bytes is not None else {}))
         self.controllers.append(controller)
         verified=None
         try:
