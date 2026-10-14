@@ -299,13 +299,28 @@ print(json.dumps(result,sort_keys=True),flush=True)
 
 def retained_controller_caps(unit,row,observation):
     from lantern_meshticulum.bench.pilot_parent_caps import Cost,ParentPolicy
+    from lantern_meshticulum.bench import fast_bundle_d1fd_history as d1fd
     policy=ParentPolicy.from_dict(row['policy']); local=policy.unit(unit)
     actual=next(v for v in observation['detail']['units'] if v['unit']==unit)
     need(observation['parent_id']==policy.parent_id and observation['policy_digest']==policy.digest==row['policy_digest']
          and observation['policy_expired_at_observation'] is True and observation['pending_unknown'] is False,
          'retained_controller_scope_changed')
     spent=Cost(**actual['prior_plus_prepaid_caps'])
-    if 'conservative_unused_enrollment_caps' in row:
+    if policy.parent_id==d1fd.PARENT:
+        d1fd.owner_view(row['owner'],policy,unit=unit)
+        native=Cost(**row['actual_native_paid_caps'])
+        native_unused=Cost(**row['conservative_unused_enrollment_caps'])
+        controller_unused=Cost(**row['conservative_unused_controller_caps'])
+        allocation=Cost() if unit=='unit-b' else Cost(256,60000000)
+        need(actual['prior_plus_prepaid_caps']==row['actual_controller_paid_caps']
+             and spent==local.prior_debt.plus(allocation) and native==local.prior_debt
+             and native.plus(native_unused)==spent.plus(controller_unused)==local.limits
+             and asdict(local.limits)==row['paid_caps']==actual['limit']
+             and sha(canonical(row['controller_observed_endpoint_refs']))==d1fd.CONTROLLER_ENDPOINT_REFS_SHA256[unit]
+             and row['native_controller_debt_views_may_be_summed'] is False
+             and row['require_result_complete'] is row['original_cleanup_proved'] is False,
+             'retained_d1fd_controller_and_native_views_changed')
+    elif 'conservative_unused_enrollment_caps' in row:
         unused=Cost(**row['conservative_unused_enrollment_caps'])
         need(actual['prior_plus_prepaid_caps']==row['actual_controller_paid_caps']==row['actual_native_paid_caps']
              and spent.plus(unused)==local.limits and asdict(local.limits)==row['paid_caps']
