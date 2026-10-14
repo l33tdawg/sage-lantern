@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Local-first SAGE Lantern voice and transport orchestration runtime"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
-dependencies = ["meshticulum @ git+https://github.com/l33tdawg/meshticulum.git@868444188f7e55ad665f1104865f5956e5266875", "PyNaCl==1.6.2", "cryptography==46.0.3", "sage-agent-sdk==11.19.10+lantern.20260906", "PyYAML==6.0.2"]
+dependencies = ["meshticulum @ git+https://github.com/l33tdawg/meshticulum.git@3bffa64beaee1718877f93443b7737db4a11b54b", "PyNaCl==1.6.2", "cryptography==46.0.3", "sage-agent-sdk==11.19.10+lantern.20260906", "PyYAML==6.0.2"]
 
 [project.scripts]
 sage-lantern = "sage_lantern.cli:main"
