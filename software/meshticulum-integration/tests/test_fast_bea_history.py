@@ -121,16 +121,24 @@ def test_missing_real_h43_receipt_prevents_cost_admission(actual, monkeypatch):
         rpc.qualify_gfsk250_mb1_partial_costs(unit, policy, native['observation'], row)
 
 
-def test_active_roster_and_capture_only_parent_do_not_change():
+@pytest.mark.parametrize('pending_scope', [False, True])
+def test_active_roster_and_capture_only_parent_do_not_change(monkeypatch, pending_scope):
     from lantern_meshticulum.bench import capture_8120, mcu_artifact
+    if pending_scope:
+        from types import MappingProxyType
+        monkeypatch.setattr(mcu_artifact, 'PENDING_NATIVE_BINDINGS', MappingProxyType(dict(
+            scope_sha256=None, history_receipt_sha256=None, preceding_parent=None)))
+    bindings = mcu_artifact.PENDING_NATIVE_BINDINGS
     assert history.H42_PREFIX == retained_capture.PAID_HISTORY[:42] == rpc.HISTORY[:42]
     assert len(rpc.OLD_DIGESTS) == len(rpc.HISTORY) == 43
     assert rpc.HISTORY[-1] == history.PARENT and capture_8120.PARENT not in rpc.HISTORY
     assert rpc.GUARDED_PAID[history.PARENT] == rpc.OLD_DIGESTS[-1] == history.POLICY_DIGEST
     assert capture_8120.H42_RECEIPT_SHA256 == h42.NEXT_HISTORY_RECEIPT_SHA256
     assert rpc.PARTIAL250[history.PARENT] is history and history in rpc.COMPLETE_FAST_HISTORY
-    assert all(value is None for value in mcu_artifact.PENDING_NATIVE_BINDINGS.values())
     assert history.pending_next_roster() == rpc.HISTORY
+    assert mcu_artifact.PENDING_NATIVE_BINDINGS is bindings
+    if pending_scope:
+        assert all(value is None for value in bindings.values())
 
 
 @pytest.mark.parametrize('fault', ['credit', 'unused', 'boolean_count', 'wrong_run', 'unstarted',
