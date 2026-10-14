@@ -78,10 +78,15 @@ def main():
     else:
         sys.path.insert(0, str(bundle))
     from lantern_meshticulum.bench import node; from meshticulum.bench import authority
+    from lantern_meshticulum.bench.mcu_artifact import select_runtime
+    mcu_selection=select_runtime(manifest)
+    mcu_selector=mcu_selection['selector'] if mcu_selection is not None and args.unit=='unit-a' else None
+    mcu_options={'mcu_artifact_selector':mcu_selector} if mcu_selector is not None else {}
     if args.action == 'inspect':
         if manifest.get('radio_profile_name')=='gfsk250' and args.unit=='unit-a':
             if manifest.get('native_operation_kind')=='c-gfsk250-mb1-fast-bundle100k-v1':
-                result=node.inspect(args.unit,radio_modem='gfsk250',qualification_kind=manifest['native_operation_kind'])
+                result=node.inspect(args.unit,radio_modem='gfsk250',qualification_kind=manifest['native_operation_kind'],
+                                    **mcu_options)
             else:result=node.inspect(args.unit,radio_modem='gfsk250')
         else:result = node.inspect(args.unit)
         result['schema'] = 'meshticulum.native-bench-inspection.v1'
@@ -222,7 +227,7 @@ def main():
                 if manifest.get('public_service_formats') != ['MR1.request', 'MR1.response']:
                     raise RuntimeError('public_service_runner_not_in_bundle')
                 result = node.run_public_service(args.unit, directory, sender_receive_ready=args.sender_receive_ready,
-                                                 native_phase_timing=args.native_phase_timing)
+                                                 native_phase_timing=args.native_phase_timing,**mcu_options)
             else:
                 result = node.run(args.unit, directory, root / 'objects')
     result['runtime_bundle'] = str(bundle)

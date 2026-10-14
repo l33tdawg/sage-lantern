@@ -119,7 +119,7 @@ def _disarmed_status(worker,identity):
         dropped_receive=int.from_bytes(reply.body[42:46],'big'))
 
 
-def _serial(unit,*,radio_modem=None,qualification_kind=None):
+def _serial(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selector=None):
     require(radio_modem in (None,GFSK_NAME,GFSK250_NAME),'unsupported_native_radio_modem')
     firmware=FIRMWARE_BY_UNIT[unit]
     if radio_modem==GFSK_NAME:
@@ -127,9 +127,17 @@ def _serial(unit,*,radio_modem=None,qualification_kind=None):
         from .profiles import GFSK_FIRMWARE
         firmware=GFSK_FIRMWARE
     elif radio_modem==GFSK250_NAME:
-        require_gfsk250_bindings(qualification_kind);require(unit=='unit-a','gfsk250_USB_unit_not_reviewed')
-        from .profiles import GFSK250_FIRMWARE
-        firmware=GFSK250_FIRMWARE
+        require(unit=='unit-a','gfsk250_USB_unit_not_reviewed')
+        if mcu_artifact_selector is None:
+            require_gfsk250_bindings(qualification_kind)
+            from .profiles import GFSK250_FIRMWARE
+            firmware=GFSK250_FIRMWARE
+        else:
+            from .mcu_artifact import artifact, require_selector_scope
+            selected=artifact(mcu_artifact_selector);require_selector_scope(qualification_kind)
+            firmware=selected['firmware']
+    require(mcu_artifact_selector is None or radio_modem==GFSK250_NAME,
+            'mcu_artifact_wrong_modem')
     serial=USB[unit]
     channel=ExclusiveSerial('/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_'+serial+'-if00',usb_serial=serial)
     try:
@@ -144,7 +152,12 @@ def _serial(unit,*,radio_modem=None,qualification_kind=None):
         channel.close();raise
 
 
-def inspect(unit,*,radio_modem=None,qualification_kind=None):
+def inspect(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selector=None):
+    if mcu_artifact_selector is not None:
+        from .mcu_artifact import KIND,artifact
+        artifact(mcu_artifact_selector)
+        require(unit=='unit-a' and radio_modem==GFSK250_NAME and qualification_kind==KIND,
+                'mcu_inspection_original_selection_required')
     import cryptography
     before = roles(unit)
     result = {'unit': unit, 'host_boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
@@ -153,7 +166,8 @@ def inspect(unit,*,radio_modem=None,qualification_kind=None):
     if unit in USB:
         channel, worker, status = (_serial(unit) if radio_modem is None else
             _serial(unit,radio_modem=radio_modem) if qualification_kind is None else
-            _serial(unit,radio_modem=radio_modem,qualification_kind=qualification_kind))
+            _serial(unit,radio_modem=radio_modem,qualification_kind=qualification_kind,
+                    mcu_artifact_selector=mcu_artifact_selector))
         try:
             result.update(radio=status,radio_opened=True)
             if radio_modem==GFSK250_NAME:
@@ -234,7 +248,8 @@ def run(unit, directory, object_directory):
     return _run(unit, directory, object_directory, public_service=False)
 
 
-def run_public_service(unit, directory, *, sender_receive_ready=False,native_phase_timing=False):
+def run_public_service(unit, directory, *, sender_receive_ready=False,native_phase_timing=False,
+                       mcu_artifact_selector=None):
     """Finite public MR1 service flow; private native provider stays unwired.
 
     Received bytes are quarantined in the root-only run directory. They are
@@ -242,7 +257,7 @@ def run_public_service(unit, directory, *, sender_receive_ready=False,native_pha
     No service, listener or autonomous forwarding is commissioned by this run.
     """
     return _run(unit, directory, None, public_service=True, sender_receive_ready=sender_receive_ready,
-                native_phase_timing=native_phase_timing)
+                native_phase_timing=native_phase_timing,mcu_artifact_selector=mcu_artifact_selector)
 
 
 def _quarantine(directory, data, *, maximum=16384):
@@ -262,7 +277,9 @@ def _quarantine(directory, data, *, maximum=16384):
         os.close(fd)
 
 
-def _run(unit, directory, object_directory, *, public_service, sender_receive_ready=False,native_phase_timing=False):
+def _run(unit, directory, object_directory, *, public_service, sender_receive_ready=False,native_phase_timing=False,
+         mcu_artifact_selector=None):
+    require(mcu_artifact_selector is None or public_service,'mcu_artifact_public_service_only')
     require(type(sender_receive_ready) is bool and (not sender_receive_ready or public_service),
             'invalid_native_sender_receive_ready_mode')
     require(type(native_phase_timing) is bool and (not native_phase_timing or public_service),
@@ -347,6 +364,14 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             # core authority creates started, or any job/store/driver opens.
             caps = open_for_run(directory.parent.parent, directory, facts_before, clock)
             result['parent'] = caps.consume_start(native_plan['session_id'], native_plan, secret)
+            from .mcu_artifact import META_SCHEMA, validate_metadata
+            metadata=result['parent']['child_caps']['metadata']
+            selected=validate_metadata(metadata) if metadata.get('schema')==META_SCHEMA else None
+            require((selected['selector'] if selected is not None and unit=='unit-a' else None)
+                ==mcu_artifact_selector,'mcu_artifact_original_claim_mismatch')
+            if selected is not None:
+                require(caps.public32_owner_current() is True and caps._approve.mcu_artifact==selected,
+                        'mcu_artifact_original_owner_changed')
             if native_phase_timing:
                 from .phase_timing import enable
                 phase_profile=enable(caps)
@@ -405,7 +430,10 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
                              boot_id=boot, clock=clock, create=True)
         require(parent_current(), 'pilot_parent_not_current')
         if unit in USB:
-            channel,worker,radio=(_serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind)
+            channel,worker,radio=(_serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind,
+                                        mcu_artifact_selector=mcu_artifact_selector)
+                                 if mcu_artifact_selector is not None else
+                                 _serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind)
                                  if public_service and caps.policy.qualification_kind=='c-gfsk250-mb1-fast-bundle100k-v1' else
                                  _serial(unit,radio_modem=modem_for(profile))
                                  if type(profile) in (GfskProfile,Gfsk250Profile) else _serial(unit))

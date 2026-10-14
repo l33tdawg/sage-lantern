@@ -36,6 +36,8 @@ def main():
     parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
     parser.add_argument('--execution-layout', choices=('directory', 'sealed-image', 'sealed-image-deflated'), default='directory')
     parser.add_argument('--fast-five-part',action='store_true')
+    parser.add_argument('--mcu-artifact-selector',choices=('gfsk250-usb-rx2048-v1',))
+    parser.add_argument('--mcu-reproduced-build-dir',type=Path,action='append')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()
     source = core_source(args.meshticulum_root)
@@ -102,6 +104,18 @@ def main():
         manifest['firmware']=GFSK250_FIRMWARE
         manifest['firmware_by_unit']['unit-a']=GFSK250_FIRMWARE
         manifest['radio_profile_name']='gfsk250'
+    if args.mcu_artifact_selector is not None:
+        if args.radio_profile!='gfsk250' or not args.fast_five_part:
+            raise RuntimeError('mcu_artifact_requires_explicit_gfsk250_fast_runtime')
+        from lantern_meshticulum.bench.mcu_artifact import artifact, PAID_SCHEMA
+        from build_mcu_artifact_packet import validate_source,reproduced
+        selected=artifact(args.mcu_artifact_selector);validate_source(source,selected)
+        reproduced(args.mcu_reproduced_build_dir or [],selected)
+        manifest.update(mcu_artifact=selected,firmware=selected['firmware'])
+        manifest['firmware_by_unit']['unit-a']=selected['firmware']
+        manifest['public_pilot_package_schemas'].append(PAID_SCHEMA)
+    elif args.mcu_reproduced_build_dir:
+        raise RuntimeError('reproduced_mcu_builds_require_explicit_artifact_selection')
     if args.execution_layout in ('sealed-image', 'sealed-image-deflated'):
         originals = files
         deflated = args.execution_layout == 'sealed-image-deflated'

@@ -112,8 +112,13 @@ def provision(package, *, state, facts, clock):
 def _provision(package, *, state, facts, clock, leases, caps):
     fields = {'schema', 'unit', 'campaign_id', 'resource_sha256', 'application_expires_epoch_us',
               'transport', 'grant', 'secret_base64', 'payload_base64', 'source_run_id', 'parent'}
-    require(type(package) is dict and set(package) == fields
-            and package['schema'] == 'meshticulum.public-pilot-package.v2', 'invalid_pilot_package')
+    from .mcu_artifact import PAID_SCHEMA, PROVISION_SCHEMA, validate_artifact
+    require(type(package) is dict,'invalid_pilot_package')
+    selected=None
+    if package.get('schema')==PAID_SCHEMA:
+        fields.add('mcu_artifact');selected=validate_artifact(package['mcu_artifact'])
+    else:require(package.get('schema')=='meshticulum.public-pilot-package.v2','invalid_pilot_package')
+    require(set(package)==fields,'invalid_pilot_package')
     require(package['unit'] == facts['unit'] and package['transport'] in ('lora', 'tcp'), 'wrong_pilot_unit_or_transport')
     identifier(package['campaign_id'])
     state = Path(state).absolute()
@@ -241,12 +246,13 @@ def _provision(package, *, state, facts, clock, leases, caps):
              'secret.bin': secret, 'active': b'active\n'}
     if payload is not None:
         files['sender.bin'] = payload
-    receipt = dict(schema='meshticulum.provisioned-public-pilot.v2', unit=facts['unit'],
+    receipt = dict(schema=PROVISION_SCHEMA if selected is not None else 'meshticulum.provisioned-public-pilot.v2', unit=facts['unit'],
         run_id=run_id, campaign_id=package['campaign_id'], transport=package['transport'],
         object=descriptor, source_basis=source_basis, source_run_id=source_run,
         original_application_deadline_us=plan['application_deadline_monotonic_us'],
         original_application_expires_epoch_us=expires, radio_opened=False, socket_opened=False,
         receiver_payload_installed=False, parent=parent)
+    if selected is not None:receipt['mcu_artifact']=selected
     files['provision.json'] = json.dumps(receipt, sort_keys=True).encode() + b'\n'
     for name, raw in files.items():
         require(caps.current() is True, 'pilot_parent_not_current')

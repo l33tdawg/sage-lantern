@@ -1876,7 +1876,14 @@ def capture_history(unit, p, runtime):
 
 def enrolled_action(action, unit, p, runtime):
     policy = ParentPolicy.from_dict(p['policy']); local = policy.unit(unit)
-    owner, prior = p['owner'], p['prior']; target = STATE/'parents'/policy.parent_id
+    owner_record, prior = p['owner'], p['prior']; target = STATE/'parents'/policy.parent_id
+    from .mcu_artifact import OWNER_SCHEMA, decode_owner, require_native_scope
+    mcu_owner=owner_record if owner_record.get('schema')==OWNER_SCHEMA else None
+    owner=decode_owner(mcu_owner)[0] if mcu_owner is not None else owner_record
+    if mcu_owner is not None:require_native_scope(mcu_owner,policy,runtime.manifest)
+    else:
+        from .mcu_artifact import select_runtime
+        need(select_runtime(runtime.manifest) is None,'mcu_runtime_requires_original_owner')
     need(policy.parent_id not in HISTORY and policy.parent_id not in CAPTURE_ONLY_PARENTS
          and owner['schema'] == 'meshticulum.finite-public-resume-owner.v1'
          and owner['policy_digest'] == policy.digest and owner['manifest_sha256'] == sha(
@@ -1917,7 +1924,7 @@ def enrolled_action(action, unit, p, runtime):
         if policy.qualification_kind in BUNDLE_KINDS:
             from .pilot_bundle import BundleContext
             BundleContext(owner['bundle_context'],policy).current(clock())
-        rf, rp, ip = owner['rf_record'], owner_radio_profile(owner, policy), IpLimits()
+        rf, rp, ip = owner['rf_record'], (profile_for(GFSK250_NAME) if mcu_owner is not None else owner_radio_profile(owner, policy)), IpLimits()
         need(owner['rf_record_sha256'] == '40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9'
              and rf['country'] == 'MY' and rf['C_transmission_allowed'] is True
              and rf['A_B_transmission_allowed'] is True and all(rf['units'][u]['antenna_connected'] is True
@@ -1931,7 +1938,7 @@ def enrolled_action(action, unit, p, runtime):
         extra = endpoint_budget(unit,owner.get('qualification_kind'),radio,tcp)
         need(local.limits == local.prior_debt.plus(extra),
              'resume_endpoint_caps_not_exact')
-        owner_raw, prior_raw, policy_raw = canonical(owner), canonical(prior), canonical(policy.to_dict())
+        owner_raw, prior_raw, policy_raw = canonical(owner_record), canonical(prior), canonical(policy.to_dict())
         last_clock = [clock()]
         checkpoint_actions=('checkpoint-audit','store-handoff','checkpoint')
         remote_check=None

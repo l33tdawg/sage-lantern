@@ -371,6 +371,10 @@ def _child(value, policy):
     if mb1:fields.add('public_transport_descriptor_sha256')
     gfsk=policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND)
     if gfsk:fields.add('radio_modem')
+    from .mcu_artifact import META_SCHEMA, KIND as MCU_KIND, validate_metadata
+    if type(m) is dict and m.get('schema')==META_SCHEMA:
+        need(policy.qualification_kind==MCU_KIND,'mcu_child_policy_changed')
+        validate_metadata(m);fields.update(('schema','mcu_artifact','mcu_artifact_sha256'))
     need(type(m) is dict and set(m) == fields and m['parent_id'] == policy.parent_id
          and m['policy_digest'] == policy.digest, 'invalid_child')
     if policy.qualification_kind in BUNDLE_KINDS:

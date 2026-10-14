@@ -190,10 +190,17 @@ class ChildCaps:
 def child_caps(package, policy):
     """Pure v1 public-package extraction; no clocks, files, keys or body retention."""
     try:
-        require(type(policy) is ParentPolicy and type(package) is dict
-            and set(package) == {'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
-                                 'transport','grant','secret_base64','payload_base64','source_run_id'}
-            and package['schema'] == 'meshticulum.public-pilot-package.v1')
+        from .mcu_artifact import PLAN_SCHEMA, META_SCHEMA, KIND as MCU_KIND, validate_artifact, ARTIFACT_SHA256
+        fields={'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
+                'transport','grant','secret_base64','payload_base64','source_run_id'}
+        require(type(policy) is ParentPolicy and type(package) is dict)
+        selected_mcu=None
+        if package.get('schema')==PLAN_SCHEMA:
+            fields.add('mcu_artifact');selected_mcu=validate_artifact(package['mcu_artifact'])
+            require(policy.qualification_kind==MCU_KIND and package['transport']=='lora'
+                and package['grant'].get('radio_modem')==GFSK250_NAME)
+        else:require(package.get('schema')=='meshticulum.public-pilot-package.v1')
+        require(set(package)==fields)
         require(policy.qualification_kind not in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND) or package['transport']=='lora')
         unit = policy.unit(package['unit']); p = package['grant']
         identifier(package['campaign_id']); digest(package['resource_sha256'])
@@ -295,6 +302,10 @@ def child_caps(package, policy):
         if public32: metadata['public_response_max_bytes'] = 32768
         if mb1_pin is not None:metadata['public_transport_descriptor_sha256']=mb1_pin
         if policy.qualification_kind in BUNDLE_KINDS: metadata['bundle_context_sha256'] = policy.bundle_context_sha256
+        if selected_mcu is not None:
+            require(unit.unit in ('unit-a','unit-c'))
+            metadata.update(schema=META_SCHEMA,mcu_artifact=json.loads(canonical(selected_mcu)),
+                            mcu_artifact_sha256=ARTIFACT_SHA256)
         return ChildCaps(unit.unit, run, sends, canonical(metadata), cost, expiry)
     except Exception:
         raise ParentCapsError() from None
@@ -455,6 +466,8 @@ class ParentCaps:
             require(type(packages) in (tuple, list) and len(packages) == 2)
             children = tuple(sorted((child_caps(p, self.policy) for p in packages), key=lambda c: c.unit))
             first, second = children; a, b = json.loads(first.metadata), json.loads(second.metadata)
+            require(a.get('schema')==b.get('schema')
+                and a.get('mcu_artifact_sha256')==b.get('mcu_artifact_sha256'))
             require(first.unit != second.unit and first.run_id == second.run_id and first.sends != second.sends
                 and all(a[k] == b[k] for k in ('campaign_id','resource_sha256','run_id','sender','receiver','transport','format','object',
                                                'application_expires_epoch_us','grant_digest','profile','cipher_frame_limit','secret_sha256'))

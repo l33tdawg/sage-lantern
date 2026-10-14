@@ -170,6 +170,10 @@ class _Public32Approval:
             reader,own=self.reader,self._owner_ref
             self._owned_close=lambda:reader.close() if own==(os.getpid(),threading.get_ident()) else None
             raw=self.reader.read(directory/'owner.json',200000);owner=parse(raw)
+            from .mcu_artifact import OWNER_SCHEMA, decode_owner, require_native_scope
+            mcu_owner=owner if owner.get('schema')==OWNER_SCHEMA else None
+            self.mcu_artifact=None
+            if mcu_owner is not None:owner,self.mcu_artifact=decode_owner(mcu_owner)
             require(owner['schema']=='meshticulum.finite-public-resume-owner.v1'
                     and owner['qualification_kind']==policy.qualification_kind and policy.qualification_kind in PUBLIC32_KINDS and owner['policy_digest']==policy.digest)
             image_helper=sys.modules.get('_lantern_execution_runtime')
@@ -182,6 +186,11 @@ class _Public32Approval:
                     try:runtime.close()
                     finally:reader.close()
             self._owned_close=close_owned
+            if mcu_owner is not None:
+                self.mcu_artifact=require_native_scope(mcu_owner,policy,runtime.manifest)
+            else:
+                from .mcu_artifact import select_runtime
+                require(select_runtime(runtime.manifest) is None)
             require(self.runtime.root.name=='runtime-'+owner['runtime_sha256'][:16]);digest(owner['runtime_sha256'])
             prior_raw=self.reader.read(directory/'prior.json',200000);prior=parse(prior_raw)
             require(self.reader.read(directory/'policy.json',20000)==canonical(policy.to_dict()))
@@ -219,7 +228,7 @@ class _Public32Approval:
                 elif policy.qualification_kind==GFSK_MB1_BUNDLE_KIND:
                     from .gfsk_mb1_bundle import require_owner
                 else:from .gfsk_bundle import require_owner
-                require_owner(owner,policy)
+                if mcu_owner is None:require_owner(owner,policy)
             require(auth['human_statement']=='run it bro' and type(auth['count_authorized']) is int and auth['count_authorized']==1
                     and auth['public_only'] is True and auth['private_production'] is False
                     and owner['rf_record_sha256']=='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9'
@@ -253,7 +262,7 @@ class _Public32Approval:
             refs=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
                   self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
                   self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle,
-                  self._policy_comparison,self._facts_comparison)
+                  self._policy_comparison,self._facts_comparison,self.mcu_artifact)
             self._state_refs=self._state_refs_ref=refs
             self._captured_refs=lambda:refs
             self._last=None;self.check()
@@ -264,8 +273,8 @@ class _Public32Approval:
         current=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
                  self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
                  self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle,
-                 self._policy_comparison,self._facts_comparison)
-        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==20
+                 self._policy_comparison,self._facts_comparison,self.mcu_artifact)
+        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==21
                 and self._state_refs is refs and self._state_refs_ref is refs
                 and len(current)==len(refs) and all(a is b for a,b in zip(current,refs))
                 and self._owner_ref==(os.getpid(),threading.get_ident())
@@ -276,6 +285,10 @@ class _Public32Approval:
                     self._facts_comparison[0],refs[19])
                 and self.bundle is self._bundle_ref is refs[17]
                 and (self.policy.qualification_kind=='c-bulk32-v1') is (refs[17] is None))
+        if self.mcu_artifact is not None:
+            from .mcu_artifact import validate_artifact, select_runtime
+            validate_artifact(self.mcu_artifact)
+            require(select_runtime(self.runtime.manifest)==self.mcu_artifact)
     def _time(self,last,previous):
         self._bound(last);now=self.clock();self._bound(last)
         if self.bundle is not None:self.bundle.current(now)
@@ -562,13 +575,22 @@ class NativeCaps:
         finally:
             if entered:self._busy=False
     def _package(self,package):
+        from .mcu_artifact import PAID_SCHEMA, PLAN_SCHEMA, validate_artifact
         fields={'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
                 'transport','grant','secret_base64','payload_base64','source_run_id','parent'}
-        require(type(package) is dict and set(package)==fields and package['schema']=='meshticulum.public-pilot-package.v2')
+        require(type(package) is dict)
+        selected=None
+        if package.get('schema')==PAID_SCHEMA:
+            fields.add('mcu_artifact');selected=validate_artifact(package['mcu_artifact'])
+            require(type(self._approve) is _Public32Approval and self._approve.mcu_artifact==selected)
+        else:
+            require(package.get('schema')=='meshticulum.public-pilot-package.v2')
+            if type(self._approve) is _Public32Approval:require(self._approve.mcu_artifact is None)
+        require(set(package)==fields)
         parent=package['parent'];require(type(parent) is dict and set(parent)=={'schema','parent_id','policy_digest','allocation_id','child'}
             and parent['schema']=='meshticulum.public-parent-allocation.v1' and parent['parent_id']==self.policy.parent_id
             and parent['policy_digest']==self.policy.digest and package['unit']==self.unit.unit)
-        digest(parent['allocation_id']);base={k:v for k,v in package.items() if k!='parent'};base['schema']='meshticulum.public-pilot-package.v1'
+        digest(parent['allocation_id']);base={k:v for k,v in package.items() if k!='parent'};base['schema']=PLAN_SCHEMA if selected is not None else 'meshticulum.public-pilot-package.v1'
         child=child_caps(base,self.policy);require(child.to_dict()==parent['child'])
         from .sf5_batch import BatchApproval
         from .gfsk_batch import BatchApproval as GfskApproval
@@ -762,7 +784,8 @@ def _open_existing(state,parent_id,facts,clock):
 
 def open_for_provision(state,facts,clock,package):
     try:
-        require(type(package) is dict and package['schema']=='meshticulum.public-pilot-package.v2')
+        from .mcu_artifact import PAID_SCHEMA
+        require(type(package) is dict and package['schema'] in ('meshticulum.public-pilot-package.v2',PAID_SCHEMA))
         caps=_open_existing(state,package['parent']['parent_id'],facts,clock)
         try:caps._package(package);require(caps.current());return caps
         except BaseException:caps.close();raise
@@ -776,7 +799,11 @@ def open_for_run(state,directory,facts,clock):
         try:private(os.fstat(fd));raw=os.read(fd,32769)
         finally:os.close(fd)
         require(len(raw)<=32768);receipt=json.loads(raw)
-        require(receipt['schema']=='meshticulum.provisioned-public-pilot.v2' and receipt['unit']==facts['unit'])
+        from .mcu_artifact import PROVISION_SCHEMA, validate_artifact, validate_metadata
+        require(receipt['schema'] in ('meshticulum.provisioned-public-pilot.v2',PROVISION_SCHEMA) and receipt['unit']==facts['unit'])
+        if receipt['schema']==PROVISION_SCHEMA:
+            selected=validate_artifact(receipt['mcu_artifact'])
+            require(validate_metadata(receipt['parent']['child_caps']['metadata'])==selected)
         expected=receipt['parent'];caps=_open_existing(state,expected['parent_id'],facts,clock)
         try:
             require(caps.db.execute('SELECT body FROM prepared WHERE id=?',(expected['native_claim_id'],)).fetchone()==(canonical(expected),)

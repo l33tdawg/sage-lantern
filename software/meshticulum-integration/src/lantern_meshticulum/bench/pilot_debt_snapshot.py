@@ -424,7 +424,12 @@ def _one(state,scope,run,observe,retained):
         output['conservative_unknown_caps']=grant['caps']
         need(run.grant_context_sha256 is not None,'grant_context_unavailable')
         job=public_json(reader.read('job.json',4096));result=public_json(reader.read('result.json',300000))
-        need(provision['schema']in('meshticulum.provisioned-public-pilot.v1','meshticulum.provisioned-public-pilot.v2')
+        from .mcu_artifact import PROVISION_SCHEMA, validate_artifact, validate_original_claim
+        if provision.get('schema')==PROVISION_SCHEMA:
+            selected=validate_artifact(provision['mcu_artifact'])
+            need(run.transport=='lora' and p.get('radio_modem')=='gfsk250')
+            validate_original_claim(provision['parent'],p,selected)
+        need(provision['schema']in('meshticulum.provisioned-public-pilot.v1','meshticulum.provisioned-public-pilot.v2',PROVISION_SCHEMA)
             and provision['unit']==scope.unit and provision['run_id']==run.run_id and provision['transport']==run.transport)
         need(provision['original_application_expires_epoch_us']==grant['application_expires_epoch_us']
              and provision['original_application_deadline_us']==grant['application_deadline_monotonic_us'])

@@ -79,11 +79,17 @@ def retire(directory, *, unit, run_id, boot):
         require(len(raw)<=16384, 'pilot_retire_record_too_large')
         values[name]=json.loads(raw)
     provision, plan = values['provision.json'], values['grant.json']
-    require(provision['schema'] in ('meshticulum.provisioned-public-pilot.v1', 'meshticulum.provisioned-public-pilot.v2')
+    from .mcu_artifact import PROVISION_SCHEMA, validate_artifact, validate_original_claim
+    selected=None
+    if provision.get('schema')==PROVISION_SCHEMA:
+        selected=validate_artifact(provision['mcu_artifact'])
+        require(provision.get('transport')=='lora' and plan.get('radio_modem')=='gfsk250',
+                'mcu_retire_transport_changed')
+    require(provision['schema'] in ('meshticulum.provisioned-public-pilot.v1', 'meshticulum.provisioned-public-pilot.v2',PROVISION_SCHEMA)
             and provision['unit']==unit and provision['run_id']==run_id and plan['host_boot_id']==boot,
             'pilot_retire_requires_this_native_public_child')
     parent = None
-    if provision['schema'] == 'meshticulum.provisioned-public-pilot.v2':
+    if provision['schema'] in ('meshticulum.provisioned-public-pilot.v2',PROVISION_SCHEMA):
         parent = provision.get('parent')
         native_digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':'),
                                                    allow_nan=False).encode()).hexdigest()
@@ -92,6 +98,8 @@ def retire(directory, *, unit, run_id, boot):
                 and parent.get('host_boot_id') == boot and parent.get('run_id') == run_id
                 and parent.get('native_plan_sha256') == native_digest,
                 'pilot_retire_parent_binding_changed')
+        if selected is not None:
+            validate_original_claim(parent,plan,selected)
     if provision['transport']=='tcp':
         require(plan['schema'] in IP_SCHEMAS and plan['session']['session_id']==run_id
                 and plan['format'] in ('MR1.request','MR1.response'), 'pilot_retire_private_or_wrong_session')

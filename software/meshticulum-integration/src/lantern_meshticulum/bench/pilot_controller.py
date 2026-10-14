@@ -31,9 +31,16 @@ RADIO_SETUP_RESERVE_MS = 15000
 def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
                   sender, receiver, transport, format, descriptor, source,
                   request, peers, boots, now_epoch_us, endpoints=None, profile='sf7-500', radio_permission=None, public32=False,
-                  mb1_descriptor_sha256=None, ip_startup_mode=None):
+                  mb1_descriptor_sha256=None, ip_startup_mode=None, mcu_artifact_selector=None):
     """Fresh independent adjacent-link sessions; receiver never gets a body."""
     identifier(campaign_id)
+    from .mcu_artifact import artifact, PLAN_SCHEMA
+    selected_mcu=None
+    if mcu_artifact_selector is not None:
+        selected_mcu=artifact(mcu_artifact_selector)
+        require(transport=='lora' and profile==GFSK250_NAME and public32
+            and mb1_descriptor_sha256 is not None and {sender,receiver}=={'unit-a','unit-c'},
+            'mcu_artifact_original_plan_mismatch')
     require(ip_startup_mode is None or (transport=='tcp' and type(ip_startup_mode) is str
         and ip_startup_mode==READY_MODE),'invalid_pilot_ip_startup_mode')
     require(type(public32) is bool and (not public32 or transport == 'lora'), 'invalid_public32_pilot')
@@ -104,6 +111,8 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
             secret_base64=base64.b64encode(key).decode(),
             payload_base64=base64.b64encode(request).decode() if unit==sender and request is not None else None,
             source_run_id=source if unit==sender else None)
+        if selected_mcu is not None:
+            values[unit].update(schema=PLAN_SCHEMA,mcu_artifact=json.loads(canonical(selected_mcu)))
     return dict(run_id=run_id,sender=sender,receiver=receiver,transport=transport,format=format,
         descriptor=descriptor,packages=values)
 
@@ -112,11 +121,23 @@ class Controller:
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
                  clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None,
-                 radio_profile='sf7-500', batch_context=None, ip_startup_mode=None):
+                 radio_profile='sf7-500', batch_context=None, ip_startup_mode=None,
+                 mcu_owner=None):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(ip_startup_mode is None or (type(ip_startup_mode) is str and ip_startup_mode==READY_MODE
             and not public32),'invalid_pilot_ip_startup_mode')
         self.ip_startup_mode=self._ip_startup_mode=ip_startup_mode
+        from .mcu_artifact import decode_owner, KIND as MCU_KIND
+        self._mcu_owner_bytes=None
+        self.mcu_artifact_selector=self._mcu_artifact_selector=None
+        if mcu_owner is not None:
+            original,selected=decode_owner(mcu_owner)
+            require(type(parent) is ParentCaps and parent.policy.qualification_kind==MCU_KIND
+                and original['policy_digest']==parent.policy.digest and radio_profile==GFSK250_NAME,
+                'mcu_original_controller_owner_mismatch')
+            self._mcu_owner_bytes=canonical(mcu_owner)
+            self.mcu_artifact_selector=self._mcu_artifact_selector=selected['selector']
+        self._mcu_owner_ref=self._mcu_owner_bytes
         require(type(parent) is ParentCaps and parent.current() is True,
                 'pilot_existing_parent_required')
         require(type(public32) is bool and public32 == (parent.policy.qualification_kind in PUBLIC32_KINDS),
@@ -177,6 +198,14 @@ class Controller:
         self.links=[];self.verified=[];self.cleanup=[]
 
     def current(self):
+        require(self.mcu_artifact_selector is self._mcu_artifact_selector,
+                'mcu_original_controller_selection_changed')
+        require(self._mcu_owner_bytes is self._mcu_owner_ref,'mcu_controller_owner_rebound')
+        if self._mcu_owner_bytes is not None:
+            from .mcu_artifact import decode_owner
+            original,selected=decode_owner(json.loads(self._mcu_owner_bytes))
+            require(original['policy_digest']==self.parent.policy.digest
+                and selected['selector']==self.mcu_artifact_selector,'mcu_controller_owner_rebound')
         require(self.ip_startup_mode is self._ip_startup_mode,'pilot_ip_startup_mode_changed')
         require(self.batch_context is self._batch_context_ref, 'batch_controller_context_rebound')
         if self.batch_context is not None:self.batch_context.check()
@@ -201,6 +230,7 @@ class Controller:
             now_epoch_us=self.epoch(),endpoints=self.operator.endpoints(sender,receiver) if transport=='tcp' else None,
             radio_permission=self.radio_permission,public32=self.public32,profile=self.radio_profile,
             ip_startup_mode=self.ip_startup_mode if transport=='tcp'else None,
+            mcu_artifact_selector=self.mcu_artifact_selector if transport=='lora'else None,
             mb1_descriptor_sha256=self.bundle_context.value['transport_descriptor_sha256']
                 if self.bundle_context is not None and self.bundle_context.transport is not None else None)
         if self.bundle_context is not None:
@@ -224,7 +254,8 @@ class Controller:
             proofs = {child.unit: child.to_dict() for child in children}
             frozen_packages = {}
             for unit, package in pair['packages'].items():
-                wrapped = dict(package, schema='meshticulum.public-pilot-package.v2',
+                from .mcu_artifact import PLAN_SCHEMA, PAID_SCHEMA
+                wrapped = dict(package, schema=PAID_SCHEMA if package['schema']==PLAN_SCHEMA else 'meshticulum.public-pilot-package.v2',
                     parent=dict(schema='meshticulum.public-parent-allocation.v1',
                         parent_id=self.parent.policy.parent_id, policy_digest=self.parent.policy.digest,
                         allocation_id=permit.key, child=proofs[unit]))
