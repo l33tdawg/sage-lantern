@@ -42,7 +42,8 @@ from .forward_operation import describe_child
 from .forward_radio import NativeRadioObserver, ACK_GRACE_US
 from .mesh_inbox import _canonical, _id
 from .radio_native_adoption import (
-    NativeRadioAdoption, _identity, _exclusive, private_radio_profile,
+    NativeRadioAdoption, _held_radio_binding, _identity, _exclusive, private_radio_profile,
+    _HELD_RADIO_BINDING as _ORIGINAL_HELD_RADIO_BINDING,
     source_pins as endpoint_source_pins)
 from .workflow_store import WorkflowStore
 from ..bench.profiles import GFSK250_FIRMWARE, admission_for, profile_record, radio_route
@@ -190,7 +191,8 @@ class RelayRadioAdoption:
     _read_grant = NativeRadioAdoption._read_grant
 
     def _bound(self):
-        NativeRadioAdoption._bound(self)
+        require(_held_radio_binding is _ORIGINAL_HELD_RADIO_BINDING)
+        _held_radio_binding(self)
         require(type(self.profile) is RelayRadioProfile and self.profile.child is self.child)
 
     def _guard(self):

@@ -7,12 +7,16 @@ import sys
 import pytest
 from sage_sdk.models import WorkflowJournalRecord, WorkflowJournalPage
 
+from lantern_meshticulum.sage import forward_native_relay_radio as relay_radio_module
+from lantern_meshticulum.sage import radio_native_adoption as endpoint_adoption_module
 from lantern_meshticulum.sage.forward_native_owner import ForwardNativeOwner
+from lantern_meshticulum.sage.forward_native_relay_radio import RelayRadioAdoption, RelayRadioError
 from lantern_meshticulum.sage.message_contacts import RecipientID
 from lantern_meshticulum.sage.message_storage import MessageStorageProbe
 from lantern_meshticulum.sage.radio_native_adoption import NativeRadioAdoption, RadioAdoptionError
 from lantern_meshticulum.sage.workflow_store import WorkflowStore, WorkflowUnavailable, WorkflowNotFound
 from tests.integrations.sage.test_forward_radio import factory_model
+from tests.integrations.sage.test_forward_native_relay_radio import prepared_rig
 from tests.integrations.sage.test_radio_native_adoption import model
 from tests.integrations.sage.test_workflow_store import setup, FIRST
 
@@ -54,6 +58,72 @@ def test_eight_fresh_guards_six_store_callbacks_and_both_epochs_each_observation
         assert requests.count(('GET', '/v1/workflows/' + r.adoption.record_id)) == 2
         assert requests.count(('GET', '/v1/messages/storage')) == 20
         assert len(requests) == 22
+
+
+def test_relay_retains_shared_fd_checks_and_nine_guards_without_endpoint_authority(tmp_path, monkeypatch):
+    methods = {RelayRadioAdoption._guard: 'guard', WorkflowStore._access: 'access',
+               WorkflowStore._snapshot: 'snapshot'}
+    codes = {method.__code__: name for method, name in methods.items()}
+    with prepared_rig(tmp_path, monkeypatch) as r:
+        adoption = RelayRadioAdoption(r.owner, r.profile, r.directory, r.wire.transports[0])
+        try:
+            assert '_read_return' not in vars(adoption) and '_read_return_ref' not in vars(adoption)
+            assert adoption._bound() is None
+            count = Counter(); old = sys.getprofile()
+            def entered(frame, event, arg):
+                if event == 'call' and frame.f_code in codes: count[codes[frame.f_code]] += 1
+            try:
+                sys.setprofile(entered)
+                assert adoption.observe() is True
+            finally: sys.setprofile(old)
+            assert count == dict(guard=9, access=6, snapshot=2)
+            with pytest.raises(RadioAdoptionError): NativeRadioAdoption._bound(adoption)
+            # A rejected endpoint entry neither changes relay policy nor gives
+            # it an endpoint seal; the original independent observation works.
+            assert adoption.observe() is True
+            assert '_read_return' not in vars(adoption) and '_read_return_ref' not in vars(adoption)
+            assert not r.wire.frames[0] and not r.wire.armed[0]
+        finally: adoption.release()
+
+
+@pytest.mark.parametrize('field', ['_read_return', '_read_return_ref'])
+def test_endpoint_without_return_seal_still_refuses_and_stays_uncertain(tmp_path, monkeypatch, field):
+    with active(tmp_path, monkeypatch) as r:
+        saved = vars(r.adoption).pop(field)
+        try: assert r.adoption.current() is False and r.adoption._uncertain
+        finally: vars(r.adoption)[field] = saved
+        assert r.adoption.current() is False
+
+
+def test_endpoint_refuses_replaced_shared_reader_before_it_can_restore_itself(tmp_path, monkeypatch):
+    with active(tmp_path, monkeypatch) as r:
+        original = endpoint_adoption_module._held_radio_binding; executed = []
+        def replacement(adoption):
+            executed.append(True)
+            endpoint_adoption_module._held_radio_binding = original
+            return original(adoption)
+        with monkeypatch.context() as patch:
+            patch.setattr(endpoint_adoption_module, '_held_radio_binding', replacement)
+            assert r.adoption.current() is False and r.adoption._uncertain
+            assert not executed
+        assert r.adoption.current() is False
+
+
+def test_relay_refuses_replaced_shared_reader_before_it_can_restore_itself(tmp_path, monkeypatch):
+    with prepared_rig(tmp_path, monkeypatch) as r:
+        adoption = RelayRadioAdoption(r.owner, r.profile, r.directory, r.wire.transports[0])
+        try:
+            original = relay_radio_module._held_radio_binding; executed = []
+            def replacement(value):
+                executed.append(True)
+                relay_radio_module._held_radio_binding = original
+                return original(value)
+            with monkeypatch.context() as patch:
+                patch.setattr(relay_radio_module, '_held_radio_binding', replacement)
+                with pytest.raises(RelayRadioError): adoption.observe()
+                assert not executed
+            assert adoption.observe() is True
+        finally: adoption.release()
 
 
 @pytest.mark.parametrize('where,field', [

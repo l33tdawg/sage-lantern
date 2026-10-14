@@ -96,6 +96,7 @@ def _exclusive(identity):
 
 def _read_return_fields(adoption):
     """Inspect only original descriptors and raw fields; invoke no observer."""
+    require(_held_radio_binding is _HELD_RADIO_BINDING)
     for cls, pins in _READ_RETURN_LAYOUTS:
         namespace = type.__getattribute__(cls, '__dict__')
         mro = type.__getattribute__(cls, '__mro__')
@@ -128,6 +129,20 @@ def _read_return_fence(adoption):
     require(type(saved) is tuple and len(saved) == len(current) and saved is a['_read_return_ref'])
     require(all(old is now for old, now in zip(saved, current)))
     require(a['_closed'] is False and a['_uncertain'] is False)
+
+
+def _held_radio_binding(self):
+    """Shared held-FD checks; each adoption retains its own type and policy gates."""
+    require(not self._closed and not self._uncertain and self._process==(os.getpid(),threading.get_ident()))
+    require(all(a is b for a,b in zip(self._refs,(self.owner,self.child,self.transport,self.store,
+        self.store.client,self.store.storage,self.directory,self.owner.resource,self.owner.authority,self.owner.native_context))))
+    require(self._fds is self._fd_refs and self._methods is self._method_refs
+            and _canonical(self.child.to_dict())==self._child_value)
+    require(all(getattr(self.transport,n)==fd and _identity(fd)==identity for n,fd,identity in self._fds))
+    require(_exclusive(self._fds[0][2]) and _exclusive(self._fds[-1][2]))
+    require(all(name not in self.transport.__dict__ and getattr(type(self.transport),name) is method
+                for name,method in self._methods))
+    if hasattr(self,'_binding_ref'):require(self._binding is self._binding_ref)
 
 
 class NativeRadioAdoption:
@@ -175,16 +190,7 @@ class NativeRadioAdoption:
 
     def _bound(self):
         _read_return_fence(self)
-        require(not self._closed and not self._uncertain and self._process==(os.getpid(),threading.get_ident()))
-        require(all(a is b for a,b in zip(self._refs,(self.owner,self.child,self.transport,self.store,
-            self.store.client,self.store.storage,self.directory,self.owner.resource,self.owner.authority,self.owner.native_context))))
-        require(self._fds is self._fd_refs and self._methods is self._method_refs
-                and _canonical(self.child.to_dict())==self._child_value)
-        require(all(getattr(self.transport,n)==fd and _identity(fd)==identity for n,fd,identity in self._fds))
-        require(_exclusive(self._fds[0][2]) and _exclusive(self._fds[-1][2]))
-        require(all(name not in self.transport.__dict__ and getattr(type(self.transport),name) is method
-                    for name,method in self._methods))
-        if hasattr(self,'_binding_ref'):require(self._binding is self._binding_ref)
+        _held_radio_binding(self)
 
     def _guard(self):
         self._bound();o=self.owner;h=o.resource
@@ -363,6 +369,7 @@ class NativeRadioAdoption:
 # Capture original implementations at module load, not from a possibly replaced
 # instance at adoption time. Plain-field names must remain descriptor-free.
 _READ_ABSENT = object()
+_HELD_RADIO_BINDING = _held_radio_binding
 _STORE_READ_METHODS = ('get', '_invoke', '_snapshot', '_access', '_record')
 _PROBE_READ_METHODS = ('snapshot', '_binding')
 _ADOPTION_READ_METHODS = ('_guard', '_read_guard', '_bound', '_observe', '_assets')
