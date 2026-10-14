@@ -353,16 +353,16 @@ class ForwardNativeOwner:
                             if initial_error is None or authorize and read_failed:raise
                             adoption._uncertain=True;raise initial_error from None
                         checked(factory.observer._device_facts)
+                        def finish():
+                            checked(factory.observer._worker_current,factory.worker);full()
                         if authorize:
                             row(guard,guard);checked(factory.authority.live)
                             row(guard,guard);checked(factory.observer._device_facts)
-                            row(guard,full)
+                            row(guard,finish)
                         elif mode is _RadioFactsMode.NATIVE:
                             row(guard,guard);checked(factory.observer._device_facts)
                             # The original worker predicate is pure, but still
                             # inside the last full authorization bookend.
-                            def finish():
-                                checked(factory.observer._worker_current,factory.worker);full()
                             row(guard,finish)
                         else:row(guard,full)
                     bindings()
