@@ -1,4 +1,5 @@
-import { getDeviceToken } from './device-session.ts';
+import { establishedSessionContext, fenceProtectedReply, getDeviceToken } from './device-session.ts';
+import { replySessionContext } from './voice-control.ts';
 
 export type Capability = { available: boolean; reason: string };
 export type CommunityStatus = { schema: 'sage.lantern.community.v1'; messaging: Capability; sharing: Capability; dictation: { available: boolean } };
@@ -119,6 +120,17 @@ export type CommunityAction = 'status' | 'radio/status' | 'custody/status' | 'me
 export async function communityRequest(action: CommunityAction, body: Record<string, unknown> = {}, signal?: AbortSignal): Promise<unknown> {
   const token = getDeviceToken();
   if (!token || signal?.aborted || (typeof document !== 'undefined' && document.hidden)) throw new Error('Device locked');
+  // The authority this dispatch is issued under, taken before the command. The
+  // token comparison below cannot see an epoch rotation that keeps the same
+  // token, so the reply is judged against this instead of against the token
+  // alone. `unknown` is not "no authority": a reply that cannot be judged is
+  // refused rather than adopted on the strength of a guess.
+  const issuedUnder = establishedSessionContext();
+  // A refusal drops the authority a reply would be judged against, so a
+  // protected write must not be dispatched at all. Refusing the reply after a
+  // message, a receipt or a consent challenge has already left the device is a
+  // fence around the answer, not around the act.
+  if (issuedUnder.state !== 'context' && issuedUnder.state !== 'legacy') throw new Error('Community authority unavailable');
   const encoded = JSON.stringify(body);
   if (new TextEncoder().encode(encoded).length > 32768) throw new Error('Request too large');
   const controller = new AbortController();
@@ -143,6 +155,12 @@ export async function communityRequest(action: CommunityAction, body: Record<str
       result += decoder.decode();
     } finally { await reader.cancel().catch(() => {}); }
     if (controller.signal.aborted || token !== getDeviceToken() || (typeof document !== 'undefined' && document.hidden)) throw new Error('Device locked');
-    return JSON.parse(result);
+    const reply = JSON.parse(result);
+    if (fenceProtectedReply(issuedUnder, replySessionContext(reply)) !== 'ok') throw new Error('Community authority changed');
+    // The admission stamp is transport metadata, not part of the community
+    // record. Consuming it here is also what keeps the exact-key community
+    // parsers reading the shape they require on a locked device.
+    delete (reply as Record<string, unknown>).session_context;
+    return reply;
   } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort); }
 }

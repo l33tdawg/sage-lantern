@@ -1,0 +1,276 @@
+/* Gallery — the separate retained-photo destination.
+ *
+ * Tokens come from screen.css (navy #0b1820, surface #172a34, ink #f6fafc,
+ * muted #b9cbd4, amber #ffbe62). The Back/title header and the scrollable
+ * content region reuse the shared sub-screen rhythm rather than inventing a
+ * second one, so every secondary destination in this candidate behaves the
+ * same way. Every interactive target is at least 72px.
+ *
+ * Rules are declared twice — bare and scoped to `.device-screen` — for the same
+ * reason the Home tiles are: the shared `.device-screen button` rule is one
+ * class plus one element, so a bare class loses inside the real Screen while a
+ * fixture that renders the component without the shell has no `.device-screen`
+ * ancestor at all.
+ */
+
+.device-gallery-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The Camera shortcut sits at the far end of the header rather than crowding the
+ * title, which is not a control and must not read as one. */
+.device-gallery-camera {
+  margin-left: auto;
+}
+
+.device-gallery-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 18px;
+  margin: 0;
+  text-align: center;
+  border: 1px solid #34505e;
+  border-radius: 16px;
+  background: #122935;
+  font-size: 21px;
+  line-height: 1.4;
+}
+
+.device-gallery-state > svg {
+  width: 46px;
+  height: 46px;
+  color: var(--device-accent, #ffbe62);
+}
+
+.device-gallery-error {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #bf8078;
+  background: #392932;
+  color: #ffd0c8;
+  font-size: 20px;
+}
+
+.device-gallery-note {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.4;
+  color: var(--device-muted, #b9cbd4);
+}
+
+/* --- Thumbnail grid ------------------------------------------------------ */
+
+.device-gallery-grid {
+  display: grid;
+  /* Two columns on the 720px panel, not three: a thumbnail is the thing being
+   * chosen, and a 180px tile on a 1560px-tall panel reads as a list of icons. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device-gallery-thumb,
+.device-screen .device-gallery-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-height: 180px;
+  padding: 10px;
+  text-align: left;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.device-gallery-thumb-frame {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #0e1f28;
+}
+
+.device-gallery-thumb-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.device-gallery-thumb-placeholder {
+  font-size: 28px;
+  color: var(--device-muted, #b9cbd4);
+}
+
+.device-gallery-thumb-label {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--device-muted, #b9cbd4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.device-gallery-thumb-missing {
+  font-size: 16px;
+  color: #ffd0c8;
+}
+
+/* --- Viewer -------------------------------------------------------------- */
+
+.device-gallery-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.device-gallery-frame {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  padding: 10px;
+  border: 1px solid #34505e;
+  border-radius: 16px;
+  background: #0e1f28;
+}
+
+.device-gallery-frame img {
+  max-width: 100%;
+  max-height: 46dvh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.device-gallery-frame p {
+  margin: 0;
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 20px;
+  color: var(--device-muted, #b9cbd4);
+}
+
+.device-gallery-question {
+  margin: 0;
+  font-size: 23px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.device-gallery-position {
+  margin: 0;
+  font-size: 18px;
+  color: var(--device-muted, #b9cbd4);
+}
+
+.device-gallery-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.device-gallery-actions > button {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-gallery-primary > button {
+  flex: 1 1 100%;
+}
+
+/* The viewer's own action row is the screen's primary action, and on a short
+ * landscape panel it started below the fold (554-626 in a 600px panel: 26px of
+ * it out of view, 36px of scrolling to reach it).
+ *
+ * The first answer is to give the panel its space back: at 600px tall the
+ * viewer's own rows need more than the scrolling region has, and the photo
+ * frame is holding 128px of slack (`min-height: 200px` around an image that is
+ * not that tall), so on a short panel the frame gives the slack up instead of
+ * the primary action starting off-screen. Measured at 1024x600: the content
+ * then fits with 82px to spare, so the Previous/Next row stays fully visible
+ * and nothing is pinned over it. 720x1560, 480x1040 and 360x800 are taller than
+ * 700px and do not move.
+ *
+ * The sticky rule below is the second answer, for content the frame cannot give
+ * up (a long question, an unavailable-photo note): wherever the viewer still
+ * overflows, the primary action is pinned to the bottom of the scrolling region
+ * rather than starting below it. It is a no-op wherever the content fits. The
+ * background is the panel's own navy, so the pinned row shows no strip. */
+.device-gallery-actions.device-gallery-primary {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--device-bg, #0b1820);
+}
+
+@media (max-height: 700px) {
+  .device-gallery-viewer { gap: 8px; }
+  .device-gallery-frame { min-height: 0; }
+  .device-gallery-frame img { max-height: 32dvh; }
+}
+
+/* --- Deletion confirmation ----------------------------------------------- */
+
+/* The wording here is generated by `deleteEffect`, never written inline: the
+ * command removes the question, its answer and its photo, and a photo-only
+ * label would promise something the device cannot do. */
+.device-gallery-confirm {
+  flex-shrink: 0;
+  padding: 16px;
+  margin-top: 10px;
+  border: 1px solid #bf8078;
+  border-radius: 16px;
+  background: #2a1f26;
+}
+
+.device-gallery-confirm h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.device-gallery-confirm p {
+  margin: 0 0 12px;
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.device-gallery-confirm .device-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.device-gallery-confirm .device-actions > button {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A narrow portrait panel fits two thumbnails, not three, and the viewer keeps
+ * its controls reachable rather than pushing them below the fold. */
+@media (max-width: 520px) {
+  /* The bar is Back + title + Camera. At 360px that is wider than the panel
+   * once every control holds its 72px floor, so the bar wraps there and only
+   * there: at 480px the three still fit on one line and nothing moves. */
+  .device-gallery .device-subheader { flex-wrap: wrap; }
+  .device-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .device-gallery-thumb,
+  .device-screen .device-gallery-thumb { min-height: 148px; padding: 8px; }
+  .device-gallery-thumb-label { font-size: 15px; }
+  .device-gallery-frame img { max-height: 40dvh; }
+  .device-gallery-question { font-size: 20px; }
+}
+
+/* The viewer takes focus while a photo is open, so the screen's keys work
+ * wherever a pointer click happened to leave focus. It is a region, not a
+ * control, so the focus ring is subtle but present — a keyboard user needs to
+ * see where they are. */
+.device-gallery-viewer:focus { outline: none; }
+.device-gallery-viewer:focus-visible { outline: 3px solid var(--device-accent, #ffbe62); outline-offset: 4px; }

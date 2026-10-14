@@ -36,3 +36,19 @@
 @media (max-width: 450px) { .device-screen .device-question-edit-target { padding: 12px; } }
 @keyframes question-answer-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .device-flow-question { transition: none; }.device-flow-answer { animation: none; } }
+
+/* The interruption marker on a chat turn. A partial answer is retained with this
+ * beside it, so the words stay the device's own and the completion is visibly not.
+ * Home carries the same marker as `.device-home-incomplete`, declared in home.css
+ * for the surface that shipped it; the values here are deliberately identical so
+ * the two read the same. */
+.device-answer-incomplete {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 10px;
+  border-radius: 8px;
+  border: 1px solid #bf8078;
+  color: #ffd0c8;
+  font-size: 17px;
+  vertical-align: middle;
+}

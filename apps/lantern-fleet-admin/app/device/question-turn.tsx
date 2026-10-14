@@ -3,9 +3,11 @@ import RecordingStatus from './recording-status';
 import QuestionContext from './question-context';
 import './question-flow.css';
 
-export default function QuestionTurn({ phase, question, answer, reply, hint, edit, review }: {
+export default function QuestionTurn({ phase, question, answer, reply, hint, edit, review, incomplete = false }: {
   phase: string; question: string | null; answer: string; reply: boolean; hint: string;
   edit?: () => void; review?: ReactNode;
+  /** True when `answer` is the partial output a normal interruption left behind. */
+  incomplete?: boolean;
 }) {
   return <article className="device-chat-exchange device-question-turn" data-phase={phase} aria-label="Current question">
     <section className={`device-chat-user device-flow-question${review || edit ? ' device-flow-question-editable' : ''}`}>
@@ -13,6 +15,6 @@ export default function QuestionTurn({ phase, question, answer, reply, hint, edi
         ? <QuestionContext transcript={question} edit={edit} label="Your question" />
         : <div className="device-transcribing-question"><h2>Your question</h2><p role="status">Turning your recording into words…</p></div>)}
     </section>
-    {answer && <section className="device-chat-assistant device-flow-answer"><h2>Lantern</h2><p>{answer}</p></section>}
+    {answer && <section className="device-chat-assistant device-flow-answer"><h2>Lantern</h2><p>{answer}</p>{incomplete && <span className="device-answer-incomplete">Incomplete</span>}</section>}
   </article>;
 }

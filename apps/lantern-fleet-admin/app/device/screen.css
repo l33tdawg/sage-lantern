@@ -5,7 +5,7 @@
   --device-muted: #b9cbd4;
   --device-accent: #ffbe62;
   width: 100%; height: 100dvh; min-height: 400px; overflow: hidden;
-  position: relative; display: grid; grid-template-rows: 72px minmax(0, 1fr) 88px;
+  position: relative; display: grid; grid-template-rows: 76px minmax(0, 1fr) 88px;
   background: var(--device-bg); color: var(--device-ink);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
@@ -25,6 +25,25 @@
 .device-screen button:disabled { opacity: .35; cursor: none; }
 .device-screen.device-touch { grid-template-rows: 76px minmax(0, 1fr) 94px; }
 .device-touch .device-footer { padding: 8px 20px; }
+/* Home 2a owns the panel below the header: its central control replaces the
+   footer. The capture owner stays mounted inside that footer — one TalkControls
+   lifetime across Home and Chat is a brief requirement — so the row is collapsed
+   and the `hidden` element is genuinely removed from the grid, rather than the
+   owner being unmounted and rebuilt on every navigation. */
+.device-screen.device-home-active { grid-template-rows: 76px minmax(0, 1fr); }
+.device-screen.device-home-active.device-touch { grid-template-rows: 76px minmax(0, 1fr); }
+@media (orientation: portrait) { .device-screen.device-home-active { grid-template-rows: 76px minmax(0, 1fr); } }
+.device-navigation-footer[hidden] { display: none; }
+/* Home is a main surface, so it joins the one navigation model rather than
+   inventing its own: it takes the content column, and the conversation drawer
+   keeps its sliding behaviour instead of falling back into normal flow. The
+   narrow layout is a single column, so the placement moves back to it. */
+.device-thread-layout > .device-home { grid-column: 2; grid-row: 2; min-width: 0; }
+@media (max-width: 760px), (orientation: portrait) { .device-thread-layout > .device-home { grid-column: 1; } }
+/* The conversation drawer is a Chat affordance: Home has no Chats control of its
+   own — its footer is hidden — so a drawer left open must never cover the Home
+   surface. This outranks the thread-layout sliding rule in both orientations. */
+.device-screen.device-home-active > .device-chat-list { display: none; }
 .device-talk-controls { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .device-talk-controls button { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 170px; }
 .device-talk-controls svg { width: 32px; height: 32px; }
@@ -36,7 +55,7 @@
 .device-talk-compact button { min-width: 116px; }
 .device-camera-shortcut { display: flex; align-items: center; justify-content: center; gap: 8px; margin-left: auto; }
 .device-camera-shortcut svg { width: 28px; height: 28px; flex-shrink: 0; }
-.device-footer > .device-camera-shortcut { margin-right: 8px; width: 76px; min-width: 76px; flex-shrink: 0; padding-inline: 10px; background: #1762a0; border-color: #6fbaff; color: #fff; }
+.device-footer > .device-camera-shortcut { margin-right: 8px; width: 76px; min-width: 76px; flex-shrink: 0; padding-inline: 10px; background: #1762a0; border-color: #6fbaff; color: var(--device-ink); }
 .device-footer > .device-question-button { min-width: 180px; white-space: nowrap; background: #173b56; border-color: #699abb; color: #f6fafc; padding-inline: 20px; }
 .device-footer > .device-question-button[aria-pressed="true"] { background: #245679; border-color: #a0d6ff; }
 .device-answer-footer > .device-camera-shortcut { margin-right: 0; }
@@ -52,7 +71,7 @@
 .device-menu svg, .device-menu > button > span { width: 32px; height: 32px; font-size: 32px; }
 .device-menu p { color: var(--device-muted); font-size: 18px; }
 /* Secondary screens keep the shared device header above them. */
-.device-subscreen { grid-row: 2 / -1; display: flex; flex-direction: column; min-height: 0; padding: 10px 24px; gap: 10px; }
+.device-subscreen { grid-row: 2 / -1; display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 10px 24px; gap: 10px; }
 .device-subcontent { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 .device-subcontent h2 { font-size: 26px; margin: 10px 0; overflow-wrap: anywhere; }
 .device-subcontent h3 { font-size: 20px; color: var(--device-muted); margin: 18px 0 10px; }
@@ -237,7 +256,7 @@
 @media (prefers-reduced-motion: reduce) { .device-wait-breath, .device-wait-phrase { animation: none; opacity: 1; transform: none; } }
 @media (max-width: 520px) { .device-footer > .device-camera-shortcut { min-width: 54px; padding-inline: 8px; }.device-camera-shortcut span { display: none; }.device-talk-compact button { min-width: 84px; }.device-top .device-wordmark { gap: 6px; font-size: 15px; }.device-wordmark > svg { width: 30px; height: 34px; } }
 @media (max-width: 450px) { .device-footer > .device-question-button { min-width: 0; padding-inline: 12px; font-size: 18px; }.device-footer > .device-camera-shortcut { width: 64px; min-width: 64px; } }
-.device-navigation-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px auto; align-content: end; gap: 8px; }
+.device-navigation-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px auto auto; align-content: end; gap: 8px; }
 .device-navigation-footer > .device-history-shortcut, .device-navigation-footer > .device-question-button { min-width: 0; width: 100%; margin-right: 0; padding-inline: 10px; white-space: normal; font-size: 20px; background: #173b56; border-color: #699abb; color: #f6fafc; }
 .device-navigation-footer > .device-camera-shortcut { width: 64px; min-width: 64px; margin-right: 0; }
 .device-navigation-footer > .device-talk-controls { display: contents; }
@@ -279,3 +298,66 @@
 .radio-node-key { overflow-wrap: anywhere; font-size: 16px; }
 .radio-details { margin-top: 16px; }
 @media (max-width: 520px) { .device-navigation-footer { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }.device-navigation-footer > .device-camera-shortcut { justify-self: end; }.device-navigation-footer > .device-talk-controls button { min-width: 100px; }.device-recording-actions > button { flex: 1; } }
+
+/* --- One header row, four 72px controls ---------------------------------
+ * The four shared header controls are the panel's 72px floor in BOTH
+ * dimensions, at every panel size: the wordmark, the Nearby meter, Messages
+ * and Menu. The shell row is 76px (the value portrait.css already used, now
+ * used in landscape and on Chat too), and what is left for the row's own
+ * vertical padding is 76 - 1px rule - 2px = 73px, so a 72px control fits
+ * without making the row taller. The controls keep their vertical centre; the
+ * two icon-only ones widen in place, so their icons move horizontally by a few
+ * pixels (measured: the Nearby meter and Messages shift +8px and -8px at
+ * 720x1560 and at 480x1040, +4px and 0 at 1024x600).
+ *
+ * These selectors are one class deeper than `.device-screen .device-top
+ * button` in portrait.css and than `.device-top button` here, because both
+ * still ask for 56px / 48px and are bundled after this file.
+ */
+.device-screen .device-top { padding-block: 1px; }
+.device-screen .device-top .device-home-group > button,
+.device-screen .device-top .device-top-actions > button { min-width: 72px; min-height: 72px; }
+
+/* At 360px four 72px controls leave 56px for the brand, so the wordmark keeps
+ * its glyph and its accessible name and gives up its label — the same
+ * concession the Nearby meter, the camera shortcut and Chat's Back already
+ * make at this size. */
+@media (orientation: portrait) and (max-width: 400px) {
+  .device-screen .device-top .device-wordmark span { display: none; }
+}
+
+/* Chat's own bar occupies the same shell row as every other screen's header,
+ * so it takes the same 76px. `main` is written out because chat.css declares
+ * `.device-screen.device-chat-active { grid-template-rows: 72px ... }` and is
+ * bundled after this file: at equal class specificity that rule would win. */
+main.device-screen.device-chat-active { grid-template-rows: 76px minmax(0, 1fr) auto; }
+
+/* Chat's Back is the same 120x72 target as every sub-screen's Back, so the
+ * panel has one Back rhythm instead of two. chat.css owns `.device-chat-back`
+ * and drops it to 64px, then 56px at 520px and below, so this rule carries the
+ * element as well as the classes to outrank it. */
+.device-screen .device-chat-bar button.device-chat-back { min-width: 120px; min-height: 72px; }
+
+/* At 520px and below chat.css hides Back's label and the bar also carries the
+ * list and New chat actions: measured at 360x800, a 120px Back pushes New chat
+ * 29px past the panel. There the icon-only Back takes the 72px floor instead,
+ * which is the widest Back that bar can hold. */
+@media (max-width: 520px) {
+  .device-screen .device-chat-bar button.device-chat-back { min-width: 72px; }
+}
+
+/* About's credits carry the device's only bare anchors, and no rule for `a`
+ * existed anywhere in the app: they rendered the user agent's #0000ee on
+ * #122935, 1.6:1. Ink is the brief's near-white text token. The padding is the
+ * 72px target floor, and the negative inline margin keeps the sentence's own
+ * line width so the flow around the links does not move. */
+.device-screen a[href] {
+  display: inline-block;
+  min-width: 72px;
+  min-height: 72px;
+  padding: 21px 10px;
+  margin-inline: -10px;
+  color: var(--device-ink);
+  text-decoration: underline;
+}
+.device-screen a[href]:focus-visible { outline: 3px solid var(--device-accent); outline-offset: -3px; }

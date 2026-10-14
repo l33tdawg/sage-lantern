@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { setDeviceToken } from './device-session.ts';
+import { observeSessionContext, parseSessionContext, setDeviceToken } from './device-session.ts';
 import { parseRenderChallenge, parseReadReceipt, readReceiptLabel, receiptEligible, RenderedReceiptFlow } from './read-receipts.ts';
 
 const id = `mesh:inbox:00000000-0000-4000-8000-000000000001:${'a'.repeat(64)}`;
@@ -89,14 +89,19 @@ test('unmount or stale challenge response cannot enable another message', async 
 
 test('real request helper stays loopback/session-bound for both routes', async () => {
   const original = globalThis.fetch;
+  // Both protected replies are stamped: the consent challenge and the
+  // acknowledgement. A locked device's reply carries the authority it was
+  // admitted under, so that is the shape the parser has to be handed.
+  const stamp = { schema: 'sage.lantern.session-context.v1', epoch: 'a'.repeat(32), session_ref: 'b'.repeat(64) };
   setDeviceToken(token);
+  observeSessionContext(parseSessionContext(stamp));
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push(url);
     assert.equal(options.headers['X-Lantern-Session'], token);
     assert.equal(options.redirect, 'error'); assert.equal(options.credentials, 'omit');
     assert.equal(options.cache, 'no-store');
-    return Response.json(url.endsWith('render-challenge') ? challenge : queued);
+    return Response.json({ ...(url.endsWith('render-challenge') ? challenge : queued), session_context: stamp });
   };
   const flow = new RenderedReceiptFlow(id, undefined, () => 100);
   try {

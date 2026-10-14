@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { communityLabel, communityRequest, parseCommunityResult, parseCommunityStatus, parseContacts, parseMessages, parseSharePreview, parseShares } from './community.ts';
 import { parseDictationStatus, replaceParagraph } from './message-dictation.ts';
-import { setDeviceToken } from './device-session.ts';
+import { observeSessionContext, parseSessionContext, setDeviceToken } from './device-session.ts';
 import { readFileSync } from 'node:fs';
 
 const created_at = '2026-09-06T01:00:00Z';
@@ -57,22 +57,29 @@ test('paragraph replacement preserves the other paragraphs and checks limits', (
 test('community requests are session-bound, local-only and reject oversized replies', async () => {
   const original = globalThis.fetch;
   const token = 'a'.repeat(43);
+  // A locked device publishes a context and stamps its successful replies with
+  // it, so a mock that returned an unstamped reply while claiming to be locked
+  // would be modelling a device that does not exist.
+  const stamp = { schema: 'sage.lantern.session-context.v1', epoch: 'a'.repeat(32), session_ref: 'b'.repeat(64) };
+  const stamped = { ...status, session_context: stamp };
   try {
     setDeviceToken(null);
     globalThis.fetch = async () => { throw new Error('Must not fetch'); };
     await assert.rejects(communityRequest('status'), /Device locked/);
     setDeviceToken(token);
+    observeSessionContext(parseSessionContext(stamp));
     globalThis.fetch = async (url, options) => {
       assert.equal(url, 'http://127.0.0.1:3197/community/status');
       assert.equal(options.headers['X-Lantern-Session'], token);
       assert.equal(options.redirect, 'error');
       assert.equal(options.credentials, 'omit');
-      return Response.json(status);
+      return Response.json(stamped);
     };
     assert.deepEqual(await communityRequest('status'), status);
-    globalThis.fetch = async () => { setDeviceToken(null); return Response.json(status); };
+    globalThis.fetch = async () => { setDeviceToken(null); return Response.json(stamped); };
     await assert.rejects(communityRequest('status'), /Device locked/);
     setDeviceToken(token);
+    observeSessionContext(parseSessionContext(stamp));
     globalThis.fetch = async () => new Response('x'.repeat(262145), { headers: { 'content-type': 'application/json' } });
     await assert.rejects(communityRequest('status'), /Response too large/);
     globalThis.fetch = async () => new Response('private error', { status: 503 });
@@ -96,10 +103,26 @@ test('public and private interfaces keep consent separate and never render HTML'
 test('recording completion cannot discard a message draft or regress a reviewed transcript', () => {
   const screen = readFileSync(new URL('../app/device/screen.tsx', import.meta.url), 'utf8');
   const dictation = readFileSync(new URL('../app/device/dictation.tsx', import.meta.url), 'utf8');
-  assert.match(screen, /setPage\(\(current\) => current === 'messages' \|\| current === 'sharing' \? current : 'main'\)/);
+  // A new voice session still returns the user to the question surface, but the
+  // Home 2a screen *is* the question surface: bouncing it here made every visit
+  // to Home last exactly one status poll. Agent joins the preserved set for the
+  // same class of reason: its draft is discarded at lock and owner change, and a
+  // session publication is neither.
+  assert.match(screen, /setPage\(\(current\) => current === 'messages' \|\| current === 'sharing' \|\| current === 'agent' \|\| \(homeEnabled && current === 'home'\) \? current : 'main'\)/);
   assert.match(dictation, /\['review', 'error', 'cancelled', 'cancelling'\]\.includes\(current.phase\) \? current/);
   assert.match(dictation, /mounted.current && !terminal.current/);
   assert.match(dictation, /Tap Cancel, then record again/);
+});
+
+test('a voice-session publication cannot discard an Agent draft', () => {
+  const screen = readFileSync(new URL('../app/device/screen.tsx', import.meta.url), 'utf8');
+  const agent = readFileSync(new URL('../app/device/agent.tsx', import.meta.url), 'utf8');
+  // The draft is component state, so leaving the surface unmounts it. The rule it
+  // is held to is discard-at-lock/owner-change; a session publication is within
+  // the same authority, so the Agent surface is preserved through it.
+  assert.match(screen, /current === 'agent' \|\| \(homeEnabled && current === 'home'\) \? current : 'main'\)/);
+  assert.match(agent, /A draft cannot outlive its authority/);
+  assert.match(agent, /useState<AgentTaskDraft>\(EMPTY_DRAFT\)/);
 });
 
 test('unknown send preserves recovery identity when browsing outbox', () => {

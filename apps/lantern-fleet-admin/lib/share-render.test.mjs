@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ts from 'typescript';
 import * as community from './community.ts';
 import * as shareRefresh from './share-refresh.ts';
-import { setDeviceToken } from './device-session.ts';
+import { observeSessionContext, parseSessionContext, setDeviceToken } from './device-session.ts';
 
 const require = createRequire(import.meta.url);
 const source = { source_id: '11111111-1111-4111-8111-111111111111', question: 'What is a seed?', answer: 'A seed can grow into a plant.', has_photo: false };
@@ -43,7 +43,9 @@ function harness(request, selectedSource = source) {
   const compiled = ts.transpileModule(readFileSync(new URL('../app/device/share.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const module = { exports: {} };
+  // Not named `module`: the Next lint rule forbids assigning to that name, and the
+  // shim is only ever the CommonJS host handed to the transpiled component below.
+  const shim = { exports: {} };
   const runtime = require('react/jsx-runtime');
   const jsx = (method) => (tag, props, key) => {
     if (tag === 'button') buttons.push(props);
@@ -52,9 +54,9 @@ function harness(request, selectedSource = source) {
   const load = (name) => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { ...runtime, jsx: jsx('jsx'), jsxs: jsx('jsxs') }
     : name === '../../lib/share-refresh' ? shareRefresh : name === '../../lib/community' ? { ...community, communityRequest: request }
     : name === './icons' ? { BackIcon: () => null, ShareIcon: () => null } : require(name);
-  new Function('require', 'module', 'exports', 'document', compiled)(load, module, module.exports, document);
+  new Function('require', 'module', 'exports', 'document', compiled)(load, shim, shim.exports, document);
   return {
-    render() { cursor = 0; buttons.length = 0; return renderToStaticMarkup(React.createElement(module.exports.default, { source: selectedSource, close() {} })); },
+    render() { cursor = 0; buttons.length = 0; return renderToStaticMarkup(React.createElement(shim.exports.default, { source: selectedSource, close() {} })); },
     click(label) { const button = buttons.find((value) => value.children === label); assert.ok(button && !button.disabled, label); button.onClick(); },
     hide() { document.hidden = true; document.dispatchEvent(new Event('visibilitychange')); },
     async settle() { while (effects.length) effects.shift()(); await new Promise(setImmediate); },
@@ -64,6 +66,11 @@ function harness(request, selectedSource = source) {
 
 test('actual Share controls queue once, inspect, and retain request across list reload', async (context) => {
   setDeviceToken('a'.repeat(43));
+  // A locked device stamps every successful protected reply with the authority it
+  // admitted the command under; an unstamped reply from a device that claims to
+  // be locked is not modelling a device that exists.
+  const stamp = { schema: 'sage.lantern.session-context.v1', epoch: 'a'.repeat(32), session_ref: 'b'.repeat(64) };
+  observeSessionContext(parseSessionContext(stamp));
   context.after(() => setDeviceToken(null));
   const id = 'mesh-public:' + crypto.randomUUID();
   const created_at = '2026-09-08T01:00:00Z';
@@ -73,7 +80,8 @@ test('actual Share controls queue once, inspect, and retain request across list 
     calls.push({ url, body });
     return new Response(JSON.stringify({ id, request_id: body.request_id, created_at,
       state: url.endsWith('/refresh') ? 'queued' : 'pending', observed_status: url.endsWith('/refresh') ? null : 'committed',
-      trust_basis: 'pinned_gateway', acceptance_available: false, consensus_verified: false, cache_eligible: false }),
+      trust_basis: 'pinned_gateway', acceptance_available: false, consensus_verified: false, cache_eligible: false,
+      session_context: stamp }),
       { headers: { 'Content-Type': 'application/json' } });
   });
   const view = harness(async (action) => {

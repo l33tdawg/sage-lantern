@@ -22,6 +22,10 @@ export function MicrophoneIcon() {
   return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><rect x="11" y="3" width="10" height="17" rx="5" /><path d="M7 15v2a9 9 0 0 0 18 0v-2M16 26v4M10 30h12" /></svg>;
 }
 
+export function KeyboardIcon() {
+  return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><rect x="2" y="8" width="28" height="17" rx="3" /><path d="M7 13h2M13 13h2M19 13h2M25 13h.5M7 18h2M13 18h2M19 18h2M25 18h.5M10 22h12" /></svg>;
+}
+
 export function SendIcon() {
   return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="m3 4 26 12L3 28l4-12-4-12ZM7 16h22" /></svg>;
 }
@@ -56,4 +60,31 @@ export function EnvelopeIcon() {
 
 export function ShareIcon() {
   return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21V3m-6 6 6-6 6 6M9 15H5v14h22V15h-4" /></svg>;
+}
+
+/** Retained photos. One shared glyph, so the Home tile and the Gallery header
+ *  cannot drift into two different pictures for the same destination. */
+export function GalleryIcon() {
+  return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="6" width="26" height="20" rx="4" /><circle cx="11" cy="13" r="2.4" /><path d="m4 23 7-6 5 4 4-3 8 6" /></svg>;
+}
+
+/** Chat. Shared by the Home tile and Chat's own title bar for the same reason. */
+export function ChatIcon() {
+  return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 8h22v14H12l-7 6z" /></svg>;
+}
+
+/** Tasks. Shared by the Home tile and the Agent title bar, never a second picture. */
+export function AgentIcon() {
+  return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 8h16M12 16h16M12 24h16" /><path d="m3 8 2 2 3-4M3 16l2 2 3-4M3 24l2 2 3-4" /></svg>;
+}
+
+/** Heartbeat. A pulse, because the screen reports a state rather than drawing one. */
+export function HeartbeatIcon() {
+  return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 17h6l3-9 5 19 4-14 3 4h7" /></svg>;
+}
+
+/** Hardware. A board outline with its connector row. Deliberately no pin numbers:
+ *  the schema has no pin map, so a numbered connector would be an invented one. */
+export function HardwareIcon() {
+  return <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="7" y="7" width="18" height="18" rx="3" /><path d="M12 3v4M20 3v4M12 25v4M20 25v4M3 12h4M3 20h4M25 12h4M25 20h4" /><rect x="12" y="12" width="8" height="8" rx="1.5" /></svg>;
 }

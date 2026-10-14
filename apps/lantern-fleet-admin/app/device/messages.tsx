@@ -8,7 +8,7 @@ import NearbyDirectory from './nearby-directory';
 import Dictation from './dictation';
 import QuestionKeyboard from './question-keyboard';
 import ReadReceiptControl from './read-receipt';
-import { getDeviceToken } from '../../lib/device-session';
+import { getDeviceToken, subscribeDeviceSession } from '../../lib/device-session';
 import { useDrawerNavigation } from './drawer-navigation';
 import { contactNames, deliveryLabel, folderItems, folderNotice, folderUnavailable, loadMessageFolders, messageThreads, outgoingLabel, previewPrefix, replyContact, type MessageFolder, type MessageThread, type ThreadMessage } from '../../lib/message-threads';
 import { receiptEligible, type ReadReceiptOutcome } from '../../lib/read-receipts';
@@ -63,17 +63,26 @@ export default function MessagesScreen({ close }: { close: () => void }) {
   useEffect(() => { mounted.current = true; back.current?.focus(); return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     const token = getDeviceToken();
+    const clearProtected = () => {
+      detailRequest.current?.abort();
+      setItems(null); setContacts([]); setParagraphs([]); setUndo(null); setRecipient(null);
+      setRecording(null); setReview(false); setFilter(''); setReadOutcomes({}); setOutcome(null); setError('');
+      setSelectedId(null); setComposing(false); setUnavailable([]); requestId.current = null;
+    };
     const clear = () => {
-      if (token !== getDeviceToken() || !getDeviceToken() || document.hidden) {
-        detailRequest.current?.abort();
-        setItems(null); setContacts([]); setParagraphs([]); setUndo(null); setRecipient(null);
-        setRecording(null); setReview(false); setFilter(''); setReadOutcomes({}); setOutcome(null); setError('');
-        setSelectedId(null); setComposing(false); setUnavailable([]); requestId.current = null;
-      }
+      if (token !== getDeviceToken() || !getDeviceToken() || document.hidden) clearProtected();
     };
     const timer = setInterval(clear, 250);
     document.addEventListener('visibilitychange', clear);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', clear); detailRequest.current?.abort(); };
+    // An epoch rotation keeps the same device token, so the poll above cannot see
+    // it. The seam fires on that rotation and on a replaced token; either way the
+    // cached chats, the draft in progress and the receipt outcomes were read
+    // under an authority that no longer holds.
+    const unsubscribe = subscribeDeviceSession(clearProtected);
+    return () => {
+      clearInterval(timer); document.removeEventListener('visibilitychange', clear); unsubscribe();
+      detailRequest.current?.abort();
+    };
   }, []);
   useEffect(() => {
     if (directory) return;

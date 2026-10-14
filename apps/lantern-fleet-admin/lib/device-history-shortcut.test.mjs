@@ -9,7 +9,11 @@ test('Chats stays first in the footer and is disabled during voice ownership', (
   assert.doesNotMatch(screen, />‹ Chats<\/button>/);
   assert.ok(footer.indexOf('device-history-shortcut') < footer.indexOf('device-share-answer'));
   assert.ok(footer.indexOf('device-camera-shortcut') < footer.indexOf('<TalkControls'));
-  assert.match(screen, /page === 'history' \? historyButton.current : menuButton.current/);
+  // Back restores focus from the *recorded origin* rather than from the page being
+  // left: the record names the control, so the history entry keeps its own, and the
+  // one journey with nothing recorded still resolves the page being left to it.
+  assert.match(screen, /target === 'history' \? historyButton\.current/);
+  assert.match(screen, /page === 'history' \? 'history'/);
 });
 
 test('shortcut opens the existing consent-controlled history screen', () => {

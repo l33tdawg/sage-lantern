@@ -38,15 +38,23 @@ test('share opens only a completed session preview and never sends directly', ()
   assert.match(action, /source_id: status.voice.session_id, question: status.voice.transcript, answer: status.voice.response, has_photo: !!status.voice.has_photo/);
   assert.match(action, /setPage\('sharing'\)/);
   assert.doesNotMatch(action, /shares\/submit|communityRequest|consent: true/);
-  assert.match(screen, /page === 'sharing' && shareSource \? shareButton.current/);
+  // Focus on return names the control rather than the page. Sharing is the one
+  // route opened without recording an origin — the Share button sets the page
+  // directly — so the page being left is still the only evidence for it.
+  assert.match(screen, /target === 'share' \? shareButton\.current/);
+  assert.match(screen, /page === 'sharing' && shareSource \? 'share'/);
 });
 
 test('Home resets the current interaction without deleting saved history', () => {
   const header = readFileSync(new URL('../app/device/device-header.tsx', import.meta.url), 'utf8');
   assert.match(screen, /if \(page === 'main' && !correction\) void clearAnswer\(\);/);
-  assert.match(header, /className="device-wordmark" disabled=\{busy\} onClick=\{onHome\}/);
+  // The busy guard exists to stop the destructive reset running mid-turn. In a
+  // build with a Home screen the wordmark only navigates — one shared capture
+  // owner survives the move — so it stays reachable during recording. Review
+  // and draft editors must finish or be explicitly cancelled before navigating.
+  assert.match(header, /className="device-wordmark" disabled=\{wordmarkBlocked \|\| \(busy && wordmarkStartsChat\)\} onClick=\{onHome\}/);
   assert.match(header, /aria-busy=\{clearing\}/);
-  assert.match(header, /title=\{home \? 'New chat' : 'Home'\}/);
+  assert.match(header, /title=\{wordmarkBlocked \? 'Finish or cancel your question before returning Home\.' : home \? 'New chat' : 'Home'\}/);
   assert.match(header, /<LanternIcon \/><span>SAGE Lantern<\/span>/);
   assert.equal((header.match(/New chat; keep saved conversations/g) || []).length, 1);
   assert.match(header, /title="Nearby"><RadioSignal paused=\{busy\} \/><\/button>/);

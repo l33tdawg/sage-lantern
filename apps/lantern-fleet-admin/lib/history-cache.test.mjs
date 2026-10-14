@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HistoryCache, HISTORY_REFRESH_MS } from './history-cache.ts';
 import { savedHistory, subscribeSavedHistory } from './saved-history.ts';
-import { DeviceSessionError, setDeviceToken } from './device-session.ts';
+import { DeviceSessionError, observeSessionContext, parseSessionContext, setDeviceToken } from './device-session.ts';
 
 const data = (name = 'A question') => ({ enabled: true, items: [{ session_id: 'synthetic-session', created_at: '2026-09-10T10:00:00Z', transcript: name, response: 'An answer' }] });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -87,10 +87,22 @@ test('shared cache is cleared on token changes, visibility loss, and final unmou
   const originalDocument = globalThis.document; const originalFetch = globalThis.fetch;
   const document = new EventTarget(); document.hidden = false; globalThis.document = document;
   let calls = 0;
-  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify(data())); };
+  /**
+   * A locked device stamps every successful protected reply, and its client knows
+   * the authority from a validated reading.
+   *
+   * `setDeviceToken` deliberately resets that knowledge — a new session must not
+   * be compared against a dead epoch — so each new token re-establishes it here
+   * exactly as the next status reading does in the running app. Without that
+   * ordering this test would model a locked device whose replies carry no stamp,
+   * which is not a device that exists.
+   */
+  const stamp = { schema: 'sage.lantern.session-context.v1', epoch: 'a'.repeat(32), session_ref: 'b'.repeat(64) };
+  const establish = () => observeSessionContext(parseSessionContext(stamp));
+  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ ...data(), session_context: stamp })); };
   let one, two;
   try {
-    setDeviceToken('a'.repeat(43));
+    setDeviceToken('a'.repeat(43)); establish();
     one = subscribeSavedHistory(() => {}); two = subscribeSavedHistory(() => {});
     await settle(); assert.equal(calls, 1); assert.ok(savedHistory.getSnapshot().history);
     one(); one = null; assert.ok(savedHistory.getSnapshot().history);
@@ -99,7 +111,12 @@ test('shared cache is cleared on token changes, visibility loss, and final unmou
     document.hidden = false; document.dispatchEvent(new Event('visibilitychange'));
     await settle(); assert.equal(calls, 2);
     setDeviceToken(null); assert.equal(savedHistory.getSnapshot().history, null);
-    setDeviceToken('b'.repeat(43)); await settle(); assert.equal(calls, 3);
+    setDeviceToken('b'.repeat(43)); establish(); await settle();
+    // Token replacement invalidates before the next validated status reading.
+    // Nothing is dispatched in that gap; a fresh explicit read is usable once
+    // the replacement authority is established.
+    assert.equal(calls, 2); assert.equal(savedHistory.getSnapshot().history, null);
+    await savedHistory.refresh(); assert.equal(calls, 3);
     two(); two = null; assert.equal(savedHistory.getSnapshot().history, null);
   } finally {
     one?.(); two?.(); setDeviceToken(null); globalThis.document = originalDocument; globalThis.fetch = originalFetch;

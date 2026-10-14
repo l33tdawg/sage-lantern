@@ -6,8 +6,8 @@ import QuestionKeyboard from './question-keyboard';
 import { QuestionEditTarget } from './question-context';
 import { createQuestionPredictor } from '../../lib/question-prediction';
 import { correctionTextValid } from '../../lib/question-correction';
-import { voiceCommand, parseTouchSession, VoiceControlError } from '../../lib/voice-control';
-import { getDeviceToken } from '../../lib/device-session';
+import { voiceCommand, parseTouchSession, replySessionContext, VoiceControlError } from '../../lib/voice-control';
+import { establishedSessionContext, fenceProtectedReply, getDeviceToken } from '../../lib/device-session';
 import englishWords from '../../lib/keyboard-words.en.json';
 import './question-review.css';
 
@@ -38,10 +38,20 @@ export default function SuggestedQuestion({ sourceId, question, actionsContainer
   const submit = async () => {
     if (busy.current || rejected || !correctionTextValid(text) || !token.current
       || token.current !== getDeviceToken() || document.hidden) return;
+    const issuedUnder = establishedSessionContext();
     submission.current ??= { source_id: sourceId, question: text, request_id: crypto.randomUUID() };
     busy.current = true; setPending(true); setError('');
     try {
-      const session = parseTouchSession(await voiceCommand('followup', submission.current));
+      const reply = await voiceCommand('followup', submission.current);
+      const session = parseTouchSession(reply);
+      /**
+       * The answer this follow-up starts belongs to the authority the request was
+       * issued under, and to that authority only while it still holds. A refusal
+       * falls into the handler below, which reports the submission as unconfirmed
+       * and reuses the same request id if the user retries — the request has
+       * already been sent, so nothing here replays it.
+       */
+      if (fenceProtectedReply(issuedUnder, replySessionContext(reply)) !== 'ok') throw new Error('Submission not confirmed');
       if (mounted.current && token.current === getDeviceToken() && !document.hidden) submitted(session.session_id, submission.current.question);
     } catch (failure) {
       if (mounted.current && token.current === getDeviceToken()) {

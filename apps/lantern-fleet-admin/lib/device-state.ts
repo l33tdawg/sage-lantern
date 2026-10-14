@@ -1,4 +1,5 @@
 import type { SageStatus } from './sage-status';
+import { readSessionContext, type SessionContextReading } from './device-session.ts';
 
 export type DeviceStatus = {
   schema: 'sage.lantern.local-status.v1';
@@ -6,7 +7,14 @@ export type DeviceStatus = {
   local_voice_ready: boolean;
   audio: { present: boolean; detail: string; ptt_ready?: boolean; ready?: boolean; capture_verified?: boolean };
   radio: { present: boolean; detail: string; name?: string; frequency_mhz?: number; firmware?: string };
-  voice: { phase: string; session_id?: string; transcript: string; response: string; follow_up_questions?: string[]; detail?: string; touch_ready?: boolean; correction_ready?: boolean; review_ready?: boolean; review_id?: string | null; photo_ready?: boolean; has_photo?: boolean; progress_stage?: string | null; input_source?: 'physical' | 'touch' | null };
+  voice: { phase: string; session_id?: string; transcript: string; response: string; follow_up_questions?: string[]; detail?: string; touch_ready?: boolean; correction_ready?: boolean; review_ready?: boolean; typed_ready?: boolean; review_id?: string | null; photo_ready?: boolean; has_photo?: boolean; progress_stage?: string | null; input_source?: 'physical' | 'touch' | 'typed' | null };
+  /**
+   * The broker's current context for this reading, the fence every other
+   * protected value in this payload is judged against. `null` means the device
+   * is not publishing one (legacy unlocked mode); `'invalid'` means one was
+   * present and unusable, which is refused rather than treated as absent.
+   */
+  session_context: SessionContextReading;
   services: Record<string, string>;
   sage?: SageStatus;
   network?: { present: boolean; detail: string };
@@ -46,11 +54,12 @@ export function parseDeviceStatus(value: unknown): DeviceStatus {
     || (value.voice.touch_ready !== undefined && typeof value.voice.touch_ready !== 'boolean')
     || (value.voice.correction_ready !== undefined && typeof value.voice.correction_ready !== 'boolean')
     || (value.voice.review_ready !== undefined && typeof value.voice.review_ready !== 'boolean')
+    || (value.voice.typed_ready !== undefined && typeof value.voice.typed_ready !== 'boolean')
     || (value.voice.review_id != null && (typeof value.voice.review_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value.voice.review_id)))
     || (value.voice.photo_ready !== undefined && typeof value.voice.photo_ready !== 'boolean')
     || (value.voice.has_photo !== undefined && typeof value.voice.has_photo !== 'boolean')
     || (value.voice.progress_stage != null && !['starting', 'transcribing', 'recalling', 'photo_analysis', 'generating', 'answering', 'speaking'].includes(String(value.voice.progress_stage)))
-    || (value.voice.input_source != null && !['physical', 'touch'].includes(String(value.voice.input_source)))
+    || (value.voice.input_source != null && !['physical', 'touch', 'typed'].includes(String(value.voice.input_source)))
     || (value.voice.session_id != null && typeof value.voice.session_id !== 'string')
     || (value.audio.ptt_ready !== undefined && typeof value.audio.ptt_ready !== 'boolean')
     || (value.audio.ready !== undefined && typeof value.audio.ready !== 'boolean')
@@ -61,7 +70,9 @@ export function parseDeviceStatus(value: unknown): DeviceStatus {
   }
   return { ...value, voice: { ...value.voice,
     follow_up_questions: value.voice.phase === 'complete' ? parseFollowUpQuestions(value.voice.follow_up_questions) : [],
-  } } as DeviceStatus;
+    // Read from the payload, never spread through: a malformed context must be
+    // visible to the caller as unusable rather than silently carried as data.
+  }, session_context: readSessionContext(value.session_context) } as DeviceStatus;
 }
 
 export type DeviceView = {
@@ -85,24 +96,48 @@ export function waitingQuestion(status: DeviceStatus | null, connected: boolean)
   return status.voice.transcript;
 }
 
-export function deviceView(status: DeviceStatus | null, connected: boolean): DeviceView {
-  if (!connected || !status) return { phase: 'unavailable', title: 'Reconnecting…', hint: 'Waiting for device status.' };
-  if (!status.audio.present) {
-    return { phase: 'unavailable', title: 'Microphone disconnected', hint: 'Check the audio board’s USB cable.' };
-  }
-  if (status.audio.ready !== true) {
-    return { phase: 'unavailable', title: 'Audio is not ready', hint: 'The audio board is detected but its capture bridge needs checking.' };
-  }
-  const physicalReady = status.audio.ptt_ready && status.services.ptt === 'active';
-  const retry = status.voice.touch_ready ? 'Tap Ask to try again.' : 'Hold the side button to try again.';
+// Why the spoken lane cannot start a new question; null when it can. This is a
+// notice, never a dead end: the typed lane beside it needs no microphone.
+export function voiceLaneNotice(status: DeviceStatus | null): string | null {
+  if (!status) return 'Waiting for device status.';
+  if (!status.audio.present) return 'Microphone disconnected';
+  if (status.audio.ready !== true) return 'Audio is not ready';
+  const physicalReady = !!(status.audio.ptt_ready && status.services.ptt === 'active');
   if (!status.local_voice_ready || (!physicalReady && !status.voice.touch_ready)
     || ['voice_loop', 'llm', 'personal_sage'].some((name) => status.services[name] !== 'active')) {
-    return { phase: 'unavailable', title: 'Voice is not ready', hint: 'Local services need to finish starting or be checked.' };
+    return 'Voice is not ready';
   }
+  return null;
+}
+
+// A new spoken turn may only start when the lane is fully ready; a live phase
+// is judged by its own evidence (freshness plus the published session).
+export function voiceLaneReady(status: DeviceStatus | null): boolean {
+  return !!status && voiceLaneNotice(status) === null;
+}
+
+// The local question service itself (not the microphone): the runtime that
+// owns review, typed questions, inference and history. A live turn is only
+// believable while this is true, and it never requires audio.
+export function questionServiceRunning(status: DeviceStatus | null): boolean {
+  return !!status && status.voice.touch_ready === true && status.services.voice_loop === 'active';
+}
+
+// The typed lane is served by the same local question service; it is offered
+// whenever that service is running and advertises it, audio or not.
+export function typedLaneAvailable(status: DeviceStatus | null, connected: boolean): boolean {
+  return connected && status?.voice.typed_ready === true && status.services.voice_loop === 'active';
+}
+
+export function deviceView(status: DeviceStatus | null, connected: boolean): DeviceView {
+  if (!connected || !status) return { phase: 'unavailable', title: 'Reconnecting…', hint: 'Waiting for device status.' };
+  // A live session is authoritative: an answer already produced, or a question
+  // already reviewed, must stay on screen even if audio or a service drops
+  // mid-turn. Only the idle path depends on the spoken lane being ready.
   switch (status.voice.phase) {
     case 'listening': return { phase: 'listening', title: 'Listening…', hint: status.voice.input_source === 'touch' ? status.voice.review_ready ? 'Tap Done to review your question, or Cancel.' : 'Tap Send when finished, or Cancel.' : 'Release the side button when finished.' };
     case 'review': return status.voice.review_ready && status.voice.review_id && status.voice.session_id
-      ? { phase: 'review', title: 'Check your question', hint: 'Edit or record again, then Submit when it looks right.' }
+      ? { phase: 'review', title: status.voice.input_source === 'typed' ? 'Type your question' : 'Check your question', hint: status.voice.input_source === 'typed' ? 'Use the keyboard, then Submit to ask.' : 'Edit or record again, then Submit when it looks right.' }
       : { phase: 'unavailable', title: 'Question review unavailable', hint: 'The device interface needs to reconnect.' };
     case 'processing': {
       const titles: Record<string, string> = { starting: 'Starting…', transcribing: 'Understanding your question…', recalling: 'Checking saved knowledge…', photo_analysis: 'Analyzing your photo…', generating: 'Preparing your answer…', answering: 'Answering…', speaking: 'Preparing audio…' };
@@ -110,17 +145,28 @@ export function deviceView(status: DeviceStatus | null, connected: boolean): Dev
     }
     case 'complete': return status.voice.response.trim()
       ? { phase: 'complete', title: 'Your answer', hint: status.voice.touch_ready ? 'Tap Ask for another question.' : 'Hold the side button to ask again.' }
-      : { phase: 'error', title: 'No answer received', hint: retry };
+      : { phase: 'error', title: 'No answer received', hint: status.voice.touch_ready ? 'Tap Ask to try again.' : 'Hold the side button to try again.' };
     case 'error': {
       if (status.voice.detail === 'no_spoken_question') return { phase: 'error', title: 'No spoken question detected', hint: 'Try again. If there’s music or noise nearby, move somewhere quieter.' };
       const detail = status.voice.detail?.toLowerCase() ?? '';
       if (detail.includes('403') || detail.includes('approved agent')) {
         return { phase: 'error', title: 'Voice access needs setup', hint: 'Ask the operator to check local SAGE approval.' };
       }
-      if (detail.includes('microphone')) return { phase: 'error', title: 'Could not record', hint: `Check the USB microphone. ${retry}` };
-      return { phase: 'error', title: 'Could not answer', hint: `${retry} If it repeats, ask the operator.` };
+      if (detail.includes('microphone')) return { phase: 'error', title: 'Could not record', hint: status.voice.typed_ready ? 'Check the microphone, or tap Type to write your question.' : 'Check the USB microphone.' };
+      return { phase: 'error', title: 'Could not answer', hint: `${status.voice.touch_ready ? 'Tap Ask to try again.' : 'Hold the side button to try again.'} If it repeats, ask the operator.` };
     }
-    case 'idle': return { phase: 'ready', title: 'What would you like to know?', hint: status.voice.touch_ready ? 'Tap. Ask. Learn' : 'Hold the side button to talk.' };
-    default: return { phase: 'unavailable', title: 'Starting voice…', hint: 'Waiting for the voice service.' };
+    case 'idle': break;
+    // Any phase this build does not recognise — blank, unknown, or a name a
+    // newer runtime invented. The publication says nothing this client can
+    // interpret, so the copy may not claim the service is starting or that a
+    // takeover happened: neither is evidenced by an unreadable reading.
+    default: return { phase: 'unavailable', title: 'Voice status unavailable', hint: 'Waiting for the current device status.' };
   }
+  const notice = voiceLaneNotice(status);
+  if (notice === null) {
+    return { phase: 'ready', title: 'What would you like to know?', hint: status.voice.touch_ready ? 'Tap. Ask. Learn' : 'Hold the side button to talk.' };
+  }
+  return typedLaneAvailable(status, connected)
+    ? { phase: 'unavailable', title: 'Ask by typing', hint: `${notice}. Tap Type to write your question.` }
+    : { phase: 'unavailable', title: notice, hint: 'Local services need to finish starting or be checked.' };
 }

@@ -4,10 +4,10 @@ import { deviceSessionHeaders } from '../../lib/device-session';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CameraFrameDecoder } from '../../lib/camera-stream';
-import { BackIcon, CameraIcon, RetakeIcon } from './icons';
+import { BackIcon, CameraIcon, GalleryIcon, RetakeIcon } from './icons';
 import type { PhotoAttachment } from '../../lib/photo-preview';
 
-export default function CameraScreen({ close, photoReady = false, onAttach }: { close: () => void; photoReady?: boolean; onAttach?: (photo: PhotoAttachment) => void }) {
+export default function CameraScreen({ close, photoReady = false, onAttach, onOpenGallery }: { close: () => void; photoReady?: boolean; onAttach?: (photo: PhotoAttachment) => void; onOpenGallery?: () => void }) {
   const [phase, setPhase] = useState<'starting' | 'live' | 'photo' | 'off' | 'error'>('starting');
   const [message, setMessage] = useState('Opening camera…');
   const controller = useRef<AbortController | null>(null);
@@ -144,6 +144,6 @@ export default function CameraScreen({ close, photoReady = false, onAttach }: { 
       {phase !== 'live' && phase !== 'photo' && <div className="device-camera-message"><CameraIcon /><p role="status">{message}</p></div>}
     </div>
     {phase === 'photo' && !photoReady && <p id="photo-answer-unavailable" role="status">Photo answers aren’t ready on this device yet.</p>}
-    <div className="device-camera-tools"><button className={phase === 'photo' ? 'device-retake' : 'device-shutter'} disabled={phase === 'starting'} onClick={phase === 'live' ? takePhoto : () => void start()}>{phase === 'live' || phase === 'starting' ? <CameraIcon /> : <RetakeIcon />}<span>{phase === 'live' ? 'Take photo' : phase === 'photo' ? 'Retake' : phase === 'starting' ? 'Wait…' : 'Try again'}</span></button>{phase === 'photo' && <button className="device-shutter" disabled={!photoReady || !onAttach} aria-describedby={!photoReady ? 'photo-answer-unavailable' : undefined} onClick={attach} aria-label="Ask about photo: start microphone">Ask about photo</button>}</div>
+    <div className="device-camera-tools"><button className={phase === 'photo' ? 'device-retake' : 'device-shutter'} disabled={phase === 'starting'} onClick={phase === 'live' ? takePhoto : () => void start()}>{phase === 'live' || phase === 'starting' ? <CameraIcon /> : <RetakeIcon />}<span>{phase === 'live' ? 'Take photo' : phase === 'photo' ? 'Retake' : phase === 'starting' ? 'Wait…' : 'Try again'}</span></button>{phase === 'photo' && <button className="device-shutter" disabled={!photoReady || !onAttach} aria-describedby={!photoReady ? 'photo-answer-unavailable' : undefined} onClick={attach} aria-label="Ask about photo: start microphone">Ask about photo</button>}{onOpenGallery && <button className="device-camera-gallery" onClick={onOpenGallery} aria-label="Open Gallery"><GalleryIcon /><span>Gallery</span></button>}</div>
   </section>;
 }

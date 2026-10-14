@@ -1,9 +1,18 @@
 'use client';
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { voiceCommand, parseTouchSession, type TouchSession } from '../../lib/voice-control';
+import { voiceCommand, parseTouchSession, replySessionContext, type TouchSession } from '../../lib/voice-control';
+import { establishedSessionContext, fenceProtectedReply } from '../../lib/device-session';
 import { parseDictationStatus, type DictationStatus } from '../../lib/message-dictation';
 import { MicrophoneIcon, CancelIcon } from './icons';
+
+/**
+ * A dictation session whose authority moved is abandoned rather than kept.
+ *
+ * The wording claims only what happened: there is no recording here to carry on
+ * with, and Record is the affordance the user still has.
+ */
+const SESSION_CHANGED_NOTICE = 'The device session changed. Tap Record to try again.';
 
 export default function Dictation({ onText, close, title = 'Record your message' }: { onText: (text: string) => void; close: () => void; title?: string }) {
   const [status, setStatus] = useState<DictationStatus | null>(null);
@@ -34,8 +43,20 @@ export default function Dictation({ onText, close, title = 'Record your message'
     timer.current = setTimeout(async () => {
       if (!mounted.current || session.current !== current) return;
       try {
+        // The authority this reading is taken under, captured before the first
+        // await: a status reply cannot witness the authority its own request was
+        // sent under.
+        const issuedUnder = establishedSessionContext();
         if (recording.current) await voiceCommand('keepalive', { session_id: current.session_id, token: current.token });
-        const next = parseDictationStatus(await voiceCommand('message/status', { session_id: current.session_id, token: current.token }), current.session_id);
+        const reply = await voiceCommand('message/status', { session_id: current.session_id, token: current.token });
+        const next = parseDictationStatus(reply, current.session_id);
+        /**
+         * A reading is adopted only under the authority it was taken under, and
+         * only while that authority still holds. A reply that fails either half
+         * is not this dictation's state; it falls into the handler below, which
+         * abandons the session instead of rendering somebody else's progress.
+         */
+        if (fenceProtectedReply(issuedUnder, replySessionContext(reply)) !== 'ok') throw new Error('Message session changed');
         if (!mounted.current || session.current !== current) return;
         setStatus(next);
         terminal.current = ['review', 'error', 'cancelled'].includes(next.phase);
@@ -53,8 +74,21 @@ export default function Dictation({ onText, close, title = 'Record your message'
   const start = async () => {
     if (operation.current || session.current) return;
     operation.current = true; setPending(true); setError('');
+    const issuedUnder = establishedSessionContext();
     try {
-      const current = parseTouchSession(await voiceCommand('start', { request_id: crypto.randomUUID(), purpose: 'message' }));
+      const reply = await voiceCommand('start', { request_id: crypto.randomUUID(), purpose: 'message' });
+      const current = parseTouchSession(reply);
+      /**
+       * The microphone is opened only under the authority the command was issued
+       * under, and only while that authority still holds. A refusal cancels the
+       * credentials the reply carried rather than leaving a recording nobody
+       * owns, exactly as the capture owner does for a refused start.
+       */
+      if (fenceProtectedReply(issuedUnder, replySessionContext(reply)) !== 'ok') {
+        void voiceCommand('cancel', { session_id: current.session_id, token: current.token }, true).catch(() => {});
+        if (mounted.current) setError(SESSION_CHANGED_NOTICE);
+        return;
+      }
       if (!mounted.current || document.hidden) { void voiceCommand('cancel', { session_id: current.session_id, token: current.token }, true).catch(() => {}); return; }
       session.current = current; recording.current = true; setStarted(true); setStatus({ phase: 'queued' }); poll(current);
     } catch { if (mounted.current) setError('Could not start the microphone. Cancel and try again.'); }

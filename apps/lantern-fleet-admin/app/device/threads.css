@@ -125,3 +125,54 @@
   .device-chat-mail.device-show-chats > .device-chat-window { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .device-chat-mail > .device-chat-mail-list { transition: none; } }
+/*
+ * A pinned conversation list on a portrait panel.
+ *
+ * Every portrait panel matches the narrow query above, so there the list can
+ * only be the off-canvas drawer. Pinning gives it the same 220px column the
+ * landscape layout already uses - in flow beside the conversation, with no scrim
+ * and no focus trap, because the user asked for it to stay rather than for a
+ * modal. These rules follow the query so that equal specificity resolves to the
+ * pin, and the pin is session state rather than anything stored.
+ */
+/*
+ * The pin is only honoured where a 220px column leaves the conversation usable.
+ *
+ * Below 521px it does not: pinned at 360x800 the grid became 220px + 140px, and
+ * the composer field measured l:379..419 — outside the panel entirely, with the
+ * page-bar buttons past the edge too. So there the pinned rules do not apply and
+ * the list stays the drawer it always was, while the pin control itself is not
+ * offered (see the 520px block below). A pin set at a wider width survives a
+ * narrow one harmlessly: the class stays, the layout ignores it, and Close in
+ * the drawer still clears it.
+ */
+@media (min-width: 521px) {
+  .device-chats-pinned > .device-chat-list {
+    display: flex;
+    position: static;
+    inset: auto;
+    transform: none;
+    visibility: visible;
+    width: auto;
+    box-shadow: none;
+    z-index: auto;
+  }
+  .device-chats-pinned.device-thread-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .device-chats-pinned > .device-main { display: flex; grid-column: 2; grid-row: 2; min-width: 0; }
+  .device-chats-pinned > .device-footer { display: grid; grid-column: 2; grid-row: 3; }
+  .device-chats-pinned > .device-chat-scrim { display: none; }
+}
+/* The heading now carries a pin, so it may need a second line on a narrow panel. */
+.device-drawer-heading { flex-wrap: wrap; row-gap: 8px; }
+.device-drawer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Pinning says nothing where the column is already permanent. */
+.device-chats-pin { display: none; }
+@media (max-width: 760px), (orientation: portrait) {
+  .device-drawer-actions .device-chats-pin,
+  .device-drawer-actions .device-chats-back { display: block; width: auto; margin: 0; min-height: 72px; min-width: 72px; font-size: 16px; }
+}
+/* ...but not where pinning cannot fit: offering a control that does nothing is
+ * worse than not offering it. */
+@media (max-width: 520px) {
+  .device-drawer-actions .device-chats-pin { display: none; }
+}

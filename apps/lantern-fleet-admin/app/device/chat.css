@@ -1,0 +1,279 @@
+/**
+ * Chat's own presentation: the agreed frame and the persistent composer.
+ *
+ * Two components share this file because they are one screen seen twice: the
+ * frame is rendered inside the main region by chat.tsx, and the composer is
+ * rendered into the page footer by the single TalkControls instance that owns
+ * the capture lane - visually the bottom of this screen either way.
+ *
+ * Button rules are written as `.device-screen .device-chat-*` for the same
+ * specificity reason navigation.css documents: `.device-screen button` is one
+ * class plus one element, so a bare class loses inside the real Screen.
+ */
+
+/* The frame keeps the bar fixed and lets the exchange region take the rest of
+ * the height, exactly as the old shell did, so the reader still scrolls rather
+ * than the header scrolling away with it. */
+.device-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.device-chat > .device-content,
+.device-chat > .device-reader {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Compact bar: Back, the thread's own name, and the two list controls. The
+ * reference's oversized icon-and-title region is deliberately not reproduced;
+ * the title is the only element that grows, and it truncates rather than
+ * pushing the controls off the bar. */
+.device-chat-bar {
+  gap: 10px;
+}
+
+.device-screen .device-chat-bar .device-chat-back,
+.device-chat-bar .device-chat-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: 64px;
+  padding-inline: 14px;
+  background: #173b56;
+  border-color: #699abb;
+  color: var(--device-ink, #f6fafc);
+}
+
+.device-chat-bar .device-chat-back svg {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.device-chat-bar .device-page-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-chat-bar .device-page-title h1 {
+  font-size: 24px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The second action must not inherit the single-action auto margin, or the two
+ * would be pushed apart instead of sitting together on the right. */
+.device-chat-bar > .device-page-bar-action + .device-page-bar-action {
+  margin-left: 0;
+}
+
+.device-chat-notice {
+  margin: 8px 0 0;
+  color: var(--device-muted, #b9cbd4);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+/* ---------------------------------------------------------------------------
+ * The composer
+ * ------------------------------------------------------------------------ */
+
+.device-chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.device-chat-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* TalkControls keeps rendering its own children; in composer mode they become
+ * this row's children instead of a nested grid. */
+.device-chat-composer-row > .device-talk-controls {
+  display: contents;
+}
+
+/* The thread layout gives the voice button the full footer width, because it
+ * used to be the footer's only action. In the composer it shares the row with
+ * the typed field, so it keeps a control's width and the field takes the rest.
+ * Scoped past `.device-thread-layout ... .device-talk-primary`, which is what
+ * otherwise wins here. */
+.device-thread-layout .device-navigation-footer .device-chat-composer-row > .device-talk-primary {
+  width: auto;
+  min-width: 148px;
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+
+.device-screen .device-chat-composer-field,
+.device-chat-composer-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 72px;
+  padding-inline: 18px;
+  text-align: left;
+  background: var(--device-surface, #172a34);
+  border: 2px solid #699abb;
+  border-radius: 16px;
+  color: var(--device-ink, #f6fafc);
+  font-size: 21px;
+}
+
+.device-screen .device-chat-composer-field:disabled,
+.device-chat-composer-field:disabled {
+  color: var(--device-muted, #b9cbd4);
+  border-color: #3f5a67;
+  background: #12222c;
+}
+
+.device-chat-composer-field svg {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.device-chat-composer-field span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-chat-composer-reason {
+  margin: 0;
+  color: var(--device-muted, #b9cbd4);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+/* The inline keyboard's slot. It is empty until a typed review opens, and the
+ * keyboard inside it scrolls rather than growing past the panel on a short
+ * viewport. The slot stretches to the composer's width by itself: the composer
+ * is a column, so a flex basis here would size its height, not its width. */
+.device-chat-composer-keyboard {
+  min-width: 0;
+}
+
+.device-chat-composer-keyboard:empty {
+  display: none;
+}
+
+.device-chat-composer-keyboard .question-keyboard {
+  max-height: min(58vh, 620px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  background: #10212b;
+  border: 1px solid #65828f;
+  border-radius: 16px;
+}
+
+.device-chat-composer-field:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Chat's footer is a composer bar rather than a single action row.
+ *
+ * Every other screen's footer gets a fixed 88px row (94px on the touch shell),
+ * and the old Chat footer overflowed it: four controls wrapped to two lines and
+ * the second line ran off the panel. Sizing this row from its content is the
+ * point of the composer - it is one line on the 720 panel and may take two on a
+ * narrow one without the panel clipping either. */
+.device-screen.device-chat-active { grid-template-rows: 72px minmax(0, 1fr) auto; }
+.device-screen.device-chat-active.device-touch { grid-template-rows: 76px minmax(0, 1fr) auto; }
+
+.device-screen .device-navigation-footer.device-chat-footer {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A review's own actions take their own line above the composer. */
+.device-screen .device-navigation-footer.device-chat-footer > .device-review-actions {
+  flex: 1 0 100%;
+}
+
+/* The composer is the flexible element: the typed field inside it grows, and
+ * the secondary actions keep a control's width instead of a share of the row.
+ * The three-class scope is deliberate: the thread layout gives every direct
+ * footer button `width: 100%`, which is what made the old footer wrap. */
+.device-screen .device-navigation-footer.device-chat-footer > .device-chat-composer {
+  order: 1;
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+/* Share and Camera follow the composer rather than preceding it: the composer
+ * is what this bar is for, and the capture owner is the last child of the
+ * footer, so DOM order alone would put the field on the far right. */
+.device-screen .device-navigation-footer.device-chat-footer > .device-share-answer,
+.device-screen .device-navigation-footer.device-chat-footer > .device-camera-shortcut {
+  order: 2;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin-right: 0;
+}
+
+/* While a typed review is open the keyboard lives in the composer and is far
+ * taller than a pair of icon buttons, so the composer takes its own line and
+ * Share and Camera sit side by side beneath it. Declared after the rules above
+ * on purpose: the same specificity means source order decides. */
+.device-screen .device-navigation-footer.device-chat-typing > .device-chat-composer {
+  flex: 1 0 100%;
+}
+
+.device-screen .device-navigation-footer.device-chat-typing > .device-share-answer,
+.device-screen .device-navigation-footer.device-chat-typing > .device-camera-shortcut {
+  flex: 1 1 44%;
+}
+
+@media (max-width: 520px) {
+  .device-chat-bar .device-page-title h1 { font-size: 21px; }
+  .device-chat-bar { gap: 8px; }
+  .device-screen .device-chat-bar .device-chat-back,
+  .device-chat-bar .device-chat-back { min-height: 56px; padding-inline: 10px; }
+  .device-screen .device-chat-bar .device-chat-back span { display: none; }
+  .device-chat-composer-field { font-size: 19px; }
+  .device-chat-composer-keyboard .question-keyboard { max-height: min(52vh, 460px); padding: 10px; }
+  /* The composer keeps one line: the field is what the panel is for, so the
+   * voice control gives up width rather than the field giving up the row. */
+  .device-screen .device-navigation-footer.device-chat-footer .device-chat-composer-row > .device-talk-primary {
+    width: auto;
+    min-width: 96px;
+    flex: 0 0 auto;
+    padding-inline: 10px;
+  }
+  /* The two secondary actions share one line under the composer instead of
+   * taking a full-width line each. */
+  .device-screen .device-navigation-footer.device-chat-footer > .device-share-answer,
+  .device-screen .device-navigation-footer.device-chat-footer > .device-camera-shortcut {
+    flex: 1 1 44%;
+  }
+}
+
+@media (max-height: 700px) {
+  .device-chat-composer-keyboard .question-keyboard { max-height: 44vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-chat-composer-keyboard .question-keyboard { animation: none; }
+}

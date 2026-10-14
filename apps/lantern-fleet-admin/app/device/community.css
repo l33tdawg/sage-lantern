@@ -24,7 +24,7 @@
 .device-community .device-consent-button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; }
 .device-consent-button[aria-pressed="true"] { border-color: #86e8b9; }
 .device-screen .device-top .device-messages-shortcut svg { width: 30px; height: 30px; color: var(--device-accent); }
-.device-navigation-footer > .device-share-answer { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 72px; width: 100%; margin: 0; padding-inline: 10px; font-size: 20px; background: #116566; border-color: #66d6c6; color: #fff; }
+.device-navigation-footer > .device-share-answer { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 72px; width: 100%; margin: 0; padding-inline: 10px; font-size: 20px; background: #116566; border-color: #66d6c6; color: var(--device-ink); }
 .device-share-answer svg { width: 28px; height: 28px; flex-shrink: 0; }
 .device-history-sharing { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
 .device-history-sharing .device-share-answer { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; background: #173b56; border-color: #699abb; }

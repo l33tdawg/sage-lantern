@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { answerIsVisible, deviceView, parseDeviceStatus, statusIsFresh, waitingQuestion } from './device-state.ts';
+import { answerIsVisible, deviceView, parseDeviceStatus, questionServiceRunning, statusIsFresh, typedLaneAvailable, voiceLaneNotice, waitingQuestion } from './device-state.ts';
 
 test('waiting question is actual transcription before tokens, hidden on reset or disconnect', () => {
   const status = fixture('processing');
@@ -32,6 +32,21 @@ test('device phases reflect real status', () => {
   }
   assert.equal(deviceView(fixture(), false).phase, 'unavailable');
   assert.equal(deviceView(null, false).phase, 'unavailable');
+});
+
+test('an unreadable voice publication is not reported as starting or taken over', () => {
+  // `voice.phase` is any string on the wire, so the default branch is what a
+  // blanked or unrecognised publication reaches — including after a rotation,
+  // when the client is holding a reading it can no longer interpret. Saying the
+  // voice service is starting, or that something took the device over, asserts
+  // more than the reading supports.
+  for (const phase of ['', 'starting_voice', 'quiescing', 'a-newer-runtime-phase']) {
+    const view = deviceView(parseDeviceStatus(fixture(phase)), true);
+    assert.equal(view.phase, 'unavailable');
+    assert.equal(view.title, 'Voice status unavailable');
+    assert.equal(view.hint, 'Waiting for the current device status.');
+    assert.doesNotMatch(`${view.title} ${view.hint}`, /starting|takeover|took over/i);
+  }
 });
 
 test('review is a separate gated phase and never displays an answer as started', () => {
@@ -135,8 +150,71 @@ test('touch readiness does not require a working physical button', () => {
   status.voice.phase = 'listening';
   status.voice.input_source = 'touch';
   assert.match(deviceView(status, true).hint, /Send/);
+  // A live phase is judged by the session it publishes: a service flag alone
+  // cannot rewrite an in-flight turn, and freshness is what expires it.
+  assert.equal(questionServiceRunning(status), true);
   status.services.voice_loop = 'failed';
-  assert.equal(deviceView(status, true).phase, 'unavailable');
+  assert.equal(questionServiceRunning(status), false);
+  const idle = fixture();
+  idle.voice.touch_ready = true;
+  idle.services.voice_loop = 'failed';
+  assert.equal(deviceView(idle, true).phase, 'unavailable');
+});
+
+test('a device without audio keeps a typed lane and never a dead end', () => {
+  const status = fixture();
+  status.audio = { present: false, detail: 'Configured platform capture device missing', ready: false, ptt_ready: false };
+  status.services.ptt = 'inactive';
+  status.voice.typed_ready = true;
+  status.voice.touch_ready = true;
+  const parsed = parseDeviceStatus(status);
+  assert.equal(voiceLaneNotice(parsed), 'Microphone disconnected');
+  assert.equal(typedLaneAvailable(parsed, true), true);
+  assert.equal(typedLaneAvailable(parsed, false), false);
+  const view = deviceView(parsed, true);
+  assert.equal(view.phase, 'unavailable');
+  assert.equal(view.title, 'Ask by typing');
+  assert.match(view.hint, /Tap Type/);
+  assert.match(view.hint, /Microphone disconnected/);
+});
+
+test('an answered turn stays visible after the audio lane drops', () => {
+  const status = fixture('complete');
+  status.voice.transcript = 'What grows in a rice paddy?';
+  status.voice.response = 'Rice.';
+  status.audio = { present: false, detail: 'missing', ready: false };
+  status.services.voice_loop = 'inactive';
+  status.voice.typed_ready = false;
+  const view = deviceView(status, true);
+  assert.equal(view.phase, 'complete');
+  assert.equal(answerIsVisible(status, true), true);
+});
+
+test('a typed review renders only with the review credentials and the typed source', () => {
+  const status = fixture('review');
+  status.voice.session_id = '11111111-1111-4111-8111-111111111111';
+  status.voice.review_id = '22222222-2222-4222-8222-222222222222';
+  status.voice.review_ready = true;
+  status.voice.typed_ready = true;
+  status.voice.input_source = 'typed';
+  status.voice.transcript = '';
+  status.audio = { present: false, detail: 'missing', ready: false };
+  const parsed = parseDeviceStatus(status);
+  assert.equal(parsed.voice.input_source, 'typed');
+  assert.equal(deviceView(parsed, true).title, 'Type your question');
+  assert.equal(deviceView(parsed, true).phase, 'review');
+  assert.throws(() => parseDeviceStatus({ ...status, voice: { ...status.voice, input_source: 'dictated' } }));
+});
+
+test('the typed lane advertises only when the question service says so', () => {
+  const status = fixture();
+  assert.equal(typedLaneAvailable(status, true), false);
+  assert.equal(deviceView(status, true).phase, 'ready');
+  const without = fixture();
+  without.voice.typed_ready = true;
+  without.services.voice_loop = 'inactive';
+  assert.equal(deviceView(without, true).phase, 'unavailable');
+  assert.equal(deviceView(without, true).title, 'Voice is not ready');
 });
 
 test('partial answers appear while processing, never as completed or stale', () => {

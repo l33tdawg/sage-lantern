@@ -37,7 +37,7 @@ test('processing status sits above persistent controls while errors stay visible
   assert.ok(screen.indexOf('<AnswerWait') < screen.indexOf('<footer'));
   assert.doesNotMatch(controls, /AnswerWait/);
   assert.doesNotMatch(controls, /view\.title|Answering…/);
-  assert.match(controls, /className="device-talk-status" role="status">\{error \|\|/);
+  assert.match(controls, /className="device-talk-status" role="status">\{notice\}/);
   assert.match(controls, /className="device-talk-primary" disabled=\{!canStart \|\| pending \|\| owned\}/);
 });
 

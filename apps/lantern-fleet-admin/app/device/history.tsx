@@ -8,6 +8,7 @@ import { voiceCommand } from '../../lib/voice-control';
 import { BackIcon, CameraIcon, HistoryIcon, MicrophoneIcon, ShareIcon } from './icons';
 import ShareScreen from './share';
 import { communityLabel, communityRequest, parseHistoryShares, type HistoryShareState } from '../../lib/community';
+import { removalNotice } from '../../lib/device-retention';
 import { prepareHistoryPhoto } from '../../lib/history-retry';
 import type { PhotoAttachment } from '../../lib/photo-preview';
 import Image from 'next/image';
@@ -93,6 +94,15 @@ export default function HistoryScreen({ close, canAsk, onAskAgain, onCorrect }: 
     else close();
   };
   if (sharing && selected) return <ShareScreen source={{ source_id: selected.session_id, question: selected.transcript, answer: selected.response, has_photo: !!selected.has_photo }} close={() => { setShareStates({}); setSharing(false); setShareRefresh((value) => value + 1); }} />;
+  // What the confirmation may say is decided by the runtime's own policy fields,
+  // not by `sage_backed` alone: a removal that keeps the photo as an original
+  // must not be described as taking it off the device.
+  const notice = confirmation ? removalNotice(confirmation, {
+    sageBacked: history?.sage_backed === true,
+    photoRemoval: history?.photo_removal,
+    item: selected ?? undefined,
+    photosAffected: history?.items.some((item) => item.has_photo) === true,
+  }) : null;
   const badge = (id: string) => {
     const state = shareStates[id];
     if (state === 'not_shared') return null;
@@ -104,8 +114,8 @@ export default function HistoryScreen({ close, canAsk, onAskAgain, onCorrect }: 
       {error && <p role="alert">{error}</p>}
       {historyError && <p role="status">{historyError} <button onClick={() => void savedHistory.refresh(true)}>Try again</button></p>}
       {confirmation ? <div className="device-confirm" role="alertdialog" aria-label="Confirm history change">
-        <h2>{confirmation === 'delete' ? 'Remove this question?' : 'Remove all history?'}</h2>
-        <p>{history?.sage_backed ? 'Removes these conversations from history and future answers. Original records cannot be erased.' : 'This removes saved questions, answers and their attached photos from this device’s history. It cannot be undone.'}</p>
+        <h2>{notice?.title}</h2>
+        <p>{notice?.body}</p>
         <p>The latest answer may still be visible on the main screen.</p>
         <div className="device-actions"><button disabled={busy} onClick={() => setConfirmation(null)}>Cancel</button><button className="device-action-danger" disabled={busy} onClick={() => void perform()}>{busy ? 'Working…' : 'Remove'}</button></div>
       </div> : selected ? <><section className="device-panel"><span className="device-section-label">Your question · {new Date(selected.created_at).toLocaleString()}</span><h2>{selected.transcript}</h2></section><section className="device-panel"><span className="device-section-label">Saved answer</span>{selected.has_photo && <SavedPhoto key={selected.session_id} sessionId={selected.session_id} />}<p className="device-history-answer">{selected.response}</p></section><div className="device-actions device-history-actions"><button className="device-action-danger" disabled={busy} onClick={() => setConfirmation('delete')}>Delete question</button><button className="device-history-ask" disabled={busy || (!canAsk && !onCorrect)} onClick={() => void askAgain()}><MicrophoneIcon />{busy ? 'Preparing…' : 'Ask again'}</button></div></>
