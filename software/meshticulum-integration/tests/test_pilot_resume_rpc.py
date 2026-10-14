@@ -109,7 +109,10 @@ def test_runtime_refuses_unpinned_or_foreign_root():
 
 def test_rpc_contract_schema_and_import_scope():
     assert rpc.CONTRACT_SCHEMA == 'meshticulum.private-resume-native-rpc.v1'
-    assert len(rpc.HISTORY) == 42 and len(set(rpc.HISTORY)) == 42
+    assert len(rpc.HISTORY) == 43 and len(set(rpc.HISTORY)) == 43
+    assert len(rpc.OLD_DIGESTS) == 43
+    assert rpc.HISTORY[42:] == ('bea52c6aa6a5a95501997a46247b514f',)
+    assert rpc.sha(rpc.canonical(rpc.HISTORY[:42])) == 'ebf29572ee1b76fd9e14b536a2ad4b1cd0eca4016a195df108df84f7fb4a04b2'
     assert rpc.HISTORY[22] == rpc.V2_FAILED_BUNDLE_PAID
     assert rpc.HISTORY[23] == rpc.V3_PARTIAL_BUNDLE_PAID
     assert rpc.HISTORY[:5] == ('28765d19f654ce3162525afe9c3f89c5',

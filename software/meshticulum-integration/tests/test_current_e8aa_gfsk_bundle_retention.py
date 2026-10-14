@@ -86,7 +86,7 @@ def test_completed_bundle_debt_scope_and_original_clocks_cannot_change(typed_row
 def test_H34_keeps_exact_H33_prefix_and_old_capture_boundary():
     old=tuple(DATA['prior_paid_parent_ids']);assert len(old)==33
     assert retained.PAID_HISTORY[:33]==old and retained.PAID_HISTORY[33]==contract.PARENT
-    assert len(rpc.OLD_DIGESTS)==42 and rpc.OLD_DIGESTS[33]==contract.POLICY_DIGEST
+    assert len(rpc.OLD_DIGESTS)==43 and rpc.OLD_DIGESTS[33]==contract.POLICY_DIGEST
     assert retained.UNADMITTED_PAID_HISTORY==old[:12]
 
 
