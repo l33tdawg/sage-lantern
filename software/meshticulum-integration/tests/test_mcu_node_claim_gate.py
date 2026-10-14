@@ -161,6 +161,10 @@ def source_case(tmp_path, monkeypatch):
             monkeypatch.setattr(mcu, 'PENDING_NATIVE_BINDINGS', MappingProxyType(dict(
                 scope_sha256='e'*64, history_receipt_sha256='f'*64,
                 preceding_parent=PAID_HISTORY[-1])))
+        else:
+            # This explicit refusal model must stay pending after activation.
+            monkeypatch.setattr(mcu, 'PENDING_NATIVE_BINDINGS', MappingProxyType(dict(
+                scope_sha256=None, history_receipt_sha256=None, preceding_parent=None)))
         selected_argument = mcu.SELECTOR if selected and unit == 'unit-a' else None
         if selector is not AUTO:
             selected_argument = selector

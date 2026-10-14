@@ -6,7 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import os
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -18,6 +18,13 @@ from lantern_meshticulum.bench.pilot_parent_caps import (
 
 BOOT='00000000-0000-4000-8000-000000000001'
 LAN=Path(__file__).resolve().parents[3]
+
+
+@pytest.fixture
+def pending_selector_bindings(monkeypatch):
+    """One requested refusal case; independent of deployed activation pins."""
+    monkeypatch.setattr(mcu,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
+        scope_sha256=None,history_receipt_sha256=None,preceding_parent=None)))
 
 
 def selection_plan():
@@ -89,7 +96,7 @@ def test_runtime_selection_is_exact_and_has_no_legacy_fallback(damage):
     with pytest.raises(mcu.McuArtifactError):mcu.select_runtime(manifest)
 
 
-def test_original_owner_is_versioned_and_pending_scope_never_supplies_permission():
+def test_original_owner_is_versioned_and_pending_scope_never_supplies_permission(pending_selector_bindings):
     base=dict(schema='meshticulum.finite-public-resume-owner.v1',qualification_kind=mcu.KIND,
         core_commit=mcu.CORE,policy_digest='a'*64)
     owner=mcu.owner_envelope(base,mcu.SELECTOR)
@@ -102,7 +109,7 @@ def test_original_owner_is_versioned_and_pending_scope_never_supplies_permission
     with pytest.raises(mcu.McuArtifactError):mcu.decode_owner(owner)
 
 
-def test_new_selector_never_opens_serial_before_missing_native_scope(monkeypatch):
+def test_new_selector_never_opens_serial_before_missing_native_scope(monkeypatch,pending_selector_bindings):
     monkeypatch.setattr(node,'ExclusiveSerial',lambda *a,**k:pytest.fail('serial must not open'))
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu'):
         node._serial('unit-a',radio_modem='gfsk250',qualification_kind=mcu.KIND,mcu_artifact_selector=mcu.SELECTOR)
@@ -229,7 +236,7 @@ def test_packet_generation_has_pinned_sources_and_no_physical_claim(tmp_path,rep
     assert not arguments['output'].exists()
 
 
-def test_pending_selector_constructor_closes_actual_held_runtime_and_owner(monkeypatch):
+def test_pending_selector_constructor_closes_actual_held_runtime_and_owner(monkeypatch,pending_selector_bindings):
     """Actual readers/source files; only the deployment location is modeled."""
     import shutil
     import tempfile

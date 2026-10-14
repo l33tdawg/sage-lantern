@@ -10,6 +10,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from types import MappingProxyType
 
 import pytest
 
@@ -21,6 +22,13 @@ from tests.test_pilot_bundle import data
 from tests.test_fast_bundle import fast_data
 from tests.test_pilot_controller import ModelOperator
 from tests.test_pilot_ssh import config
+
+
+@pytest.fixture
+def pending_selector_bindings(monkeypatch):
+    """Explicit pending state for only the refusal cases requesting it."""
+    monkeypatch.setattr(mcu,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
+        scope_sha256=None,history_receipt_sha256=None,preceding_parent=None)))
 
 
 @pytest.fixture
@@ -90,7 +98,7 @@ def test_original_operation_cannot_relabel_or_substitute_runtime(runner,original
     with pytest.raises(Exception):runner.operation_selection(op,manifest)
 
 
-def test_pending_original_operation_refuses_before_fixture_credentials_or_native_work(runner,original,monkeypatch):
+def test_pending_original_operation_refuses_before_fixture_credentials_or_native_work(runner,original,monkeypatch,pending_selector_bindings):
     n=original
     assert all(v is None for v in mcu.PENDING_NATIVE_BINDINGS.values())
     monkeypatch.setattr(runner,'review',lambda *a:(n['op'],Path('.'),Path('.'),n['manifest'],{},None))
@@ -111,7 +119,7 @@ def controller_arguments(n,parent,operator,now):
         radio_profile='gfsk250',mcu_owner=n['common'])
 
 
-def test_pending_controller_and_campaign_never_prepay_or_admit_stage(original,tmp_path):
+def test_pending_controller_and_campaign_never_prepay_or_admit_stage(original,tmp_path,pending_selector_bindings):
     n=original;p=n['policy'];now=[p.issued_epoch_us+1000000,p.original_monotonic_us+1000000]
     root=tmp_path/'controller';root.mkdir(mode=0o700)
     parent=ParentCaps.enroll(root/'caps.sqlite',p,clock=lambda:tuple(now),boot_reader=lambda:p.controller_boot_id)
@@ -134,7 +142,7 @@ def selected_config(n):
     return cfg,source
 
 
-def test_pending_ssh_config_refuses_before_connection(original,monkeypatch):
+def test_pending_ssh_config_refuses_before_connection(original,monkeypatch,pending_selector_bindings):
     cfg,source=selected_config(original)
     monkeypatch.setattr(SSHOperator,'_ssh',lambda *a,**k:pytest.fail('no SSH target may be reached'))
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu'):
@@ -144,7 +152,7 @@ def test_pending_ssh_config_refuses_before_connection(original,monkeypatch):
 @pytest.fixture
 def model_binding_validation(monkeypatch,original):
     """Parser seam only: no NativeCaps, device facts or approved native scope."""
-    assert all(v is None for v in mcu.PENDING_NATIVE_BINDINGS.values())
+    original_bindings=mcu.PENDING_NATIVE_BINDINGS
     pins=dict(scope_sha256=original['op']['mb1_bundle_scope_sha256'],
         history_receipt_sha256=original['op']['history_receipt_sha256'],preceding_parent='source-control-only')
     calls=[]
@@ -161,7 +169,7 @@ def model_binding_validation(monkeypatch,original):
         validate(policy.qualification_kind);return selected
     monkeypatch.setattr(mcu,'require_native_scope',native_binding)
     yield calls
-    assert all(v is None for v in mcu.PENDING_NATIVE_BINDINGS.values())
+    assert mcu.PENDING_NATIVE_BINDINGS is original_bindings
 
 
 class StopBeforeNativeStart(RuntimeError):pass
@@ -250,7 +258,7 @@ def test_original_constructor_choice_cannot_fall_back_before_stage_or_prepay(ori
     finally:parent.close()
 
 
-def test_new_paid_package_cannot_stage_under_legacy_or_pending_config(original,tmp_path):
+def test_new_paid_package_cannot_stage_under_legacy_or_pending_config(original,tmp_path,pending_selector_bindings):
     n=original;p=n['policy'];now=p.issued_epoch_us+1000000
     request,_=bundle.BundleContext(n['value'],p).exchange(0)
     pair=pair_packages(campaign_id=n['value']['stages'][0]['campaign_id'],resource_sha256=n['value']['manifest_sha256'],
@@ -271,7 +279,7 @@ def test_new_paid_package_cannot_stage_under_legacy_or_pending_config(original,t
         with pytest.raises(mcu.McuArtifactError,match='pending_mcu'):operator.prepare(package)
 
 
-def test_final_ack_wrapped_owner_still_refuses_missing_native_scope(original):
+def test_final_ack_wrapped_owner_still_refuses_missing_native_scope(original,pending_selector_bindings):
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu'):
         fast.require_owner(original['common'],original['policy'])
 

@@ -2,8 +2,9 @@
 """Explicit source-artifact selection; never RF or device authorization.
 
 The old modem/firmware tables remain the default. The new public envelope binds
-this selection before prepayment. Native approval is deliberately unavailable
-until a separately reviewed finite scope and retained-history binding exist.
+this selection before prepayment. Source pins identify the reviewed finite
+scope and retained history; each native operation still requires current
+ownership, a fresh device inspection and its own original finite admission.
 """
 import hashlib
 import json
@@ -59,8 +60,10 @@ _ARTIFACT = canonical(dict(
         'partitions.bin':'bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce'},
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
 ARTIFACT_SHA256 = hashlib.sha256(_ARTIFACT).hexdigest()
-PENDING_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256=None,
-    history_receipt_sha256=None, preceding_parent=None))
+PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
+    scope_sha256='16f73f63ce91875dfcb907733ebae16b97a78450c7c769a3c9066b9752eac78e',
+    history_receipt_sha256='4d27db070dc0106d067bc49372919b32431ff04a31894bff3d14746d4bca4594',
+    preceding_parent='bea52c6aa6a5a95501997a46247b514f'))
 
 
 def artifact(selector=SELECTOR):
