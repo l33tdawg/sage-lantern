@@ -383,7 +383,14 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         # Convert the OS-owner observation to an exact bool, never a caller flag.
         selected_profile=profile_from_plan(native_plan,board_id=1) if public_service else None
         if public_service and native_plan.get('radio_modem')==GFSK_NAME:require_gfsk_bindings()
-        if public_service and native_plan.get('radio_modem')==GFSK250_NAME:require_gfsk250_bindings(caps.policy.qualification_kind)
+        if public_service and native_plan.get('radio_modem')==GFSK250_NAME:
+            if selected is not None:
+                # Both ends carry the original selected claim; only A has a
+                # local firmware selector. C must check that same MCU scope.
+                from .mcu_artifact import require_selector_scope
+                require_selector_scope(caps.policy.qualification_kind)
+            else:
+                require_gfsk250_bindings(caps.policy.qualification_kind)
         authority = RunAuthority(directory, radio_admission=admission_for(selected_profile) if public_service else RADIO_ADMISSION, expected_unit=unit, host_boot_id=boot,
                                  clock=clock, owner_probe=lambda: bool(owned()))
         if public_service:
