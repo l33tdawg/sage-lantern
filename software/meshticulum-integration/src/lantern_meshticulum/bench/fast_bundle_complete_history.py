@@ -35,29 +35,32 @@ original_context=partial(shared._original_context,sys.modules[__name__])
 retained_context=partial(shared._retained_context,sys.modules[__name__])
 
 
-def require_final_bindings():
-    shared._require_final_bindings(sys.modules[__name__])
+def _require_delivery_bindings(c, *, original_run_complete, original_final_audit_timeout):
+    shared._require_final_bindings(c)
     def pin(v):return type(v) is str and len(v)==64 and all(c in '0123456789abcdef' for c in v)
     units={'unit-a','unit-b','unit-c'}
-    require(ORIGINAL_RUN_COMPLETE is False and ORIGINAL_FINAL_AUDIT_TIMEOUT==124 and WHOLE_BYTES==100000 and pin(WHOLE_SHA256)
-        and all(set(table)==units for table in (FAST_STAGE_SHA256,FINAL_ACK_SHA256,VERIFIED_PIECE_SHA256,STAGE_APPLICATION_ENDS,STAGE_NATIVE_DEADLINES)),
-        'pending_60d9_delivery_and_original_failure')
+    require(c.ORIGINAL_RUN_COMPLETE is original_run_complete and c.ORIGINAL_FINAL_AUDIT_TIMEOUT==original_final_audit_timeout and c.WHOLE_BYTES==100000 and pin(c.WHOLE_SHA256)
+        and all(set(table)==units for table in (c.FAST_STAGE_SHA256,c.FINAL_ACK_SHA256,c.VERIFIED_PIECE_SHA256,c.STAGE_APPLICATION_ENDS,c.STAGE_NATIVE_DEADLINES)),
+        f'pending_{c.PARENT[:4]}_delivery_and_original_result')
     for unit in units:
         count=0 if unit=='unit-b' else 5
-        outcomes=NATIVE_OUTCOME_SHA256[unit]
-        require(len(outcomes)==2*count and type(FAST_STAGE_SHA256[unit]) is dict
-            and set(FAST_STAGE_SHA256[unit])=={'fast-stage-'+str(i)+'.json' for i in range(count)}
-            and type(FINAL_ACK_SHA256[unit]) is dict and len(FINAL_ACK_SHA256[unit])==count
-            and type(VERIFIED_PIECE_SHA256[unit]) is dict and len(VERIFIED_PIECE_SHA256[unit])==(5 if unit=='unit-a' else 0)
-            and set(FINAL_ACK_SHA256[unit])<=set(outcomes) and set(VERIFIED_PIECE_SHA256[unit])<=set(outcomes)
-            and (unit!='unit-a' or set(VERIFIED_PIECE_SHA256[unit])==set(FINAL_ACK_SHA256[unit]))
-            and all(pin(p) for table in (FAST_STAGE_SHA256,FINAL_ACK_SHA256,VERIFIED_PIECE_SHA256) for p in table[unit].values())
-            and type(STAGE_APPLICATION_ENDS[unit]) is tuple and type(STAGE_NATIVE_DEADLINES[unit]) is tuple
-            and len(STAGE_APPLICATION_ENDS[unit])==len(STAGE_NATIVE_DEADLINES[unit])==count
-            and all(type(v) is int and v>0 for table in (STAGE_APPLICATION_ENDS,STAGE_NATIVE_DEADLINES) for v in table[unit]),
-            'pending_60d9_native_stage_and_delivery_metadata')
+        outcomes=c.NATIVE_OUTCOME_SHA256[unit]
+        require(len(outcomes)==2*count and type(c.FAST_STAGE_SHA256[unit]) is dict
+            and set(c.FAST_STAGE_SHA256[unit])=={'fast-stage-'+str(i)+'.json' for i in range(count)}
+            and type(c.FINAL_ACK_SHA256[unit]) is dict and len(c.FINAL_ACK_SHA256[unit])==count
+            and type(c.VERIFIED_PIECE_SHA256[unit]) is dict and len(c.VERIFIED_PIECE_SHA256[unit])==(5 if unit=='unit-a' else 0)
+            and set(c.FINAL_ACK_SHA256[unit])<=set(outcomes) and set(c.VERIFIED_PIECE_SHA256[unit])<=set(outcomes)
+            and (unit!='unit-a' or set(c.VERIFIED_PIECE_SHA256[unit])==set(c.FINAL_ACK_SHA256[unit]))
+            and all(pin(p) for table in (c.FAST_STAGE_SHA256,c.FINAL_ACK_SHA256,c.VERIFIED_PIECE_SHA256) for p in table[unit].values())
+            and type(c.STAGE_APPLICATION_ENDS[unit]) is tuple and type(c.STAGE_NATIVE_DEADLINES[unit]) is tuple
+            and len(c.STAGE_APPLICATION_ENDS[unit])==len(c.STAGE_NATIVE_DEADLINES[unit])==count
+            and all(type(v) is int and v>0 for table in (c.STAGE_APPLICATION_ENDS,c.STAGE_NATIVE_DEADLINES) for v in table[unit]),
+            f'pending_{c.PARENT[:4]}_native_stage_and_delivery_metadata')
     return True
 
+
+def require_final_bindings():
+    return _require_delivery_bindings(sys.modules[__name__],original_run_complete=False,original_final_audit_timeout=124)
 
 def pending_next_roster():
     from .retained_capture import PAID_HISTORY
@@ -66,19 +69,23 @@ def pending_next_roster():
     return PAID_HISTORY[:42]
 
 
-def metadata_files(reader,state,unit,value):
-    require_final_bindings();parent=state/'parents'/PARENT;reader.directory(parent);files={}
-    require(value['fast_stage_sha256']==FAST_STAGE_SHA256[unit]
-        and {name for name in os.listdir(parent) if name.startswith('fast-stage-')}==set(FAST_STAGE_SHA256[unit]),'60d9_stage_namespace_changed')
-    for name,pin in FAST_STAGE_SHA256[unit].items():
-        raw=reader.read(parent/name,8192);require(hashlib.sha256(raw).hexdigest()==pin,'60d9_stage_bytes_changed')
+def _metadata_files(c,reader,state,unit,value):
+    c.require_final_bindings();parent=state/'parents'/c.PARENT;reader.directory(parent);files={}
+    require(value['fast_stage_sha256']==c.FAST_STAGE_SHA256[unit]
+        and {name for name in os.listdir(parent) if name.startswith('fast-stage-')}==set(c.FAST_STAGE_SHA256[unit]),f'{c.PARENT[:4]}_stage_namespace_changed')
+    for name,pin in c.FAST_STAGE_SHA256[unit].items():
+        raw=reader.read(parent/name,8192);require(hashlib.sha256(raw).hexdigest()==pin,f'{c.PARENT[:4]}_stage_bytes_changed')
         files[str((parent/name).relative_to(state))]=pin
-    for field,pins,name in (('fast_final_ack_sha256',FINAL_ACK_SHA256,'fast-final-ack.json'),
-                            ('verified_piece_sha256',VERIFIED_PIECE_SHA256,'verified-piece.json')):
-        require(value[field]==pins[unit],'60d9_public_metadata_scope_changed')
-        for run in NATIVE_OUTCOME_SHA256[unit]:
+    for field,pins,name in (('fast_final_ack_sha256',c.FINAL_ACK_SHA256,'fast-final-ack.json'),
+                            ('verified_piece_sha256',c.VERIFIED_PIECE_SHA256,'verified-piece.json')):
+        require(value[field]==pins[unit],f'{c.PARENT[:4]}_public_metadata_scope_changed')
+        for run in c.NATIVE_OUTCOME_SHA256[unit]:
             path=state/'runs'/run/name
-            if run not in pins[unit]:require(not os.path.lexists(path),'60d9_unexpected_public_metadata');continue
-            raw=reader.read(path,100000);require(hashlib.sha256(raw).hexdigest()==pins[unit][run],'60d9_public_metadata_changed')
+            if run not in pins[unit]:require(not os.path.lexists(path),f'{c.PARENT[:4]}_unexpected_public_metadata');continue
+            raw=reader.read(path,100000);require(hashlib.sha256(raw).hexdigest()==pins[unit][run],f'{c.PARENT[:4]}_public_metadata_changed')
             files[str(path.relative_to(state))]=pins[unit][run]
     reader.check();return files
+
+
+def metadata_files(reader,state,unit,value):
+    return _metadata_files(sys.modules[__name__],reader,state,unit,value)

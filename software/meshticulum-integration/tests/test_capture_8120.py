@@ -35,8 +35,9 @@ def sample(request,synthetic_a658_capture):
 
 
 def test_actual_evidence_keeps_exact_paid_prefix_and_empty_enrollment_classification():
-    assert len(retained.PAID_HISTORY)==42 and pinned.PARENT not in retained.PAID_HISTORY
-    assert sha(canonical(retained.PAID_HISTORY))=='ebf29572ee1b76fd9e14b536a2ad4b1cd0eca4016a195df108df84f7fb4a04b2'
+    assert len(retained.PAID_HISTORY)==43 and pinned.PARENT not in retained.PAID_HISTORY
+    assert sha(canonical(retained.PAID_HISTORY[:42]))=='ebf29572ee1b76fd9e14b536a2ad4b1cd0eca4016a195df108df84f7fb4a04b2'
+    assert retained.PAID_HISTORY[42]=='bea52c6aa6a5a95501997a46247b514f'
     assert pinned.EXPIRY_COMPLETION_SHA256=='a996e21a8d632d4b26c2baf623a1ec8f981ebc66344de678352b0f3371de7aa2'
     assert pinned.H42_RECEIPT_SHA256=='68f7a680452b111ba6f826ff4566dd7a25e8299d7682e7979bd095730e87f489'
     assert pinned.OBSERVATION_SHA256['unit-c']=='48122f0c112bc8366a895e51e81c25ca294535dfe794d246816d8cb16c488493'
@@ -58,7 +59,7 @@ def test_all_observed_metadata_enters_real_seal_without_new_debt(sample):
     files={name:pin for name,pin in retained.capture_paths(state,unit)['files'].items() if (state/name).exists()}
     dirs={'':['parents','runs'],'parents':list(expected),'runs':[]}
     dirs.update({'parents/'+p:[] for p in retained.PAID_HISTORY})
-    for parent in expected[42:]:
+    for parent in expected[len(retained.PAID_HISTORY):]:
         prefix='parents/'+parent;dirs[prefix]=os.listdir(state/prefix);dirs[prefix+'/prepared-identities']=[]
     raw,pin=capture(state,owner_uid=os.geteuid(),expected_files=files,expected_directories=dirs)
     with SealedHistory(state,owner_uid=os.geteuid(),seal_bytes=raw,expected_sha256=pin) as held:
@@ -70,7 +71,7 @@ def test_all_observed_metadata_enters_real_seal_without_new_debt(sample):
     assert original=={name:(target/name).read_bytes() for name in row['files']}
     record=json.loads(original['capture.json'])
     assert record['refunds']==0 and record['original_unknown_actual_cost'] is None and record['global_debt_complete'] is False
-    assert tuple(v['policy']['parent_id'] for v in record['history']['previous'])==retained.PAID_HISTORY
+    assert tuple(v['policy']['parent_id'] for v in record['history']['previous'])==retained.PAID_HISTORY[:42]
     if unit=='unit-c':
         with sqlite3.connect((target/'native.sqlite').as_uri()+'?mode=ro',uri=True) as db:
             assert db.execute('SELECT name FROM sqlite_master').fetchall()==[]

@@ -41,7 +41,8 @@ def synthetic_8120_capture(monkeypatch):
         binding=canonical(dict(schema='meshticulum.private-resume-history-binding.v2',unit=unit,
             parent_id=model.PARENT,strict_sha256=sha(strict),legacy_sha256=sha(legacy),
             parent_identity=list(_stamp(target.stat()))[:4]))
-        history=dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY],local_synthetic_capture=True)
+        # 8120 captured H42; a later paid parent does not change that capture.
+        history=dict(previous=[dict(policy=dict(parent_id=p)) for p in retained.PAID_HISTORY[:42]],local_synthetic_capture=True)
         capture=dict(schema=COMMITTED_CONTRACTS[GFSK250_FAST_BUNDLE_KIND][6],unit=unit,parent_id=model.PARENT,
             history_binding_sha256=sha(binding),review_sha256=model.REVIEW_SHA256,
             facts=dict(unit=unit,host_boot_id=selected),phase_start_epoch_us=model.START,phase_end_epoch_us=model.END,

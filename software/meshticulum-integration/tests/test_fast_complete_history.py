@@ -44,7 +44,8 @@ def test_actual_delivery_keeps_original_failure_and_full_reservation(actual, mon
     monkeypatch.setattr(fast_bundle, 'require_bindings', lambda: pytest.fail('history used live authority'))
     assert history.require_final_bindings() is True
     assert history.pending_next_roster() == rpc.HISTORY[:42]
-    assert len(rpc.HISTORY) == len(rpc.OLD_DIGESTS) == 42
+    assert len(rpc.HISTORY) == len(rpc.OLD_DIGESTS) == 43
+    assert rpc.HISTORY[:42] == history.H41_PREFIX+(history.PARENT,)
     assert rpc.GUARDED_PAID[history.PARENT] == policy.digest
     context = history.original_context(row['owner'], policy, unit=unit)
     assert context.value['whole_bytes'] == 100000 and len(context.value['stages']) == 5
