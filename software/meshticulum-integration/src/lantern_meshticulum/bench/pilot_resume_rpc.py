@@ -1802,7 +1802,7 @@ def seal_inputs(reader, unit, known, original, newer):
                  and int(name[:-5],16)!=0 for name in entries),'prepared_identity_namespace_changed_before_seal')
         for name in entries:
             if name in _FILES or path in identities or str((path/name).relative_to(STATE)) in _EXTRA_FILES:
-                key=(rel+'/' if rel else '')+name;raw=reader.read(path/name,MAX_FILE)
+                key=(rel+'/' if rel else '')+name;raw=reader.read_held(path/name,MAX_FILE)
                 files[key]=sha(raw)
                 need(key not in known or files[key]==known[key],'metadata_changed_before_seal')
     strict_known={key:pin for key,pin in known.items()
