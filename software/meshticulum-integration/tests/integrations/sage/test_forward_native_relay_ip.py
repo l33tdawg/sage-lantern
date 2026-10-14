@@ -31,6 +31,7 @@ from meshticulum.ip.flow import IpFlow
 from meshticulum.ip.journal import IpJournal
 from meshticulum.ip.state import SessionStore
 from meshticulum.ip.worker import TcpWorker
+from meshticulum.ip.wire import READY_MODE
 from meshticulum.privacy.forward_relay import RelayStage
 from meshticulum.scheduler.budget import BudgetPolicy, Ledger
 from lantern_meshticulum.sage.forward_budget import Cost
@@ -89,11 +90,11 @@ def timed_rig(path, monkeypatch, *, scopes=RELAY_SCOPES+(SCOPE,), limit=LIMITS):
                         except Exception: pass
 
 
-def native_plan(r, packet, kind=1, addresses=None):
+def native_plan(r, packet, kind=1, addresses=None, *, startup_mode=None):
     sends = kind%2 == 1; b = PeerID(r.context.responder.chain_id,r.context.responder.public_key.hex())
     first,last = (r.local,b) if sends else (b,r.local)
     if addresses is None: addresses = ('127.0.0.1',10001),('127.0.0.1',10002)
-    return dict(schema='meshticulum.ip-service-run.v1',host_boot_id=BOOT,local_peer=asdict(r.local),
+    plan=dict(schema='meshticulum.ip-service-run.v1',host_boot_id=BOOT,local_peer=asdict(r.local),
         session=dict(initiator=asdict(first),responder=asdict(last),session_id=uuid.uuid4().hex,generation=uuid.uuid4().hex),
         format='MPF2.record',object=dict(bytes=len(packet),sha256=hashlib.sha256(packet).hexdigest()),
         route_binding_digest=r.context.digest.hex(),issued_epoch_us=r.context.issued_epoch_us,
@@ -102,6 +103,9 @@ def native_plan(r, packet, kind=1, addresses=None):
         initiator_address=list(addresses[0]),responder_address=list(addresses[1]),
         limits=dict(max_plaintext=256,max_frames=64,max_tx_stream_bytes=65536,max_rx_stream_bytes=65536,
                     max_object_bytes=4096,window_frames=4,max_retries=3))
+    if startup_mode is not None:
+        plan.update(schema='meshticulum.ip-service-run.v2',startup_mode=startup_mode)
+    return plan
 
 
 def files(path, plan, secret=b'i'*32):
@@ -124,11 +128,11 @@ def enrollment(r, f, *, revision=1, state='active', change=None):
         if a is not f.adoption: a.release()
 
 
-def factory(r, packet, kind=1, *, enroll=True, addresses=None, ready=None):
+def factory(r, packet, kind=1, *, enroll=True, addresses=None, ready=None, startup_mode=None):
     if addresses is None:
         addresses=unused_address(),unused_address()
         while addresses[0] == addresses[1]: addresses=unused_address(),unused_address()
-    p=native_plan(r,packet,kind,addresses)
+    p=native_plan(r,packet,kind,addresses,startup_mode=startup_mode)
     profile=plan_ip_hop(r.owner,p,b'i'*32,slot=(kind-1)*2+int(kind%2==1),kind=kind,sends=kind%2==1)
     d=r.path/('ip-'+str(kind)); files(d,p)
     f=NativeRelayIpFactory(r.owner,profile,d,ready=ready); r.ip_factories.append(f)
@@ -218,9 +222,9 @@ def paid(r):
     return r.state.rows[r.owner._budget.record_id]['payload']['body']['allocations']
 
 
-def prepare(r,packet,kind, *, ip=None, radio=None):
+def prepare(r,packet,kind, *, ip=None, radio=None, startup_mode=None):
     listening=threading.Event()
-    if ip is None:ip=factory(r,packet,kind,ready=lambda p:listening.set() or True)
+    if ip is None:ip=factory(r,packet,kind,ready=lambda p:listening.set() or True,startup_mode=startup_mode)
     if radio is None:radio=MixedRadioFactory(r,packet,kind,not ip.profile.child.sends)
     result,t=remote_connector(r,ip,listener_ready=listening)
     incoming,outgoing=(radio,ip) if ip.profile.child.sends else (ip,radio)
@@ -233,8 +237,8 @@ def prepare(r,packet,kind, *, ip=None, radio=None):
     return ip,radio,q,children
 
 
-def carry(r,packet,kind, *, drop=False):
-    ip,radio,q,children=prepare(r,packet,kind)
+def carry(r,packet,kind, *, drop=False, startup_mode=None):
+    ip,radio,q,children=prepare(r,packet,kind,startup_mode=startup_mode)
     source,target=(radio.remote,q) if ip.profile.child.sends else (q,radio.remote)
     if drop:radio.handles[0].worker.drop_kind=FrameKind.DATA
     source.transfer.send(packet);end=time.monotonic()+15
@@ -269,6 +273,36 @@ def test_five_ip_plans_bind_only_b_adjacent_direction(tmp_path,kind):
         assert v.grant.route_binding_digest==r.context.digest
         with pytest.raises(Exception):ForwardTcpStage(r.owner,v,tmp_path/'wrong',native_admission=lambda p:True)
         with pytest.raises(RelayIpError):plan_ip_hop(r.owner,p,b'i'*32,slot=(kind-1)*2+int(not sends),kind=kind,sends=not sends)
+        assert not hasattr(r.owner,'_operation') and not hasattr(r.owner,'local_initiator')
+
+
+@pytest.mark.parametrize('kind',range(1,6))
+def test_explicit_ready_relay_profile_binds_original_direction_mode_and_caps(tmp_path,kind):
+    with relay_rig(tmp_path) as r:
+        p=native_plan(r,r.sessions[0].start(),kind);sends=kind%2==1
+        legacy=plan_ip_hop(r.owner,p,b'i'*32,slot=(kind-1)*2+int(sends),kind=kind,sends=sends)
+        p.update(schema='meshticulum.ip-service-run.v2',startup_mode=READY_MODE)
+        ready=plan_ip_hop(r.owner,p,b'i'*32,slot=(kind-1)*2+int(sends),kind=kind,sends=sends)
+        assert ready.grant.startup_mode==READY_MODE and legacy.grant.startup_mode is None
+        assert ready.grant.digest!=legacy.grant.digest and ready.hop.grant_digest!=legacy.hop.grant_digest
+        assert ready.child.cost==legacy.child.cost and ready.child.cipher_frame_limit==legacy.child.cipher_frame_limit
+        assert ready.child.application_deadline_monotonic_us==legacy.child.application_deadline_monotonic_us
+        assert (ready.grant.direction(r.local)==0) is sends
+
+
+def test_signed_legacy_hop_binding_cannot_authorize_ready_plan(tmp_path,monkeypatch):
+    with timed_rig(tmp_path,monkeypatch) as r:
+        packet=r.sessions[0].start();ip=factory(r,packet,startup_mode=READY_MODE)
+        p=json.loads(ip.profile.plan_bytes);p.pop('startup_mode');p['schema']='meshticulum.ip-service-run.v1'
+        legacy=plan_ip_hop(r.owner,p,b'i'*32,slot=1,kind=1,sends=True)
+        def change(body):body['binding']['hop']['grant_digest']=legacy.grant.digest.hex()
+        enrollment(r,ip,revision=2,change=change)
+        with pytest.raises(RelayIpError):
+            adoption=RelayIpAdoption(r.owner,ip.profile,ip.directory)
+            try:adoption.observe()
+            finally:adoption.release()
+        assert not ip._sockets and not (ip.directory/'bytes.sqlite').exists()
+        assert r.owner._budget.record_id not in r.state.rows
         assert not hasattr(r.owner,'_operation') and not hasattr(r.owner,'local_initiator')
 
 
@@ -321,6 +355,23 @@ def test_five_stages_radio_model_and_real_tcp_keep_end_to_end_crypto(tmp_path,mo
         assert all(f._retired and not f._unknown for f in r.ip_factories)
         assert len(list(tmp_path.glob('ip-*/bytes.sqlite')))==5
         assert not list(tmp_path.glob('**/sender.bin'))
+
+
+def test_five_stages_explicit_sender_ready_radio_model_and_real_tcp(tmp_path,monkeypatch,shared_process_peer_scheduling):
+    # Same helpers, original 100s parent, 15s carry and 8s connector bounds.
+    with timed_rig(tmp_path,monkeypatch) as r:
+        i,b=r.sessions
+        def ready(packet,kind):return carry(r,packet,kind,startup_mode=READY_MODE)
+        second=b.respond(ready(i.start(),1))
+        i.finish(ready(second,2))
+        fourth=b.accept_confirmation(ready(i.confirm(),3))
+        i.verify_confirmation(ready(fourth,4))
+        sealed=i.seal(r.inner);assert b.open(ready(sealed,5))==r.inner
+        assert open_private(r.inner,r.clock).content==CONTENT
+        assert len(paid(r))==10 and r.owner.snapshot()['completed_stages']==5
+        assert not r.owner.snapshot()['native_qualified']
+        assert all(f._retired and not f._unknown and f.profile.grant.startup_mode==READY_MODE for f in r.ip_factories)
+        assert len(list(tmp_path.glob('ip-*/bytes.sqlite')))==5 and not list(tmp_path.glob('**/sender.bin'))
 
 
 @pytest.mark.parametrize('damage',['scope','missing','signature','binding','active'])

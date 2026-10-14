@@ -15,6 +15,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from meshticulum.privacy.forward_session import ForwardContext, public
 from meshticulum.privacy.mesh_binary_envelope import to_binary
+from meshticulum.ip.wire import READY_MODE
 from lantern_meshticulum.sage.forward_budget import Cost
 from lantern_meshticulum.sage.forward_native_owner import ForwardNativeOwner
 from lantern_meshticulum.sage.forward_receive_journal import ReceiveIntention
@@ -50,12 +51,12 @@ def make_owner(r, initiator):
         boot_reader=lambda: r.state.boot, clock_reader=clock)
 
 
-def native_plan(owner, packet, slot, addresses):
+def native_plan(owner, packet, slot, addresses, *, startup_mode=None):
     kind = slot + 1
     first = owner.context.initiator if kind % 2 else owner.context.responder
     second = owner.context.responder if kind % 2 else owner.context.initiator
     peer = lambda p: dict(chain_id=p.chain_id, agent_id=p.public_key.hex())
-    return dict(schema='meshticulum.ip-service-run.v1', host_boot_id=BOOT,
+    plan=dict(schema='meshticulum.ip-service-run.v1', host_boot_id=BOOT,
         local_peer=peer(owner.local), session=dict(initiator=peer(first), responder=peer(second),
             session_id=bytes([slot + 11]).hex() * 16, generation=bytes([slot + 21]).hex() * 16),
         format='MPF2.record', object=dict(bytes=len(packet), sha256=hashlib.sha256(packet).hexdigest()),
@@ -66,6 +67,9 @@ def native_plan(owner, packet, slot, addresses):
         initiator_address=list(addresses[0]), responder_address=list(addresses[1]),
         limits=dict(max_plaintext=256, max_frames=64, max_tx_stream_bytes=65536,
                     max_rx_stream_bytes=65536, max_object_bytes=4096, window_frames=4, max_retries=3))
+    if startup_mode is not None:
+        plan.update(schema='meshticulum.ip-service-run.v2',startup_mode=startup_mode)
+    return plan
 
 
 def grant_files(directory, profile):
@@ -109,6 +113,32 @@ def test_no_default_private_admission_or_forged_profile(tmp_path):
         forged = replace(profile, child=replace(profile.child, cost=Cost(ip_frames=1, tx_stream_bytes=128, rx_stream_bytes=128)))
         with pytest.raises(ForwardTcpError): ForwardTcpStage(owner, forged, tmp_path / 'absent', native_admission=lambda p: True)
         assert not r.state.rows and not (tmp_path / 'absent').exists()
+
+
+def test_explicit_sender_ready_plan_changes_native_profile_without_changing_caps():
+    with setup() as r:
+        owner=r.create()
+        p=native_plan(owner,b'x'*77,0,(('127.0.0.1',10001),('127.0.0.1',10002)))
+        legacy=plan_stage(owner,p,b's'*32,slot=0,kind=1)
+        p.update(schema='meshticulum.ip-service-run.v2',startup_mode=READY_MODE)
+        ready=plan_stage(owner,p,b's'*32,slot=0,kind=1)
+        assert legacy.grant.startup_mode is None and ready.grant.startup_mode==READY_MODE
+        assert legacy.grant.digest!=ready.grant.digest and legacy.digest!=ready.digest
+        assert legacy.child.cost==ready.child.cost and legacy.child.cipher_frame_limit==ready.child.cipher_frame_limit
+        assert legacy.child.application_deadline_monotonic_us==ready.child.application_deadline_monotonic_us
+        assert json.loads(ready.plan_bytes)['startup_mode']==READY_MODE and not r.state.rows
+
+
+@pytest.mark.parametrize('damage',['v1_extra','v2_missing','unknown'])
+def test_private_profile_refuses_unversioned_or_unrecognized_readiness(damage):
+    with setup() as r:
+        owner=r.create()
+        p=native_plan(owner,b'x'*77,0,(('127.0.0.1',10001),('127.0.0.1',10002)),startup_mode=READY_MODE)
+        if damage=='v1_extra':p['schema']='meshticulum.ip-service-run.v1'
+        elif damage=='v2_missing':p.pop('startup_mode')
+        else:p['startup_mode']='another_mode'
+        with pytest.raises(ForwardTcpError):plan_stage(owner,p,b's'*32,slot=0,kind=1)
+        assert not r.state.rows
 
 
 def test_parent_cap_refusal_precedes_socket_and_journal_creation(tmp_path, monkeypatch):
