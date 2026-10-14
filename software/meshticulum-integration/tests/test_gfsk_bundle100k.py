@@ -85,13 +85,16 @@ def test_new_kind_cannot_relabel_whole_or_renew_clock(gfdata,field,value):
 
 
 def test_pending_scope_stays_closed_and_fresh_boot_does_not_refund_debt(gfdata,monkeypatch):
-    from lantern_meshticulum.bench import profiles
+    from lantern_meshticulum.bench import profiles,retained_capture
+    actual=tuple(retained_capture.PAID_HISTORY)
+    assert len(actual)==43 and actual[-1]=='bea52c6aa6a5a95501997a46247b514f'
+    # Only this historical bundle model uses H42; production stays closed on43.
+    monkeypatch.setattr(retained_capture,'PAID_HISTORY',actual[:42])
     monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256',None)
     with pytest.raises(Exception,match='pending_gfsk_firmware_source_and_history_bindings'):
         mode.require_bundle_bindings()
     monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256','e'*64)
-    from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
-    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',PAID_HISTORY[-1])
+    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',actual[41])
     monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256',None)
     with pytest.raises(Exception,match='pending_gfsk_whole_bundle_scope'):mode.require_bundle_bindings()
     monkeypatch.setattr(mode,'GFSK_BUNDLE_SCOPE_SHA256','f'*64)

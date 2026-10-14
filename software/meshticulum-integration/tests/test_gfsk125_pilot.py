@@ -145,12 +145,31 @@ def test_parallel_metadata_threads_create_local_contexts_and_never_reuse_main_ow
 
 @pytest.fixture(autouse=True)
 def synthetic_deployment_bindings(monkeypatch):
+    """Explicit historical H42 model; never current native GFSK admission."""
     from lantern_meshticulum.bench import profiles,retained_capture
+    actual=tuple(retained_capture.PAID_HISTORY)
+    assert len(actual)==43 and actual[-1]=='bea52c6aa6a5a95501997a46247b514f'
+    historical=actual[:42]
+    assert historical[-1]=='60d9ca2aa760cb4460d0af637101c997'
     monkeypatch.setattr(profiles,'GFSK_FIRMWARE','mtb1-0000000000')
     monkeypatch.setattr(profiles,'GFSK_CORE_COMMIT','a'*40)
     monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256','b'*64)
-    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',retained_capture.PAID_HISTORY[-1])
-    monkeypatch.setattr(retained_capture,'PAID_HISTORY',tuple(retained_capture.PAID_HISTORY))
+    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',historical[-1])
+    monkeypatch.setattr(retained_capture,'PAID_HISTORY',historical)
+    return actual
+
+
+@pytest.mark.parametrize('preceding',['60d9ca2aa760cb4460d0af637101c997','bea52c6aa6a5a95501997a46247b514f'])
+def test_actual_current_H43_keeps_legacy_scope_closed_before_device_open(
+        synthetic_deployment_bindings,monkeypatch,preceding):
+    from lantern_meshticulum.bench import profiles,retained_capture,node,mcu_artifact
+    selected_before=dict(mcu_artifact.PENDING_NATIVE_BINDINGS)
+    monkeypatch.setattr(retained_capture,'PAID_HISTORY',synthetic_deployment_bindings)
+    monkeypatch.setattr(profiles,'GFSK_PRECEDING_PARENT',preceding)
+    monkeypatch.setattr(node,'ExclusiveSerial',lambda *a,**k:pytest.fail('legacy device opened'))
+    with pytest.raises(WireError,match='pending_gfsk_firmware_source_and_history_bindings'):
+        node._serial('unit-a',radio_modem='gfsk125')
+    assert dict(mcu_artifact.PENDING_NATIVE_BINDINGS)==selected_before
 
 
 def test_pending_deployment_refuses_before_open(monkeypatch):
