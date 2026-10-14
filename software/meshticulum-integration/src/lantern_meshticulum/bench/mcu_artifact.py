@@ -93,7 +93,7 @@ _IRQ_ARTIFACT = canonical(dict(
 ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
 _ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT, SELECTOR:_IRQ_ARTIFACT})
 PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
-    scope_sha256='b36e7801d24e208da2d3b91f3548f1977d8109d4089fd2996066d7f618d0cf20',
+    scope_sha256='54721794ad3a4b35d780c899351a033184ddae3f97b3c4668188e69e37d79cc4',
     history_receipt_sha256='04f6e18c9f9425796dc31fb203b7d92d826b6ef775a597903b2466aaf91cbee4',
     preceding_parent='d1fd73cd772ff055140f17ca986a07d0'))
 
