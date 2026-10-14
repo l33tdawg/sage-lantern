@@ -17,28 +17,28 @@ class McuArtifactError(ValueError):
 def require(value, reason):
     if not value: raise McuArtifactError(reason)
 
-SELECTOR = 'gfsk250-usb-rx2048-v1'
+LEGACY_SELECTOR = 'gfsk250-usb-rx2048-v1'
 PLAN_SCHEMA = 'meshticulum.public-mcu-pilot-package.v1'
 PAID_SCHEMA = 'meshticulum.public-mcu-pilot-package.v2'
 PROVISION_SCHEMA = 'meshticulum.provisioned-public-mcu-pilot.v1'
 OWNER_SCHEMA = 'meshticulum.finite-public-mcu-resume-owner.v2'
 META_SCHEMA = 'meshticulum.public-mcu-child-metadata.v1'
-OPERATION_SCHEMA = 'meshticulum.public-gfsk250-usb-rx2048-mb1-fast-bundle100k-operation.v1'
+OPERATION_SCHEMA = 'meshticulum.public-gfsk250-usb-rx2048-irq-mb1-fast-bundle100k-operation.v2'
 SSH_SCHEMA = 'meshticulum.finite-mcu-gfsk250-mb1-fast-ssh-pilot.v1'
 KIND = 'c-gfsk250-mb1-fast-bundle100k-v1'
-CORE = '2eacc798db2841c20b9466500825b79886992dd1'
-FIRMWARE = 'mtb1-4f6cfc6b63'
-IMAGE_SHA256 = '73d44a3194dec9493a101c8e041beb61a410e1e781d741e7ecc9d4cf7e1e0b5d'
+LEGACY_CORE = '2eacc798db2841c20b9466500825b79886992dd1'
+LEGACY_FIRMWARE = 'mtb1-4f6cfc6b63'
+LEGACY_IMAGE_SHA256 = '73d44a3194dec9493a101c8e041beb61a410e1e781d741e7ecc9d4cf7e1e0b5d'
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
 
 _ARTIFACT = canonical(dict(
-    schema='meshticulum.explicit-mcu-artifact.v1', selector=SELECTOR,
+    schema='meshticulum.explicit-mcu-artifact.v1', selector=LEGACY_SELECTOR,
     local_unit='unit-a', target='mtbench_heltec_v4', board_id=1,
-    firmware=FIRMWARE, image_bytes=391424, image_sha256=IMAGE_SHA256,
+    firmware=LEGACY_FIRMWARE, image_bytes=391424, image_sha256=LEGACY_IMAGE_SHA256,
     radio_modem='gfsk250', capability_record_version=2,
-    core_revision=CORE, public_source_revision='36091801f8e182d678195ad6b205c9aa1e3d0640',
+    core_revision=LEGACY_CORE, public_source_revision='36091801f8e182d678195ad6b205c9aa1e3d0640',
     source_lock_sha256='bfe550244ae41d5e11cbb5009dd4a5558f178e6ac134adfc6b39ea889903182e',
     recipe_sha256='92eab8413b0e4dce22ff57ff3dc3abf4aa0909a7f30f1d269b7a79bb58116805',
     input_lock_sha256='9d2d534dbf784db3c13b729ab91d20832e0dd536dd8edf7ce2ccd79985c6dfb2',
@@ -54,12 +54,44 @@ _ARTIFACT = canonical(dict(
         'f9da4ff556dcde50ca924d6e476ec0eb38a37552394bb068a880307ceb5b4422',
         'a06451074dd60c052df1fbfc8f2ce21a830b020acf1daf95980626bd345dc9a1'],
     verified_artifacts={
-        'firmware.bin':IMAGE_SHA256,
+        'firmware.bin':LEGACY_IMAGE_SHA256,
         'firmware.elf':'ec5a17b8772dd28156aca391dda31a2e07e37657a6e1d6053f378d77579010c2',
         'bootloader.bin':'2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363',
         'partitions.bin':'bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce'},
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
-ARTIFACT_SHA256 = hashlib.sha256(_ARTIFACT).hexdigest()
+LEGACY_ARTIFACT_SHA256 = hashlib.sha256(_ARTIFACT).hexdigest()
+SELECTOR = 'gfsk250-usb-rx2048-irq-v1'
+CORE = '2b9db9e71dfa7d115d4e465225893b828c760171'
+FIRMWARE = 'mtb1-020e287255'
+IMAGE_SHA256 = 'eca7772095cc9c9e63c9f6e6d9fe48ba3c376cd6bfef557ffcc441621a846fa2'
+_IRQ_ARTIFACT = canonical(dict(
+    schema='meshticulum.explicit-mcu-artifact.v2', selector=SELECTOR,
+    local_unit='unit-a', target='mtbench_heltec_v4', board_id=1,
+    firmware=FIRMWARE, image_bytes=391600, image_sha256=IMAGE_SHA256,
+    radio_modem='gfsk250', capability_record_version=2,
+    core_revision=CORE, runtime_core_revision=CORE,
+    source_lock_sha256='b504150554abdf068eeabe1d140db1a0c132ecb93c84c3b351049cf78ca4d904',
+    recipe_sha256='92eab8413b0e4dce22ff57ff3dc3abf4aa0909a7f30f1d269b7a79bb58116805',
+    input_lock_sha256='9d2d534dbf784db3c13b729ab91d20832e0dd536dd8edf7ce2ccd79985c6dfb2',
+    application={
+        'main.cpp':'d52db685d92cffad86a6245fe5818ab35cf258b9606d8dee44d5b2481f2e5062',
+        'protocol.hpp':'9664157bd3c526739317e18f6120c332f078026012bdb1271bd6254fe3419ad7',
+        'gfsk_profile.hpp':'eae3b0883490663c89bdd6b636aa054e0031e294651185e52cf4ebd292cb4d82',
+        'gfsk250_profile.hpp':'379c0023940a6091a93c20f2199f2dcb0f70e7678c680681107622ea71cd6aba'},
+    reproduced_build_sha256=[
+        'f17fd745de786f52a8a1c0a8092ab4c91e92b7c9e4d37eca52d354ba20e083a6',
+        '3727db379dbf032b34dba02990d94b804b12f11626b5fb1d3cf221324239d2f6'],
+    reproduced_source_sha256=[
+        '73b3bbd6fc62b97bfa49ff34c6f083a3b5c9115b294dec3fb3e6fc2a35556645',
+        '9e99b7486914452bb770be28933407bfac2905e004e109ceab94f9f02c32dd2b'],
+    verified_artifacts={
+        'firmware.bin':IMAGE_SHA256,
+        'firmware.elf':'0fb4a8c777c7d2f30d3e21439e6c959add702676f17e3028207235b5249827d1',
+        'bootloader.bin':'2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363',
+        'partitions.bin':'bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce'},
+    source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
+ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
+_ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT, SELECTOR:_IRQ_ARTIFACT})
 PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
     scope_sha256='16f73f63ce91875dfcb907733ebae16b97a78450c7c769a3c9066b9752eac78e',
     history_receipt_sha256='4d27db070dc0106d067bc49372919b32431ff04a31894bff3d14746d4bca4594',
@@ -67,12 +99,19 @@ PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
 
 
 def artifact(selector=SELECTOR):
-    require(type(selector) is str and selector == SELECTOR, 'unreviewed_mcu_artifact_selector')
-    return json.loads(_ARTIFACT)
+    require(type(selector) is str and selector in _ARTIFACTS, 'unreviewed_mcu_artifact_selector')
+    return json.loads(_ARTIFACTS[selector])
+
+
+def current_artifact(selector=SELECTOR):
+    require(type(selector) is str and selector == SELECTOR, 'historical_mcu_artifact_not_current')
+    return artifact(selector)
 
 
 def validate_artifact(value):
-    require(type(value) is dict and canonical(value) == _ARTIFACT, 'mcu_artifact_binding_changed')
+    require(type(value) is dict and type(value.get('selector')) is str
+        and value['selector'] in _ARTIFACTS and canonical(value) == _ARTIFACTS[value['selector']],
+        'mcu_artifact_binding_changed')
     return value
 
 
@@ -87,29 +126,37 @@ def select_runtime(manifest):
         and manifest.get('firmware') == value['firmware']
         and manifest.get('firmware_by_unit', {}).get('unit-a') == value['firmware'],
         'mcu_artifact_runtime_mismatch')
+    if value['selector'] == SELECTOR:
+        source_files = manifest.get('source_files', manifest.get('files'))
+        require(type(source_files) is dict and source_files.get(
+            'provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json') == value['source_lock_sha256'],
+            'mcu_artifact_runtime_source_changed')
     return value
 
 
 def owner_envelope(original_owner, selector):
+    selected = artifact(selector)
     require(type(original_owner) is dict
         and original_owner.get('schema') == 'meshticulum.finite-public-resume-owner.v1'
         and original_owner.get('qualification_kind') == KIND
-        and original_owner.get('core_commit') == CORE, 'mcu_original_owner_mismatch')
+        and original_owner.get('core_commit') == selected.get('runtime_core_revision', selected['core_revision']),
+        'mcu_original_owner_mismatch')
     return dict(schema=OWNER_SCHEMA, original_owner=json.loads(canonical(original_owner)),
-        mcu_artifact=artifact(selector))
+        mcu_artifact=selected)
 
 
 def decode_owner(value):
     require(type(value) is dict and set(value) == {'schema','original_owner','mcu_artifact'}
         and value['schema'] == OWNER_SCHEMA, 'invalid_mcu_owner_envelope')
     validate_artifact(value['mcu_artifact'])
-    require(canonical(owner_envelope(value['original_owner'], SELECTOR)) == canonical(value),
+    require(canonical(owner_envelope(value['original_owner'], value['mcu_artifact']['selector'])) == canonical(value),
         'mcu_original_owner_mismatch')
     return value['original_owner'], value['mcu_artifact']
 
 
 def require_native_scope(value, policy, manifest):
     owner, selected = decode_owner(value)
+    require(selected['selector'] == SELECTOR, 'historical_mcu_artifact_not_current')
     require(select_runtime(manifest) == selected and owner['policy_digest'] == policy.digest
         and owner['qualification_kind'] == policy.qualification_kind == KIND,
         'mcu_owner_runtime_or_policy_changed')
@@ -137,7 +184,8 @@ def validate_metadata(meta):
     require(type(meta) is dict and meta.get('schema') == META_SCHEMA and meta.get('transport') == 'lora'
         and meta.get('radio_modem') == 'gfsk250', 'invalid_mcu_child_metadata')
     validate_artifact(meta['mcu_artifact'])
-    require(meta.get('mcu_artifact_sha256') == ARTIFACT_SHA256, 'mcu_child_artifact_changed')
+    require(meta.get('mcu_artifact_sha256') == hashlib.sha256(canonical(meta['mcu_artifact'])).hexdigest(),
+        'mcu_child_artifact_changed')
     return meta['mcu_artifact']
 
 

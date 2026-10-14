@@ -69,7 +69,7 @@ def test_seal_inputs_uses_held_reader_and_unchanged_final_full_check(seal_fixtur
     assert observed.get('read_held_calls',0)==1 and observed.get('read_calls',0)==0
     # One fresh held reread plus the unchanged final Reader.check reread.
     assert observed['fresh_preads']==2
-    assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==43
+    assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==44
 
 
 @pytest.mark.parametrize('fault',['bytes','replacement','hardlink','mode','parent','offset'])

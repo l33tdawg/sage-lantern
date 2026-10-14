@@ -190,7 +190,7 @@ class ChildCaps:
 def child_caps(package, policy):
     """Pure v1 public-package extraction; no clocks, files, keys or body retention."""
     try:
-        from .mcu_artifact import PLAN_SCHEMA, META_SCHEMA, KIND as MCU_KIND, validate_artifact, ARTIFACT_SHA256
+        from .mcu_artifact import PLAN_SCHEMA, META_SCHEMA, KIND as MCU_KIND, validate_artifact
         fields={'schema','unit','campaign_id','resource_sha256','application_expires_epoch_us',
                 'transport','grant','secret_base64','payload_base64','source_run_id'}
         require(type(policy) is ParentPolicy and type(package) is dict)
@@ -305,7 +305,7 @@ def child_caps(package, policy):
         if selected_mcu is not None:
             require(unit.unit in ('unit-a','unit-c'))
             metadata.update(schema=META_SCHEMA,mcu_artifact=json.loads(canonical(selected_mcu)),
-                            mcu_artifact_sha256=ARTIFACT_SHA256)
+                            mcu_artifact_sha256=hashlib.sha256(canonical(selected_mcu)).hexdigest())
         return ChildCaps(unit.unit, run, sends, canonical(metadata), cost, expiry)
     except Exception:
         raise ParentCapsError() from None

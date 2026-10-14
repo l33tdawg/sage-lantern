@@ -133,8 +133,8 @@ def _serial(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selecto
             from .profiles import GFSK250_FIRMWARE
             firmware=GFSK250_FIRMWARE
         else:
-            from .mcu_artifact import artifact, require_selector_scope
-            selected=artifact(mcu_artifact_selector);require_selector_scope(qualification_kind)
+            from .mcu_artifact import current_artifact, require_selector_scope
+            selected=current_artifact(mcu_artifact_selector);require_selector_scope(qualification_kind)
             firmware=selected['firmware']
     require(mcu_artifact_selector is None or radio_modem==GFSK250_NAME,
             'mcu_artifact_wrong_modem')

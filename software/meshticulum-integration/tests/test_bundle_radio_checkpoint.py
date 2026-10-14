@@ -100,11 +100,11 @@ def root_record(data,tmp_path,monkeypatch,root_observation):
     observation=snapshot.collect(directory,snapshot.Scope('meshticulum.public-parent-snapshot-scope.v1','controller',os.geteuid(),
         policy.parent_id,policy.digest,module.sha(raw),None,BOOT,130000000),clock=now,boot_reader=lambda:BOOT).to_dict()
     assert observation['status']=='scoped_rows_observed' and observation['detail']['allocation_count']==2
-    # The original H42 checkpoint contract remains closed on the active H43
+    # The original H42 checkpoint contract remains closed on the active H44
     # roster. Exercise its historical checks under an explicit local model;
     # peer STATUS/projections remain modeled and confer no current permission.
     actual_history=tuple(module.HISTORY)
-    assert len(actual_history)==43 and actual_history[-1]=='bea52c6aa6a5a95501997a46247b514f'
+    assert len(actual_history)==44 and actual_history[42]=='bea52c6aa6a5a95501997a46247b514f' and actual_history[-1]=='d1fd73cd772ff055140f17ca986a07d0'
     history=actual_history[:42]
     monkeypatch.setattr(module,'HISTORY',history)
     natives={};terminal=[]

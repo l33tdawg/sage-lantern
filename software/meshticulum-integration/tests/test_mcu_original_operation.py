@@ -52,7 +52,8 @@ def original(fast_data,runner,tmp_path):
     responses=[context.transport.response(index,cache)for index in range(5)]
     manifest=dict(mcu_artifact=mcu.artifact(),firmware=mcu.FIRMWARE,
         firmware_by_unit={'unit-a':mcu.FIRMWARE,'unit-b':'mtb1-9816f92488'},
-        radio_profile_name='gfsk250',native_operation_kind=mcu.KIND)
+        radio_profile_name='gfsk250',native_operation_kind=mcu.KIND,
+        source_files={'provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json':mcu.artifact()['source_lock_sha256']})
     op=dict(schema=mcu.OPERATION_SCHEMA,mcu_artifact_selector=mcu.SELECTOR,mcu_artifact=mcu.artifact(),
         core_commit=mcu.CORE,runtime_sha256='7'*64,manifest_sha256='8'*64,
         mb1_bundle_scope_sha256='9'*64,history_receipt_sha256='a'*64)

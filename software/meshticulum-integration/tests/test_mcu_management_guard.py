@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 import os
+from types import MappingProxyType
 
 import pytest
 
@@ -19,8 +20,13 @@ from tests.test_public32_pilot import tmp_path, protected_source, clock, facts, 
 
 
 @pytest.fixture
-def selected(native,protected_source):
-    """Select only source fixture inputs; every new production guard is genuine."""
+def selected(native,protected_source,monkeypatch):
+    """Local model scope only; original guards execute without a native grant."""
+    from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
+    monkeypatch.setattr(mcu,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
+        scope_sha256=rpc.sha(b'declared source-only IRQ management-guard scope'),
+        history_receipt_sha256=rpc.sha(b'declared source-only IRQ management-guard history'),
+        preceding_parent=PAID_HISTORY[-1])))
     n=native;root,_=protected_source
     path=root/'manifest.json';manifest=json.loads(path.read_bytes())
     manifest.update(mcu_artifact=mcu.artifact(),radio_profile_name='gfsk250',

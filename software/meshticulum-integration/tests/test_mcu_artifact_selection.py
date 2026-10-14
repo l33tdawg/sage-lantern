@@ -87,7 +87,8 @@ def test_original_selection_changes_child_binding_before_full_prepayment(tmp_pat
 @pytest.mark.parametrize('damage',['firmware','profile','kind','board','null'])
 def test_runtime_selection_is_exact_and_has_no_legacy_fallback(damage):
     manifest=dict(mcu_artifact=mcu.artifact(),firmware=mcu.FIRMWARE,
-        firmware_by_unit={'unit-a':mcu.FIRMWARE},radio_profile_name='gfsk250',native_operation_kind=mcu.KIND)
+        firmware_by_unit={'unit-a':mcu.FIRMWARE},radio_profile_name='gfsk250',native_operation_kind=mcu.KIND,
+        source_files={'provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json':mcu.artifact()['source_lock_sha256']})
     if damage=='firmware':manifest['firmware_by_unit']['unit-a']=profiles.GFSK250_FIRMWARE
     elif damage=='profile':manifest['radio_profile_name']='gfsk125'
     elif damage=='kind':manifest['native_operation_kind']='another'
@@ -102,7 +103,8 @@ def test_original_owner_is_versioned_and_pending_scope_never_supplies_permission
     owner=mcu.owner_envelope(base,mcu.SELECTOR)
     assert mcu.decode_owner(owner)==(base,mcu.artifact())
     manifest=dict(mcu_artifact=mcu.artifact(),firmware=mcu.FIRMWARE,
-        firmware_by_unit={'unit-a':mcu.FIRMWARE},radio_profile_name='gfsk250',native_operation_kind=mcu.KIND)
+        firmware_by_unit={'unit-a':mcu.FIRMWARE},radio_profile_name='gfsk250',native_operation_kind=mcu.KIND,
+        source_files={'provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json':mcu.artifact()['source_lock_sha256']})
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu'):
         mcu.require_native_scope(owner,SimpleNamespace(digest='a'*64,qualification_kind=mcu.KIND),manifest)
     owner['original_owner']['core_commit']='0'*40
@@ -191,19 +193,32 @@ def reproduced_builds():
 
 
 def test_actual_reproduced_records_and_application_sources_match_selected_artifact(reproduced_builds):
-    module=packet_module();selected=mcu.artifact()
+    module=packet_module();selected=mcu.artifact(mcu.LEGACY_SELECTOR)
     core=Path(os.environ['MESHTICULUM_SOURCE'])
-    assert module.validate_source(core,selected)==core.resolve()
+    # Current IRQ source cannot be relabelled as the historical 4f artifact.
+    with pytest.raises(ValueError,match='mcu_application_source_changed'):module.validate_source(core,selected)
     original,second=reproduced_builds
     image,files,records=module.reproduced([original,second],selected)
-    assert len(image)==391424 and hashlib.sha256(image).hexdigest()==mcu.IMAGE_SHA256
+    assert len(image)==391424 and hashlib.sha256(image).hexdigest()==mcu.LEGACY_IMAGE_SHA256
     assert len(files)==4 and len(records)==2
     with pytest.raises(ValueError):module.reproduced([original,original],selected)
     damaged=deepcopy(selected);damaged['verified_artifacts']['firmware.bin']='0'*64
     with pytest.raises(ValueError):module.reproduced([original,second],damaged)
 
 
-def test_packet_generation_has_pinned_sources_and_no_physical_claim(tmp_path,reproduced_builds):
+@pytest.fixture
+def irq_reproduced_builds():
+    configured=os.environ.get('MESHTICULUM_MCU_IRQ_REPRODUCED_BUILD_DIRS')
+    if configured is None:
+        pytest.skip('IRQ build evidence requires explicit MESHTICULUM_MCU_IRQ_REPRODUCED_BUILD_DIRS JSON with two reviewed directories.')
+    paths=json.loads(configured)
+    assert type(paths)is list and len(paths)==2 and all(type(p)is str for p in paths)
+    paths=[Path(p)for p in paths]
+    assert all(p.is_dir()for p in paths)
+    return paths
+
+
+def test_packet_generation_has_pinned_sources_and_no_physical_claim(tmp_path,irq_reproduced_builds):
     """Synthetic rollback tests the generator only; no installed-app evidence."""
     import io
     import tarfile
@@ -216,7 +231,7 @@ def test_packet_generation_has_pinned_sources_and_no_physical_claim(tmp_path,rep
     record=tmp_path/'synthetic-rollback.json';record.write_bytes(canonical(prior))
     pin=hashlib.sha256(record.read_bytes()).hexdigest()
     arguments=dict(core=Path(os.environ['MESHTICULUM_SOURCE']),selector=mcu.SELECTOR,
-        build_dirs=reproduced_builds,rollback_image=image,rollback_record=record,
+        build_dirs=irq_reproduced_builds,rollback_image=image,rollback_record=record,
         rollback_record_sha256=pin,output=tmp_path/'packet')
     receipt=module.generate(**arguments)
     data=(arguments['output']/'packet.tar.gz').read_bytes()

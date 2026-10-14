@@ -49,7 +49,9 @@ def validate_source(core, selected):
         and sha(read(prefix/'inputs.lock.json',500000)) == selected['input_lock_sha256'],
         'mcu_firmware_recipe_or_lock_changed')
     lock = ROOT/'software/meshticulum-integration/meshticulum-source-lock.json'
-    need(sha(read(lock,500000)) == selected['source_lock_sha256'], 'mcu_source_lock_changed')
+    lock_raw = read(lock,500000)
+    need(sha(lock_raw) == selected['source_lock_sha256'] and json.loads(lock_raw)['revision']
+        == selected.get('runtime_core_revision', selected['core_revision']), 'mcu_source_lock_changed')
     return source
 
 

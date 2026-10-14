@@ -87,6 +87,7 @@ OLD_DIGESTS = (
     'd570f42d9d3c6dbde1edf0a783de2d5ba3039dc13a54776e4a6f13f34435cc51',
     'ae183aeb153cc1c59b60b3641027db5aac3267e6a6813ac610b2f6286b2a77f0',
     'bd3d9a1d2bd14c19fb91828a4213b41887d24a906fb4e111923927e55afeafe4',
+    '1ce4ceb934200048b1210568022532ddb578793e5e849bf7cf199161af40ffc0',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -224,11 +225,13 @@ from .gfsk_mb1_complete_history import PARENT as MB1_COMPLETE_BUNDLE_PAID, NATIV
 from .fast_bundle_zero_history import PARENT as FAST_ZERO_PAID, NATIVE_DATABASE_SHA256 as FAST_ZERO_DATABASES
 from .fast_bundle_unstarted_history import PARENT as FAST_UNSTARTED_PAID, RUN as FAST_UNSTARTED_RUN
 from . import gfsk250_mb1_partial_history as partial250,fast_bundle_partial_history as fast_partial,fast_bundle_complete_history as fast_complete,fast_bundle_bea_history as bea_complete
+from . import fast_bundle_d1fd_history as d1fd_history
 PARTIAL250={partial250.PARENT:partial250,fast_partial.PARENT:fast_partial,fast_complete.PARENT:fast_complete,bea_complete.PARENT:bea_complete}
 COMPLETE_FAST_HISTORY=(fast_complete,bea_complete)
 COMPLETE_FAST_PARENTS=tuple(c.PARENT for c in COMPLETE_FAST_HISTORY)
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
                 BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34],MB1_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[35],MB1_COMPLETE_BUNDLE_PAID:OLD_DIGESTS[36],GFSK250_MB1_PARTIAL_PAID:OLD_DIGESTS[37],FAST_ZERO_PAID:OLD_DIGESTS[38],FAST_UNSTARTED_PAID:OLD_DIGESTS[39],fast_partial.PARENT:OLD_DIGESTS[40],fast_complete.PARENT:OLD_DIGESTS[41],bea_complete.PARENT:OLD_DIGESTS[42]}
+GUARDED_PAID[d1fd_history.PARENT] = OLD_DIGESTS[43]
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -349,6 +352,16 @@ def parse(raw):
             need(key not in value, 'duplicate_rpc_metadata_key'); value[key] = item
         return value
     return json.loads(raw, object_pairs_hook=unique)
+
+
+def retained_owner_view(record, policy, unit):
+    """Historical semantics only; raw envelope remains the protected file pin."""
+    need(type(record) is dict, 'invalid_retained_owner')
+    if policy.parent_id == d1fd_history.PARENT:
+        return d1fd_history.owner_view(record, policy, unit=unit)
+    from .mcu_artifact import OWNER_SCHEMA
+    need(record.get('schema') != OWNER_SCHEMA, 'unreviewed_retained_mcu_owner')
+    return record
 
 
 def _reader_operation(method):
@@ -777,6 +790,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
     need(totals == inventory['full_caps_retained_totals'], 'original_cap_sum_changed')
     for index, (v, policy) in enumerate(zip(old, policies)):
         guard(); target = STATE/'parents'/policy.parent_id; reader.directory(target)
+        owner = retained_owner_view(v['owner'], policy, unit)
         prior = inventory if v['prior_kind'] == 'legacy' else dict(v['prior_metadata'],legacy_inventory=inventory)
         for name, value in (('policy.json',v['policy']),('owner.json',v['owner']),('prior.json',prior)):
             need(metadata(target/name,200000) == canonical(value), 'old_parent_input_changed')
@@ -786,8 +800,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         legacy = None
         if v['runs']:
             legacy = DebtScope.from_dict(dict(schema='meshticulum.public-debt-scope.v1',unit=unit,
-                current_host_boot_id=boot(),runtime_sha256=v['owner']['runtime_sha256'],
-                manifest_sha256=v['owner']['manifest_sha256'],observation_expires_epoch_us=end,runs=v['runs']))
+                current_host_boot_id=boot(),runtime_sha256=owner['runtime_sha256'],
+                manifest_sha256=owner['manifest_sha256'],observation_expires_epoch_us=end,runs=v['runs']))
         observed = collect(STATE,Scope('meshticulum.public-parent-snapshot-scope.v1','native',0,
             policy.parent_id,policy.digest,v['database_sha256'],unit,boot(),end),
             clock=clock,boot_reader=boot,legacy_scope=legacy).to_dict()
@@ -795,7 +809,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
              and observed['policy_expired_at_observation'] and not observed['pending_unknown'], 'old_parent_uncertain')
         need(sha(canonical({k:observed[k] for k in v['projection_keys']})) == v['projection_sha256'], 'old_parent_rows_changed')
         need(observed['prior_lineage']['global_snapshot_sha256'] == policy.prior_snapshot_sha256
-             == sha(canonical(v['owner']['prior_registry'])), 'old_global_lineage_changed')
+             == sha(canonical(owner['prior_registry'])), 'old_global_lineage_changed')
         local = next(r for r in observed['prior_lineage']['units'] if r['unit'] == unit)
         need(local['prior_snapshot_sha256'] == sha(canonical(prior)) == policy.unit(unit).prior_snapshot_sha256,
              'old_local_lineage_changed')
@@ -806,6 +820,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if policy.parent_id==FAST_UNSTARTED_PAID:
             from .fast_bundle_unstarted_history import stage_files
             known.update(stage_files(reader,STATE,unit,v))
+        if policy.parent_id == d1fd_history.PARENT:
+            known.update(d1fd_history.metadata_files(reader, STATE, unit, v))
         if policy.parent_id in (fast_partial.PARENT,*COMPLETE_FAST_PARENTS):
             known.update(PARTIAL250[policy.parent_id].metadata_files(reader,STATE,unit,v))
         refs = sorted([dict(controller_allocation_id=c['controller_allocation_id'],child=c['child'])
@@ -864,7 +880,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                 need(row['status'] == 'scoped_rows_observed' and row['wire']['retired'] == 1,
                      'old_actual_journal_unsettled')
                 if row['journal']['has_unknown_or_pending']:
-                    qualify_known_cut(reader,unit,policy,v['owner'],observed,row,
+                    qualify_known_cut(reader,unit,policy,owner,observed,row,
                                      KNOWN_CUTS.get(policy.parent_id))
                 result_raw = metadata(STATE/'runs'/row['run_id']/'result.json',300000); result = parse(result_raw)
                 need(sha(result_raw) == row['files']['result.json']['sha256']
@@ -909,7 +925,9 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
                     need(sha(raw) == record['sha256'], 'old_typed_file_changed')
         for name, record in observed['files'].items():
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
-        if policy.parent_id==FAST_UNSTARTED_PAID:
+        if policy.parent_id == d1fd_history.PARENT:
+            d1fd_history.qualify_costs(unit, policy, observed, v)
+        elif policy.parent_id==FAST_UNSTARTED_PAID:
             from .fast_bundle_unstarted_history import qualify_costs
             qualify_costs(unit,policy,observed,v)
         elif policy.parent_id==FAST_ZERO_PAID:
@@ -1044,6 +1062,9 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id==FAST_UNSTARTED_PAID:
         need(not ids and absent==({FAST_UNSTARTED_RUN} if unit in ('unit-a','unit-c') else set()),
              'fast_unstarted_child_scope_changed')
+    elif policy.parent_id == d1fd_history.PARENT:
+        need(not ids and not absent and not claims and all(type(detail[k]) is int and detail[k] == 0
+             for k in ('claim_count', 'prepared_count', 'resource_count', 'start_count')), 'd1fd_zero_child_scope_changed')
     elif policy.parent_id==FAST_ZERO_PAID:
         need(not ids and not absent and not claims,'fast_zero_child_scope_changed')
     elif policy.parent_id==ENROLLED_ZERO_PAID:
@@ -2192,12 +2213,13 @@ def inspect_paid_parent(unit,p,runtime):
     Started membership comes from actual protected native rows, not input DTOs.
     Missing unstarted cost stays null and full prepaid debt remains charged.
     """
-    policy=ParentPolicy.from_dict(p['policy']);owner=p['owner'];prior=p['prior'];local=policy.unit(unit)
+    policy=ParentPolicy.from_dict(p['policy']);raw_owner=p['owner'];prior=p['prior'];local=policy.unit(unit)
+    owner=retained_owner_view(raw_owner,policy,unit)
     need(policy.parent_id in GUARDED_PAID and policy.digest==GUARDED_PAID[policy.parent_id]
          and local.host_boot_id==boot(),'wrong_paid_parent_scope')
     end=clock()[0]+35000000;target=STATE/'parents'/policy.parent_id
     with Reader() as reader:
-        for name,value in (('policy.json',policy.to_dict()),('owner.json',owner),('prior.json',prior)):
+        for name,value in (('policy.json',policy.to_dict()),('owner.json',raw_owner),('prior.json',prior)):
             need(reader.read(target/name,200000)==canonical(value),'paid_parent_input_changed')
         sampled=clock();phase=owner['native_phase'][unit]
         need(sampled[0]>=owner['phase_end_epoch_us']>policy.expires_epoch_us

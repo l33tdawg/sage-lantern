@@ -25,7 +25,7 @@ import zlib
 from run_public_sf5_c_bulk_8k import read,write,sha,canonical,stable,need,RPC_ENTRY
 
 SCHEMA='meshticulum.public-gfsk250-mb1-fast-bundle100k-operation.v1'
-MCU_SCHEMA='meshticulum.public-gfsk250-usb-rx2048-mb1-fast-bundle100k-operation.v1'
+MCU_SCHEMA='meshticulum.public-gfsk250-usb-rx2048-irq-mb1-fast-bundle100k-operation.v2'
 # Full H34 C metadata plus the signed five-part schedule exceeds the old
 # 84k envelope. Only this explicit whole-file entry uses the bounded 91k cap.
 need(RPC_ENTRY.count("need(len(blob)<=112000,'RPC_encoded_bound')")==1
@@ -65,7 +65,9 @@ def operation_selection(op, manifest=None):
     need(op['schema']==OPERATION_SCHEMA and op.get('mcu_artifact_selector')==SELECTOR,
          'wrong_original_mcu_operation')
     selected=validate_artifact(op['mcu_artifact'])
-    need(op['core_commit']==selected['core_revision'],'mcu_operation_core_changed')
+    need(selected['selector']==op['mcu_artifact_selector']
+         and op['core_commit']==selected.get('runtime_core_revision',selected['core_revision']),
+         'mcu_operation_core_changed')
     if manifest is not None:
         need(select_runtime(manifest)==selected and manifest['firmware_by_unit']['unit-b']=='mtb1-9816f92488',
              'mcu_operation_runtime_changed')
