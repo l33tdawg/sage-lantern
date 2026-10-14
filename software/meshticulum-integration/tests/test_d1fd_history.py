@@ -125,8 +125,13 @@ def test_actual_zero_child_reservation_does_not_accept_debt_or_scope_drift(actua
     with pytest.raises(WireError):history.qualify_costs(unit,policy,native['observation'],row)
 
 
-def test_current_roster_is_append_only_and_old_native_scope_refuses_without_rebinding():
+def test_current_roster_is_append_only_and_old_native_scope_refuses_without_rebinding(monkeypatch):
+    from types import MappingProxyType
     from lantern_meshticulum.bench import retained_capture,mcu_artifact
+    monkeypatch.setattr(mcu_artifact,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
+        scope_sha256='16f73f63ce91875dfcb907733ebae16b97a78450c7c769a3c9066b9752eac78e',
+        history_receipt_sha256='4d27db070dc0106d067bc49372919b32431ff04a31894bff3d14746d4bca4594',
+        preceding_parent='bea52c6aa6a5a95501997a46247b514f')))
     bindings=mcu_artifact.PENDING_NATIVE_BINDINGS
     assert len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==44
     assert rpc.HISTORY[:43]==history.H43_PREFIX and rpc.HISTORY[-1]==history.PARENT

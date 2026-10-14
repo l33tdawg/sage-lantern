@@ -2,7 +2,7 @@
 from copy import deepcopy
 import hashlib
 import json
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -74,8 +74,12 @@ def test_old_selector_cannot_open_serial_under_new_scope(monkeypatch):
         node._serial('unit-a',radio_modem='gfsk250',qualification_kind=mcu.KIND,mcu_artifact_selector=mcu.LEGACY_SELECTOR)
 
 
-def test_real_h44_roster_refuses_consumed_h43_scope():
+def test_real_h44_roster_refuses_consumed_h43_scope(monkeypatch):
     from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
+    monkeypatch.setattr(mcu,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
+        scope_sha256='16f73f63ce91875dfcb907733ebae16b97a78450c7c769a3c9066b9752eac78e',
+        history_receipt_sha256='4d27db070dc0106d067bc49372919b32431ff04a31894bff3d14746d4bca4594',
+        preceding_parent='bea52c6aa6a5a95501997a46247b514f')))
     assert PAID_HISTORY[-1]=='d1fd73cd772ff055140f17ca986a07d0'
     assert mcu.PENDING_NATIVE_BINDINGS['preceding_parent']=='bea52c6aa6a5a95501997a46247b514f'
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu_artifact_native_scope_and_history'):
