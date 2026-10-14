@@ -24,9 +24,10 @@ from tests.integrations.sage.test_mesh_inbox import SENDER,RECIPIENT,SENDER_KEY,
 from tests.test_meshticulum_bench_runtime import BOOT
 
 @contextmanager
-def setup(*,initiator=True,scopes=SCOPES,approval_override=None,original=None,peer_observer=None):
+def setup(*,initiator=True,scopes=SCOPES,approval_override=None,original=None,peer_observer=None,initial_clock=None):
     state,client,endpoint=backend(SENDER_KEY if initiator else KEY)
-    state.owner_live=True;state.epoch='e'*32;state.boot=BOOT;state.now=(100000000,50000000)
+    state.owner_live=True;state.epoch='e'*32;state.boot=BOOT
+    state.now=(100000000,50000000) if initial_clock is None else initial_clock
     noise=(X25519PrivateKey.generate(),X25519PrivateKey.generate())
     ctx=ForwardContext(SENDER,RECIPIENT,uuid.uuid4().bytes,b'a'*32,100000000,180000000,64,
                        public(noise[0]),public(noise[1]))

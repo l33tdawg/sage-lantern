@@ -52,7 +52,7 @@ def describe_child(transfer,*,slot,kind,live=True):
         caps=a.grant.limits;cost=Cost(ip_frames=caps.max_frames,
             tx_stream_bytes=caps.max_tx_stream_bytes,rx_stream_bytes=caps.max_rx_stream_bytes)
         carrier='tcp';profile=a.grant.digest.hex()
-        deadline=int(a.deadlines.application_deadline_monotonic*1000000)
+        deadline=a.application_deadline_us
     return ChildPlan(slot,kind,f.sends,transfer.grant_digest.hex(),transfer.descriptor[1],transfer.descriptor[0],
         carrier,profile,a.plan['host_boot_id'],a.application_expires_epoch_us,
         deadline,cost,a.grant.max_frames)

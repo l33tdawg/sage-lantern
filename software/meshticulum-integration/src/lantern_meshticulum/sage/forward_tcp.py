@@ -122,7 +122,7 @@ def plan_stage(owner, native_plan, secret, *, slot, kind):
             and ipaddress.ip_address(grant.initiator_address[0]).version
                 == ipaddress.ip_address(grant.responder_address[0]).version)
         caps = grant.limits
-        deadline = int(p['application_deadline_monotonic_us'] / 1000000 * 1000000)
+        deadline = p['application_deadline_monotonic_us']
         child = ChildPlan(slot, kind, sends, grant.digest.hex(), grant.object_sha256.hex(),
             grant.object_bytes, 'tcp', grant.digest.hex(), owner.intention.host_boot_id,
             owner.context.expires_epoch_us, deadline,
