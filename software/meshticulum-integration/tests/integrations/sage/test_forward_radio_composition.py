@@ -171,6 +171,20 @@ def shared_process_peer_scheduling(request):
 @pytest.mark.parametrize('fault',['none','loss'])
 def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path,monkeypatch,fault,shared_process_peer_scheduling):
     values=original();commands=[queue.Queue(),queue.Queue()];replies=queue.Queue();reports=[[],[]];pairs=[];active=[];counters=([0,0],[0,0])
+    ready_barriers=[];timings=[[],[]]
+    def error_metadata(error,index,slot,phase):
+        allowed={'reliable_flow_startup_grant_unanswered','reliable_flow_retry_ceiling',
+            'worker_run_fenced','forward_operation_unavailable','forward_native_owner_unavailable',
+            'forward_radio_unavailable','service_runner_not_running','bench_scheduler_flow_fenced'}
+        chain=[];seen=set();current=error
+        while current is not None and id(current) not in seen and len(chain)<8:
+            seen.add(id(current))
+            reason=current.args[0] if len(current.args)==1 and type(current.args[0]) is str and current.args[0] in allowed else None
+            frames=[(Path(frame.f_code.co_filename).name[:100],frame.f_code.co_name[:100],line)
+                    for frame,line in traceback.walk_tb(current.__traceback__)][-20:]
+            chain.append(dict(type=type(current).__name__[:100],reason=reason,frames=frames))
+            current=current.__context__
+        return dict(actor=index,slot=slot,phase=phase,errors=chain,timings=timings)
     def device_facts(observer):
         observer._bound()
         assert all(os.fstat(fd).st_ino==identity[1]
@@ -197,6 +211,7 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
         return '\n'.join(rows)
     monkeypatch.setattr(Path,'read_text',kernel)
     def actor(index):
+        slot=None;phase='create';ready=None
         try:
             with setup(initiator=index==0,scopes=SCOPES+(SCOPE,),original=values) as r:
                 h=r.hardware;h._forward_radio=h._coordinator=h._radio_observer=None;h._initializing=False
@@ -208,6 +223,7 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
                 active.append(op);replies.put(('created',index))
                 while True:
                     command=commands[index].get(timeout=150)
+                    phase=command[0]
                     if command[0]=='packet':replies.put(('packet',index,op.packet()));continue
                     if command[0]=='close':
                         result=owner.close();assert op.session.state=='closed' and op.session._tx is op.session._rx is op.session._s is None
@@ -219,15 +235,29 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
                         after=[v for v in r.state.rows.values()if v['payload']['schema']==INBOX_SCHEMA]
                         assert len(after)==1 and after[0]['revision']==1 and json.dumps(after)==before
                         replies.put(('settled',index,result.status,again.status));continue
-                    _,slot,packet,pair=command
+                    _,slot,packet,pair,ready,stage_wait_end=command
+                    phase='prepare';timing=dict(slot=slot,prepare_enter=time.monotonic(),stage_wait_end=stage_wait_end)
+                    timings[index].append(timing)
                     profile=plan_stage(owner,plan(owner,slot,packet),hashlib.sha256(bytes([slot])+r.context.digest).digest(),slot=slot,kind=slot+1)
                     directory=tmp_path/f'{slot}-{index}';provision(directory,profile,owner,pair.transports[index])
                     observer=NativeRadioObserver(owner,profile,pair.transports[index]);factory=ForwardRadioFactory(owner,profile,directory,pair.transports[index],observer=observer)
-                    runner=factory.prepare(payload=packet if profile.child.sends else None);runner.start()
+                    runner=factory.prepare(payload=packet if profile.child.sends else None)
+                    timing['prepared_at']=time.monotonic();phase='ready'
+                    # Both finite children must be prepared before either peer
+                    # starts. ARM and application clocks continue while waiting.
+                    wait_end=min(stage_wait_end,profile.child.application_deadline_monotonic_us/1000000)
+                    remaining=wait_end-time.monotonic();assert remaining>0
+                    ready.wait(timeout=remaining)
+                    assert time.monotonic()<wait_end
+                    phase='start';timing['start_enter']=time.monotonic();runner.start()
+                    timing['started_at']=time.monotonic()
                     deadline=time.monotonic()+35
+                    phase='step';timing['first_step_at']=time.monotonic()
                     while not runner.step():
                         assert time.monotonic()<deadline;time.sleep(.002)
+                    phase='retire'
                     assert runner.wire_complete and owner.retire_stage(runner)
+                    timing['retired_at']=time.monotonic()
                     report=factory.report();reports[index].append(report)
                     assert report['retired'] and not report['uncertain'] and report['native_qualified'] is False
                     assert report['physical_disarmed'] is True and (directory/'active').read_bytes()==b'retired\n'
@@ -237,7 +267,12 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
                     row=r.state.rows[op.budget.record_id]['payload']['body']
                     assert len(row['allocations'])==slot+1 and row['allocations'][-1]==profile.child.to_dict()
                     replies.put(('stage',index,slot))
-        except BaseException as error:replies.put(('error',index,repr(error),traceback.format_exc()))
+        except BaseException as error:
+            if ready is not None:ready.abort()
+            metadata=error_metadata(error,index,slot,phase)
+            # Preserve the four-field error tuple used by the GFSK wrapper,
+            # without exception args, frame locals, payloads or key material.
+            replies.put(('error',index,type(error).__name__[:100],json.dumps(metadata)))
     threads=[threading.Thread(target=actor,args=(index,),daemon=True)for index in (0,1)]
     for thread in threads:thread.start()
     def receive(expected,count=1):
@@ -247,17 +282,22 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
         for slot in range(5):
             sender=slot%2;commands[sender].put(('packet',));packet=receive('packet')[0][2]
             pair=WirePair(tmp_path/f'wire-{slot}',fault=fault if slot==0 else 'none',counters=counters);pairs.append(pair)
-            for index in (0,1):commands[index].put(('stage',slot,packet,pair))
+            ready=threading.Barrier(2);ready_barriers.append(ready);stage_wait_end=time.monotonic()+45
+            for index in (0,1):commands[index].put(('stage',slot,packet,pair,ready,stage_wait_end))
             receive('stage',2);pair.close()
         commands[1].put(('settle',));assert receive('settled')[0][2]=='admitted'
         for index in (0,1):commands[index].put(('close',))
         assert all(v[2] is True for v in receive('closed',2))
     finally:
+        for ready in ready_barriers:ready.abort()
         for index in (0,1):commands[index].put(('close',))
         for thread in threads:thread.join(3)
         for pair in pairs:
             if not pair.stop.is_set():pair.close()
+        (tmp_path/'composition-timing.json').write_text(json.dumps(dict(fault=fault,timings=timings),indent=2)+'\n')
     assert all(not thread.is_alive()for thread in threads) and all(len(v)==5 for v in reports)
+    assert all(max(side[slot]['prepared_at']for side in timings)<=min(side[slot]['start_enter']for side in timings)
+               for slot in range(5))
     assert all(len(op.budget._permits)==5 and op.position==5 for op in active)
     assert all(sum(v['child']['cost']['radio_attempts']for v in side)==1280
                and sum(v['child']['cost']['estimated_airtime_us']for v in side)==300000000 for side in reports)
