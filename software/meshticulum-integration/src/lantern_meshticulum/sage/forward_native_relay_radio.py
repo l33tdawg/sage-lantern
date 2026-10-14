@@ -326,8 +326,9 @@ class RelayRadioObserver(NativeRadioObserver):
         self._refs = (owner,profile,transport); self.adoption = self.worker = self.identity = None
         self.last_status = self.physical_disarmed = None; self._used = False
         self._armed_record = self._armed_ref = None
+        self._factory = self._factory_ref = None
         self._methods = tuple((name,getattr(type(self),name)) for name in
-            ('device','discovered','armed','status','_status250','owned','current','disarmed','bind'))
+            ('device','_device_facts','_worker_current','discovered','armed','status','_status250','owned','current','disarmed','bind'))
 
     def bind(self, adoption):
         self._bound(); require(not self._used and type(adoption) is RelayRadioAdoption)
