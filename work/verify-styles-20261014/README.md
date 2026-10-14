@@ -276,3 +276,30 @@ listed in `git diff` (three tracked files) and in the two hunks added to the unt
 status` shows `??`), so its diff does not appear in `git diff`; the two hunks added to it are
 the `flex-wrap: wrap` inside its `@media (max-width: 520px)` block and the
 `.device-gallery-actions.device-gallery-primary` sticky rule.
+
+---
+
+## 14 October 2026 — Hardware and Heartbeat added to the screen list
+
+These two were listed under NOT COVERED above, and the gap was real: the
+integrated driver reaches both (its `settings-and-agent-reach-heartbeat-and-hardware`
+scenario asserts their behaviour), but no instrument had ever measured the SIZE of
+anything on them. They are now in `VISITS`, reached the way a user reaches them —
+`Menu → Settings → the row headed Heartbeat / Hardware` — which needed a new `row`
+step in the runner because the click target is an "Open" button inside a row with
+no unique class.
+
+Result at all four viewports, 18 screens now: `problems 0`, `console errors 0`.
+
+| screen | controls measured | under the 72px floor | heights seen |
+| --- | --- | --- | --- |
+| heartbeat | 13 per viewport | **0** | all 72 |
+| hardware | 14 per viewport | **0** | all 72 |
+
+Be precise about what this is worth: it is a **positive control, not a repair**.
+Nothing was changed for these screens — every control was already 72px tall, from
+`screen.css`'s `.device-screen button { min-height: 72px }` — so the finding is
+that the floor already held here and the earlier NOT COVERED note was about
+absence of measurement rather than a defect. Adding them is what turns "probably
+fine" into a number, at 8 screen-viewport combinations and ~108 control
+measurements.

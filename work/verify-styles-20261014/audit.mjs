@@ -56,6 +56,11 @@ const VISITS = [
   { name: 'messages', steps: [['tile', 'messages']], expect: '.device-subscreen[aria-label="Messages"]' },
   { name: 'nearby', steps: [['tile', 'nearby']], expect: '.device-subscreen[aria-label="Nearby"]' },
   { name: 'settings', steps: [['menu', 'Settings']], expect: '.device-subscreen[aria-label="Settings"]' },
+  // Reached from their Settings rows. They were absent from this list, so no
+  // control on either had a measured size - the integrated driver reaches them,
+  // but it asserts behaviour, not the 72px floor.
+  { name: 'heartbeat', steps: [['menu', 'Settings'], ['row', 'Heartbeat']], expect: '.device-subscreen[aria-label="Heartbeat"]' },
+  { name: 'hardware', steps: [['menu', 'Settings'], ['row', 'Hardware']], expect: '.device-subscreen[aria-label="Hardware"]' },
   { name: 'history', steps: [['menu', 'Past questions']], expect: '.device-subscreen[aria-label="Question history"]' },
   { name: 'status', steps: [['menu', 'Nearby']], expect: '.device-subscreen[aria-label="Nearby"]' },
   { name: 'sharing', steps: [['menu', 'Shared knowledge']], expect: '.device-subscreen[aria-label="Shared knowledge"]' },
@@ -289,6 +294,21 @@ try {
     await press('.device-menu button', index);
   }
 
+  /**
+   * Press the button in the settings row whose heading matches.
+   *
+   * The index is computed over the SAME element set `press` will use - the same
+   * selector with the same visibility filter - so a row without a button cannot
+   * shift it onto the wrong control.
+   */
+  async function pressRow(label) {
+    const index = await cdp.evaluate(`[...document.querySelectorAll('.device-history-setting button')]
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+      .findIndex((b) => ((b.closest('.device-history-setting')?.querySelector('h2')?.textContent) || '').trim() === ${JSON.stringify(label)})`);
+    if (index < 0) throw new Error(`no settings row headed ${label}`);
+    await press('.device-history-setting button', index);
+  }
+
   async function shot(name) {
     const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(join(shots, `${name}.png`), Buffer.from(data, 'base64'));
@@ -366,6 +386,7 @@ try {
           if (kind === 'tile') await press(`.device-home-tile[data-destination="${arg}"]`);
           else if (kind === 'click') await press(arg);
           else if (kind === 'menu') await pressMenu(arg);
+          else if (kind === 'row') await pressRow(arg);
           else if (kind === 'wait' && !(await waitFor(arg, 10000))) throw new Error(`wait timed out for ${arg}`);
         } catch (failure) {
           problems.push(`${vp.view}/${visit.name}: step ${kind} ${arg} failed: ${failure.message}`);
