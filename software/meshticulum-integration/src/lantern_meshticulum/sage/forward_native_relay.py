@@ -212,8 +212,8 @@ class ForwardNativeRelay:
                 and native_context.actor == resource.actor
                 and intention.authority_digest == self.context.binding_digest.hex()
                 and intention.application_expires_epoch_us == self.context.expires_epoch_us
-                and description.deadlines.application_deadline_monotonic * 1000000
-                    <= intention.application_deadline_monotonic_us)
+                and description.deadlines.application_deadline_monotonic
+                    <= intention.application_deadline_monotonic_us / 1000000)
             self.access_check()
             self._budget = ForwardBudget(self._store, context=self.context, intention=intention,
                 signing_key=self._native_refs[4], boot_id=intention.host_boot_id, limits=limits,
@@ -467,7 +467,7 @@ class ForwardNativeRelay:
                 and plan.host_boot_id == self.intention.host_boot_id
                 and plan.application_expires_epoch_us == self.context.expires_epoch_us
                 and plan.application_deadline_monotonic_us <= self.intention.application_deadline_monotonic_us
-                and plan.application_deadline_monotonic_us <= self.description.deadlines.application_deadline_monotonic * 1000000)
+                and plan.application_deadline_monotonic_us / 1000000 <= self.description.deadlines.application_deadline_monotonic)
 
     def prepare(self, stage, incoming_plan, outgoing_plan, *, incoming_factory, outgoing_factory):
         def prepare():

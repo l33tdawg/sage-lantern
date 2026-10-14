@@ -78,7 +78,7 @@ class Accounting(NativeAccountingSource):
 
 @contextmanager
 def relay_rig(path, *, scopes=RELAY_SCOPES, limit=LIMITS, approval_change=None, before_create=None,
-              accounting_factory=Accounting):
+              accounting_factory=Accounting, description_deadline=None):
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     clock = Clock(); inner = to_binary(sealed_message(1).wire)
     sessions, context, stores = session_pair(path, clock, inner)
@@ -89,8 +89,9 @@ def relay_rig(path, *, scopes=RELAY_SCOPES, limit=LIMITS, approval_change=None, 
     intention = ReceiveIntention(str(uuid.uuid4()), hashlib.sha256(inner).hexdigest(), len(inner),
         context.binding_digest.hex(), BOOT, context.expires_epoch_us,
         clock()[1] + context.expires_epoch_us - clock()[0])
-    description = RelayDescription(context, local, DeadlineSet(intention.application_deadline_monotonic_us / 1e6,
-        intention.application_deadline_monotonic_us / 1e6, context.expires_epoch_us / 1e6))
+    # A fresh alternate descriptor keeps the exact original intention deadline.
+    declared = intention.application_deadline_monotonic_us / 1e6 if description_deadline is None else description_deadline
+    description = RelayDescription(context, local, DeadlineSet(declared, declared, context.expires_epoch_us / 1e6))
     h = HardwareRuntime.__new__(HardwareRuntime)
     h.identity = client._identity; h.actor = RecipientID(local.chain_id, local.agent_id)
     h.probe = MessageStorageProbe(client, actor=h.actor, endpoint=endpoint)
