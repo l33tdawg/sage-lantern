@@ -298,9 +298,8 @@ class ForwardNativeOwner:
                 require(any(a.plan is child and not a.bound for a in self._budget._permits.values()))
             else:self._registry._paid_bound(tracked)
         def guard():
-            bindings();self._observe(keys=False);bindings()
+            bindings()
             require(callback(self,adoption,child,epoch) is True);bindings()
-            self._observe(keys=False);bindings()
             _ADOPTION_GUARD_TAIL(adoption);bindings()
             return True
         def full():

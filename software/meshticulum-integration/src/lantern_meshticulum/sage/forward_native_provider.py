@@ -298,7 +298,7 @@ class ForwardNativeProvider:
         else:
             require(self._checked(self._storage_pair_check, self.storage_epoch) == self.storage_epoch)
 
-    def _check_native(self):
+    def _check_accounting(self):
         before = self._time()
         observed = self._checked(self._source_observe, self.resource, self.intention)
         after = self._time()
@@ -318,6 +318,9 @@ class ForwardNativeProvider:
             self._accounting_binding, self._setup_approval = binding, approved
             self._retained_debt = observed.retained_debt
         require(self._retained_debt == observed.retained_debt)
+
+    def _check_native(self):
+        self._check_accounting()
         # The source is an independent callback. Fence callback-time storage
         # and approval drift before the combined purpose guard may return.
         self._check_storage()
@@ -357,9 +360,17 @@ class ForwardNativeProvider:
         return self._observe(all_predicates)
 
     def _radio_native_check(self,owner,adoption,child,epoch):
-        """Fresh held accounting and root/native permission for metadata only."""
+        """One fresh metadata fence, never crypto or physical dispatch authority.
+
+        Accounting is independent read-only evidence. Native storage observes
+        its pre-Vault epoch; the exact pair then observes the post-Vault epoch.
+        The surrounding read retains every SDK bracket and full key bookend.
+        A late callback change may be read and rejected, never published.
+        """
         run=owner._radio_read
         facts=owner._radio_facts
+        source=self.accounting;binding=self._accounting_binding
+        debt=self._retained_debt;approved=self._setup_approval
         def bound():
             require(type(owner) is ForwardNativeOwner and owner is self._owner
                 and owner.resource is self.resource and owner.authority is self.authority
@@ -370,7 +381,13 @@ class ForwardNativeProvider:
                 and adoption.store is owner._composition.store
                 and owner._radio_native_check.__self__ is self
                 and owner._radio_native_check.__func__ is _RADIO_NATIVE_CHECK
-                and owner._radio_facts is facts)
+                and owner._radio_facts is facts
+                and owner._boot is self._boot and owner._clock is self._clock
+                and owner.consent==self.consent and owner.config_revision==self.config_revision
+                and owner.consent.messaging_enabled is True and owner.consent.dispatch_enabled is True
+                and owner.broker_id==self.broker_id and self.accounting is source
+                and self._accounting_binding==binding and self._retained_debt is debt
+                and self._setup_approval==approved)
             if facts is not None:
                 from .forward_radio import ForwardRadioFactory, _RadioFactsMode
                 require(type(facts) is tuple and len(facts)==3
@@ -381,8 +398,14 @@ class ForwardNativeProvider:
                     and adoption._child.observe_thread==threading.get_ident())
             require(all(name not in self.__dict__ and getattr(type(self),name) is original
                         for name,original in _RADIO_PROVIDER_METHODS))
-            self._available()
-        bound();self._guard();bound();return True
+            owner._available();adoption._bound();self._available()
+        def metadata():
+            bound();self._check_accounting();bound()
+            self._check_access();bound()
+            self._check_storage();bound()
+            self._check_access();bound()
+            self._time();bound()
+        bound();self._observe(metadata);bound();return True
 
     @contextmanager
     def _lease(self):
@@ -647,4 +670,4 @@ class ForwardNativeProvider:
 _RADIO_NATIVE_CHECK=ForwardNativeProvider._radio_native_check
 _RADIO_PROVIDER_METHODS=tuple((name,getattr(ForwardNativeProvider,name)) for name in
     ('_available','_checked','_guard','_observe','_check_access','_check_storage',
-     '_check_native','_permissions','_time','_radio_native_check'))
+     '_check_accounting','_check_native','_permissions','_time','_radio_native_check'))
