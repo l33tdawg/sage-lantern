@@ -105,6 +105,7 @@ class ForwardBudget:
         self._budget_action=self._budget_action_ref=budget_action_check
         self._guarding=False
         self._workflow_epoch=self._workflow_run=None
+        self._bound_read=None
         actor=dict(chain_id=store.storage.actor.chain_id,agent_id=store.storage.actor.agent_id)
         # Never include mutable context, lifetime, boot or limits in identity.
         self.record_id=_id(SCHEMA,[actor,intention.operation_id])
@@ -294,4 +295,27 @@ class ForwardBudget:
             raise
         finally:
             if entered:self._busy=False
+    def check_bound_read(self,admission,token,clock):
+        """Exact committed read only; no signed-row mutation or spending."""
+        from .forward_operation import _StageRead
+        require(type(token) is _StageRead and token.budget is self
+            and token.runner.admission is admission and type(admission) is Admission
+            and admission.owner is self and self._permits.get(id(admission)) is admission
+            and admission.bound is True)
+        entered=False;binding=token._bindings
+        try:
+            self._available()
+            if self._busy or self._bound_read is not None:
+                self._uncertain=True;raise ForwardBudgetError()
+            self._busy=entered=True;self._bound_read=token
+            token.bound();token._clock_valid(clock);token.operation.check_bound_read(token,clock)
+            token.fence();require(self._epoch is not None and self._snapshot()==self._epoch)
+            require(token._bindings is binding);token.bound();clock('budget',self._live);token.bound()
+            require(self._snapshot()==self._epoch and token._bindings is binding);token.bound();token.fence()
+            return True
+        except BaseException:
+            if entered:self._uncertain=True
+            raise
+        finally:
+            if entered and self._bound_read is token:self._bound_read=None;self._busy=False
     def close(self):self._closed=True;return not self._busy and not self._uncertain

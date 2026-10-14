@@ -409,6 +409,32 @@ class ForwardNativeProvider:
             self._time();bound()
         bound();self._observe(metadata);bound();return True
 
+    def _stage_native_check(self,token):
+        """Fresh read-only accounting/Vault/root fences for one paid read."""
+        from .forward_operation import _StageRead
+        require(type(token) is _StageRead and token.provider is self)
+        owner=token.owner;source=self.accounting;binding=self._accounting_binding
+        debt=self._retained_debt;approved=self._setup_approval
+        def bound():
+            token.bound()
+            require(owner is self._owner and owner.resource is self.resource
+                and owner.authority is self.authority and owner.native_context is self._exchange
+                and owner.context is self._context and owner.intention is self.intention
+                and owner._stage_read is token and owner._busy and token._checking
+                and owner.storage_epoch==self.storage_epoch and owner._clock is self._clock
+                and owner._boot is self._boot and owner.consent==self.consent
+                and owner.consent.messaging_enabled is True and owner.consent.dispatch_enabled is True
+                and owner.config_revision==self.config_revision and owner.broker_id==self.broker_id
+                and self.accounting is source and self._accounting_binding==binding
+                and self._retained_debt is debt and self._setup_approval==approved)
+        def metadata():
+            bound();self._check_accounting();bound()
+            self._check_access();bound()
+            self._check_storage();bound()
+            self._check_access();bound()
+            self._time();bound()
+        bound();self._observe(metadata);bound();return True
+
     @contextmanager
     def _lease(self):
         from sage_lantern.storage_supervisor_socket import CaptureLease
@@ -462,7 +488,8 @@ class ForwardNativeProvider:
         return result
 
     def _run(self, action):
-        if self._busy or self._owner is not None and self._owner._radio_read is not None:
+        if self._busy or self._owner is not None and (
+                self._owner._radio_read is not None or self._owner._stage_read is not None):
             self._uncertain = True
             self.close()
             raise ForwardNativeProviderError()
@@ -673,3 +700,44 @@ _RADIO_NATIVE_CHECK=ForwardNativeProvider._radio_native_check
 _RADIO_PROVIDER_METHODS=tuple((name,getattr(ForwardNativeProvider,name)) for name in
     ('_available','_checked','_guard','_observe','_check_access','_check_storage',
      '_check_accounting','_check_native','_permissions','_time','_radio_native_check'))
+_STAGE_PROVIDER_METHODS=tuple((name,getattr(ForwardNativeProvider,name),getattr(ForwardNativeProvider,name).__code__)
+    for name in ('_available','_checked','_observe','_check_access','_check_storage',
+                 '_check_accounting','_permissions','_time','_stage_native_check'))
+# Import only after the owner/provider classes exist. Pin at module loading,
+# never first use of a possibly substituted factory callback.
+from .forward_radio import ForwardRadioFactory as _StageRadioFactory
+from .forward_tcp import ForwardTcpStage as _StageTcpFactory
+_STAGE_NATIVE_METHODS=tuple((kind,kind._native,kind._native.__code__,read,read.__code__) for kind,read in
+    ((_StageRadioFactory,_StageRadioFactory._observed),(_StageTcpFactory,_StageTcpFactory._observe_stage_read)))
+
+# The final native callback is the selected read's mandatory key boundary.
+# Seal its permission-bearing chain at module load, including mutable defaults.
+from . import forward_native_owner as _stage_owner_module
+from . import radio_native_adoption as _stage_adoption_module
+from .forward_radio import NativeRadioObserver as _StageRadioObserver
+
+def _stage_function_stamp(function):
+    wrapped=getattr(function,'__wrapped__',None)
+    def values(f):
+        if f is None:return None
+        return (f.__code__,f.__defaults__,None if f.__kwdefaults__ is None else
+                tuple((k,type(v),v) for k,v in sorted(f.__kwdefaults__.items())))
+    return function,values(function),wrapped,values(wrapped)
+
+_STAGE_PROOF_METHODS=tuple((kind,tuple((name,_stage_function_stamp(getattr(kind,name))) for name in names))
+    for kind,names in (
+    (_StageRadioFactory,('_native','_native_current','_facts','_bound','_observed')),
+    (_StageTcpFactory,('_native','_live','_owned','_bound','_child_time','_clock','_observe_stage_read')),
+    (_StageRadioObserver,('_bound','_worker_current')),
+    (_stage_adoption_module.NativeRadioAdoption,('_bound','_guard','_assets','_observe','current','_read_record','_guard_tail')),
+    (ForwardNativeOwner,('_run','_available','_checked','_observe','phase_check','access_check',
+                         'observe_radio_facts','_observe_radio','observe_stage_read','time')),
+    (ForwardNativeProvider,('_guard','_observe','_check_access','_check_storage','_check_native',
+                           '_check_accounting','_radio_native_check','_exchange_enrollment_check')),
+    (NoisePurpose,('exchange_check','_observer','_observe','_read','_validate','_enrolled')),
+    (NativeNoiseEnrollment,('exchange_check','_observe','_validate'))))
+_STAGE_PROOF_GLOBALS=tuple((module,name,getattr(module,name)) for module,names in (
+    (_stage_owner_module,('_RADIO_FACTS_OBSERVER','_RADIO_OBSERVER','_RADIO_OWNER_METHODS')),
+    (_stage_adoption_module,('_ADOPTION_READ_BODY','_ADOPTION_GUARD_TAIL')))
+    for name in names)
+_STAGE_STAMP_CODE=_stage_function_stamp.__code__

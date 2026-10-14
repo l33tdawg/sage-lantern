@@ -15,6 +15,7 @@ cleanup. Physical/native provisioning qualification remains external.
 """
 
 from dataclasses import dataclass, field, asdict
+from contextlib import contextmanager
 import errno
 import fcntl
 import hashlib
@@ -169,6 +170,7 @@ class ForwardTcpStage:
         self._wire_retired = self._store_closed = False
         self._last_child_clock = None
         self._authority_fd_refs = None
+        self._stage_observation = None
 
     def __repr__(self):
         return '<ForwardTcpStage>'
@@ -201,6 +203,9 @@ class ForwardTcpStage:
                 and self.transfer.flow is self.flow and self.transfer.authority is self.authority)
 
     def _live(self):
+        if self._stage_observation is not None:
+            self._unknown = True
+            raise ForwardTcpError()
         self._bound()
         require(not self._unknown and not self._retired
                 and self._owner == (os.getpid(), threading.get_ident()))
@@ -371,6 +376,9 @@ class ForwardTcpStage:
             self._busy = False
 
     def _native(self, context, child, transfer):
+        if self._stage_observation is not None:
+            self._unknown = True
+            raise ForwardTcpError()
         self._bound()
         require(context == self.owner.context and child is self.profile.child and transfer is self.transfer)
         if self._retired:
@@ -382,7 +390,52 @@ class ForwardTcpStage:
             self._live(); require(self._owned())
         return True
 
+    @contextmanager
+    def _observe_stage_read(self, token):
+        """Contain cleanup during one pinned provider metadata interval."""
+        from .forward_operation import _StageRead
+        from .forward_native_provider import _STAGE_NATIVE_METHODS
+        if self._stage_observation is not None:
+            self._unknown=True;raise ForwardTcpError()
+        require(type(token) is _StageRead and token.owner is self.owner
+            and token.runner is self.runner and token.plan is self.profile.child
+            and not token._active and not token._finished and not token._failed
+            and self.runner._executing and self.owner._operation.active is self.runner)
+        entry=next(e for e in _STAGE_NATIVE_METHODS if e[0] is type(self))
+        require(type(self)._observe_stage_read is entry[3] and entry[3].__code__ is entry[4]
+            and '_observe_stage_read' not in self.__dict__)
+        registry=self.owner._registry;condition=registry._condition
+        children=[c for c in registry._children if c.owner is self.owner and c.runner is self.runner]
+        require(len(children)==1);child=children[0];acquired=False
+        try:
+            self._bound();registry._paid_bound(child)
+            with condition:
+                require(self._stage_observation is None and not child.observing
+                    and not registry._closing and not registry._uncertain and not self._unknown)
+                self._stage_observation=token;child.observing=True
+                child.observe_thread=threading.get_ident();acquired=True
+            yield
+            require(self._stage_observation is token and self.owner._registry is registry
+                and registry._condition is condition and child.observing
+                and child.observe_thread==threading.get_ident() and not self._unknown
+                and not registry._closing and not registry._uncertain)
+            self._bound();registry._paid_bound(child)
+        except BaseException:
+            self._unknown=True
+            if acquired:child.unknown=True
+            raise
+        finally:
+            if acquired:
+                with condition:
+                    if self._stage_observation is token:self._stage_observation=None
+                    if child.observing and child.observe_thread==threading.get_ident():
+                        child.observing=False;child.observe_thread=None
+                    condition.notify_all()
+
     def _cleanup(self, deadline):
+        if self._stage_observation is not None:
+            self._unknown = True
+            return False
         errors = []
         # Dispose the actual retained handles even if a callback replaced a
         # public field. Never close the replacement or silently restore binding.

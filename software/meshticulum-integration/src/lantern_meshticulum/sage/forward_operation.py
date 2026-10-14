@@ -10,6 +10,7 @@ from dataclasses import asdict
 import hashlib
 import os
 import threading
+from types import MethodType
 from meshticulum.privacy.forward_session import (ForwardSession,inspect_record,H1,H2,CONFIRM_I,CONFIRM_R,DATA)
 from meshticulum.bench.services import ServiceTransfer
 from meshticulum.bench.service_runner import _ServiceLoop
@@ -20,6 +21,7 @@ from lantern_meshticulum.sage.service_runner import _Held
 from lantern_meshticulum.sage.forward_budget import ForwardBudget,ChildPlan,Cost,Admission
 from lantern_meshticulum.sage.forward_receiver import ForwardReceiver
 from lantern_meshticulum.sage.mesh_inbox import _canonical
+from lantern_meshticulum.sage.message_storage import MessageStorageProbe
 
 class ForwardOperationError(RuntimeError):
     def __init__(self):super().__init__('forward_operation_unavailable')
@@ -57,10 +59,12 @@ def describe_child(transfer,*,slot,kind,live=True):
 
 class ForwardOperation:
     """One non-resumable crypto exchange; carrier retry reuses cached records."""
-    def __init__(self,session,budget,*,sealed_record=None,receiver=None,native_check,operation_action_check=None):
+    def __init__(self,session,budget,*,sealed_record=None,receiver=None,native_check,operation_action_check=None,
+                 stage_read_check=None):
         require(type(session) is ForwardSession and type(budget) is ForwardBudget
             and session.context==budget.context and session.deadline==budget.intention.application_deadline_monotonic_us
-            and callable(native_check) and (operation_action_check is None or callable(operation_action_check)))
+            and callable(native_check) and (operation_action_check is None or callable(operation_action_check))
+            and (stage_read_check is None or callable(stage_read_check)))
         local=session.context.initiator if session.initiator else session.context.responder
         require(budget.store.storage.actor.agent_id==local.public_key.hex()
             and budget.store.storage.actor.chain_id==local.chain_id)
@@ -75,6 +79,7 @@ class ForwardOperation:
         self.session,self.budget,self.receiver=session,budget,receiver
         self._sealed,self._native=sealed_record,native_check
         self._operation_action=self._operation_action_ref=operation_action_check
+        self._stage_read_action=self._stage_read_action_ref=stage_read_check
         self._action_refs=(session,budget,receiver,session.context,budget.intention,native_check,
                            session.authorize,session.clock,session.counters,budget.context)
         self._action_value=(session.context.digest,budget.context.digest,_canonical(budget.intention.to_dict()),
@@ -91,7 +96,8 @@ class ForwardOperation:
         return kind,sends
     def _available(self):require(not self._closed and not self._uncertain and not self.session._closed
         and self._owner==(os.getpid(),threading.get_ident())
-        and self._operation_action is self._operation_action_ref)
+        and self._operation_action is self._operation_action_ref
+        and self._stage_read_action is self._stage_read_action_ref)
     def _action_bound(self):
         self._available()
         require(all(a is b for a,b in zip(self._action_refs,
@@ -142,6 +148,21 @@ class ForwardOperation:
             and 0<=now[1]<self.session.deadline
             and (self._last_clock is None or all(a>=b for a,b in zip(now,self._last_clock))))
         self._last_clock=now
+    def check_bound_read(self,token,clock):
+        """Only retained operation metadata; no crypto/phase authorization."""
+        require(type(token) is _StageRead and token.operation is self)
+        token.bound();token._clock_valid(clock);require(token.phase=='operation')
+        self._action_bound();kind,sends=self.expected()
+        require(type(kind) is int and type(sends) is bool
+            and (kind,sends)==(token.plan.kind,token.plan.sends))
+        token.fence()
+        now=clock('operation',self.session.clock)
+        token.bound()
+        require(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
+            and self.session.context.issued_epoch_us<=now[0]<self.session.context.expires_epoch_us
+            and 0<=now[1]<self.session.deadline
+            and (self._last_clock is None or all(a>=b for a,b in zip(now,self._last_clock))))
+        self._last_clock=now;token.phase='budget'
     def _run(self,callback):
         entered=False
         try:
@@ -259,11 +280,14 @@ class ForwardStageRunner(_ServiceLoop):
         self._refs=(transfer.flow,transfer.authority,transfer.flow.worker,transfer.flow.cipher,
             transfer.authority.grant,transfer.flow.journal if type(transfer.flow) is BenchFlow else transfer.flow.worker.journal,
             getattr(transfer.authority,'profile',None),getattr(transfer.authority,'contract',None),transfer.authority.local_peer)
+        self._stage_read_refs=_select_stage_read(self)
+        self._stage_read_refs_ref=self._stage_read_refs
         operation.budget.consume(admission)
         operation._available();operation.budget._available()
         super().__init__(transfer,payload=payload)
         operation.active=self
     def _bound(self,*,live=True):
+        require(self._stage_read_refs is self._stage_read_refs_ref)
         f,a=self.transfer.flow,self.transfer.authority
         current=(f,a,f.worker,f.cipher,a.grant,f.journal if type(f) is BenchFlow else f.worker.journal,
                  getattr(a,'profile',None),getattr(a,'contract',None),a.local_peer)
@@ -271,9 +295,38 @@ class ForwardStageRunner(_ServiceLoop):
             and f.cipher.grant is a.grant
             and _canonical(a.plan)==self._plan_value and f._service_adapter is self.transfer
             and describe_child(self.transfer,slot=self.plan.slot,kind=self.plan.kind,live=live)==self.plan)
-        self.operation._check(self.plan.kind,self.plan.sends)
-        self.operation.budget.check(self.admission)
-        v=self._native(self.operation.session.context,self.plan,self.transfer);require(v is True)
+        token=None
+        selected=self._stage_read_refs
+        if selected is not None:
+            # A terminal factory keeps the original full checks, but never
+            # silently replaces the selected native callback.
+            action,native,kind,method,code,*_=selected
+            def native_bound():
+                require(self._stage_read_refs is self._stage_read_refs_ref is selected
+                    and self._native is native and native.__func__ is method and method.__code__ is code
+                    and type(native.__self__) is kind and kind._native is method
+                    and '_native' not in native.__self__.__dict__)
+            native_bound()
+        current=(selected is not None and not selected[1].__self__._retired
+            and (self.plan.carrier!='lora' or not selected[1].__self__.adoption._closed))
+        if current and self._executing and self.operation.active is self:
+            action,native,*_=self._stage_read_refs
+            token=action(self)
+            require(type(token) is _StageRead and token.runner is self)
+            binding=token._bindings;delegates=token._delegate_pins;token.bound(active=False)
+        else:
+            self.operation._check(self.plan.kind,self.plan.sends)
+            self.operation.budget.check(self.admission)
+            native=selected[1] if selected is not None else self._native
+        if selected is not None:native_bound()
+        v=native(self.operation.session.context,self.plan,self.transfer);require(v is True)
+        if selected is not None:native_bound()
+        if token is not None:
+            require(token._bindings is binding and token._delegate_pins is delegates)
+            for name,function,code,defaults,kwdefaults in delegates:
+                require(getattr(token,name) is function and function.__code__ is code
+                    and function.__defaults__ is defaults and function.__kwdefaults__ is kwdefaults)
+            binding(False)
         self.operation._available();self.operation.budget._available()
         require(not live or (not self.transfer.cancelled and not self.transfer.flow.closed))
         # Native callbacks may have replaced a previously checked object.
@@ -336,3 +389,245 @@ class ForwardStageRunner(_ServiceLoop):
         if not self.retired:self.operation.close()
         self.payload=None
         return self.retired
+
+
+def _select_stage_read(runner):
+    """Pin the closed native set; arbitrary/model callbacks stay legacy."""
+    action=runner.operation._stage_read_action
+    if action is None:return None
+    from .forward_native_owner import ForwardNativeOwner, _STAGE_READ_OBSERVER
+    from .forward_native_provider import _STAGE_NATIVE_METHODS, _stage_function_stamp
+    require(type(action) is MethodType and type(action.__self__) is ForwardNativeOwner
+        and action.__func__ is _STAGE_READ_OBSERVER)
+    native=runner._native
+    if type(native) is not MethodType:return None
+    match=next((entry for entry in _STAGE_NATIVE_METHODS if type(native.__self__) is entry[0]),None)
+    if match is None:return None
+    kind,method,code,read,read_code=match
+    require(native.__func__ is method and method.__code__ is code
+        and kind._native is method and '_native' not in native.__self__.__dict__
+        and native.__self__.owner is action.__self__)
+    facts=None
+    if runner.plan.carrier=='lora':
+        factory=native.__self__;callback=factory.observer._device_facts
+        require(type(callback) is MethodType and callback.__self__ is factory.observer
+            and any(obj is factory.observer and name=='_device_facts' and original is callback.__func__
+                    for obj,name,original in factory._native_method_refs))
+        facts=(factory.observer,callback.__func__,_stage_function_stamp(callback.__func__))
+    return action,native,kind,method,code,read,read_code,facts
+
+
+class _StageRead:
+    """One metadata interval, ending before the required native callback.
+
+    This token is not permission. Only two original clock call sites can borrow
+    Owner.time, once each; their permit is spent before external callbacks.
+    """
+    def __init__(self,owner,runner):
+        from .forward_native_provider import (ForwardNativeProvider, _RADIO_NATIVE_CHECK, _STAGE_PROVIDER_METHODS,
+            _STAGE_PROOF_METHODS, _STAGE_PROOF_GLOBALS, _stage_function_stamp, _STAGE_STAMP_CODE)
+        from .forward_native_owner import _STAGE_OWNER_METHODS
+        require(type(runner) is ForwardStageRunner and runner._executing and not runner.retired)
+        op=runner.operation;b=op.budget;receiver=owner._composition
+        provider_callback=owner._radio_native_check
+        require(type(provider_callback) is MethodType and type(provider_callback.__self__) is ForwardNativeProvider
+            and provider_callback.__func__ is _RADIO_NATIVE_CHECK)
+        p=provider_callback.__self__;registry=owner._registry
+        children=[c for c in registry._children if c.owner is owner and c.runner is runner]
+        require(len(children)==1);child=children[0]
+        registry._paid_bound(child)
+        self.owner,self.runner,self.operation,self.budget,self.provider,self.plan=owner,runner,op,b,p,runner.plan
+        self.phase='operation';self._active=False;self._finished=False;self._failed=False
+        self._checking=False;self._clock_busy=False
+        selected=runner._stage_read_refs
+        require(selected is not None and selected==_select_stage_read(runner))
+        action,native,kind,method,code,read,read_code,facts=selected;factory=native.__self__
+        refs=(op,b,receiver,p,registry,child,runner.admission,runner.plan,runner.transfer,
+              op.session,b.store,b._permits,b.limits,b.prior,b.key,b._lease,b._clock,op.session.clock,
+              b._epoch,b._body,child.paid_refs,child.paid_value,owner._observer_refs,op.cached)
+        value=(_canonical(runner.plan.to_dict()),_canonical(b.binding),b._revision,runner.admission.revision,
+               op.position,op.cached,op.session.context.digest,_canonical(owner.intention.to_dict()),
+               _canonical(asdict(b.limits)),_canonical(asdict(b.prior)))
+        proof_objects=(factory,owner,p,p._purpose,p._enrollment)
+        if self.plan.carrier=='lora':proof_objects+=(factory.observer,factory.adoption)
+        proof_methods=tuple((obj,name,stamp) for obj in proof_objects for cls,entries in _STAGE_PROOF_METHODS
+            if type(obj) is cls for name,stamp in entries)
+        require(type(owner._exchange_key_check) is MethodType
+            and owner._exchange_key_check.__self__ is p._purpose
+            and owner._exchange_key_check.__func__ is type(p._purpose).exchange_check)
+        key_refs=(p._purpose,p._enrollment,owner._exchange_key_check,p._purpose._exchange_enrollment)
+        methods=tuple((obj,name,original,original_code) for obj,entries in (
+            (owner,_STAGE_OWNER_METHODS),(p,_STAGE_PROVIDER_METHODS),
+            (op,_STAGE_OPERATION_METHODS),(b,_STAGE_BUDGET_METHODS),
+            (receiver,_STAGE_RECEIVER_METHODS),(b.store.storage,_STAGE_STORAGE_METHODS),
+            (self,_STAGE_TOKEN_METHODS)) for name,original,original_code in entries)
+        pending=None;spent=set();clock_running=False
+        def clock(site,callback):
+            nonlocal pending,clock_running
+            bindings(True)
+            expected=op.session.clock if site=='operation' else b._live
+            require(site in ('operation','budget') and site==self.phase
+                and type(callback) is MethodType and type(expected) is MethodType
+                and callback.__self__ is expected.__self__ and callback.__func__ is expected.__func__
+                and site not in spent and pending is None and not clock_running and not self._checking)
+            spent.add(site);permit=object();pending=permit
+            try:
+                result=callback();bindings(True);require(pending is None)
+                return result
+            except BaseException:
+                self._failed=owner._uncertain=True;raise
+            finally:
+                if pending is permit:pending=None
+        def observe_time():
+            nonlocal pending,clock_running
+            bindings(True)
+            if pending is None or clock_running or self._checking:
+                self._failed=owner._uncertain=True;raise ForwardOperationError()
+            pending=None;clock_running=self._clock_busy=True
+            try:
+                now=owner._observe(keys=False);bindings(True);return now
+            except BaseException:
+                self._failed=owner._uncertain=True;raise
+            finally:clock_running=self._clock_busy=False
+        def clock_valid(callback):
+            if callback is not clock:
+                self._failed=owner._uncertain=True;raise ForwardOperationError()
+        def read_action():
+            if owner._busy or op._busy or b._busy or owner._stage_read is not None or b._bound_read is not None:
+                self._failed=owner._uncertain=True;raise ForwardOperationError()
+            bindings(None)
+            context=(read(factory,owner.context,self.plan,runner.transfer) if self.plan.carrier=='lora'
+                     else read(factory,self))
+            with context:
+                self._active=True;owner._stage_read=self;owner._busy=op._busy=True
+                try:
+                    require(b.check_bound_read(runner.admission,self,clock) is True)
+                    bindings('return');require(spent=={'operation','budget'} and pending is None)
+                    self._finished=True;return self
+                except BaseException:
+                    self._failed=owner._uncertain=op._uncertain=b._uncertain=True;raise
+                finally:
+                    self._active=False
+                    if owner._stage_read is self:owner._stage_read=None;owner._busy=False
+                    op._busy=False
+        def bindings(active):
+            self._delegates()
+            require(self._delegate_pins is delegates and self._clock_observer is observe_time and self._clock_valid is clock_valid
+                and self._read_action is read_action and self._bindings is bindings
+                and self._clock_busy is clock_running and not self._failed and self.owner is owner and self.runner is runner
+                and self.operation is op and self.budget is b and self.provider is p and self.plan is runner.plan
+                and runner._stage_read_refs is runner._stage_read_refs_ref is selected and runner._native is native
+                and op._stage_read_action is op._stage_read_action_ref is action
+                and action.__self__ is owner and type(owner).observe_stage_read is action.__func__
+                and type(factory) is kind and type(factory)._native is method
+                and native.__func__ is method and method.__code__ is code and '_native' not in factory.__dict__
+                and getattr(type(factory),read.__name__) is read and read.__code__ is read_code
+                and read.__name__ not in factory.__dict__
+                and factory.owner is owner and factory.runner is runner and factory.transfer is runner.transfer
+                and factory.profile.child is runner.plan and runner._executing and op.active is runner
+                and not child.opening and not child.unknown and not child.retired
+                and type(runner.plan.kind) is int and type(runner.plan.slot) is int
+                and type(runner.plan.sends) is bool and type(runner.plan.cost) is Cost)
+            require(all(a is c for a,c in zip(refs,(runner.operation,op.budget,owner._composition,
+                provider_callback.__self__,owner._registry,child,runner.admission,runner.plan,runner.transfer,
+                op.session,b.store,b._permits,b.limits,b.prior,b.key,b._lease,b._clock,op.session.clock,
+                b._epoch,b._body,child.paid_refs,child.paid_value,owner._observer_refs,op.cached))))
+            require(value==(_canonical(runner.plan.to_dict()),_canonical(b.binding),b._revision,runner.admission.revision,
+                op.position,op.cached,op.session.context.digest,_canonical(owner.intention.to_dict()),
+                _canonical(asdict(b.limits)),_canonical(asdict(b.prior))))
+            require(all(a is c for a,c in zip(b._action_refs,
+                (b.store,b.context,b.intention,b.key,b.limits,b.prior,b.slots)))
+                and b._action_value==(b.context.digest,b.intention.to_dict(),b.boot_id,
+                    asdict(b.limits),asdict(b.prior),_canonical(b.binding),b.record_id)
+                and _canonical(b._action_value[3])==_canonical(asdict(b.limits))
+                and _canonical(b._action_value[4])==_canonical(asdict(b.prior))
+                and b.context is owner.context and b.intention is owner.intention
+                and type(b.store.storage) is MessageStorageProbe and b.store.storage is receiver.probe
+                and b.store.storage.client is receiver.client and receiver.client is owner._refs[2]
+                and receiver._closed is False and receiver._uncertain is False
+                and receiver.client._client.is_closed is False)
+            require(_stage_function_stamp.__code__ is _STAGE_STAMP_CODE)
+            for module,name,original in _STAGE_PROOF_GLOBALS:require(getattr(module,name) is original)
+            if facts is not None:
+                obj,original,stamp=facts
+                require(factory.observer is obj and '_device_facts' not in obj.__dict__
+                    and type(obj)._device_facts is original and original.__code__ is stamp[1][0]
+                    and _stage_function_stamp(original)==stamp)
+            for obj,name,stamp in proof_methods:
+                require(name not in obj.__dict__ and getattr(type(obj),name) is stamp[0]
+                    and stamp[0].__code__ is stamp[1][0] and _stage_function_stamp(stamp[0])==stamp
+                    and (stamp[2] is None or stamp[2].__code__ is stamp[3][0]))
+            require(p._purpose is key_refs[0] and p._enrollment is key_refs[1]
+                and owner._exchange_key_check is key_refs[2] and p._purpose._exchange_enrollment is key_refs[3]
+                and type(key_refs[3]) is MethodType and key_refs[3].__self__ is p
+                and key_refs[3].__func__ is type(p)._exchange_enrollment_check)
+            for obj,name,original,original_code in methods:
+                require(name not in obj.__dict__ and getattr(type(obj),name) is original
+                    and original.__code__ is original_code)
+            require(type(b._clock) is MethodType and b._clock.__self__ is owner
+                and b._clock.__func__ is type(owner).time
+                and type(op.session.clock) is MethodType and op.session.clock.__self__ is receiver
+                and op.session.clock.__func__ is type(receiver)._time
+                and receiver._clock.__self__ is owner and receiver._clock.__func__ is type(owner).time)
+            if active is True or active=='return':
+                require(self._active and owner._stage_read is self and owner._busy
+                    and op._busy and not op._action_observing
+                    and (b._bound_read is self and b._busy if active is True else b._bound_read is None and not b._busy)
+                    and child.observing and child.observe_thread==threading.get_ident()
+                    and (factory._native_observing if self.plan.carrier=='lora'
+                         else factory._stage_observation is self))
+            elif active is None:
+                require(not self._active and not self._finished and owner._stage_read is None
+                    and b._bound_read is None and not owner._busy and not b._busy and not op._busy)
+            else:
+                require(self._finished and not self._active and owner._stage_read is None
+                    and b._bound_read is None and not owner._busy and not b._busy and not op._busy)
+            owner._available();op._action_bound();b._available();p._available()
+            registry._paid_bound(child)
+            require(owner._operation is p._operation is op and owner is p._owner
+                and owner.consent.messaging_enabled is True and owner.consent.dispatch_enabled is True)
+        self._bindings=bindings;self._clock_observer=observe_time
+        self._clock_valid=clock_valid;self._read_action=read_action
+        delegates=tuple((name,function,function.__code__,function.__defaults__,function.__kwdefaults__)
+            for name,function in (('_bindings',bindings),('_clock_observer',observe_time),
+                                  ('_clock_valid',clock_valid),('_read_action',read_action)))
+        self._delegate_pins=delegates
+
+    def _delegates(self):
+        for name,function,code,defaults,kwdefaults in self._delegate_pins:
+            require(getattr(self,name) is function and function.__code__ is code
+                and function.__defaults__ is defaults and function.__kwdefaults__ is kwdefaults)
+
+    def bound(self,*,active=True):
+        try:self._delegates();self._bindings(active)
+        except BaseException:
+            self._failed=self.owner._uncertain=self.operation._uncertain=self.budget._uncertain=True
+            raise
+
+    def fence(self):
+        binding=self._bindings;self.bound()
+        if self._checking or self._clock_busy:
+            self._failed=self.owner._uncertain=True;raise ForwardOperationError()
+        self._checking=True
+        try:
+            require(self.provider._stage_native_check(self) is True)
+            require(self._bindings is binding);self.bound()
+        finally:self._checking=False
+
+    def observe_time(self):
+        self.bound()
+        return self._clock_observer()
+
+    def read(self):
+        self._delegates()
+        return self._read_action()
+
+
+_STAGE_OPERATION_METHODS=tuple((n,getattr(ForwardOperation,n),getattr(ForwardOperation,n).__code__) for n in
+    ('_available','_action_bound','check_bound_read'))
+_STAGE_BUDGET_METHODS=tuple((n,getattr(ForwardBudget,n),getattr(ForwardBudget,n).__code__) for n in
+    ('_available','_time','_live','_snapshot','check_bound_read'))
+_STAGE_RECEIVER_METHODS=tuple((n,getattr(ForwardReceiver,n),getattr(ForwardReceiver,n).__code__) for n in ('_available','_time'))
+_STAGE_STORAGE_METHODS=tuple((n,getattr(MessageStorageProbe,n),getattr(MessageStorageProbe,n).__code__)
+    for n in ('_binding','snapshot'))
+_STAGE_TOKEN_METHODS=tuple((n,getattr(_StageRead,n),getattr(_StageRead,n).__code__) for n in ('_delegates','bound','fence','observe_time','read'))

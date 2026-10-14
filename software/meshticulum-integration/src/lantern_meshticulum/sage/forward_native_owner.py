@@ -75,6 +75,7 @@ class ForwardNativeOwner:
         self._key_check,self._peer_key_check,self._boot,self._clock=key_check,peer_key_check,boot_reader,clock_reader
         self._exchange_key_check=exchange_key_check
         self._radio_native_check=radio_native_check;self._radio_read=None;self._radio_facts=None
+        self._stage_read=None
         if radio_native_check is not None:
             from .forward_native_provider import ForwardNativeProvider, _RADIO_NATIVE_CHECK
             require(type(radio_native_check) is MethodType
@@ -484,7 +485,29 @@ class ForwardNativeOwner:
             raise ForwardNativeOwnerError() from None
         finally:
             if entered:self._operation_observing=False
-    def time(self):return self._run(lambda:self._observe(keys=False))
+    def observe_stage_read(self,runner):
+        """Finite paid metadata read; the factory must authorize afterward."""
+        from .forward_operation import _StageRead
+        if self._busy or self._stage_read is not None:
+            self._uncertain=True;raise ForwardNativeOwnerError()
+        token=_StageRead(self,runner);delegates=token._delegate_pins
+        def bound():
+            require(token._delegate_pins is delegates)
+            for name,function,code,defaults,kwdefaults in delegates:
+                require(getattr(token,name) is function and function.__code__ is code
+                    and function.__defaults__ is defaults and function.__kwdefaults__ is kwdefaults)
+        try:
+            bound();result=token.read();bound();require(result is token)
+            return token
+        except BaseException:
+            token._failed=self._uncertain=True;raise
+
+    def time(self):
+        if self._stage_read is not None:
+            from .forward_operation import _StageRead
+            require(type(self._stage_read) is _StageRead and self._stage_read.owner is self)
+            return self._stage_read.observe_time()
+        return self._run(lambda:self._observe(keys=False))
     def journal_action_check(self,journal,context,intention,remote,local_initiator):
         """Full fresh purpose/enrollment authorization for one journal guard.
 
@@ -631,7 +654,8 @@ class ForwardNativeOwner:
                 and receiver.journal._lease is budget._lease and receiver.journal.intention==budget.intention)
             native=self.phase_check;action=self.operation_action_check
             operation=ForwardOperation(session,budget,sealed_record=sealed_record,
-                receiver=None if self.local_initiator else receiver,native_check=native,operation_action_check=action)
+                receiver=None if self.local_initiator else receiver,native_check=native,operation_action_check=action,
+                stage_read_check=self.observe_stage_read if self._radio_native_check is not None else None)
             self._operation_refs=(operation,session,receiver,budget,session.authorize,session.clock,native,action)
             self._operation_methods=(type(receiver)._authorize_crypto,type(self).operation_action_check)
             self._operation=operation
@@ -735,3 +759,6 @@ _RADIO_AUTHORIZATION_CODE=_RADIO_AUTHORIZATION_OBSERVER.__code__
 _RADIO_OBSERVER=ForwardNativeOwner._observe_radio
 _RADIO_OWNER_METHODS=tuple((name,getattr(ForwardNativeOwner,name))
     for name in ('_run','_available','_observe','_checked'))
+_STAGE_READ_OBSERVER=ForwardNativeOwner.observe_stage_read
+_STAGE_OWNER_METHODS=tuple((name,getattr(ForwardNativeOwner,name),getattr(ForwardNativeOwner,name).__code__)
+    for name in ('_run','_available','_observe','_checked','time','observe_stage_read'))
