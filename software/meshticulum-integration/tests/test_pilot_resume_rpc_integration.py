@@ -31,7 +31,17 @@ class LocalRuntimeModel:
     def __init__(self,root):
         self.root = root/('runtime-'+('a'*16)); self.root.mkdir(mode=0o700)
         self.reader = rpc.Reader(); self.checks = 0
-        rpc.write_new(self.root,'manifest.json',b'{"local_control_only":true}')
+        # Real held model bytes supply the current manifest interface. This is
+        # deliberately not an installed-runtime schema or source attestation.
+        source = Path(rpc.__file__).read_bytes(); source_pin = rpc.sha(source)
+        rpc.write_new(self.root,'pilot_resume_rpc.py',source)
+        manifest = dict(schema='meshticulum.local-runtime-model.v1',local_control_only=True,
+            private_services_enabled=False,public_parent_claims_required=True,
+            files={'pilot_resume_rpc.py':source_pin},
+            source_files={'lantern_meshticulum/bench/pilot_resume_rpc.py':source_pin})
+        rpc.write_new(self.root,'manifest.json',canonical(manifest))
+        self.manifest = rpc.parse(self.reader.read(self.root/'manifest.json',65536))
+        assert rpc.sha(self.reader.read(self.root/'pilot_resume_rpc.py',500000)) == source_pin
     def check(self): self.checks += 1; return self.reader.check()
 
 
@@ -81,7 +91,8 @@ def local_scope(monkeypatch,request,synthetic_8120_capture):
         authorization=dict(human_statement='run it bro',count_authorized=1,public_only=True,private_production=False),
         review_sha256='d'*64,history_binding_sha256=binding,capture_record_sha256=rpc.sha(canonical(saved)),
         prior_registry=registry,facts={'unit-a':facts},native_phase={'unit-a':phase},phase_start_epoch_us=now,
-        phase_end_epoch_us=end,runtime_sha256='a'*64,manifest_sha256=rpc.sha(b'{"local_control_only":true}'),
+        phase_end_epoch_us=end,runtime_sha256='a'*64,
+        manifest_sha256=rpc.sha(runtime.reader.read(runtime.root/'manifest.json',65536)),
         rf_record_sha256='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9',
         rf_record=dict(country='MY',C_transmission_allowed=True,A_B_transmission_allowed=True,
             units={u:dict(antenna_connected=True) for u in ('unit-a','unit-b','unit-c')}),rf_profile=asdict(rpc.profile_for('sf7-500')))
