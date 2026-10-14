@@ -11,7 +11,7 @@
 .device-chat-list { display: flex; flex-direction: column; min-height: 0; gap: 12px; padding: 14px 12px; border-right: 1px solid #34505e; background: #10212b; }
 .device-chat-list h2 { margin: 0; font-size: 16px; color: var(--device-muted); }
 .device-chat-list nav { min-height: 0; overflow-y: auto; flex: 1; }
-.device-chat-list button { width: 100%; min-height: 52px; padding: 10px 12px; font-size: 16px; text-align: left; }
+.device-chat-list button { width: 100%; min-height: 72px; padding: 10px 12px; font-size: 16px; text-align: left; }
 .device-chat-list nav button { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; background: transparent; border-color: transparent; }
 .device-chat-list nav button[aria-current] { background: #243a45; border-color: #65828f; }
 .device-chat-list strong { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: 500; line-height: 1.35; }
@@ -26,38 +26,38 @@
 .device-chat-user { align-self: flex-end; max-width: 92%; border-radius: 18px 18px 4px 18px; background: #243b46; padding: 14px 18px; }
 .device-chat-assistant { padding: 0 6px; }
 .device-thread-layout .device-footer { flex-wrap: wrap; gap: 8px; }
-.device-thread-layout .device-footer > button { min-height: 48px; font-size: 16px; padding: 8px; }
+.device-thread-layout .device-footer > button { min-height: 72px; font-size: 16px; padding: 8px; }
 .device-thread-layout .device-navigation-footer > button,
 .device-thread-layout .device-navigation-footer .device-talk-primary {
-  min-height: 56px; height: 56px; padding: 10px 14px; font-size: 18px; gap: 8px;
+  min-height: 72px; height: 72px; padding: 10px 14px; font-size: 18px; gap: 8px;
 }
 .device-thread-layout .device-navigation-footer .device-talk-primary { min-width: 148px; width: 100%; white-space: nowrap; }
 .device-thread-layout .device-navigation-footer.device-has-suggestions .device-talk-primary { width: 190px; white-space: normal; font-size: 16px; line-height: 1.1; }
 @media (max-width: 520px) { .device-thread-layout .device-navigation-footer.device-has-suggestions .device-talk-primary { width: 100%; font-size: 15px; padding-inline: 8px; } }
 .device-suggested-questions { display: grid; gap: 10px; margin: 22px 4px 8px; }
 .device-suggested-questions h2 { margin: 0 0 2px; font-size: 16px; font-weight: 500; color: var(--device-muted); }
-.device-suggested-questions button { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 56px; width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; padding: 13px 16px; border: 1px solid #57707d; border-radius: 18px; background: #1a303d; color: var(--device-ink); font-size: 18px; line-height: 1.35; }
+.device-suggested-questions button { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 72px; width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; padding: 13px 16px; border: 1px solid #57707d; border-radius: 18px; background: #1a303d; color: var(--device-ink); font-size: 18px; line-height: 1.35; }
 .device-suggested-questions button span { flex-shrink: 0; color: var(--device-accent); }
 .device-suggested-questions button:active { background: #2b4859; transform: translateY(1px); }
-.device-thread-layout .device-recording-actions button { min-height: 56px; height: 56px; font-size: 18px; }
+.device-thread-layout .device-recording-actions button { min-height: 72px; height: 72px; font-size: 18px; }
 .device-thread-layout .device-navigation-footer svg { width: 24px; height: 24px; }
 @media (max-width: 760px), (orientation: portrait) {
   .device-thread-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr) auto; }
   .device-thread-layout > .device-chat-list { display: none; }
   .device-thread-layout > .device-main { grid-column: 1; padding: 10px 14px; }
   .device-thread-layout > .device-footer { grid-column: 1; padding: 10px 12px max(12px, env(safe-area-inset-bottom)); }
-  .device-chats-back { display: block; width: fit-content; min-height: 44px; font-size: 16px; margin-bottom: 8px; }
+  .device-chats-back { display: block; width: fit-content; min-height: 72px; font-size: 16px; margin-bottom: 8px; }
   .device-show-chats > .device-chat-list { display: flex; grid-column: 1; grid-row: 2 / 4; }
   .device-show-chats > .device-main, .device-show-chats > .device-footer { display: none; }
   .device-thread-layout .device-wordmark span { font-size: 18px; }
   .device-thread-layout .device-top { padding-inline: 12px; gap: 8px; }
   .device-thread-layout .device-top-actions { gap: 6px; }
-  .device-thread-layout .device-top button { min-height: 44px; padding: 6px 10px; font-size: 16px; }
+  .device-thread-layout .device-top button { min-height: 72px; padding: 6px 10px; font-size: 16px; }
   .device-chat-exchange p { font-size: 20px; }
 }
 .device-chat-scrim { display: none; }
 .device-drawer-heading { display: flex; justify-content: space-between; align-items: center; }
-.device-thread-search { width: 100%; min-width: 0; min-height: 48px; border: 1px solid #65828f; background: #0b1820; color: var(--device-ink); border-radius: 10px; padding: 10px; font-size: 16px; }
+.device-thread-search { width: 100%; min-width: 0; min-height: 72px; border: 1px solid #65828f; background: #0b1820; color: var(--device-ink); border-radius: 10px; padding: 10px; font-size: 16px; }
 @media (max-width: 760px), (orientation: portrait) {
   .device-thread-layout > .device-chat-list { display: flex; position: absolute; inset: 0 auto 0 0; width: min(88%, 340px); z-index: 31; transform: translateX(-105%); visibility: hidden; transition: transform .18s ease, visibility .18s; box-shadow: 12px 0 36px #0006; }
   .device-show-chats > .device-chat-list { transform: translateX(0); visibility: visible; }
@@ -76,7 +76,7 @@
 .device-mail-drawer-open .device-mail-sidebar { transform: translateX(0); visibility: visible; }
 .device-mail-sidebar nav { flex: 1; min-height: 0; overflow-y: auto; }
 .device-mail-sidebar .device-community-tabs { gap: 4px; }
-.device-mail-sidebar button { min-height: 48px; font-size: 16px; padding: 8px; }
+.device-mail-sidebar button { min-height: 72px; font-size: 16px; padding: 8px; }
 .device-mail-sidebar p { color: var(--device-muted); font-size: 14px; }
 .device-mail-sidebar button[aria-current] { border-color: var(--device-accent); background: #243b46; }
 .device-mail-sidebar .device-community-row span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 16px; }
@@ -95,7 +95,7 @@
 @media (max-width: 760px), (orientation: portrait) {
   .device-mail-layout { padding: 10px 14px; }
   .device-mail-layout .device-message-body { font-size: 20px; }
-  .device-mail-layout footer button { min-height: 48px; font-size: 16px; padding: 8px 12px; }
+  .device-mail-layout footer button { min-height: 72px; font-size: 16px; padding: 8px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .device-mail-sidebar { transition: none; } }
 

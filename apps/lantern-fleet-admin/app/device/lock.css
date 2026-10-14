@@ -5,10 +5,10 @@
 .device-lock-copy { min-width: 0; text-align: center; }
 .device-lock-copy h1 { font-size: 36px; margin: 0 0 20px; }
 .device-lock-digits { font-size: 24px; letter-spacing: 3px; min-height: 44px; overflow-wrap: anywhere; }
-.device-lock-copy .device-lock-reveal { min-height: 48px; padding: 8px 16px; font-size: 18px; }
+.device-lock-copy .device-lock-reveal { min-height: 72px; padding: 8px 16px; font-size: 18px; }
 .device-lock-copy p { min-height: 3em; margin: 12px 0 0; font-size: 20px; line-height: 1.4; color: var(--device-muted); }
 .device-lock-keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.device-lock-keypad button { min-width: 0; min-height: 64px; font-size: 32px; padding: 8px; }
+.device-lock-keypad button { min-width: 0; min-height: 72px; font-size: 32px; padding: 8px; }
 .device-lock-keypad .device-lock-secondary { font-size: 18px; }
 .device-lock-keypad .device-lock-submit { grid-column: 1 / -1; background: var(--device-accent); border-color: #ffe0a6; color: #0b1820; font-size: 24px; }
 .device-screen.device-sleep { display: flex; background: #000; }

@@ -14,7 +14,7 @@
 .device-name-choices > button:last-child { grid-column: 1 / -1; }
 .device-name-choices button[aria-pressed="true"] { background: #245679; border-color: #a0d6ff; }
 .device-name-keyboard { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
-.device-name-keyboard button { min-width: 0; min-height: 56px; padding: 4px; font-size: 24px; }
+.device-name-keyboard button { min-width: 0; min-height: 72px; padding: 4px; font-size: 24px; }
 .device-name-keyboard button:nth-last-child(-n+3) { grid-column: span 2; font-size: 18px; }
 .device-name-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 12px; }
 @media (max-width: 560px) { .device-name-keyboard { grid-template-columns: repeat(6, minmax(0, 1fr)); }.device-name-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -79,11 +79,11 @@
 .device-subcontent .device-history-answer { font-size: 27px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .device-muted { color: var(--device-muted); }
 .device-review-hint, .device-inline-error { margin: 0 0 8px; font-size: 18px; color: var(--device-accent); }
-.device-photo-attached { display: flex; align-items: center; gap: 12px; font-size: 20px; margin-bottom: 10px; color: var(--device-accent); }.device-photo-attached svg { width: 32px; height: 32px; flex-shrink: 0; }.device-photo-attached button { margin-left: auto; min-height: 60px; }
+.device-photo-attached { display: flex; align-items: center; gap: 12px; font-size: 20px; margin-bottom: 10px; color: var(--device-accent); }.device-photo-attached svg { width: 32px; height: 32px; flex-shrink: 0; }.device-photo-attached button { margin-left: auto; min-height: 72px; }
 .device-camera-tools .device-retake { display: flex; align-items: center; gap: 8px; }
 .device-about-brand { display: flex; align-items: center; gap: 12px; }.device-about-brand svg { width: 50px; height: 60px; color: var(--device-accent); }
 .device-info-table { display: grid; grid-template-columns: 1fr 1fr; gap: 0; font-size: 20px; margin: 10px 0; }.device-info-table dt, .device-info-table dd { padding: 12px 8px; border-bottom: 1px solid #34505e; margin: 0; overflow-wrap: anywhere; }.device-info-table dt { color: var(--device-muted); }
-.device-status-tabs { display: flex; gap: 8px; }.device-status-tabs button { flex: 1; min-width: 0; min-height: 60px; padding-inline: 8px; font-size: 19px; }.device-status-tabs button[aria-pressed="true"] { border-color: var(--device-accent); background: #284657; }
+.device-status-tabs { display: flex; gap: 8px; }.device-status-tabs button { flex: 1; min-width: 0; min-height: 72px; padding-inline: 8px; font-size: 19px; }.device-status-tabs button[aria-pressed="true"] { border-color: var(--device-accent); background: #284657; }
 .device-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }.device-stat-tile { padding: 14px; background: var(--device-surface); border-radius: 12px; }.device-stat-tile h2 { font-size: 20px; }.device-stat-tile strong { display: block; font-size: 28px; }.device-stat-tile svg { display: block; width: 100%; height: 100px; }.device-stat-tile small { display: block; color: var(--device-muted); font-size: 16px; }.device-stat-tile progress { width: 100%; height: 24px; accent-color: #75e1b5; margin: 26px 0; }
 .device-subscreen .device-subheader { flex-shrink: 0; justify-content: flex-start; padding-bottom: 10px; border-bottom: 1px solid #34505e; }
 .device-subheader > button { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -112,7 +112,7 @@
 .device-empty-state { padding: 24px 16px; text-align: center; border: 1px solid #34505e; border-radius: 16px; }
 .device-empty-state > svg { width: 42px; height: 42px; color: var(--device-accent); }
 .device-panel-caution { border-left: 4px solid var(--device-accent); }
-.device-details summary { padding: 16px 0; min-height: 64px; font-size: 22px; font-weight: 600; }
+.device-details summary { padding: 16px 0; min-height: 72px; font-size: 22px; font-weight: 600; }
 .device-info-table { background: #122935; border: 1px solid #34505e; border-radius: 12px; overflow: hidden; }
 .device-info-table dt, .device-info-table dd { padding: 14px 12px; }
 .device-stat-tile { border: 1px solid #34505e; }
@@ -122,7 +122,7 @@
 .device-history-actions > button { flex: 1; justify-content: center; }
 @media (max-width: 450px) { .device-subscreen { padding-inline: 12px; }.device-page-title h1 { font-size: 23px; }.device-page-title > svg { display: none; }.device-history-setting { flex-wrap: wrap; }.device-chart-grid { grid-template-columns: 1fr; } }
 .device-actions, .device-history-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.device-history-setting select { min-height: 56px; max-width: 55%; padding: 10px 14px; border: 1px solid #7396ac; border-radius: 10px; background: #203f58; color: var(--device-ink); font: inherit; font-size: 22px; }
+.device-history-setting select { min-height: 72px; max-width: 55%; padding: 10px 14px; border: 1px solid #7396ac; border-radius: 10px; background: #203f58; color: var(--device-ink); font: inherit; font-size: 22px; }
 .device-history-item { width: 100%; display: flex; flex-direction: column; text-align: left; gap: 8px; margin-bottom: 12px; }
 .device-history-item span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .device-history-item small { font-size: 17px; color: var(--device-muted); }
@@ -143,7 +143,7 @@
 .device-top .device-wordmark { display: flex; align-items: center; gap: 6px; padding-inline: 0 10px; font-size: 16px; font-weight: 600; letter-spacing: -.025em; color: var(--device-ink); white-space: nowrap; }
 .device-wordmark > svg { width: 34px; height: 38px; color: var(--device-accent); flex-shrink: 0; }
 .device-top .device-wordmark span { color: var(--device-ink); }
-.device-top button { min-height: 64px; border: 0; background: transparent; }
+.device-top button { min-height: 72px; border: 0; background: transparent; }
 .device-top button span { color: var(--device-accent); }
 .device-top-actions { display: flex; gap: 4px; }
 .device-top-actions button { display: flex; align-items: center; gap: 8px; }
@@ -291,7 +291,7 @@
 .radio-node-list h3 { margin: 0 0 10px; font-size: 21px; }
 .radio-node-list > p, .radio-details p { font-size: 17px; color: #c4ccd6; }
 .radio-node-list details, .radio-details { border: 1px solid #39536b; border-radius: 16px; padding: 12px 16px; margin: 10px 0; }
-.radio-node-list summary, .radio-details summary { min-height: 40px; display: flex; align-items: center; gap: 12px; font-size: 20px; cursor: pointer; }
+.radio-node-list summary, .radio-details summary { min-height: 72px; display: flex; align-items: center; gap: 12px; font-size: 20px; cursor: pointer; }
 .radio-node-list summary svg, .radio-details summary svg { width: 25px; height: 25px; flex-shrink: 0; }
 .radio-node-list summary span { flex: 1; overflow-wrap: anywhere; }
 .radio-node-list summary small { font-size: 15px; color: #bfccd9; }

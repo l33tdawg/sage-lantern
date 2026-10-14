@@ -30,7 +30,7 @@
 }
 .device-review-actions[hidden] { display: none; }
 .device-review-actions .question-review-actions { width: 100%; gap: 8px; flex-wrap: nowrap; }
-.device-screen .device-review-actions button { min-width: 0; min-height: 56px; font-size: 18px; line-height: 1.2; padding: 8px; }
+.device-screen .device-review-actions button { min-width: 0; min-height: 72px; font-size: 18px; line-height: 1.2; padding: 8px; }
 @media (max-width: 450px) { .device-screen .device-review-actions button { font-size: 16px; }.device-flow-question { padding: 12px; } }
 @media (max-width: 450px) { .device-thread-layout .device-top button { padding-inline: 6px; }.device-thread-layout .device-wordmark span { font-size: 16px; } }
 @media (max-width: 450px) { .device-screen .device-question-edit-target { padding: 12px; } }

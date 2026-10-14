@@ -3,7 +3,7 @@
 .question-keyboard textarea { width: 100%; box-sizing: border-box; min-height: 72px; resize: vertical; font: inherit; font-size: 24px; color: var(--device-ink, #f6fafc); background: var(--device-bg, #122235); border: 2px solid #89b6db; border-radius: 12px; padding: 10px; }
 .question-key-row, .question-suggestions, .question-keyboard-actions { display: flex; justify-content: center; gap: 6px; }
 .question-key-rows { display: flex; flex-direction: column; gap: 6px; }
-.question-keyboard button { min-width: 0; min-height: 52px; padding: 6px; font-size: 24px; flex: 1; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.question-keyboard button { min-width: 0; min-height: 72px; padding: 6px; font-size: 24px; flex: 1; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .question-key-row button { max-width: 72px; }
 .question-key-tools button { max-width: none; font-size: 18px; }
 .question-key-tools .question-space-key { flex: 3; }
@@ -14,9 +14,9 @@
 .question-keyboard button:active { background: #f0cd67; color: #202417; box-shadow: inset 0 0 0 2px #fff; }
 .question-key-row:nth-child(2) { padding-inline: 3%; }
 .question-key-row:nth-child(3) { padding-inline: 8%; }
-.device-screen .question-keyboard button { min-width: 0; min-height: 56px; padding: 4px; font-size: 22px; }
+.device-screen .question-keyboard button { min-width: 0; min-height: 72px; padding: 4px; font-size: 22px; }
 .device-screen .question-key-tools button { font-size: clamp(14px, 2vw, 18px); }
-@media (min-width: 700px) { .device-screen .question-keyboard button { min-height: 64px; } }
+@media (min-width: 700px) { .device-screen .question-keyboard button { min-height: 72px; } }
 
 /* --- The key floor ---------------------------------------------------------
  * Ten keys on the top row need 10 x 72px + 9 x 6px = 774px, which no portrait

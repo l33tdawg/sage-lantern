@@ -1187,7 +1187,22 @@ export default function DeviceScreen({ onLock, profile, onProfileChange, homeEna
         {chats.current && chats.current.items.length > 4 && <p>For older details, you may need to remind Lantern.</p>}
         <nav aria-label="Past conversation threads">{chats.threads.filter((thread) => thread.items.some((item) => (item.transcript + ' ' + item.response).toLocaleLowerCase().includes(chatSearch.toLocaleLowerCase())) || !chatSearch).map((thread) => <button key={thread.id} disabled={busy || !connected} aria-current={thread.id === chats.current?.thread_id ? 'page' : undefined} onClick={() => {
           if (thread.id === chats.current?.thread_id) setShowChats(false);
-          else void chats.select(thread.id).then((ok) => { if (ok) { setQuestionHandoff(null); setPhoto(undefined); setSessionPhoto(undefined); setShowChats(false); readingPosition.current = 0; } });
+          else void chats.select(thread.id).then((ok) => { if (ok) { setQuestionHandoff(null); setPhoto(undefined); setSessionPhoto(undefined); setShowChats(false); readingPosition.current = 0;
+            /**
+             * The inventory moved: the chat that was open is saved history now and
+             * the one just opened is not. Without this read the drawer keeps
+             * showing the list from before the switch, so the conversation you
+             * left is missing from "Past conversation threads" until something
+             * else refreshes it. Measured: after selecting the second of two
+             * chats the list held one row - the one now open - and the other
+             * thread was absent.
+             *
+             * Forced, because an unforced refresh returns the cached snapshot when
+             * the last read is under HISTORY_REFRESH_MS old (30s) - and the drawer
+             * has just read, so it always is. A non-forced call here is a no-op
+             * that looks like a fix; measured, the list stayed stale with it.
+             */
+            void savedHistory.refresh(true); } });
         }}><strong>{thread.title}</strong><small>{thread.items.length} {thread.items.length === 1 ? 'exchange' : 'exchanges'}</small></button>)}</nav>
         {chats.history?.enabled === false && <p>Saving is off. This chat clears when you leave it or lock the device.</p>}
         <button disabled={busy} onClick={() => setPage('history')}>Manage saved history</button>

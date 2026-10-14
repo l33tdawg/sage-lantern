@@ -65,7 +65,7 @@
 @media (max-width: 520px) {
   .device-page-bar { gap: 8px; padding-bottom: 8px; }
   .device-page-bar .device-page-title h1 { font-size: 22px; }
-  .device-page-bar-action { min-height: 64px; padding-inline: 12px; }
+  .device-page-bar-action { min-height: 72px; padding-inline: 12px; }
 }
 
 /* A destination's own glyph when it illustrates a state panel rather than a

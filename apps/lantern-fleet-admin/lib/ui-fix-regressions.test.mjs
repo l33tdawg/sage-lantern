@@ -109,9 +109,23 @@ test('the narrow gallery fits its panel and keeps the viewer actions reachable',
   // controls fit, and the grid columns may shrink rather than overflow.
   assert.match(galleryCss, /@media \(max-width: 520px\) \{[\s\S]*?\.device-gallery \.device-subheader \{ flex-wrap: wrap; \}/);
   assert.match(galleryCss, /@media \(max-width: 520px\) \{[\s\S]*?\.device-gallery-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 10px; \}/);
-  // 1024x600 before: the viewer's action row began at 554 and ran to 626 in a 600px
-  // panel, 26px past the edge. Measured after: 474..546, inside it. The row is sticky to
+  // 1024x600 before: the viewer's action row ran 26px past the edge of a 600px panel.
+  // The durable claim is that it is now fully inside the fold. Its absolute y moves
+  // with this file - the reviewer measured 436..508 on one revision and 502..574 on
+  // the one before - so quote the containment, never a y-range. The row is sticky to
   // the bottom of its scroll container and its buttons may shrink.
   assert.match(galleryCss, /\.device-gallery-actions\.device-gallery-primary \{\s*position: sticky;\s*bottom: 0;/);
   assert.match(galleryCss, /\.device-gallery-actions > button \{\s*flex: 1;\s*min-width: 0;\s*\}/);
+});
+
+test('selecting a saved chat refreshes the saved inventory', () => {
+  // The chat that was open becomes saved history and the one just opened stops
+  // being it, so the drawer's list is stale until this read happens. Measured
+  // before the fix: after selecting the second of two chats the list held ONE row
+  // - the chat now open - and the conversation just left was missing, so it could
+  // not even be selected back.
+  // Forced on purpose: an unforced refresh returns the cached snapshot while the
+  // last read is under HISTORY_REFRESH_MS old, and the drawer has just read - so
+  // the non-forced form is a no-op that looks like a fix.
+  assert.match(screen, /chats\.select\(thread\.id\)\.then\(\(ok\) => \{ if \(ok\) \{[\s\S]*?void savedHistory\.refresh\(true\); \} \}\);/);
 });
