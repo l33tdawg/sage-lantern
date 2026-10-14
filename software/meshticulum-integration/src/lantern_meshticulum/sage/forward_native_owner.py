@@ -233,15 +233,33 @@ class ForwardNativeOwner:
             adoption._uncertain=True;raise
         finally:adoption._busy=False
 
+    def observe_radio_authorization(self,factory):
+        """One worker authorization; a fresh full key check must finish it."""
+        from .forward_radio import ForwardRadioFactory, _RADIO_AUTHORIZATION_MODE
+        require(type(factory) is ForwardRadioFactory and factory.owner is self
+            and self._radio_native_check is not None)
+        adoption=factory.adoption
+        if adoption._busy:
+            adoption._uncertain=self._uncertain=True;raise ForwardNativeOwnerError()
+        adoption._busy=True
+        try:return self._observe_radio(adoption,factory,_RADIO_AUTHORIZATION_MODE)
+        except BaseException:
+            adoption._uncertain=True;raise
+        finally:adoption._busy=False
+
     def _observe_radio(self,adoption,factory=None,mode=None):
         from .radio_native_adoption import NativeRadioAdoption, _ADOPTION_READ_BODY, _ADOPTION_GUARD_TAIL
         from .forward_native_provider import ForwardNativeProvider, _RADIO_NATIVE_CHECK
-        from .forward_radio import ForwardRadioFactory, ForwardRadioError, _RadioFactsMode
+        from .forward_radio import (ForwardRadioFactory, ForwardRadioError, _RadioFactsMode,
+            _RadioAuthorizationMode, _RadioAuthorizationRefused)
         from . import forward_radio as radio
         modes=radio._RADIO_FACTS_MODES
+        authorization_mode=radio._RADIO_AUTHORIZATION_MODE
+        authorize=mode is authorization_mode
         require(type(adoption) is NativeRadioAdoption)
         require(factory is None and mode is None or type(factory) is ForwardRadioFactory
-            and type(mode) is _RadioFactsMode and any(mode is m for m in modes)
+            and (type(mode) is _RadioFactsMode and any(mode is m for m in modes)
+                 or type(mode) is _RadioAuthorizationMode and authorize)
             and factory.owner is self and factory.adoption is adoption)
         callback=self._radio_native_check
         require(type(callback) is MethodType and type(callback.__self__) is ForwardNativeProvider
@@ -249,6 +267,7 @@ class ForwardNativeOwner:
         provider=callback.__self__;child=adoption.child;epoch=self.storage_epoch
         methods=((self,'observe_radio_adoption',_RADIO_ADOPTION_OBSERVER),
             (self,'observe_radio_facts',_RADIO_FACTS_OBSERVER),(self,'_observe_radio',_RADIO_OBSERVER),
+            (self,'observe_radio_authorization',_RADIO_AUTHORIZATION_OBSERVER),
             (provider,'_radio_native_check',_RADIO_NATIVE_CHECK),
             (adoption,'_read_record',_ADOPTION_READ_BODY),(adoption,'_guard_tail',_ADOPTION_GUARD_TAIL)
             )+tuple((self,name,original) for name,original in _RADIO_OWNER_METHODS)
@@ -257,10 +276,13 @@ class ForwardNativeOwner:
         value=_canonical(child.to_dict());run=object()
         facts=None if factory is None else (factory,mode,run)
         original_record=(adoption._highest,adoption._record)
-        initial_error=ForwardRadioError() if mode is _RadioFactsMode.LIVE else None
+        initial_error=(_RadioAuthorizationRefused() if authorize else
+            ForwardRadioError() if mode is _RadioFactsMode.LIVE else None)
+        read_failed=False;known_refusal=None
         def bindings(*,observed=True):
             require(radio._RADIO_FACTS_MODES is modes and type(modes) is tuple and len(modes)==3
-                and all(a is b for a,b in zip(modes,(_RadioFactsMode.DEVICE,_RadioFactsMode.LIVE,_RadioFactsMode.NATIVE))))
+                and all(a is b for a,b in zip(modes,(_RadioFactsMode.DEVICE,_RadioFactsMode.LIVE,_RadioFactsMode.NATIVE)))
+                and radio._RADIO_AUTHORIZATION_MODE is authorization_mode is _RadioAuthorizationMode.AUTHORIZE)
             self._available();adoption._bound()
             require(self._busy and self._radio_read is run and adoption._read_run is run
                 and self._radio_facts is facts
@@ -306,13 +328,16 @@ class ForwardNativeOwner:
             bindings();self._observe();bindings();_ADOPTION_GUARD_TAIL(adoption);bindings()
         pending=original_record
         def row(before,after):
-            nonlocal pending
+            nonlocal pending,read_failed
             before();adoption._assets();bindings()
-            revision,record=_ADOPTION_READ_BODY(adoption,guard,epoch)
+            try:revision,record=_ADOPTION_READ_BODY(adoption,guard,epoch)
+            except Exception:
+                read_failed=True;raise
             bindings();adoption._assets();bindings();after()
             require(revision>=pending[0] and (revision!=pending[0] or record==pending[1]))
             pending=revision,record
         def read():
+            nonlocal known_refusal
             require(self._radio_read is None and adoption._read_run is None and self._radio_facts is None)
             self._radio_read=adoption._read_run=run
             self._radio_facts=facts
@@ -324,10 +349,14 @@ class ForwardNativeOwner:
                     else:
                         try:row(full,guard)
                         except Exception:
-                            if initial_error is None:raise
+                            if initial_error is None or authorize and read_failed:raise
                             adoption._uncertain=True;raise initial_error from None
                         checked(factory.observer._device_facts)
-                        if mode is _RadioFactsMode.NATIVE:
+                        if authorize:
+                            row(guard,guard);checked(factory.authority.live)
+                            row(guard,guard);checked(factory.observer._device_facts)
+                            row(guard,full)
+                        elif mode is _RadioFactsMode.NATIVE:
                             row(guard,guard);checked(factory.observer._device_facts)
                             # The original worker predicate is pure, but still
                             # inside the last full authorization bookend.
@@ -338,6 +367,9 @@ class ForwardNativeOwner:
                     bindings()
                 bindings(observed=False);adoption._highest,adoption._record=pending
                 return True
+            except _RadioAuthorizationRefused as error:
+                if error is initial_error:known_refusal=error
+                raise
             finally:
                 if self._radio_facts is facts:self._radio_facts=None
                 else:self._uncertain=True
@@ -345,7 +377,10 @@ class ForwardNativeOwner:
                 else:self._uncertain=True
                 if adoption._read_run is run:adoption._read_run=None
                 else:adoption._uncertain=True
-        return self._run(read)
+        try:return self._run(read)
+        except Exception:
+            if authorize and known_refusal is initial_error:raise initial_error from None
+            raise
     def key_check(self,public_key,context_digest):
         expected=self.context.initiator_noise_public_key if self.local_initiator else self.context.responder_noise_public_key
         require(public_key==expected and context_digest==self.context.digest)
@@ -695,6 +730,8 @@ class ForwardNativeOwner:
 
 _RADIO_ADOPTION_OBSERVER=ForwardNativeOwner.observe_radio_adoption
 _RADIO_FACTS_OBSERVER=ForwardNativeOwner.observe_radio_facts
+_RADIO_AUTHORIZATION_OBSERVER=ForwardNativeOwner.observe_radio_authorization
+_RADIO_AUTHORIZATION_CODE=_RADIO_AUTHORIZATION_OBSERVER.__code__
 _RADIO_OBSERVER=ForwardNativeOwner._observe_radio
 _RADIO_OWNER_METHODS=tuple((name,getattr(ForwardNativeOwner,name))
     for name in ('_run','_available','_observe','_checked'))

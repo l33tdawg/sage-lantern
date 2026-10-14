@@ -63,8 +63,18 @@ class _RadioFactsMode(Enum):
 
 _RADIO_FACTS_MODES=(_RadioFactsMode.DEVICE,_RadioFactsMode.LIVE,_RadioFactsMode.NATIVE)
 
+class _RadioAuthorizationMode(Enum):
+    AUTHORIZE='authorize'
+
+_RADIO_AUTHORIZATION_MODE=_RadioAuthorizationMode.AUTHORIZE
+_RADIO_AUTHORITY_LIVE=RunAuthority.live
+_RADIO_AUTHORITY_LIVE_CODE=RunAuthority.live.__code__
+
 class ForwardRadioError(RuntimeError):
     def __init__(self):super().__init__('forward_radio_unavailable')
+
+class _RadioAuthorizationRefused(ForwardRadioError):
+    """Call-local negative classification, only after owned containment checks."""
 
 
 def require(value):
@@ -411,11 +421,17 @@ class ForwardRadioFactory:
         self._authority_refs=self._journal_refs=self._store_ref=None
         self._authority_binding=self._authority_binding_ref=None
         self._native_observing=False;self._native_adoption=None
-        from .forward_native_owner import _RADIO_FACTS_OBSERVER
+        from .forward_native_owner import _RADIO_FACTS_OBSERVER, _RADIO_AUTHORIZATION_OBSERVER, _RADIO_AUTHORIZATION_CODE
         require(observer._factory is None and observer._factory_ref is None)
         self._facts_action=(owner.observe_radio_facts if owner._radio_native_check is not None else None)
         self._facts_action_ref=self._facts_action
         self._facts_method=_RADIO_FACTS_OBSERVER
+        self._authorization_action=(owner.observe_radio_authorization if owner._radio_native_check is not None else None)
+        self._authorization_action_ref=self._authorization_action
+        self._authorization_method=_RADIO_AUTHORIZATION_OBSERVER
+        self._authorization_method_code=_RADIO_AUTHORIZATION_CODE
+        self._authorization_live=_RADIO_AUTHORITY_LIVE
+        self._authorization_code=_RADIO_AUTHORITY_LIVE_CODE
         observer._factory=observer._factory_ref=self
         self._native_methods=tuple((obj,name,getattr(type(obj),name)) for obj,names in (
             (self,('_bound','_native','_native_current','_live','_authorize','_owned','_observed','_facts')),
@@ -438,6 +454,18 @@ class ForwardRadioFactory:
                 and self._facts_action.__func__ is self._facts_method is _RADIO_FACTS_OBSERVER
                 and type(self.owner).observe_radio_facts is _RADIO_FACTS_OBSERVER
                 and 'observe_radio_facts' not in self.owner.__dict__)
+        require(self._authorization_action is self._authorization_action_ref
+            and (self._authorization_action is None)==(self._facts_action is None))
+        if self._authorization_action is not None:
+            from .forward_native_owner import _RADIO_AUTHORIZATION_OBSERVER, _RADIO_AUTHORIZATION_CODE
+            require(type(self._authorization_action) is MethodType
+                and self._authorization_action.__self__ is self.owner
+                and self._authorization_action.__func__ is self._authorization_method is _RADIO_AUTHORIZATION_OBSERVER
+                and self._authorization_method.__code__ is self._authorization_method_code is _RADIO_AUTHORIZATION_CODE
+                and type(self.owner).observe_radio_authorization is _RADIO_AUTHORIZATION_OBSERVER
+                and 'observe_radio_authorization' not in self.owner.__dict__
+                and self._authorization_live is _RADIO_AUTHORITY_LIVE is RunAuthority.live
+                and self._authorization_live.__code__ is self._authorization_code is _RADIO_AUTHORITY_LIVE_CODE)
         method=self._descriptor_current
         require(type(method) is MethodType and method.__self__ is self and method.__func__ is self._descriptor_method
             and '_descriptor_current' not in self.__dict__ and type(self)._descriptor_current is self._descriptor_method
@@ -533,6 +561,26 @@ class ForwardRadioFactory:
         definitions();require(self._descriptor is original)
 
     def _authorize(self):
+        if self._authorization_action is not None:
+            if self._native_observing:self._unknown=True;raise ForwardRadioError()
+            try:
+                require(type(self.authority) is RunAuthority and self._authority_binding is not None)
+                self._bound()
+            except BaseException as error:
+                self._unknown=True
+                if not isinstance(error,Exception):raise
+                raise ForwardRadioError() from None
+            try:value=self._authorization_action(self)
+            except BaseException as error:
+                if type(error) is not _RadioAuthorizationRefused:self._unknown=True
+                if not isinstance(error,Exception):raise
+                raise ForwardRadioError() from None
+            try:require(value is True);self._bound()
+            except BaseException as error:
+                self._unknown=True
+                if not isinstance(error,Exception):raise
+                raise ForwardRadioError() from None
+            return True
         require(type(self.authority) is RunAuthority and self._authority_binding is not None)
         with self._observed(self.owner.context,self.profile.child,self.transfer,first_current=True) as checked:
             checked(self.observer._device_facts)
@@ -645,21 +693,29 @@ class ForwardRadioFactory:
     def _observed(self,context,plan,transfer,*,first_current=False,initial_error=None):
         """One callback bracket; holds references/ownership, never live results."""
         require(type(first_current) is bool)
-        require(initial_error is None or type(initial_error) is ForwardRadioError and not first_current
+        require(initial_error is None or not first_current
             and self.owner._busy and self.owner._radio_read is self.adoption._read_run
-            and self.owner._radio_read is not None and self.owner._radio_facts==
-                (self,_RadioFactsMode.LIVE,self.owner._radio_read))
+            and self.owner._radio_read is not None and (
+                type(initial_error) is ForwardRadioError and self.owner._radio_facts==
+                    (self,_RadioFactsMode.LIVE,self.owner._radio_read)
+                or type(initial_error) is _RadioAuthorizationRefused and self.owner._radio_facts==
+                    (self,_RADIO_AUTHORIZATION_MODE,self.owner._radio_read)))
         acquired=initial_refusal=False;original=self._native_adoption
         require(type(original) is tuple and len(original)==5)
         a,child,registry,condition,methods=original
         worker=self.worker;native_methods=self._native_method_refs
         authority_binding=self._authority_binding_ref
+        authorization=(self._authorization_action,self._authorization_action_ref,self._authorization_method,
+            self._authorization_method_code,self._authorization_live,self._authorization_code)
         handles=self._handles;handle_refs=tuple(handles.items())
         def references(*,refused=False):
             require(self._native_adoption is original and self._native_methods is self._native_method_refs is native_methods
                 and type(native_methods) is tuple and len(native_methods)==17
                 and type(methods) is tuple and len(methods)==5
                 and self._authority_binding is self._authority_binding_ref is authority_binding
+                and all(a is b for a,b in zip(authorization,(self._authorization_action,
+                    self._authorization_action_ref,self._authorization_method,self._authorization_method_code,
+                    self._authorization_live,self._authorization_code)))
                 and self._handles is handles and tuple(handles.items())==handle_refs
                 and self.adoption is a and a._child is child and self.owner._registry is registry
                 and registry._condition is condition and child.owner is self.owner and child.plan is plan
@@ -712,6 +768,7 @@ class ForwardRadioFactory:
                 self._unknown=True
                 if acquired:a._uncertain=True;child.unknown=True
             if not isinstance(error,Exception):raise
+            if initial_refusal and type(error) is _RadioAuthorizationRefused:raise error from None
             raise ForwardRadioError() from None
         finally:
             if acquired:

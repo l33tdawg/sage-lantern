@@ -389,9 +389,11 @@ class ForwardNativeProvider:
                 and self._accounting_binding==binding and self._retained_debt is debt
                 and self._setup_approval==approved)
             if facts is not None:
-                from .forward_radio import ForwardRadioFactory, _RadioFactsMode
+                from .forward_radio import ForwardRadioFactory, _RadioFactsMode, _RadioAuthorizationMode
                 require(type(facts) is tuple and len(facts)==3
-                    and type(facts[0]) is ForwardRadioFactory and type(facts[1]) is _RadioFactsMode
+                    and type(facts[0]) is ForwardRadioFactory
+                    and (type(facts[1]) is _RadioFactsMode
+                         or type(facts[1]) is _RadioAuthorizationMode and facts[1] is _RadioAuthorizationMode.AUTHORIZE)
                     and facts[2] is run and facts[0].owner is owner and facts[0].adoption is adoption
                     and adoption._adopted is True and self.resource._forward_radio is adoption
                     and facts[0]._native_observing and adoption._child.observing
