@@ -1,0 +1,86 @@
+/* Fixture shell only. The device screen styles come from the component's own
+ * app/device/home.css, which esbuild emits beside the bundle. Nothing here
+ * restyles the component: this sets the panel size and paints the surround. */
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0b1820;
+  color: #f6fafc;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+#root { height: 100%; min-height: 0; }
+
+button { font-family: inherit; }
+
+/* --- Device shell -------------------------------------------------------
+ * The real shell is `76px | minmax(0, 1fr) | 94px` (screen.css .device-touch,
+ * portrait.css). Home lives in the middle row. These rows are labelled
+ * placeholders, not reproductions of the app chrome: what matters here is that
+ * the height Home actually gets is the height it will actually get. */
+
+.fixture-screen {
+  display: grid;
+  grid-template-rows: 76px minmax(0, 1fr) 94px;
+  height: 100%;
+  min-height: 0;
+  background: #0b1820;
+}
+
+.fixture-shell-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-inline: 16px;
+  background: #0e1f28;
+  color: #6f8894;
+  font-size: 15px;
+  border-block: 1px dashed #24404d;
+}
+.fixture-shell-row small { color: #4d6672; }
+
+.fixture-home-region { position: relative; min-height: 0; }
+
+/* --- Desktop framing ----------------------------------------------------
+ * A portrait panel in a wide window stays portrait. */
+
+.fixture-desktop {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #06121a;
+}
+
+.fixture-fit { overflow: hidden; }
+
+.fixture-device {
+  width: 720px;
+  height: 1560px;
+  transform-origin: top left;
+  border: 1px solid #24404d;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  background: #0b1820;
+}
+
+/* The callback trail is evidence, not chrome: it is off unless ?log=1. */
+.fixture-log {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: #04121a;
+  border-top: 1px solid #2b424f;
+  color: #ffbe62;
+  font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.fixture-log strong { color: #b9cbd4; font-weight: 600; }
+.fixture-log-state { color: #8aa3af; }

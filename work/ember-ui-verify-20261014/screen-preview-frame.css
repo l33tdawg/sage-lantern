@@ -1,0 +1,57 @@
+/* Integrated Screen preview — framing only.
+ *
+ * Everything inside `.device-frame` is the real app: `screen.tsx`, its own CSS,
+ * the real Home, the real capture owner. Nothing here restyles the device. The
+ * panel is pinned to the C–F bench geometry (720×1560 portrait, scale 1.0) so
+ * the preview measures the screen the device actually shows, and the surround
+ * is labelled so a reviewer can see what is synthetic. */
+
+html, body { margin: 0; height: 100%; background: #06121a; color: #f6fafc; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+#root { height: 100%; min-height: 0; }
+button { font-family: inherit; }
+
+/* --- Synthetic-preview banner (outside the device) --------------------- */
+.preview-notice {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline;
+  padding: 10px 16px; background: #1b1408; border-bottom: 1px solid #6b4d16;
+  color: #ffbe62; font-size: 15px;
+}
+.preview-notice strong { font-weight: 700; letter-spacing: .04em; }
+.preview-notice span { color: #b9cbd4; }
+.preview-notice code { color: #f6fafc; }
+
+.preview-shell { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.preview-stage { display: grid; place-items: center; overflow: hidden; min-height: 0; }
+.preview-fit { overflow: hidden; }
+
+/* The panel. `screen.css` sets `height: 100dvh`; inside the frame the panel is
+ * the frame, so the two lengths are pinned to the bench geometry here. */
+.device-frame {
+  position: relative;
+  width: 720px;
+  height: 1560px;
+  transform-origin: top left;
+  border: 1px solid #24404d;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  background: #0b1820;
+  overflow: hidden;
+}
+.device-frame .device-screen { width: 720px; height: 1560px; min-height: 0; }
+
+/* `?frame=0` means "the panel is the viewport". Without this the panel stayed
+ * pinned at 720x1560 whatever the window size, so a 480x1040 or 360x800 check
+ * measured the 720-wide panel through a smaller window and its media queries
+ * never applied — the viewports were cropped, not tested. */
+.device-frame-viewport { width: 100vw; height: 100dvh; border: 0; box-shadow: none; }
+.device-frame-viewport .device-screen { width: 100vw; height: 100dvh; }
+
+/* The transport log is evidence, not chrome: off unless ?log=1. */
+.preview-log {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+  display: flex; flex-direction: column; gap: 2px; max-height: 30vh; overflow: hidden;
+  padding: 8px 12px; background: #04121a; border-top: 1px solid #2b424f;
+  color: #ffbe62; font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.preview-log strong { color: #b9cbd4; font-weight: 600; }
+.preview-log em { color: #8aa3af; font-style: normal; }
