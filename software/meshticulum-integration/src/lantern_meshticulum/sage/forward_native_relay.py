@@ -26,6 +26,7 @@ from meshticulum.privacy.forward_relay import (
 from .forward_budget import ForwardBudget, ChildPlan, Cost
 from .forward_native_owner import SCOPES, host_boot, clock
 from .forward_native_provider import NativeAccountingSource, NativeAccountingObservation
+from .bound_storage_pair import BoundStoragePair, BoundStoragePairError
 from .forward_operation import describe_child
 from .forward_receive_journal import ReceiveIntention
 from .message_contacts import RecipientID
@@ -154,7 +155,8 @@ class RelayChild:
 
 class ForwardNativeRelay:
     def __init__(self, resource, authority, native_context, *, description, intention,
-                 limits, accounting, boot_reader=host_boot, clock_reader=clock):
+                 limits, accounting, boot_reader=host_boot, clock_reader=clock,
+                 storage_pair_factory=BoundStoragePair):
         from sage_lantern.mesh_daemon import HardwareRuntime
         from sage_lantern.mesh_community import MeshActionAuthority
         from sage_lantern.mesh_runtime import MeshUserContext
@@ -162,7 +164,8 @@ class ForwardNativeRelay:
                 and type(native_context) is MeshUserContext and type(description) is RelayDescription
                 and type(intention) is ReceiveIntention and type(limits) is Cost
                 and isinstance(accounting, NativeAccountingSource)
-                and callable(boot_reader) and callable(clock_reader))
+                and callable(boot_reader) and callable(clock_reader)
+                and (storage_pair_factory is None or storage_pair_factory is BoundStoragePair))
         self.resource, self.authority, self.native_context = resource, authority, native_context
         self.description, self.context, self.intention = description, description.context, intention
         self.limits, self.accounting = limits, accounting
@@ -179,8 +182,13 @@ class ForwardNativeRelay:
         self._children = []
         self._position = 0
         self._last_time = self._accounting_binding = self._approval = None
+        self._storage_pair_factory = storage_pair_factory
+        self._storage_pair = self._storage_pair_ref = None
+        self._storage_pair_check = self._storage_pair_check_ref = None
+        self._storage_pair_matches = None
+        self._storage_pair_delegates = None
         self._refs = (resource, authority, native_context, description, intention, limits,
-                      accounting, boot_reader, clock_reader)
+                      accounting, boot_reader, clock_reader, storage_pair_factory)
         self._native_refs = (resource.supervisor, resource.probe, resource.probe.client,
                             resource.identity, resource.identity._signing_key, resource._mutex)
         self._source_methods = (type(accounting).observe, type(accounting).close,
@@ -197,7 +205,14 @@ class ForwardNativeRelay:
                 broker=self.broker_id, storage=self.storage_epoch))
             self._store = WorkflowStore(resource.probe.client, storage=MessageStorageProbe(resource.probe.client,
                 actor=RecipientID(self.local.chain_id, self.local.agent_id), endpoint=resource.probe.endpoint))
-            self._store_refs = self._store, self._store.storage, self._store.client
+            if storage_pair_factory is not None:
+                self._storage_pair = self._storage_pair_ref = storage_pair_factory(resource.probe, self._store)
+                self._storage_pair_check = self._storage_pair_check_ref = self._storage_pair.observe
+                self._storage_pair_matches = self._storage_pair.matches
+                self._storage_pair_delegates = (self._storage_pair._BoundStoragePair__matches,
+                                               self._storage_pair._BoundStoragePair__observe)
+            self._store_refs = (self._store, self._store.storage, self._store.client,
+                               self._storage_pair_delegates, self._storage_pair_matches)
             self.owner_lease = self._lease
             self._lease_ref = self.owner_lease
             self._budget_action = self.budget_action_check
@@ -231,9 +246,10 @@ class ForwardNativeRelay:
             from .forward_children import attach
             self._registry = attach(self)
             self.access_check()
-        except BaseException:
+        except BaseException as error:
             self._uncertain = True
             self.close()
+            if isinstance(error, BoundStoragePairError): raise ForwardNativeRelayError() from None
             raise
 
     def __repr__(self): return '<ForwardNativeRelay>'
@@ -248,15 +264,39 @@ class ForwardNativeRelay:
                 and (cleanup or not self._closed and not self._uncertain and not self._source_closed))
         h = self.resource
         require(all(a is b for a, b in zip(self._refs, (h, self.authority, self.native_context,
-            self.description, self.intention, self.limits, self.accounting, self._boot, self._clock)))
+            self.description, self.intention, self.limits, self.accounting, self._boot, self._clock,
+            self._storage_pair_factory)))
             and all(a is b for a, b in zip(self._native_refs, (h.supervisor, h.probe, h.probe.client,
                 h.identity, h.identity._signing_key, h._mutex)))
             and self.context is self.description.context and self.owner_lease is self._lease_ref
-            and all(a is b for a, b in zip(self._store_refs, (self._store, self._store.storage, self._store.client)))
+            and all(a is b for a, b in zip(self._store_refs,
+                (self._store, self._store.storage, self._store.client,
+                 self._storage_pair_delegates, self._storage_pair_matches)))
             and self._store.client is h.probe.client
             and self._source_methods == (type(self.accounting).observe, type(self.accounting).close,
                                          getattr(type(self.accounting), 'close_from_registry', None))
             and not any(name in self.accounting.__dict__ for name in ('observe', 'close', 'close_from_registry')))
+        require(self._storage_pair is self._storage_pair_ref
+            and self._storage_pair_check is self._storage_pair_check_ref)
+        if self._storage_pair_factory is None:
+            require(self._storage_pair is None and self._storage_pair_check is None
+                and self._storage_pair_delegates is None and self._storage_pair_matches is None)
+        else:
+            require(self._storage_pair_factory is BoundStoragePair and type(self._storage_pair) is BoundStoragePair
+                and self._storage_pair_check.__self__ is self._storage_pair
+                and self._storage_pair_check.__func__ is BoundStoragePair.observe
+                and type(self._storage_pair_matches) is MethodType
+                and self._storage_pair_matches.__self__ is self._storage_pair
+                and self._storage_pair_matches.__func__ is BoundStoragePair.matches
+                and all(current is original for current, original in zip(
+                    (getattr(self._storage_pair, '_BoundStoragePair__matches', None),
+                     getattr(self._storage_pair, '_BoundStoragePair__observe', None)), self._storage_pair_delegates)))
+            # Delegated containment uses the retained handles and original
+            # registry permit, never this producer-thread status observer.
+            if not cleanup:
+                try: paired = self._storage_pair_matches(h.probe, self._store)
+                except BoundStoragePairError: raise ForwardNativeRelayError() from None
+                require(paired is True)
         require(self._facts == _canonical(dict(description=description_value(self.description),
             intention=self.intention.to_dict(), limits=asdict(self.limits), local=asdict(self.local),
             config=self.config_revision, broker=self.broker_id, storage=self.storage_epoch)))
@@ -300,10 +340,16 @@ class ForwardNativeRelay:
         require(self._checked(h.configured) is True and self._checked(h.active) is True
             and self._checked(h.consent) == self.consent and self.consent.messaging_enabled
             and self.consent.dispatch_enabled and self._checked(h.supervisor.resource_lifecycle_check) is True
-            and self._checked(h.supervisor.verified_epoch) == self.storage_epoch
-            and self._checked(h.probe.snapshot).epoch == self.storage_epoch
-            and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch
-            and self._checked(h._epoch) == self.native_context.epoch)
+            and self._checked(h.supervisor.verified_epoch) == self.storage_epoch)
+        # Only the adjacent same-client views share this fresh status read.
+        # Native supervisor, SDK brackets and both accounting bookends remain.
+        if self._storage_pair_check is None:
+            require(self._checked(h.probe.snapshot).epoch == self.storage_epoch
+                and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch)
+        else:
+            try: require(self._checked(self._storage_pair_check, self.storage_epoch) == self.storage_epoch)
+            except BoundStoragePairError: raise ForwardNativeRelayError() from None
+        require(self._checked(h._epoch) == self.native_context.epoch)
         for peer in (self.context.initiator, self.context.responder):
             require(any(p['chain_id'] == peer.chain_id and p['agent_id'] == peer.public_key.hex() for p in h.config['peers']))
         for scope in RELAY_SCOPES:
