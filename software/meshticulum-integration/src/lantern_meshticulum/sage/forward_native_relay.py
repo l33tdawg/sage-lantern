@@ -63,6 +63,135 @@ def description_value(description):
                 deadlines=asdict(description.deadlines), max_packet_bytes=description.max_packet_bytes)
 
 
+def _structural_values(owner):
+    """Fresh scalar fields of the original canonical facts; no live decision."""
+    d, c, i, cost, peer = owner.description, owner.context, owner.intention, owner.limits, owner.local
+    return (type(d), type(c), type(c.initiator), type(c.responder), type(d.relay_peer),
+        type(d.deadlines), type(i), type(cost), type(peer),
+        c.initiator.chain_id, c.initiator.public_key, c.responder.chain_id, c.responder.public_key,
+        c.session_id, c.binding_digest, c.issued_epoch_us, c.expires_epoch_us, c.max_records,
+        c.initiator_noise_public_key, c.responder_noise_public_key,
+        d.relay_peer.chain_id, d.relay_peer.agent_id,
+        d.deadlines.application_deadline_monotonic, d.deadlines.authority_deadline_monotonic,
+        d.deadlines.authority_expires_epoch, d.max_packet_bytes,
+        i.operation_id, i.packet_sha256, i.packet_bytes, i.authority_digest, i.host_boot_id,
+        i.application_expires_epoch_us, i.application_deadline_monotonic_us,
+        cost.radio_attempts, cost.estimated_airtime_us, cost.ip_frames,
+        cost.tx_stream_bytes, cost.rx_stream_bytes, peer.chain_id, peer.agent_id,
+        owner.config_revision, owner.broker_id, owner.storage_epoch)
+
+
+def _structural_guard(owner):
+    """Retain only admitted immutable values and the original serializer pins."""
+    context_type = type(owner.context)
+    peer_type = type(owner.context.initiator)
+    intention_type = type(owner.intention)
+    scalar_reader = _structural_values
+    object_id, exact_type, project, pack = id, type, map, tuple
+    original_values = scalar_reader(owner)
+    original_types = pack(project(object_id, project(exact_type, original_values)))
+    float_values = pack((index, value.hex()) for index, value in enumerate(original_values)
+                        if exact_type(value) is float)
+    raw = owner._facts
+    properties = context_type.digest, context_type.prologue
+    context_globals = context_type.prologue.fget.__globals__
+    canonical_globals, dataclass_globals = _canonical.__globals__, asdict.__globals__
+    json_module, hash_module = context_globals['json'], context_globals['hashlib']
+    encoder, copy_module = json_module.JSONEncoder, dataclass_globals['copy']
+    encoder_globals = encoder.iterencode.__globals__
+    delegates = ((canonical_globals, 'json', json_module),
+        (context_globals, 'json', json_module), (context_globals, 'hashlib', hash_module),
+        (context_globals, 'DOMAIN', context_globals['DOMAIN']),
+        (json_module.__dict__, 'JSONEncoder', encoder),
+        (hash_module.__dict__, 'sha256', hash_module.sha256),
+        (dataclass_globals, 'copy', copy_module),
+        (dataclass_globals, '_FIELDS', dataclass_globals['_FIELDS']),
+        (dataclass_globals, '_FIELD', dataclass_globals['_FIELD']),
+        *((encoder_globals, name, encoder_globals[name]) for name in
+          ('c_make_encoder', 'encode_basestring_ascii', 'encode_basestring', 'INFINITY')))
+    delegates = tuple((namespace, name, name in namespace, value)
+                      for namespace, name, value in delegates)
+    atomic_present = '_ATOMIC_TYPES' in dataclass_globals
+    atomic = dataclass_globals.get('_ATOMIC_TYPES')
+    delegates += ((dataclass_globals, '_ATOMIC_TYPES', atomic_present, atomic),)
+    encoder_fields = tuple(encoder.__dict__.items())
+    targets = ((globals(), '_structural_values'), (globals(), 'description_value'),
+        (globals(), '_canonical'), (globals(), 'asdict'), (globals(), 'require'),
+        (intention_type, 'to_dict'), (peer_type, 'to_dict'),
+        (properties[0], 'fget'), (properties[1], 'fget'), (json_module, 'dumps'),
+        (encoder, '__init__'), (encoder, 'encode'), (encoder, 'iterencode'), (encoder, 'default'),
+        (encoder_globals, '_make_iterencode'), (dataclass_globals, '_asdict_inner'),
+        (dataclass_globals, 'fields'), (dataclass_globals, '_is_dataclass_instance'),
+        (copy_module, 'deepcopy'))
+    # Python 3.11 reaches deepcopy for these asdict leaves. Python 3.12's
+    # immutable atomic set takes that path only when the admitted set says so.
+    if not atomic_present or not all(kind in atomic for kind in (str, int, float)):
+        dispatch = copy_module._deepcopy_dispatch
+        delegates += ((copy_module.deepcopy.__globals__, '_deepcopy_dispatch', True, dispatch),)
+        targets += tuple((dispatch, kind) for kind in (str, int, float))
+    methods = []
+    for namespace, name in targets:
+        function = namespace[name] if type(namespace) is dict else getattr(namespace, name)
+        methods.append((namespace, name, function, function.__code__, function.__defaults__,
+                        function.__kwdefaults__, tuple((function.__kwdefaults__ or {}).items())))
+    methods = tuple(methods)
+    function_ids = pack(object_id(method[2]) for method in methods)
+    method_ids = pack((object_id(method[3]), object_id(method[4]), object_id(method[5])) for method in methods)
+    keyword_pins = pack((method[2], pack(sorted(key for key, value in method[6])),
+        pack(object_id(method[5][key]) for key in sorted(key for key, value in method[6])))
+        for method in methods if method[5] is not None)
+    delegate_ids = pack((present, object_id(value)) for namespace, name, present, value in delegates)
+    encoder_ids = pack(object_id(value) for name, value in encoder_fields)
+    schemas = tuple((cls, cls.__dataclass_fields__,
+        tuple((name, field, field.name, field._field_type)
+              for name, field in cls.__dataclass_fields__.items()))
+        for cls in (type(owner.local), type(owner.description.deadlines), type(owner.limits)))
+
+    def check():
+        current_delegates = pack((name in namespace, object_id(namespace.get(name)))
+                                for namespace, name, present, expected in delegates)
+        if current_delegates != delegate_ids:
+            raise ForwardNativeRelayError()
+        functions = pack(namespace[name] if exact_type(namespace) is dict else getattr(namespace, name)
+                         for namespace, name, function, code, defaults, keywords, values in methods)
+        if pack(project(object_id, functions)) != function_ids:
+            raise ForwardNativeRelayError()
+        current_methods = pack((object_id(function.__code__), object_id(function.__defaults__),
+                                object_id(function.__kwdefaults__)) for function in functions)
+        if current_methods != method_ids:
+            raise ForwardNativeRelayError()
+        for function, keys, values in keyword_pins:
+            current = function.__kwdefaults__
+            if (len(current) != len(keys) or any(exact_type(key) is not str for key in current)
+                    or pack(sorted(current)) != keys
+                    or pack(object_id(current[key]) for key in keys) != values):
+                raise ForwardNativeRelayError()
+        if not (context_type.digest is properties[0] and context_type.prologue is properties[1]
+                and type(owner._facts) is bytes and owner._facts == raw):
+            raise ForwardNativeRelayError()
+        if len(encoder.__dict__) != len(encoder_fields) or pack(
+                object_id(encoder.__dict__.get(name)) for name, value in encoder_fields) != encoder_ids:
+            raise ForwardNativeRelayError()
+        if any('to_dict' in value.__dict__ for value in
+               (owner.intention, owner.context.initiator, owner.context.responder)):
+            raise ForwardNativeRelayError()
+        for cls, fields, schema in schemas:
+            if cls.__dataclass_fields__ is not fields or len(fields) != len(schema):
+                raise ForwardNativeRelayError()
+            for name, field, field_name, kind in schema:
+                if not (fields.get(name) is field and field.name == field_name and field._field_type is kind):
+                    raise ForwardNativeRelayError()
+        values = scalar_reader(owner)
+        if (pack(project(object_id, project(exact_type, values))) != original_types
+                or values != original_values
+                or any(values[index].hex() != expected for index, expected in float_values)):
+            raise ForwardNativeRelayError()
+
+    closure = check.__closure__
+    return (check, check.__code__, check.__defaults__, check.__kwdefaults__, closure,
+            tuple(cell.cell_contents for cell in closure))
+
+
 def relay_approval_binding(description, intention, limits, accounting, *,
                            config_revision, broker_id, storage_epoch):
     require(type(intention) is ReceiveIntention and type(limits) is Cost
@@ -154,6 +283,16 @@ class RelayChild:
 
 
 class ForwardNativeRelay:
+    __slots__ = ('__structural_guard', '__dict__', '__weakref__')
+
+    def __setattr__(self, name, value):
+        if name == '_ForwardNativeRelay__structural_guard': raise ForwardNativeRelayError()
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name):
+        if name == '_ForwardNativeRelay__structural_guard': raise ForwardNativeRelayError()
+        object.__delattr__(self, name)
+
     def __init__(self, resource, authority, native_context, *, description, intention,
                  limits, accounting, boot_reader=host_boot, clock_reader=clock,
                  storage_pair_factory=BoundStoragePair):
@@ -203,6 +342,7 @@ class ForwardNativeRelay:
             self._facts = _canonical(dict(description=description_value(description), intention=intention.to_dict(),
                 limits=asdict(limits), local=asdict(self.local), config=self.config_revision,
                 broker=self.broker_id, storage=self.storage_epoch))
+            object.__setattr__(self, '_ForwardNativeRelay__structural_guard', _structural_guard(self))
             self._store = WorkflowStore(resource.probe.client, storage=MessageStorageProbe(resource.probe.client,
                 actor=RecipientID(self.local.chain_id, self.local.agent_id), endpoint=resource.probe.endpoint))
             if storage_pair_factory is not None:
@@ -297,9 +437,11 @@ class ForwardNativeRelay:
                 try: paired = self._storage_pair_matches(h.probe, self._store)
                 except BoundStoragePairError: raise ForwardNativeRelayError() from None
                 require(paired is True)
-        require(self._facts == _canonical(dict(description=description_value(self.description),
-            intention=self.intention.to_dict(), limits=asdict(self.limits), local=asdict(self.local),
-            config=self.config_revision, broker=self.broker_id, storage=self.storage_epoch)))
+        check, code, defaults, keywords, closure, contents = self.__structural_guard
+        require(check.__code__ is code and check.__defaults__ is defaults and check.__kwdefaults__ is keywords
+            and check.__closure__ is closure
+            and all(cell.cell_contents is expected for cell, expected in zip(closure, contents)))
+        check()
         if self._budget is not None:
             budget, binding, raw = self._budget_refs
             require(self._budget is budget and budget.binding is binding and _canonical(binding) == raw

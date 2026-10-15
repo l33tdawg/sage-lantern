@@ -75,6 +75,7 @@ def timed_rig(path, monkeypatch, *, scopes=RELAY_SCOPES+(SCOPE,), limit=LIMITS):
         finally:
             r.owner.fence(); r.hardware._forward_children.close(4)
             for t in r.threads: t.join(2)
+            assert all(not t.is_alive() for t in r.threads)
             for remote in r.remotes: close_remote(remote)
             # Explicit fixture-owner emergency teardown is separate from the
             # native terminal proof when a negative control stays uncertain.
@@ -242,16 +243,41 @@ def carry(r,packet,kind, *, drop=False, startup_mode=None):
     source,target=(radio.remote,q) if ip.profile.child.sends else (q,radio.remote)
     if drop:radio.handles[0].worker.drop_kind=FrameKind.DATA
     source.transfer.send(packet);end=time.monotonic()+15
-    done=False
-    while not done:
-        assert time.monotonic()<end
-        if not source.flow.flow.complete:source.flow.step()
-        done=r.owner.step()
-        if not target.flow.flow.complete:target.flow.step()
-        elif type(target.flow) is IpFlow:target.flow.finish_receive_ack()
-        if type(source.flow) is BenchFlow and source.flow.flow.complete:
-            pass
-        time.sleep(.001)
+    done=False;peer=None;stop=threading.Event();peer_errors=queue.Queue()
+    def pump_peer():
+        try:
+            while not stop.is_set():
+                assert time.monotonic()<end
+                if not q.flow.flow.complete:q.flow.step()
+                elif q.flow.sends or q.flow.finish_receive_ack():return
+                time.sleep(.001)
+        except BaseException as error:peer_errors.put(error)
+    def start_peer():
+        # B is an independent socket/authority owner. Only its peer thread
+        # pumps that flow. Legacy startup waits for A's complete queued object;
+        # the explicit READY case keeps exercising its wire-level wait.
+        nonlocal peer
+        if peer is None and (q.flow.sends or startup_mode is not None or ip.flow.started):
+            peer=threading.Thread(target=pump_peer,daemon=True)
+            r.threads.append(peer);peer.start()
+    try:
+        while not done:
+            assert time.monotonic()<end
+            start_peer()
+            if not peer_errors.empty():raise peer_errors.get_nowait()
+            if source is not q and not source.flow.flow.complete:source.flow.step()
+            done=r.owner.step()
+            start_peer()
+            if target is not q and not target.flow.flow.complete:target.flow.step()
+            if not peer_errors.empty():raise peer_errors.get_nowait()
+            time.sleep(.001)
+    finally:
+        stop.set()
+        if peer is not None:
+            remaining=r.intention.application_deadline_monotonic_us/1e6-time.monotonic()
+            peer.join(max(0,min(2,remaining)))
+            assert not peer.is_alive()
+    if not peer_errors.empty():raise peer_errors.get_nowait()
     assert target.transfer.received()==packet
     assert r.owner.finish_stage()['outgoing_final_ack_observed'] is True
     assert all(c.retired for c in children) and not ip._unknown
