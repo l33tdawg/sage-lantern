@@ -92,14 +92,14 @@ _IRQ_ARTIFACT = canonical(dict(
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
 IRQ020_ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
 SELECTOR = 'gfsk250-usb-rx2048-irq-hostfair-v1'
-CORE = 'af5b1fd23a454746122d0b256908a0b2cdfc1741'
+CORE = 'b9ce259a915e1336ee2eda5c2cbe413d370e6b9d'
 _CURRENT_ARTIFACT = canonical(dict(json.loads(_IRQ_ARTIFACT), selector=SELECTOR,
-    runtime_core_revision=CORE, source_lock_sha256='a367469b88cc0bce515d187d7fd29bd1b6d12d462403763623564ed30a11871c'))
+    runtime_core_revision=CORE, source_lock_sha256='3b37a55820ed9b7759359778a42b302f0e57500c328ec076023983d5ed05de76'))
 ARTIFACT_SHA256 = hashlib.sha256(_CURRENT_ARTIFACT).hexdigest()
 _ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT,
     IRQ020_SELECTOR:_IRQ_ARTIFACT, SELECTOR:_CURRENT_ARTIFACT})
 PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
-    scope_sha256='2bb3d00703a5cf3c1b3aaf84f3b113af0e3ff318d1920c099df431f2476dd0cf',
+    scope_sha256=None,
     history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
     preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
 
@@ -220,7 +220,7 @@ _LORA_ARTIFACT = canonical(dict(json.loads(_CURRENT_ARTIFACT),
     schema='meshticulum.explicit-lora-mcu-artifact.v1', selector=LORA_SELECTOR,
     radio_modem='lora', radio_profile_names=list(LORA_PROFILE_NAMES)))
 LORA_ARTIFACT_SHA256 = hashlib.sha256(_LORA_ARTIFACT).hexdigest()
-LORA_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256='893d3f92784af5659f41fa692f55863e4401d23cc27d73ac7bf6fd0858524611',
+LORA_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256=None,
     history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
     preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
 

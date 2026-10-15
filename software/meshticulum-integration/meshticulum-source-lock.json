@@ -46,7 +46,7 @@
     "src/meshticulum/flow/mux.py": "38b03c5daad9afb679cd3c671efeb50efbd9c6fd94ecaa7b6cb1291e993d693a",
     "src/meshticulum/ip/__init__.py": "2dc77cef23e4ad81563147beae48127ffcc9208769ea90db7294e96a26d76e4c",
     "src/meshticulum/ip/authority.py": "ce35b6370b347f82cea2b62123a5b30f04331d2512fa971f7004849cd703adb5",
-    "src/meshticulum/ip/flow.py": "d4bb7870a7a476d3d9b59fa37e3ea0e7e2daca347da10cdfd8e6c6a2b67ab9a8",
+    "src/meshticulum/ip/flow.py": "61c25af3ea8caf4501876952305a20cd341ef3787138046bb7aebdca0953773f",
     "src/meshticulum/ip/journal.py": "6752c2e03dcedefc2a314eee1dcdad28ad2fb5ae5d4ce81fc6aaf5bdad6a858b",
     "src/meshticulum/ip/state.py": "a4b20bacc398b5f20a007aa0c7b9e080ac8fdd4a16f60e3fa816452155c0c4ae",
     "src/meshticulum/ip/wire.py": "22d376c536406f7eea92189237faf262f2920c8d9b55dac2a2748acb37dd8ecf",
@@ -74,6 +74,6 @@
     "src/meshticulum/scheduler/scheduler.py": "565a701f5430863d925ce6aed08c9de1c27baa8c73db031a8a5424592aa4c6ed"
   },
   "repository": "https://github.com/l33tdawg/meshticulum",
-  "revision": "af5b1fd23a454746122d0b256908a0b2cdfc1741",
+  "revision": "b9ce259a915e1336ee2eda5c2cbe413d370e6b9d",
   "schema": "sage-lantern.meshticulum-source-lock.v1"
 }

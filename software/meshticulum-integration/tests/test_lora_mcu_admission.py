@@ -28,7 +28,7 @@ def manifest():
 def test_paid_gfsk_descriptors_and_default_selection_remain_exact():
     assert mcu.LEGACY_ARTIFACT_SHA256=='72b1289b782f54940c0bced77e19118e5c8ae47e1fea51ecf112e597419c582b'
     assert mcu.IRQ020_ARTIFACT_SHA256=='9e478abcb07234a2f42ed70966b3ac4d82c303bafd8e20a8c5b08eaf681a1f57'
-    assert mcu.ARTIFACT_SHA256=='efa3989be1de3e9515a3696031f8e97fdab35760462d3353e0b293d36d6a4fdb'
+    assert mcu.ARTIFACT_SHA256=='7423b78c75b50bfab32c7180f73959e8b10ecc2b38f0cba8714872aa2953bd2a'
     selected=mcu.lora_artifact(); original=mcu.artifact()
     ignored={'schema','selector','radio_modem','radio_profile_names'}
     assert {k:v for k,v in selected.items() if k not in ignored}=={k:v for k,v in original.items() if k not in ignored}

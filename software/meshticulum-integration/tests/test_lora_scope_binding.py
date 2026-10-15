@@ -14,10 +14,10 @@ from lantern_meshticulum.bench import mcu_artifact as mcu
 from lantern_meshticulum.bench.profiles import profile_for
 from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
 
-EXPECTED_CORE = 'af5b1fd23a454746122d0b256908a0b2cdfc1741'
-EXPECTED_PREFIX = '8015bca2bfacb1623c60738773923d890ac9211f'
-EXPECTED_SCOPE_SHA = '893d3f92784af5659f41fa692f55863e4401d23cc27d73ac7bf6fd0858524611'
-EXPECTED_LOCK_SHA = 'a367469b88cc0bce515d187d7fd29bd1b6d12d462403763623564ed30a11871c'
+EXPECTED_CORE = 'b9ce259a915e1336ee2eda5c2cbe413d370e6b9d'
+EXPECTED_PREFIX = None
+EXPECTED_SCOPE_SHA = None
+EXPECTED_LOCK_SHA = '3b37a55820ed9b7759359778a42b302f0e57500c328ec076023983d5ed05de76'
 OLD_SCOPES = (
     ('c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
      'meshticulum-h46-hotpath-operation-repaired-final-20261015'),
