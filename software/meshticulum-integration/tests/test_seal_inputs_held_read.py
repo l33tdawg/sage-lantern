@@ -50,6 +50,8 @@ def seal_fixture(tmp_path,monkeypatch):
         (state/'parents'/rpc.incomplete_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     if rpc.endpoint_lora_history.PARENT in rpc.HISTORY:
         (state/'parents'/rpc.endpoint_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
+    if rpc.management_lora_history.PARENT in rpc.HISTORY:
+        (state/'parents'/rpc.management_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     if rpc.unstarted_history.UNMATERIALIZED_PARENT in rpc.HISTORY:
         (state/'parents'/rpc.unstarted_history.UNMATERIALIZED_PARENT/'prepared-identities').mkdir(mode=0o700)
     for relative in rpc.capture_paths(state,'unit-b')['directories']:
