@@ -25,6 +25,8 @@ def prepared(monkeypatch,synthetic_a658_capture):
         directory.mkdir(mode=0o700)
         for name in rpc.unstarted_history.unmaterialized_staging_names('unit-c'):
             (state/'runs'/name).mkdir(mode=0o700)
+    if rpc.incomplete_lora_history.PARENT in rpc.HISTORY:
+        (state/'parents'/rpc.incomplete_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     for parent,count in counts.items():
         directory=state/'parents'/parent/'prepared-identities';directory.mkdir(mode=0o700)
         for index in range(count):
