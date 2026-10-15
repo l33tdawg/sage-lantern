@@ -21,6 +21,31 @@ const app = join(here, '../../../apps/lantern-fleet-admin');
 const require = createRequire(join(app, 'package.json'));
 const { build } = require('esbuild');
 
+/**
+ * Refuse to build if the stub's template literal has been broken.
+ *
+ * `STUB` in the entry is one template literal spanning most of the file, so an
+ * unescaped backtick inside it ends the string early, and that failure is silent
+ * at every other gate: esbuild sometimes still exits 0 because the remainder
+ * happens to be valid JavaScript, and `node --check` always passes. The page then
+ * dies at load with a ReferenceError from half-evaluated stub code. It has cost
+ * real time twice - once from a comment quoting an endpoint, once from a comment
+ * quoting a prop - so the build now fails loudly instead.
+ */
+const entrySource = readFileSync(join(here, 'lock-fixture-entry.tsx'), 'utf8');
+let insideStub = false;
+const unescaped = [];
+entrySource.split('\n').forEach((line, index) => {
+  if (!insideStub) { if (line.includes('const STUB = `')) insideStub = true; return; }
+  if (/^\}\)\(\);`;\s*$/.test(line.trim())) { insideStub = false; return; }
+  if (/(^|[^\\])`/.test(line)) unescaped.push(index + 1);
+});
+if (insideStub || unescaped.length) {
+  throw new Error(insideStub
+    ? 'the STUB template literal is never closed - look for an unescaped backtick'
+    : `unescaped backtick inside the STUB template literal on line(s) ${unescaped.join(', ')} - escape it with a backslash`);
+}
+
 const result = await build({
   entryPoints: [join(here, 'lock-fixture-entry.tsx')],
   outfile: join(here, 'lock-fixture.js'),

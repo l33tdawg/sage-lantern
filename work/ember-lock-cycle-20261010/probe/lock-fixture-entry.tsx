@@ -54,6 +54,8 @@ const PHOTO_B64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP///////////////////////////
  * replaced.
  */
 const STUB = `(() => {
+  /** True when this page was loaded as ?screen=name, i.e. first-run naming. */
+  const NAME_SETUP = new URLSearchParams(location.search).get('screen') === 'name';
   /**
    * FOR EDITORS - everything to the closing backtick is ONE template literal.
    *
@@ -122,8 +124,14 @@ const STUB = `(() => {
   });
 
   const profile = () => ({
-    version: 1, configured: true, setup_required: false,
-    display_name: 'Lantern C', public_discoverable: false, revision: 3,
+    /**
+     * ?screen=name reports an unconfigured profile, which is what makes the
+     * boundary show the first-run NAME screen once the device is unlocked
+     * (access.tsx gates it on unlocked plus profile.setup_required). The validator
+     * requires setup_required to be the negation of configured, so both move together.
+     */
+    version: 1, configured: !NAME_SETUP, setup_required: NAME_SETUP,
+    display_name: NAME_SETUP ? '' : 'Lantern C', public_discoverable: false, revision: 3,
   });
 
   /**

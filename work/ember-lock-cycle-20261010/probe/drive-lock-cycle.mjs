@@ -214,6 +214,10 @@ const VIEW = `(() => {
       panel.querySelectorAll('.device-lock-keypad button').forEach((el) => add('key:' + (el.textContent || '').trim(), el));
       add('reveal', panel.querySelector('.device-lock-copy .device-lock-reveal'));
       panel.querySelectorAll('.device-lock-wait button').forEach((el) => add('wait:' + (el.textContent || '').trim().slice(0, 22), el));
+      // The first-run name screen. Its keyboard is the rule the 72px pass raised
+      // from 56px, and its choices and actions are separate control groups.
+      panel.querySelectorAll('.device-name-keyboard button, .device-name-choices button, .device-name-actions button, .device-name .device-subheader button')
+        .forEach((el) => add('name:' + ((el.textContent || '').trim().slice(0, 12) || 'back'), el));
       const probe = document.createElement('div');
       probe.style.cssText = 'position:absolute;left:0;top:0;width:20px;height:20px;visibility:hidden';
       panel.appendChild(probe);
@@ -365,6 +369,46 @@ record('the recover phase has no reveal, and that is the prop rather than the CS
   check('no reveal renders, unlike choose and confirm', recoverReveal === undefined,
     recoverReveal ? `it rendered at ${recoverReveal.w}x${recoverReveal.h} - the prop is not what gates it` : 'absent, as allowReveal=false requires'),
 ], recoverShot);
+
+/**
+ * The first-run NAME screen, which access.tsx gates on an unlocked device whose
+ * profile reports setup_required. It is the other screen whose keyboard the 72px
+ * pass raised (screen.css `.device-name-keyboard button`, 56 -> 72), so this is
+ * also a red/green candidate rather than only a coverage row.
+ */
+await cdp.send('Page.navigate', { url: withQuery(URL_UNDER_TEST, 'screen=name') });
+await waitFor(cdp, `!!document.querySelector('.device-lock-submit')`, { what: 'the passcode screen before the name screen' });
+await typePin();
+await submitKeypad();
+await waitFor(cdp, `!!document.querySelector('.device-name')`, { what: 'the name screen after unlocking' });
+await sleep(400);
+const nameChoicesRun = await cdp.evaluate(VIEW);
+const nameChoicesShot = '00f-first-run-name.png';
+await cdp.shot(nameChoicesShot);
+const choiceRows = nameChoicesRun.floor.rows.filter((entry) => entry.label.startsWith('name:'));
+record('the first-run name screen meets the floor', [
+  check('the name screen is on screen', /Choose a name/.test(nameChoicesRun.text), nameChoicesRun.text.slice(0, 80)),
+  check('its suggestion controls meet the floor', choiceRows.length >= 6 && choiceRows.every(meetsFloor),
+    `${choiceRows.length} controls, worst ${choiceRows.length ? Math.min(...choiceRows.map((entry) => entry.h)) : 0}px tall`),
+  check('the floor predicate discriminates: a 20x20 element fails it',
+    nameChoicesRun.floor.control.w === 20 && !meetsFloor(nameChoicesRun.floor.control), `${nameChoicesRun.floor.control.w}x${nameChoicesRun.floor.control.h}`),
+], nameChoicesShot);
+
+await cdp.click(`[...document.querySelectorAll('.device-name-choices button')].find((b) => b.textContent.trim() === 'Choose another name')`);
+await waitFor(cdp, `!!document.querySelector('.device-name-keyboard button')`, { what: 'the name keyboard' });
+await sleep(300);
+const nameTypingRun = await cdp.evaluate(VIEW);
+const nameTypingShot = '00g-first-run-name-keyboard.png';
+await cdp.shot(nameTypingShot);
+const nameKeyRows = nameTypingRun.floor.rows.filter((entry) => entry.label.startsWith('name:'));
+record('the first-run name keyboard meets the floor', [
+  check('the keyboard rendered its keys', nameKeyRows.length >= 38, `${nameKeyRows.length} keys`),
+  check('every name key meets the floor', nameKeyRows.every(meetsFloor),
+    nameKeyRows.filter((entry) => !meetsFloor(entry)).map((entry) => `${entry.label}=${entry.w}x${entry.h}`).join(' · ')
+      || `all ${nameKeyRows.length} keys at ${nameKeyRows[0] ? `${nameKeyRows[0].w}x${nameKeyRows[0].h}` : '?'}`),
+  check('every measured control sits inside the panel', nameTypingRun.floor.rows.every((entry) => entry.inside),
+    nameTypingRun.floor.rows.filter((entry) => !entry.inside).map((entry) => entry.label).join(' · ') || 'all inside'),
+], nameTypingShot);
 
 // Back to the lock fixture for the lock cycle.
 await cdp.send('Page.navigate', { url: URL_UNDER_TEST });

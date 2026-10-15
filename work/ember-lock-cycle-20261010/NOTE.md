@@ -277,3 +277,44 @@ verification of a change, because no rule was altered for them.
 
 Still unexercised after this: sleep, the name and access first-run screens, and
 Hardware, Heartbeat and the spoken-review sheet.
+
+---
+
+## 14 October 2026 — the name screen, and one edit proved redundant
+
+`?screen=name` drives the other first-run screen: the stub reports an unconfigured
+profile (`setup_required`, with `configured` its negation, because the app's
+validator requires them to agree), the driver unlocks the real boundary, and
+`access.tsx` then shows the real `name.tsx` instead of Home.
+
+Measured, 13 scenarios / 56 checks now, 0 console errors, 0 exceptions:
+
+| state | controls | sizes |
+| --- | --- | --- |
+| name, suggestions | 9 | worst 72px tall |
+| name, keyboard open | 42 keys | all 123x72 |
+
+### The keyboard rule I raised is not load-bearing, and the red run is why I know
+
+The floor pass raised `screen.css:17` (`.device-name-keyboard button`) from 56px
+to 72px. Setting it back to **56px and rebuilding changed nothing**: the keys
+still measure 72 and all 56 checks still pass. `screen.css:21`
+(`.device-screen button { min-height: 72px }`) has the same specificity and comes
+LATER in the file, so it already won. The edit was a no-op.
+
+That is worth stating plainly for two reasons. First, a green run alone would have
+let me record "verified" against a rule that does nothing - the red run is the only
+thing that separates those cases. Second, it means the floor pass's headline result
+(1668 -> 0 under-floor controls) is sound, but NOT every one of its 25 edits was
+load-bearing: `navigation.css`'s <=520 page-bar rule was already known to be
+outranked, and this is a second case now proven rather than suspected. A full
+"is each edit load-bearing" pass would need a red run per rule; that has not been
+done, and no claim here should be read as covering it.
+
+### Guard added
+
+`build-lock-fixture.mjs` now refuses to build when the stub's template literal
+contains an unescaped backtick, naming the line. That trap bit twice in one day,
+the second time while writing the comment that documents it - the build now fails
+loudly instead, and the guard itself was tested both ways (green builds, an
+injected stray backtick fails with the line number).

@@ -303,3 +303,21 @@ that the floor already held here and the earlier NOT COVERED note was about
 absence of measurement rather than a defect. Adding them is what turns "probably
 fine" into a number, at 8 screen-viewport combinations and ~108 control
 measurements.
+
+### Correction, same day: not every raised rule was load-bearing
+
+The result above (1668 -> 0 under-floor controls) is measured and holds. What was
+NOT established at the time is that each of the 25 edits was individually
+necessary, and a red run since has shown at least one was not:
+
+- `screen.css:17` `.device-name-keyboard button` was raised 56 -> 72. Setting it
+  back to 56 and rebuilding changes nothing: `screen.css:21` `.device-screen
+  button { min-height: 72px }` has equal specificity and comes later, so it
+  already won. Verified by a red run in the lock fixture (56/56 checks still pass
+  at 56px).
+- `navigation.css`'s `<=520` page-bar rule was already known to be outranked by
+  the more specific `.device-screen .device-page-bar-action`.
+
+So: the OUTCOME is verified; the necessity of individual edits is not, and would
+need one red run per rule. Do not read this pass as 25 verified repairs - read it
+as a verified floor, with at least two of its edits redundant.
