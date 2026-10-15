@@ -27,8 +27,8 @@ def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     scope,raw,receipt,p=actual
     expected=dict(scope_sha256=hashlib.sha256(raw).hexdigest(),history_receipt_sha256=history.NEXT_HISTORY_RECEIPT_SHA256,preceding_parent=history.PARENT)
     assert dict(mcu.PENDING_NATIVE_BINDINGS)==mcu.require_selector_scope(mcu.KIND)==expected
-    assert scope['reviewed_implementation_commit']=='9a9b1605ffb13e6b6a04b6e777c218719013d3ae'
-    assert scope['core_commit']==mcu.CORE=='d828aef5be0ed5aeff472f79bc3935fe50c17092'
+    assert scope['reviewed_implementation_commit']=='91992e8c957c58634945372b19a2f10da134b7b5'
+    assert scope['core_commit']==mcu.CORE=='81a8e2a9afc6371de433034432e2e3536655f8c0'
     assert scope['mcu_artifact']==mcu.artifact()
     assert scope['source_lock_sha256']==mcu.artifact()['source_lock_sha256']
     assert scope['mcu_artifact']['core_revision']==mcu.FIRMWARE_CORE
@@ -38,6 +38,13 @@ def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     assert scope['maximum_whole_transfers']==1 and scope['parts']==5
     assert (scope['whole_seconds'],scope['phase_seconds'],scope['part_application_seconds'],scope['absolute_window_seconds'])==(1350,1355,180,1500)
     assert scope['refunds']==0 and scope['global_debt_complete']is False and scope['original_unknown_actual_cost']is None
+    assert scope['retained_unissued_host_scopes'][0]==scope['retained_unissued_host_scope']
+    assert [p['sha256']for p in scope['retained_unissued_host_scopes']]==[
+        'c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
+        'ba84af81f913d73013fdefa1b550725795f91d0bea11ee0e7367169b72999e50']
+    assert all(p['window_issued']is False and p['original_scope_not_consumed']is True
+        and p['no_paid_history_entry_added']is True and p['refunds']==0
+        for p in scope['retained_unissued_host_scopes'])
 
 
 def test_actual_new_boot_does_not_replace_paid_original_boot_or_caps(actual):
