@@ -249,11 +249,32 @@ def _sender_receive_ready(runner, flow, worker, authority, parent_current):
     return True
 
 
-def _sender_readiness_pass(enabled, runner, flow, worker, authority, parent_current):
+def _comparison_sender_readiness(authority, caps):
+    """Only the held two-profile comparison may use its ordinary SF7 sender."""
+    if caps is None: return False
+    from .lora_comparison import ComparisonApproval, KIND
+    from .mcu_artifact import require_lora_runtime
+    from .pilot_native_caps import NativeCaps
+    if type(caps) is not NativeCaps or caps.policy.qualification_kind != KIND: return False
+    approval = caps._approve
+    require(type(authority) is RunAuthority and authority.sends is True
+            and type(approval) is ComparisonApproval and approval.policy is caps.policy
+            and approval.unit == caps.unit.unit == authority.plan['unit']
+            and caps.current() is True and approval.check() is True,
+            'lora_original_comparison_owner_required')
+    selected = require_lora_runtime(approval.runtime.manifest, KIND, authority.profile)
+    require(selected == approval.lora_mcu_artifact
+            and caps.current() is True and approval.check() is True,
+            'lora_mcu_artifact_original_claim_mismatch')
+    return True
+
+
+def _sender_readiness_pass(enabled, runner, flow, worker, authority, parent_current, *, comparison_caps=None):
     """Default callers retain their original loop, including already queued ACKs."""
     require(type(enabled) is bool, 'invalid_native_sender_receive_ready_mode')
     if not enabled: return False
-    require(authority.sends is True and (authority.public32 is True or _fast_profile(authority.profile)),
+    require(authority.sends is True and (authority.public32 is True or _fast_profile(authority.profile)
+            or _comparison_sender_readiness(authority, comparison_caps)),
             'sender_receive_ready_requires_public32_sender')
     return _sender_receive_ready(runner, flow, worker, authority, parent_current)
 
@@ -462,7 +483,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             require(authority.plan['schema'] == 'meshticulum.bench-run.v1',
                     'service_requires_dedicated_runner')
         require(not sender_receive_ready or (public_service and authority.sends is True
-                and (authority.public32 is True or _fast_profile(authority.profile))),
+                and (authority.public32 is True or _fast_profile(authority.profile)
+                     or _comparison_sender_readiness(authority, caps if lora_selected is not None else None))),
                 'sender_receive_ready_requires_public32_sender')
         grant, profile = authority.grant, authority.profile
         if type(profile) in (GfskProfile,Gfsk250Profile):
@@ -550,7 +572,8 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             runner = ServiceRunner(ServiceTransfer(flow), payload=payload)
             runner.start()
             from lantern_meshticulum.bench.pilot_job import ready
-            receive_checked = _sender_readiness_pass(sender_receive_ready, runner, flow, worker, authority, parent_current)
+            receive_checked = _sender_readiness_pass(sender_receive_ready, runner, flow, worker, authority, parent_current,
+                comparison_caps=caps if lora_selected is not None else None)
             with authority.application_lease():
                 require(parent_current(), 'pilot_parent_not_current_before_ready')
                 ready(directory, result['native_job'], radio_receive_checked=receive_checked)
