@@ -122,8 +122,8 @@ def test_actual_root48_controllers_preserve47_prefix_and_separate_allocated_view
     assert canonical(payload['previous'][:-1])==canonical(values['histories'][unit]['previous'])
     assert canonical(payload['legacy_inventory'])==canonical(values['histories'][unit]['legacy_inventory'])
     assert len(canonical(payload))<=2500000
-    assert rpc.HISTORY==history.H47_PREFIX+(history.PARENT,) and len(rpc.OLD_DIGESTS)==48
-    assert tuple(v['policy_digest']for v in payload['previous'])==rpc.OLD_DIGESTS
+    assert rpc.HISTORY[:48]==history.H47_PREFIX+(history.PARENT,) and len(rpc.OLD_DIGESTS)==49
+    assert tuple(v['policy_digest']for v in payload['previous'])==rpc.OLD_DIGESTS[:48]
 
 
 @pytest.mark.parametrize('damage',('allocation','limit','paid','full','expiry','pending'))

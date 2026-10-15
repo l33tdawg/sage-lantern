@@ -89,7 +89,7 @@ def test_pending_receipt_does_not_admit_even_complete_metadata(actual,monkeypatc
 def test_historical_H45_pins_remain_exact_and_old_scopes_stay_closed(inputs,monkeypatch):
     from types import MappingProxyType
     from lantern_meshticulum.bench import mcu_artifact,retained_capture
-    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==48
+    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==49
     assert rpc.HISTORY[:44]==tuple(inputs['parents'])and rpc.HISTORY[44]==history.UNMATERIALIZED_PARENT
     assert rpc.OLD_DIGESTS[44]==history.UNMATERIALIZED_POLICY_DIGEST
     lane=Path(os.environ['MESHTICULUM_H45_FIXTURE']).parent/'meshticulum-e244-h45-activation-20261015'
