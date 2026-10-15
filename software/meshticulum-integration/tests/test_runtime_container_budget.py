@@ -24,14 +24,14 @@ def test_real_stored_and_deflated_packages_keep_exact_sources(runner, packaged_i
 def test_outer_allowance_cannot_expand_other_budgets(runner, which, case):
     physical = {'bench_node.py': b'entry', 'execution.zip': b'i'}
     version = 'v2'
-    if case == 'image': physical['execution.zip'] = b'i' * 2000001
+    if case == 'image': physical['execution.zip'] = b'i' * 2250001
     if case == 'packaging': physical.update(a=b'a' * 250000, b=b'b' * 250000)
     if case == 'container':
         physical['execution.zip'] = b'i' * 2000000
         physical.update(a=b'a' * 250000, b=b'b' * 250000)
     if case == 'legacy':
         version = 'v1'; physical.pop('execution.zip')
-        physical.update({str(i): b'a' * 400000 for i in range(5)})
+        physical.update({str(i): b'a' * 400000 for i in range(6)})
     manifest = dict(schema='meshticulum.bench-runtime-bundle.' + version,
                     files={name: hashlib.sha256(raw).hexdigest() for name, raw in physical.items()})
     raw, pin = archive(physical, manifest)

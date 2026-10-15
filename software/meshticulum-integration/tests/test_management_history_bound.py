@@ -38,7 +38,7 @@ def test_exact_h41_history_and_original_context_pass_management_and_capture_comm
         phase_start_epoch_us=c.value['original_epoch_us'],phase_end_epoch_us=c.value['original_epoch_us']+1355000000,
         review_sha256='a'*64,qualification_kind=p.qualification_kind,bundle_context=c.value,
         bundle_capture_commitment=public_context_commitment(c.value,parent_id=p.parent_id))
-    raw=inputs.canonical(payload);assert 2000000<len(raw)<=inputs.RAW_MAX==2500000
+    raw=inputs.canonical(payload);assert 2000000<len(raw)<=inputs.RAW_MAX==2750000
     compressed,csha,rsha=inputs.encode(payload)
     assert inputs.decode(compressed,csha,rsha)==payload
     assert rpc.capture_request_commitment(payload)==payload['bundle_capture_commitment']
@@ -110,7 +110,7 @@ def test_runtime_image_input_and_existing_argv_contracts_keep_their_original_lim
     assert "archive=read(op['runtime_archive'],2000000)" in source
     # Physical container overhead is tested with actual archives in
     # test_runtime_container_budget; image/input limits remain separate.
-    assert "expanded<=2000000,'batch_image_expansion_bound'" in source
+    assert "expanded<=2250000,'batch_image_expansion_bound'" in source
     tree=ast.parse((bench/'run_public_sf5_c_bulk_8k.py').read_bytes())
     entry=ast.literal_eval(next(n.value for n in tree.body if isinstance(n,ast.Assign)
         and any(isinstance(t,ast.Name) and t.id=='RPC_ENTRY' for t in n.targets)))

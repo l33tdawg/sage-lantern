@@ -20,12 +20,12 @@ FLOW_PINS = {'flow.py': '9a8d4bb3bea2f69581d80ecd31fda7692c2435fe1363be53564d528
 
 def validate_package(files, *, sealed):
     """Match installer bounds before publishing any build artifact."""
-    if len(files) > 128 or any(len(raw) > (2000000 if name == 'execution.zip' else 500000)
+    if len(files) > 128 or any(len(raw) > (2250000 if name == 'execution.zip' else 500000)
                                for name, raw in files.items()):
         raise SystemExit('Runtime member exceeds its reviewed byte or count limit.')
     total = sum(map(len, files.values()))
     packaging = total - len(files.get('execution.zip', b''))
-    if total > (2500000 if sealed else 2000000) or sealed and packaging > 500000:
+    if total > (2500000 if sealed else 2250000) or sealed and packaging > 500000:
         raise SystemExit('Runtime container exceeds its reviewed packaging limit.')
 
 
@@ -145,7 +145,7 @@ def main():
         originals = files
         deflated = args.execution_layout == 'sealed-image-deflated'
         expanded_bytes = sum(map(len, originals.values()))
-        if expanded_bytes > 2000000:raise SystemExit('Sealed source expansion exceeds its reviewed byte limit.')
+        if expanded_bytes > 2250000:raise SystemExit('Sealed source expansion exceeds its reviewed byte limit.')
         method = zipfile.ZIP_DEFLATED if deflated else zipfile.ZIP_STORED
         raw_image = io.BytesIO()
         with zipfile.ZipFile(raw_image, 'w', compression=method, allowZip64=False) as image:
@@ -154,7 +154,7 @@ def main():
                 entry.compress_type = method; entry.external_attr = 0o100600 << 16
                 image.writestr(entry, data, compresslevel=6 if deflated else None)
         image_bytes = raw_image.getvalue()
-        if len(image_bytes) > 2000000:
+        if len(image_bytes) > 2250000:
             raise SystemExit('Sealed execution image exceeds its reviewed byte limit.')
         loader = (ROOT / 'firmware/meshticulum-bench/execution_runtime.py').read_bytes()
         compile(loader, 'execution_runtime.py', 'exec')

@@ -26,7 +26,7 @@ DEFLATED_LAYOUT = 'sage-lantern.sealed-source-image.v2'
 IMAGE = 'execution.zip'
 LOADER = 'execution_runtime.py'
 MODULE = '_lantern_execution_runtime'
-MAX_IMAGE = 2_000_000
+MAX_IMAGE = 2_250_000
 OWNED = ('meshticulum', 'lantern_meshticulum')
 ALIASES = MappingProxyType({
     **{'meshticulum.meshticulum_contracts.' + name: 'meshticulum.contracts.' + name

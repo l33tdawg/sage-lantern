@@ -151,14 +151,14 @@ def archive_source_members(archive,manifest_pin):
         for row in rows:
             need(row.isfile() and not Path(row.name).is_absolute() and '..' not in Path(row.name).parts
                 and str(Path(row.name))==row.name and 0<=row.size<=
-                (2000000 if row.name=='execution.zip' else 500000),'batch_archive_member_bound')
+                (2250000 if row.name=='execution.zip' else 500000),'batch_archive_member_bound')
             total+=row.size;need(total<=2500000,'batch_archive_total_bound')
             data=tar.extractfile(row).read(row.size+1)
             need(len(data)==row.size,'batch_archive_truncated');physical[row.name]=data
     need('manifest.json' in physical and sha(physical['manifest.json'])==manifest_pin,'batch_manifest_changed')
     manifest=json.loads(physical.pop('manifest.json'));files=manifest['files']
     need(total-len(physical.get('execution.zip',b''))<=500000
-        if manifest['schema']=='meshticulum.bench-runtime-bundle.v2' else total<=2000000,
+        if manifest['schema']=='meshticulum.bench-runtime-bundle.v2' else total<=2250000,
         'batch_archive_packaging_bound')
     need(type(files) is dict and set(physical)==set(files)
         and all(sha(data)==files[name] for name,data in physical.items()),'batch_member_changed')
@@ -175,10 +175,10 @@ def archive_source_members(archive,manifest_pin):
         and layout['image']=='execution.zip' and layout['loader']=='execution_runtime.py'
         and type(sources) is dict and 75<=len(sources)<=150
         and sha(canonical(sources))==layout['source_files_sha256'],'batch_image_correspondence_changed')
-    need(not compressed or type(layout['expanded_bytes']) is int and 0<layout['expanded_bytes']<=2000000,
+    need(not compressed or type(layout['expanded_bytes']) is int and 0<layout['expanded_bytes']<=2250000,
         'batch_image_expansion_bound')
     need({'execution.zip','execution_runtime.py','bench_node.py'}<=set(physical)
-        and type(layout['bytes']) is int and 0<layout['bytes']<=2000000
+        and type(layout['bytes']) is int and 0<layout['bytes']<=2250000
         and len(physical['execution.zip'])==layout['bytes']
         and sha(physical['execution.zip'])==layout['sha256']==files['execution.zip']
         and sha(physical['execution_runtime.py'])==layout['loader_sha256']==files['execution_runtime.py'],
@@ -198,7 +198,7 @@ def archive_source_members(archive,manifest_pin):
                 and not name.endswith(('.pyc','.pyo','.so','.pyd','.dll'))
                 and row.compress_type==(zipfile.ZIP_DEFLATED if compressed else zipfile.ZIP_STORED) and not row.flag_bits&1
                 and stat.S_ISREG(mode) and 0<=row.file_size<=500000,'batch_image_member_type_changed')
-            expanded+=row.file_size;need(expanded<=2000000,'batch_image_expansion_bound')
+            expanded+=row.file_size;need(expanded<=2250000,'batch_image_expansion_bound')
             if compressed:data,cursor=deflated_member(image_raw,row,cursor,central)
             else:data=image.read(row)
             need(len(data)==row.file_size and sha(data)==sources[name],

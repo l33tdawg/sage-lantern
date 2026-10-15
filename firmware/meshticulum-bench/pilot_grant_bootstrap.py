@@ -87,7 +87,7 @@ def main():
     for name, expected in manifest['files'].items():
         part = Path(name)
         need(not part.is_absolute() and '..' not in part.parts, 'invalid_runtime_path')
-        maximum=2000000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
+        maximum=2250000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
         need(hashlib.sha256(read(bundle / part, maximum, root=True)).hexdigest() == expected,
              'runtime_source_changed')
     if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2':

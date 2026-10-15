@@ -23,7 +23,7 @@ RPC_FILE_ENTRY=r'''try:
  manifest=json.loads(mraw);need(manifest['private_services_enabled'] is False and manifest['public_parent_claims_required'] is True,'public_runtime_required')
  for name,wanted in manifest['files'].items():
   part=Path(name);need(not part.is_absolute() and '..' not in part.parts,'runtime_member')
-  limit=2000000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
+  limit=2250000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
   need(hashlib.sha256(read(root/part,limit)).hexdigest()==wanted,'runtime_member_pin')
  sources=manifest['source_files'] if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' else manifest['files']
  need(sources.get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')

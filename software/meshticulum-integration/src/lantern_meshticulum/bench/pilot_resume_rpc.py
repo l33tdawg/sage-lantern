@@ -781,7 +781,7 @@ class Runtime:
                 part = Path(name)
                 need(type(name) is str and not part.is_absolute() and '..' not in part.parts
                      and '.' not in part.parts and HEX.fullmatch(pin), 'unsafe_runtime_member')
-                maximum=2000000 if self._image is not None and name=='execution.zip' else 500000
+                maximum=2250000 if self._image is not None and name=='execution.zip' else 500000
                 need(sha(self.reader.read(self.root/part, maximum)) == pin, 'runtime_payload_changed')
             relative = 'lantern_meshticulum/bench/pilot_resume_rpc.py'
             if self._image is not None:

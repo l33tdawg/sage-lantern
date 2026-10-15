@@ -67,7 +67,7 @@ def test_all_three_readers_refuse_noncanonical_or_unbounded_images(runner,which,
     elif fault=='unknown_version':manifest['execution_layout']['schema']='sage-lantern.sealed-source-image.v3'
     elif fault=='expanded_mismatch':manifest['execution_layout']['expanded_bytes']+=1
     elif fault=='expanded_bool':manifest['execution_layout']['expanded_bytes']=True
-    elif fault=='expanded_limit':manifest['execution_layout']['expanded_bytes']=2000001
+    elif fault=='expanded_limit':manifest['execution_layout']['expanded_bytes']=2250001
     elif fault=='local_crc':struct.pack_into('<I',raw,14,0)
     elif fault=='crc':
         struct.pack_into('<I',raw,14,0);struct.pack_into('<I',raw,central+16,0)
@@ -105,8 +105,8 @@ def test_sum_of_expanded_members_is_bounded_before_decode(runner,which):
     sources=fixture_sources()
     for name in list(sources)[:5]:sources[name]=b'#'+b'x'*449998+b'\n'
     _,physical,manifest=image_fixture(sources)
-    assert len(physical['execution.zip'])<100000 and sum(map(len,sources.values()))>2000000
-    manifest['execution_layout']['expanded_bytes']=2000000
+    assert len(physical['execution.zip'])<100000 and sum(map(len,sources.values()))>2250000
+    manifest['execution_layout']['expanded_bytes']=2250000
     with pytest.raises(RuntimeError):decode(which,runner,physical,manifest)
 
 

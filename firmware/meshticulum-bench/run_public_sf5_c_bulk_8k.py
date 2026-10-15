@@ -271,7 +271,7 @@ mraw=read(root/'manifest.json',65536);need(hashlib.sha256(mraw).hexdigest()==pin
 m=json.loads(mraw);need(m['private_services_enabled'] is False and m['public_parent_claims_required'] is True,'public_runtime_required')
 for name,h in m['files'].items():
  part=Path(name);need(not part.is_absolute() and '..' not in part.parts,'runtime_member')
- limit=2000000 if m.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
+ limit=2250000 if m.get('schema')=='meshticulum.bench-runtime-bundle.v2' and name=='execution.zip' else 500000
  need(hashlib.sha256(read(root/part,limit)).hexdigest()==h,'runtime_member_pin')
 sources=m['source_files'] if m.get('schema')=='meshticulum.bench-runtime-bundle.v2' else m['files']
 need(sources.get('lantern_meshticulum/bench/pilot_resume_rpc.py')==adapter_pin,'native_adapter_pin')

@@ -55,9 +55,9 @@ def image_members(raw, manifest):
             and layout['schema'] in ('sage-lantern.sealed-source-image.v1','sage-lantern.sealed-source-image.v2')
             and layout['image'] == 'execution.zip'
             and layout['loader'] == 'execution_runtime.py' and type(layout['bytes']) is int
-            and 0 < layout['bytes'] <= 2000000 and len(raw) == layout['bytes']
+            and 0 < layout['bytes'] <= 2250000 and len(raw) == layout['bytes']
             and hashlib.sha256(raw).hexdigest() == layout['sha256'], 'sealed_runtime_layout_changed')
-    require(not compressed or type(layout['expanded_bytes']) is int and 0 < layout['expanded_bytes'] <= 2000000,
+    require(not compressed or type(layout['expanded_bytes']) is int and 0 < layout['expanded_bytes'] <= 2250000,
             'sealed_runtime_expansion_bound')
     require(type(sources) is dict and 75 <= len(sources) <= 150
             and hashlib.sha256(json.dumps(sources,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
@@ -78,7 +78,7 @@ def image_members(raw, manifest):
                     and not row.flag_bits & 1 and stat.S_ISREG(row.external_attr >> 16)
                     and not row.filename.endswith(('.pyc','.pyo','.so','.pyd','.dll'))
                     and 0 <= row.file_size <= 500000, 'sealed_runtime_member_type')
-            total += row.file_size; require(total <= 2000000, 'sealed_runtime_expansion_limit')
+            total += row.file_size; require(total <= 2250000, 'sealed_runtime_expansion_limit')
             if compressed:data, cursor = deflated_member(raw, row, cursor, central)
             else:data = archive.read(row)
             require(len(data) == row.file_size and hashlib.sha256(data).hexdigest() == sources[row.filename],
@@ -99,7 +99,7 @@ def members(data, digest):
             require(entry.isfile() and not path.is_absolute() and '..' not in path.parts
                     and str(path) == entry.name and path.parts and len(entry.name) < 200,
                     'invalid_runtime_archive_member')
-            maximum = 2000000 if entry.name == 'execution.zip' else 500000
+            maximum = 2250000 if entry.name == 'execution.zip' else 500000
             require(entry.name not in result and len(result) < 128 and 0 <= entry.size <= maximum,
                     'runtime_archive_member_limit')
             total += entry.size
@@ -109,10 +109,10 @@ def members(data, digest):
     require({'manifest.json', 'bench_node.py'} <= result.keys(), 'incomplete_runtime_archive')
     manifest = json.loads(result['manifest.json'])
     image_layout = manifest.get('schema') == 'meshticulum.bench-runtime-bundle.v2'
-    # The sealed image has its own 2 MB limit; notices and loader need a
-    # separate, bounded allowance. Legacy directory archives stay at 2 MB.
+    # The sealed image has its own 2.25 MB limit; notices and loader need a
+    # separate, bounded allowance. Legacy directory archives stay at 2.25 MB.
     require(total - len(result.get('execution.zip', b'')) <= 500000 if image_layout
-            else total <= 2000000, 'runtime_archive_packaging_limit')
+            else total <= 2250000, 'runtime_archive_packaging_limit')
     require(manifest['schema'] in ('meshticulum.bench-runtime-bundle.v1', 'meshticulum.bench-runtime-bundle.v2')
             and set(manifest['files']) == set(result) - {'manifest.json'}, 'wrong_runtime_manifest')
     for name, expected in manifest['files'].items():
@@ -177,7 +177,7 @@ def main():
         path = destination / name
         private_root(path.parent)
         require(path.lstat().st_uid == 0 and not path.lstat().st_mode & 0o022
-                and read_regular(path, 2000000 if name == 'execution.zip' else 500000) == data, 'runtime_installed_bytes_changed')
+                and read_regular(path, 2250000 if name == 'execution.zip' else 500000) == data, 'runtime_installed_bytes_changed')
     for name in ('runs', 'objects'): private_root(state / name)
     executable = '/usr/bin/python3' if unit == 'unit-c' else '/root/esp-venv-r3/bin/python'
     os.chdir(destination)
