@@ -110,6 +110,7 @@ class BatchContext:
     @classmethod
     def _from_retained_owner(cls,owner,policy,*,unit,observation):
         """Decode only the proved expired 6be scope; grants no live approval."""
+        from .pilot_resume_rpc import historical_monotonic_expired
         retained_parent='6be212b13351cb9852ed07ba7998be96'
         retained_digest='97e3b2e0b51f7fb1b1d4c21c04d715f9dc630e6702e46eb6fd1d6f7cb6f62bef'
         require(type(policy) is ParentPolicy and policy.parent_id==retained_parent
@@ -122,7 +123,7 @@ class BatchContext:
                 and all(type(observation.get(k)) is int for k in
                         ('observation_original_epoch_us','observation_original_monotonic_us'))
                 and observation['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-                and observation['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+                and historical_monotonic_expired(policy,unit,observation,owner['native_phase'][unit]['deadline_monotonic_us']),
                 'retained_gfsk_original_clocks_live')
         return cls._decode_owner_record(owner,policy)
 

@@ -252,6 +252,40 @@ def clock(): return time.time_ns()//1000, time.monotonic_ns()//1000
 def boot(): return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 def stable(value): return {k:value[k] for k in ('unit','host_boot_id','services','service_lifetimes')}
 
+
+def historical_clock_expired(original_boot, expires_epoch_us, deadline_monotonic_us, sampled, current_boot):
+    """Retired metadata keeps its original clock; a new boot never remaps it.
+
+    Callers separately pin the old grant/claim and retired state. Their live
+    observation guard still checks the actual current boot. Monotonic values
+    are comparable only within the original boot; epoch expiry is always due.
+    """
+    from .pilot_parent_caps import boot as validate_boot
+    validate_boot(original_boot);validate_boot(current_boot)
+    need(type(sampled) is tuple and len(sampled)==2
+         and all(type(v) is int and v>0 for v in (*sampled,expires_epoch_us,deadline_monotonic_us)),
+         'historical_clock_shape_changed')
+    return expires_epoch_us<sampled[0] and (original_boot!=current_boot or deadline_monotonic_us<sampled[1])
+
+def historical_monotonic_expired(policy, unit, observation, deadline_monotonic_us):
+    """Compare a retired deadline only within its original boot.
+
+    Epoch expiry and original metadata pins remain the caller's checks. A fresh
+    collected scope supplies its current boot; an older DTO without that field
+    retains the original same-boot comparison and cannot imply a reboot.
+    """
+    from .pilot_parent_caps import boot as validate_boot
+    original=policy.unit(unit).host_boot_id
+    current=observation.get('current_host_boot_id',original)
+    validate_boot(original);validate_boot(current)
+    mono=observation['observation_original_monotonic_us']
+    need(observation.get('policy_expired_at_observation') is True
+         and type(mono) is int and mono>0
+         and type(deadline_monotonic_us) is int and deadline_monotonic_us>0,
+         'historical_monotonic_shape_changed')
+    return original!=current or mono>=deadline_monotonic_us
+
+
 def reserve_history_descriptor_capacity():
     """Reserve before history Reader growth, retaining all continuity handles.
 
@@ -789,7 +823,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         if run not in original: continue
         need(g['issued_epoch_us'] == row['original_issued_epoch_us']
              and g['expires_epoch_us'] == row['original_expires_epoch_us']
-             and g.get('host_boot_id') == row['host_boot_id'] == boot()
+             and g.get('host_boot_id') == row['host_boot_id']
              and row['actual_cost'] is None, 'old_original_binding_changed')
         if g['schema'] in IP_SCHEMAS:
             if g['schema']==IP_V2:ip_metadata_grant(g)
@@ -812,7 +846,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         prior = inventory if v['prior_kind'] == 'legacy' else dict(v['prior_metadata'],legacy_inventory=inventory)
         for name, value in (('policy.json',v['policy']),('owner.json',v['owner']),('prior.json',prior)):
             need(metadata(target/name,200000) == canonical(value), 'old_parent_input_changed')
-        need(policy.expires_epoch_us < clock()[0] and policy.unit(unit).host_boot_id == boot(), 'old_parent_live_or_rebooted')
+        need(policy.expires_epoch_us < clock()[0], 'old_parent_live_or_rebooted')
         need(sha(metadata(target/'native.sqlite')) == v['database_sha256'], 'old_native_database_changed')
         end = min(clock()[0]+35000000, guard()['phase_end_epoch_us'])
         legacy = None
@@ -1165,7 +1199,7 @@ def qualify_enrolled_zero_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,detail['enrollment']['deadline_monotonic_us']),
          'enrolled_zero_original_clocks_not_expired')
     extra=Cost(2560,600000000) if unit in ('unit-a','unit-c') else Cost()
     need(all(type(detail[k]) is int and detail[k]==0 for k in
@@ -1201,7 +1235,7 @@ def qualify_partial_batch_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,owner['native_phase'][unit]['deadline_monotonic_us']),
          'partial_batch_original_clocks_live')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==resources
@@ -1261,7 +1295,7 @@ def qualify_early_rx_partial_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,owner['native_phase'][unit]['deadline_monotonic_us']),
          'early_rx_partial_original_clocks_live')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==resources
@@ -1306,7 +1340,7 @@ def qualify_completed_batch_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,owner['native_phase'][unit]['deadline_monotonic_us']),
          'completed_batch_original_clocks_live')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==resources
@@ -1350,7 +1384,7 @@ def qualify_rx_priority_batch_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,owner['native_phase'][unit]['deadline_monotonic_us']),
          'rx_priority_batch_original_clocks_live')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==resources
@@ -1495,7 +1529,7 @@ def qualify_gfsk_complete_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,owner['native_phase'][unit]['deadline_monotonic_us']),
          'completed_gfsk_original_clocks_live')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==resources
@@ -1564,8 +1598,8 @@ def qualify_sf5_startup_costs(unit,policy,observed,value):
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and type(owner['phase_end_epoch_us']) is int and type(phase['deadline_monotonic_us']) is int
          and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=phase['deadline_monotonic_us']
-         >=detail['enrollment']['deadline_monotonic_us'], 'sf5_startup_original_clocks_live')
+         and historical_monotonic_expired(policy,unit,observed,phase['deadline_monotonic_us'])
+         and phase['deadline_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'], 'sf5_startup_original_clocks_live')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count','resource_count'))
          and len(detail['claims'])==len(detail['resources'])==count
          and detail['full_prepaid_caps']==asdict(actual_extra)
@@ -1630,13 +1664,13 @@ def qualify_partial_bundle_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,detail['enrollment']['deadline_monotonic_us']),
          'partial_bundle_original_clocks_not_expired')
     if kind in ('c-bundle100k-v2','c-bundle100k-v3'):
         owner=value['owner'];phase=owner['native_phase'][unit]
         need(type(owner['phase_end_epoch_us']) is int and type(phase['deadline_monotonic_us']) is int
              and observed['observation_original_epoch_us']>=owner['phase_end_epoch_us']
-             and observed['observation_original_monotonic_us']>=phase['deadline_monotonic_us'],
+             and historical_monotonic_expired(policy,unit,observed,phase['deadline_monotonic_us']),
              'v2_partial_bundle_original_phase_clocks_not_expired')
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==(1 if count else 0)
@@ -1756,8 +1790,9 @@ def retired_partial_radio(reader,unit,policy,observed,row,now):
          and sha(provision_raw)=='d2bdd53798dac8ce8ca8e40f0a8fc42c19789d751472be03efc247d18cec7fcf'
          and sha(identity_raw)==row['prepared_identity_sha256']=='a4e7600fe7c6fb4f6cfa87bfb8e7f0880376bb959b311b4b8e9533595a17df05'
          and plan['schema']=='meshticulum.service-run.v1' and plan['unit']==unit and plan['session_id']==PARTIAL_RUN
-         and plan['host_boot_id']==policy.unit(unit).host_boot_id==boot() and plan['expires_epoch_us']<sample[0]
-         and plan['application_deadline_monotonic_us']<sample[1] and plan['service']['format']=='MR1.request'
+         and plan['host_boot_id']==policy.unit(unit).host_boot_id and plan['expires_epoch_us']<sample[0]
+         and historical_clock_expired(plan['host_boot_id'],plan['expires_epoch_us'],
+             plan['application_deadline_monotonic_us'],sample,boot()) and plan['service']['format']=='MR1.request'
          and provision['run_id']==PARTIAL_RUN and provision['unit']==unit and provision['transport']=='lora'
          and receipt['parent_id']==PARTIAL_PAID and receipt['prepared'] is True and receipt['native_claim_id']==claim['native_claim_id']
          and sha(canonical(receipt))==claim['prepared_row_sha256'] and sha(canonical(plan))==claim['native_plan_sha256']
@@ -1800,7 +1835,7 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
          and receipt['native_claim_id']==claim['native_claim_id'] and receipt['child_caps']['cost']==claim['child']['full_caps']
          and receipt['run_id']==run and receipt['parent_id']==policy.parent_id
          and receipt['policy_digest']==policy.digest and receipt['unit']==unit
-         and receipt['host_boot_id']==policy.unit(unit).host_boot_id==boot()
+         and receipt['host_boot_id']==plan['host_boot_id']==policy.unit(unit).host_boot_id
          and sha(canonical(plan))==receipt['native_plan_sha256']==claim['native_plan_sha256'],
          'retired_unstarted_provision_rebound')
     if plan['schema']==IP_V2:
@@ -1817,7 +1852,8 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
          'retired_unstarted_plan_rebound')
     sampled=now();need(plan['expires_epoch_us']<sampled[0]
          and receipt['application_expires_epoch_us']<sampled[0]
-         and receipt['application_deadline_monotonic_us']<sampled[1]
+         and historical_clock_expired(receipt['host_boot_id'],receipt['application_expires_epoch_us'],
+             receipt['application_deadline_monotonic_us'],sampled,boot())
          and public(target/'active',128)==b'retired\n','retired_unstarted_live_or_not_retired')
     for name in os.listdir(target):
         need(name not in ('job.json','started','bytes.sqlite','wire.sqlite','attempts.sqlite')
@@ -2530,7 +2566,7 @@ def qualify_gfsk250_mb1_partial_costs(unit,policy,observed,value):
             if c in (fast_partial,*COMPLETE_FAST_HISTORY):
                 pin=c.FAST_STAGE_SHA256[unit]['fast-stage-'+str(index)+'.json'] if complete else c.FAST_STAGE_SHA256[unit]
                 need(row['fast_stage_sha256']==pin
-                    and observed['observation_original_monotonic_us']>=row['fast_stage_deadline_monotonic_us']
+                    and historical_monotonic_expired(policy,unit,observed,row['fast_stage_deadline_monotonic_us'])
                     and (not complete or row['fast_stage_deadline_monotonic_us']==c.STAGE_NATIVE_DEADLINES[unit][index]),
                     'retained_fast_stage_changed_or_live')
         need(observed['legacy_scoped_rows_complete'] is True and len(observed['legacy_runs'])==count
@@ -2556,7 +2592,7 @@ def qualify_fast_zero_costs(unit,policy,observed,value):
     need(observed['policy_expired_at_observation'] is True
          and all(type(observed[k]) is int for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
          and observed['observation_original_epoch_us']>=policy.expires_epoch_us
-         and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us'],
+         and historical_monotonic_expired(policy,unit,observed,detail['enrollment']['deadline_monotonic_us']),
          'fast_zero_original_clocks_not_expired')
     extra=Cost(2560,600000000) if unit in ('unit-a','unit-c') else Cost()
     need(all(type(detail[k]) is int and detail[k]==0 for k in

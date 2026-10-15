@@ -40,6 +40,13 @@ RETAINED_SCOPES=('c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f
     'c4ce1ce81748084ede8b8731c1479fc70f36a196ad5601a7651c570e66014c9e')
 
 
+def current_peers(config):
+    """Use current host boots for new grants; historical peers stay immutable."""
+    return {unit:dict(chain_id='meshticulum-public-pilot-v1',agent_id=sha(
+        ('meshticulum-public-pilot-v1/'+unit+'/'+row['host_boot_id']).encode()))
+        for unit,row in config['units'].items()}
+
+
 def controller_boot():
     # Same observation as run_public_pilot.controller_boot; available before
     # importing the not-yet-verified paired source during operation review.
@@ -562,7 +569,7 @@ def main():
             priors[u]=dict(schema='meshticulum.public-resume-conservative-prior.v1',history_binding_sha256=cap['history_binding_sha256'],legacy_inventory=histories[u]['legacy_inventory'],previous_parent_ids=op['history_parent_ids'],full_caps=histories[u]['previous'][-1]['paid_caps'],complete_global_debt=False,actual_cost=None,refunds=0)
         result['captures']=captures
         registry={u:dict(observation_sha256=sha(canonical(priors[u])),history_binding_sha256=captures[u]['history_binding_sha256'],full_caps=priors[u]['full_caps']) for u in histories};units=[]
-        peers={u:next(v['peer'] for v in histories[u]['previous'][-1]['policy']['units'] if v['unit']==u) for u in histories};extra={u:Cost() if u=='unit-b' else Cost(1024,240000000) for u in histories}
+        peers=current_peers(cfg);extra={u:Cost() if u=='unit-b' else Cost(1024,240000000) for u in histories}
         for u in histories:
             old=Cost(**priors[u]['full_caps']);units.append(UnitCaps(u,cfg['units'][u]['host_boot_id'],PeerID(**peers[u]),old.plus(extra[u]),old,sha(canonical(priors[u]))))
         aggregate=Cost()

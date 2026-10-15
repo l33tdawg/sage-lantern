@@ -54,6 +54,7 @@ def pending_next_roster():
 
 def qualify_costs(unit,policy,observed,value):
     """Retain the whole enrollment; one paid claim is not measured radio use."""
+    from .pilot_resume_rpc import historical_monotonic_expired
     require_final_bindings()
     retained_context(value['owner'],policy,unit=unit,observation=observed)
     detail=observed['detail'];local=policy.unit(unit);count=0 if unit=='unit-b' else 1
@@ -68,7 +69,7 @@ def qualify_costs(unit,policy,observed,value):
         and detail['full_prepaid_caps']==asdict(claimed)
         and detail['approval_bytes_match_enrollment'] is True
         and detail['enrollment']['history_binding_sha256']==value['owner']['history_binding_sha256']
-        and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us']
+        and historical_monotonic_expired(policy,unit,observed,detail['enrollment']['deadline_monotonic_us'])
         and observed['expected_database_sha256']==value['database_sha256']==NATIVE_DATABASE_SHA256[unit]
         and observed['legacy_runs'] is None and observed['legacy_relation'] is None,
         '9f90_actual_rows_changed')
@@ -93,13 +94,13 @@ def qualify_costs(unit,policy,observed,value):
             and type(row['grant_sha256']) is str and len(row['grant_sha256'])==64
             and row['prepared_identity_sha256']==PREPARATION_SHA256[unit]
             and resource['fast_stage_sha256']==FAST_STAGE_SHA256[unit]
-            and observed['observation_original_monotonic_us']>=resource['fast_stage_deadline_monotonic_us'],
+            and historical_monotonic_expired(policy,unit,observed,resource['fast_stage_deadline_monotonic_us']),
             '9f90_prepared_stage_changed')
 
 
 def retired_metadata(reader,state,unit,policy,observed,row,now,boot_reader):
     """Read the exact public prepared metadata and stage, never keys or payload."""
-    from .pilot_resume_rpc import parse,sha,_child_ref
+    from .pilot_resume_rpc import parse,sha,_child_ref,historical_clock_expired
     declared_partition(policy)
     require(unit in ('unit-a','unit-c') and row['run_id']==RUN and row['transport']=='lora',
         '9f90_retired_scope_changed')
@@ -122,7 +123,7 @@ def retired_metadata(reader,state,unit,policy,observed,row,now,boot_reader):
         and receipt['native_claim_id']==claim['native_claim_id']
         and receipt['parent_id']==PARENT and receipt['policy_digest']==POLICY_DIGEST
         and receipt['unit']==unit and receipt['run_id']==RUN
-        and receipt['host_boot_id']==policy.unit(unit).host_boot_id==boot_reader()
+        and receipt['host_boot_id']==policy.unit(unit).host_boot_id
         and receipt['native_plan_sha256']==claim['native_plan_sha256']
         and provision['schema']=='meshticulum.provisioned-public-pilot.v2'
         and provision['unit']==unit and provision['run_id']==RUN and provision['transport']=='lora',
@@ -132,7 +133,9 @@ def retired_metadata(reader,state,unit,policy,observed,row,now,boot_reader):
         and plan['host_boot_id']==receipt['host_boot_id'] and plan['service']['format']=='MR1.request'
         and plan['service']['application_expires_epoch_us']==receipt['application_expires_epoch_us']
         and plan['expires_epoch_us']<sample[0] and receipt['application_expires_epoch_us']<sample[0]
-        and plan['application_deadline_monotonic_us']==receipt['application_deadline_monotonic_us']<sample[1]
+        and plan['application_deadline_monotonic_us']==receipt['application_deadline_monotonic_us']
+        and historical_clock_expired(receipt['host_boot_id'],receipt['application_expires_epoch_us'],
+            receipt['application_deadline_monotonic_us'],sample,boot_reader())
         and _sha({k:v for k,v in plan.items() if k!='application_deadline_monotonic_us'})==receipt['original_plan_sha256']==meta['plan_sha256']
         and plan['profile']==meta['profile'] and {k:plan['object'][k] for k in ('bytes','sha256')}==meta['object']
         and public(target/'active',128,lock=True)==b'retired\n', '9f90_retired_plan_or_clock_changed')
@@ -151,7 +154,9 @@ def retired_metadata(reader,state,unit,policy,observed,row,now,boot_reader):
         and stage['bundle_context_sha256']==policy.bundle_context_sha256==resource['bundle_context_sha256']
         and stage['campaign_id']==resource['campaign_id']==meta['campaign_id']
         and stage['expires_epoch_us']==resource['application_expires_epoch_us']==receipt['application_expires_epoch_us']
-        and stage['native_deadline_monotonic_us']==resource['fast_stage_deadline_monotonic_us']<sample[1]
+        and stage['native_deadline_monotonic_us']==resource['fast_stage_deadline_monotonic_us']
+        and historical_clock_expired(receipt['host_boot_id'],stage['expires_epoch_us'],
+            stage['native_deadline_monotonic_us'],sample,boot_reader())
         and stage['expires_epoch_us']<sample[0] and stage['previous_verified_proof_sha256'] is None,
         '9f90_retired_fast_stage_changed')
     reader.check()
@@ -370,6 +375,7 @@ def unmaterialized_owner_view(record,policy,*,unit):
 
 def qualify_unmaterialized_costs(unit,policy,observed,value):
     """Full reservation once; actual prepared rows do not imply materialized runs."""
+    from .pilot_resume_rpc import historical_monotonic_expired
     require_unmaterialized_bindings()
     owner=unmaterialized_owner_view(value['owner'],policy,unit=unit);detail=observed['detail'];local=policy.unit(unit)
     count=0 if unit=='unit-b'else 1;claimed=Cost()if not count else Cost(256,60000000)
@@ -379,9 +385,9 @@ def qualify_unmaterialized_costs(unit,policy,observed,value):
         and owner['policy_digest']==policy.digest and owner['history_receipt_sha256']==UNMATERIALIZED_ORIGINAL_HISTORY_SHA256
         and observed['policy_expired_at_observation']is True and observed['pending_unknown']is False
         and observed['scoped_rows_complete']is True and observed['observation_original_epoch_us']>=1792024207143316
-        and observed['observation_original_monotonic_us']>=owner['native_phase'][unit]['deadline_monotonic_us']
-            +1792024207143316-owner['phase_end_epoch_us']
-        and observed['observation_original_monotonic_us']>=detail['enrollment']['deadline_monotonic_us']
+        and historical_monotonic_expired(policy,unit,observed,owner['native_phase'][unit]['deadline_monotonic_us']
+            +1792024207143316-owner['phase_end_epoch_us'])
+        and historical_monotonic_expired(policy,unit,observed,detail['enrollment']['deadline_monotonic_us'])
         and observed['expected_database_sha256']==value['database_sha256']==UNMATERIALIZED_DATABASES[unit]
         and _sha(detail['claims'])==UNMATERIALIZED_CLAIMS[unit]
         and _sha(detail['resources'])==UNMATERIALIZED_RESOURCES[unit]
@@ -418,8 +424,8 @@ def qualify_unmaterialized_costs(unit,policy,observed,value):
                 and record['prepared_row_sha256']==claim['prepared_row_sha256']
                 for record in UNMATERIALIZED_STAGING[unit].values())
             and observed['observation_original_epoch_us']>=claim['child']['application_expires_epoch_us']
-            and observed['observation_original_monotonic_us']>=max(claim['application_deadline_monotonic_us'],
-                resource['application_deadline_monotonic_us'],resource['fast_stage_deadline_monotonic_us']),
+            and historical_monotonic_expired(policy,unit,observed,max(claim['application_deadline_monotonic_us'],
+                resource['application_deadline_monotonic_us'],resource['fast_stage_deadline_monotonic_us'])),
             'e244_unmaterialized_identity_or_clock_changed')
 
 

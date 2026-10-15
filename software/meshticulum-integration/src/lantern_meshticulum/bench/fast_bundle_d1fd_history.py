@@ -102,6 +102,7 @@ def pending_next_roster():
 
 def qualify_costs(unit, policy, observed, value):
     """Keep full enrollment and separate native/controller prepaid observations."""
+    from .pilot_resume_rpc import historical_monotonic_expired
     require_final_bindings(); retained_context(value['owner'], policy, unit=unit, observation=observed)
     detail = observed['detail']; local = policy.unit(unit)
     extra = Cost() if unit == 'unit-b' else Cost(2560, 600000000)
@@ -123,7 +124,7 @@ def qualify_costs(unit, policy, observed, value):
     require(observed['scoped_rows_complete'] is True and observed['pending_unknown'] is False
             and detail['approval_bytes_match_enrollment'] is True
             and detail['enrollment']['history_binding_sha256'] == owner['history_binding_sha256']
-            and observed['observation_original_monotonic_us'] >= detail['enrollment']['deadline_monotonic_us']
+            and historical_monotonic_expired(policy,unit,observed,detail['enrollment']['deadline_monotonic_us'])
             and observed['expected_database_sha256'] == value['database_sha256'] == NATIVE_DATABASE_SHA256[unit]
             and value['runs'] == value['retired_unstarted'] == value['failed_started_runs'] == []
             and value['preparation_sha256'] == {} and value['controller_endpoint_refs'] == []

@@ -69,6 +69,7 @@ def original_context(owner,policy,*,unit):
 
 def retained_context(owner,policy,*,unit,observation):
     """Pure expired-context predicate; an actual collector remains mandatory."""
+    from .pilot_resume_rpc import historical_monotonic_expired
     context=original_context(owner,policy,unit=unit)
     require(type(observation) is dict and observation.get('status')=='scoped_rows_observed'
         and observation.get('parent_id')==PARENT and observation.get('policy_digest')==POLICY_DIGEST
@@ -77,7 +78,7 @@ def retained_context(owner,policy,*,unit,observation):
     epoch,mono=(observation.get(k) for k in ('observation_original_epoch_us','observation_original_monotonic_us'))
     require(type(epoch) is int and type(mono) is int
         and epoch>=ORIGINAL_PHASE_END>=policy.expires_epoch_us
-        and mono>=owner['native_phase'][unit]['deadline_monotonic_us'],'3195_original_clocks_live')
+        and historical_monotonic_expired(policy,unit,observation,owner['native_phase'][unit]['deadline_monotonic_us']),'3195_original_clocks_live')
     context._check();return context
 
 

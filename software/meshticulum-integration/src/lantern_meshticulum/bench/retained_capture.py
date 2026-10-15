@@ -147,6 +147,9 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
     try: target.lstat()
     except FileNotFoundError:
         _need(not required, 'missing_retained_capture'); return False
+    from .pilot_parent_caps import boot as validate_boot
+    try: observed_boot=validate_boot(current_boot())
+    except (ValueError,TypeError): _need(False,'retained_capture_current_boot_invalid')
     raw_files, descriptors = {}, []
     try:
         with _Ancestry(target, os.geteuid()) as parent, \
@@ -174,7 +177,7 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
                   and record['history_binding_sha256'] == pins['history-binding.json']
                   and record['review_sha256'] == review
                   and record['facts']['unit'] == unit
-                  and record['facts']['host_boot_id'] == pinned_boot == current_boot()
+                  and record['facts']['host_boot_id'] == pinned_boot
                   and record['phase_start_epoch_us'] == start and record['phase_end_epoch_us'] == end
                   and record['actual_history_verified'] is True and record['global_debt_complete'] is False
                   and record['original_unknown_actual_cost'] is None and type(record['refunds']) is int
@@ -196,12 +199,14 @@ def _artifact_present(state, unit, clock, parent_id, pins, pinned_boot, start, e
                           ('epoch_us','monotonic_us','deadline_monotonic_us'))
                   and start <= phase['epoch_us'] < end
                   and phase['deadline_monotonic_us'] == phase['monotonic_us']+end-phase['epoch_us']
-                  and now[0] >= expired_end and now[1] >= phase['deadline_monotonic_us']+expired_end-end,
+                  and now[0] >= expired_end and (pinned_boot != observed_boot
+                      or now[1] >= phase['deadline_monotonic_us']+expired_end-end),
                   'retained_capture_phase_not_expired')
             for name, (raw, stamp, fd) in raw_files.items():
                 _need(_stamp(os.fstat(fd)) == stamp == _stamp(os.stat(name,dir_fd=parent.fds[-1],follow_symlinks=False))
                       and os.pread(fd,len(raw)+1,0) == raw, 'retained_capture_final_drift')
             parent.check(); empty.check()
+            _need(current_boot()==observed_boot,'retained_capture_current_boot_changed')
             _need(directory_stamps == (_stamp(os.fstat(parent.fds[-1])),_stamp(os.fstat(empty.fds[-1])))
                   and set(os.listdir(parent.fds[-1])) == expected and not os.listdir(empty.fds[-1]),
                   'retained_capture_namespace_changed')
