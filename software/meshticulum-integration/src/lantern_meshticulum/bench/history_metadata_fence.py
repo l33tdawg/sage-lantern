@@ -145,6 +145,8 @@ _LORA_INCOMPLETE_DIRECTORY = 'parents/02ec9185d218e44740b30227a11bd7cd'
 _IDENTITY_COUNTS[_LORA_INCOMPLETE_DIRECTORY+'/prepared-identities'] = (0,)
 _LORA_ENDPOINT_INCOMPLETE_DIRECTORY = 'parents/ea4d3adb8508e75f5a0e2e822ecc1cd0'
 _IDENTITY_COUNTS[_LORA_ENDPOINT_INCOMPLETE_DIRECTORY+'/prepared-identities'] = (0,1)
+_LORA_MANAGEMENT_INCOMPLETE_DIRECTORY = 'parents/1a02ac26e525311caa32e180596d7160'
+_IDENTITY_COUNTS[_LORA_MANAGEMENT_INCOMPLETE_DIRECTORY+'/prepared-identities'] = (0,)
 _CAPTURE_FILES = frozenset(('capture.json','history-binding.json','history-identity-seal.json','legacy-grant-seal.json'))
 _FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 
