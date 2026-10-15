@@ -413,6 +413,11 @@ def retained_owner_view(record, policy, unit):
     return record
 
 
+def _ancestry_identity(info):
+    """The same four-field ancestry identity, without unused file timestamps."""
+    return info.st_dev, info.st_ino, info.st_mode, info.st_uid
+
+
 def _reader_operation(method):
     @wraps(method)
     def using(self, *args, **kwargs):
@@ -503,8 +508,8 @@ class Reader:
         need(all(os.lseek(fd,0,os.SEEK_CUR)==token for fd,token in self._token_state),
              'rpc_reader_descriptor_changed')
         for fd,parent,name,identity,token in self._nodes.values():
-            need(tuple(_stamp(os.fstat(fd))[:4]) == identity
-                 == tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False))[:4])
+            need(_ancestry_identity(os.fstat(fd)) == identity
+                 == _ancestry_identity(os.stat(name,dir_fd=parent,follow_symlinks=False))
                  and os.lseek(fd,0,os.SEEK_CUR) == token, 'rpc_ancestry_changed')
         self._available()
     @_reader_operation
@@ -512,23 +517,30 @@ class Reader:
         self._available()
         absolute = Path(os.path.abspath(path)); names = ('/',*absolute.parts[1:])
         need(len(names)<=64 and len(str(absolute))<=4096, 'ancestry_too_long')
-        parent = None; ancestor = Path('/')
-        for index,name in enumerate(names):
-            if index: ancestor = ancestor/name
-            if ancestor not in self._nodes:
-                fd = os.open(name,_FLAGS|os.O_DIRECTORY,dir_fd=parent)
-                token = self._retain(fd); info = os.fstat(fd)
-                need(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,os.geteuid())
-                     and not stat.S_IMODE(info.st_mode)&0o022, 'writable_or_foreign_ancestor')
-                self._nodes[ancestor] = (fd,parent,name,tuple(_stamp(info)[:4]),token)
-                self._node_state = tuple(self._nodes.items())
-            parent = self._nodes[ancestor][0]
+        retained = self._nodes.get(absolute)
+        if retained is None:
+            parent = None; ancestor = Path('/')
+            for index,name in enumerate(names):
+                if index: ancestor = ancestor/name
+                if ancestor not in self._nodes:
+                    fd = os.open(name,_FLAGS|os.O_DIRECTORY,dir_fd=parent)
+                    token = self._retain(fd); info = os.fstat(fd)
+                    need(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,os.geteuid())
+                         and not stat.S_IMODE(info.st_mode)&0o022, 'writable_or_foreign_ancestor')
+                    self._nodes[ancestor] = (fd,parent,name,tuple(_stamp(info)[:4]),token)
+                    self._node_state = tuple(self._nodes.items())
+                parent = self._nodes[ancestor][0]
+        else:
+            # Reuse only the lexical lookup; every retained ancestor is freshly
+            # checked below before the leaf descriptor can be returned.
+            parent = retained[0]
         self._check_nodes(); info = os.fstat(parent)
         need(info.st_uid==os.geteuid() and stat.S_IMODE(info.st_mode)==0o700, 'unsafe_private_leaf')
         identity = list(_stamp(info)[:4])
         need(path not in self.directories or self.directories[path]==identity, 'rpc_directory_rebound')
-        self.directories[path] = identity
-        self._directory_state = tuple((path,tuple(value)) for path,value in self.directories.items())
+        if path not in self.directories:
+            self.directories[path] = identity
+            self._directory_state = tuple((path,tuple(value)) for path,value in self.directories.items())
         return parent
     @_reader_operation
     def read(self, path, maximum, *, lock=False):
