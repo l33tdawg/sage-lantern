@@ -87,7 +87,7 @@ def _structural_guard(owner):
     peer_type = type(owner.context.initiator)
     intention_type = type(owner.intention)
     scalar_reader = _structural_values
-    object_id, exact_type, project, pack = id, type, map, tuple
+    object_id, exact_type, project, pack, indexed = id, type, map, tuple, enumerate
     original_values = scalar_reader(owner)
     original_types = pack(project(object_id, project(exact_type, original_values)))
     float_values = pack((index, value.hex()) for index, value in enumerate(original_values)
@@ -135,8 +135,6 @@ def _structural_guard(owner):
         methods.append((namespace, name, function, function.__code__, function.__defaults__,
                         function.__kwdefaults__, tuple((function.__kwdefaults__ or {}).items())))
     methods = tuple(methods)
-    function_ids = pack(object_id(method[2]) for method in methods)
-    method_ids = pack((object_id(method[3]), object_id(method[4]), object_id(method[5])) for method in methods)
     keyword_pins = pack((method[2], pack(sorted(key for key, value in method[6])),
         pack(object_id(method[5][key]) for key in sorted(key for key, value in method[6])))
         for method in methods if method[5] is not None)
@@ -154,12 +152,14 @@ def _structural_guard(owner):
             raise ForwardNativeRelayError()
         functions = pack(namespace[name] if exact_type(namespace) is dict else getattr(namespace, name)
                          for namespace, name, function, code, defaults, keywords, values in methods)
-        if pack(project(object_id, functions)) != function_ids:
-            raise ForwardNativeRelayError()
-        current_methods = pack((object_id(function.__code__), object_id(function.__defaults__),
-                                object_id(function.__kwdefaults__)) for function in functions)
-        if current_methods != method_ids:
-            raise ForwardNativeRelayError()
+        # Resolve every current target before inspecting the retained method
+        # pins: a later descriptor must not mutate an already-checked function.
+        # All four identities remain fresh, without temporary ID projections.
+        for index, current in indexed(functions):
+            original = methods[index]
+            if not (current is original[2] and current.__code__ is original[3]
+                    and current.__defaults__ is original[4] and current.__kwdefaults__ is original[5]):
+                raise ForwardNativeRelayError()
         for function, keys, values in keyword_pins:
             current = function.__kwdefaults__
             if (len(current) != len(keys) or any(exact_type(key) is not str for key in current)
