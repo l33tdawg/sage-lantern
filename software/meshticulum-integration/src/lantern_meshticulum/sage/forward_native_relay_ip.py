@@ -119,7 +119,7 @@ def plan_ip_hop(owner, native_plan, secret, *, slot, kind, sends):
         require(owner.local == owner.description.relay_peer and owner.local not in endpoints
             and grant.session.initiator == first and grant.session.responder == last
             and (grant.direction(owner.local) == 0) is sends and grant.format == 'MPF2.record'
-            and grant.route_binding_digest == owner.context.digest
+            and grant.route_binding_digest == (context_digest := owner.context.digest)
             and grant.issued_epoch_us == owner.context.issued_epoch_us
             and grant.expires_epoch_us == grant.application_expires_epoch_us == owner.context.expires_epoch_us
             and type(p['application_deadline_monotonic_us']) is int
@@ -137,7 +137,7 @@ def plan_ip_hop(owner, native_plan, secret, *, slot, kind, sends):
             owner.context.expires_epoch_us, p['application_deadline_monotonic_us'],
             Cost(ip_frames=caps.max_frames, tx_stream_bytes=caps.max_tx_stream_bytes,
                  rx_stream_bytes=caps.max_rx_stream_bytes), caps.max_frames)
-        return RelayIpProfile(owner.context.digest, hashlib.sha256(_canonical(owner.intention.to_dict())).digest(),
+        return RelayIpProfile(context_digest, hashlib.sha256(_canonical(owner.intention.to_dict())).digest(),
             owner._approval, raw, grant, child, RelayHop('ip', grant.session, grant.route_binding_digest, grant_digest))
     except Exception:
         raise RelayIpError() from None

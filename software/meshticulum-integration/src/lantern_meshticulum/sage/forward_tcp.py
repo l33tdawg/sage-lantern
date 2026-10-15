@@ -112,7 +112,7 @@ def plan_stage(owner, native_plan, secret, *, slot, kind):
             and grant.session.initiator == PeerID(first.chain_id, first.public_key.hex())
             and grant.session.responder == PeerID(second.chain_id, second.public_key.hex())
             and (grant.direction(local) == 0) == sends
-            and grant.route_binding_digest == owner.context.digest
+            and grant.route_binding_digest == (context_digest := owner.context.digest)
             and grant.issued_epoch_us == owner.context.issued_epoch_us
             and grant.expires_epoch_us == grant.application_expires_epoch_us
                 == owner.context.expires_epoch_us
@@ -123,12 +123,13 @@ def plan_stage(owner, native_plan, secret, *, slot, kind):
                 == ipaddress.ip_address(grant.responder_address[0]).version)
         caps = grant.limits
         deadline = p['application_deadline_monotonic_us']
-        child = ChildPlan(slot, kind, sends, grant.digest.hex(), grant.object_sha256.hex(),
-            grant.object_bytes, 'tcp', grant.digest.hex(), owner.intention.host_boot_id,
+        grant_hex = grant.digest.hex()
+        child = ChildPlan(slot, kind, sends, grant_hex, grant.object_sha256.hex(),
+            grant.object_bytes, 'tcp', grant_hex, owner.intention.host_boot_id,
             owner.context.expires_epoch_us, deadline,
             Cost(ip_frames=caps.max_frames, tx_stream_bytes=caps.max_tx_stream_bytes,
                  rx_stream_bytes=caps.max_rx_stream_bytes), caps.max_frames)
-        return ForwardTcpProfile(owner.context.digest,
+        return ForwardTcpProfile(context_digest,
             hashlib.sha256(_canonical(owner.intention.to_dict())).digest(),
             owner.local_initiator, owner._approval, local, grant, raw, child)
     except Exception:
