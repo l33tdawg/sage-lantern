@@ -130,13 +130,15 @@ def plan_ip_hop(owner, native_plan, secret, *, slot, kind, sends):
             and ipaddress.ip_address(grant.initiator_address[0]).version
                 == ipaddress.ip_address(grant.responder_address[0]).version)
         caps = grant.limits
-        child = ChildPlan(slot, kind, sends, grant.digest.hex(), grant.object_sha256.hex(),
-            grant.object_bytes, 'tcp', grant.digest.hex(), owner.intention.host_boot_id,
+        grant_digest = grant.digest
+        grant_hex = grant_digest.hex()
+        child = ChildPlan(slot, kind, sends, grant_hex, grant.object_sha256.hex(),
+            grant.object_bytes, 'tcp', grant_hex, owner.intention.host_boot_id,
             owner.context.expires_epoch_us, p['application_deadline_monotonic_us'],
             Cost(ip_frames=caps.max_frames, tx_stream_bytes=caps.max_tx_stream_bytes,
                  rx_stream_bytes=caps.max_rx_stream_bytes), caps.max_frames)
         return RelayIpProfile(owner.context.digest, hashlib.sha256(_canonical(owner.intention.to_dict())).digest(),
-            owner._approval, raw, grant, child, RelayHop('ip', grant.session, grant.route_binding_digest, grant.digest))
+            owner._approval, raw, grant, child, RelayHop('ip', grant.session, grant.route_binding_digest, grant_digest))
     except Exception:
         raise RelayIpError() from None
 

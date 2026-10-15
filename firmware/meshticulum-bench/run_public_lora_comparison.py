@@ -12,12 +12,15 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import secrets
 import stat
 import subprocess
 import sys
+import threading
 import time
+import uuid
 import xml.etree.ElementTree as ET
 
 from run_public_sf5_c_bulk_8k import read,write,sha,canonical,stable,need
@@ -37,6 +40,90 @@ RETAINED_SCOPES=('c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f
     'c4ce1ce81748084ede8b8731c1479fc70f36a196ad5601a7651c570e66014c9e')
 
 
+def controller_boot():
+    # Same observation as run_public_pilot.controller_boot; available before
+    # importing the not-yet-verified paired source during operation review.
+    if platform.system()=='Linux':value=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    elif platform.system()=='Darwin':
+        value=subprocess.check_output(['/usr/sbin/sysctl','-n','kern.bootsessionuuid'],text=True,timeout=5).strip().lower()
+    else:raise RuntimeError('unsupported_controller_boot_observation')
+    return str(uuid.UUID(value))
+
+
+class OuterWindow:
+    """The issuer's original interval; checking never maps a fresh deadline."""
+    def __init__(self,op,*,clock=None,boot_reader=None):
+        self._op=op;self._clock=clock or (lambda:(time.time_ns()//1000,time.monotonic_ns()//1000))
+        self._boot=boot_reader or controller_boot;self._pid=os.getpid();self._lock=threading.RLock()
+        self._original=self._binding();self._last=None;self.boundary()
+
+    def _binding(self):
+        absolute=self._op['absolute_device_window']
+        epoch,end=absolute['issued_epoch_us'],absolute['expires_epoch_us']
+        mono,mono_end=(self._op['original_outer_monotonic_us'],self._op['original_outer_deadline_monotonic_us'])
+        boot=self._op['original_outer_controller_boot']
+        need(type(absolute) is dict and set(absolute)=={'issued_epoch_us','expires_epoch_us','count_authorized'}
+            and type(absolute['count_authorized']) is int and absolute['count_authorized']==1
+            and all(type(v) is int and v>=0 for v in (epoch,end,mono,mono_end))
+            and end-epoch==mono_end-mono==720000000 and type(boot) is str
+            and str(uuid.UUID(boot))==boot,'comparison_original_outer_binding_changed')
+        return epoch,end,mono,mono_end,boot
+
+    def check(self):
+        with self._lock:
+            need(os.getpid()==self._pid and self._binding()==self._original,'comparison_original_outer_rebound')
+            now=self._clock();need(os.getpid()==self._pid and self._binding()==self._original,'comparison_original_outer_rebound')
+            epoch,end,mono,mono_end,_=self._original
+            need(type(now) is tuple and len(now)==2 and all(type(v) is int for v in now)
+                and epoch<=now[0]<end and mono<=now[1]<mono_end
+                and (self._last is None or all(a>=b for a,b in zip(now,self._last))),
+                'comparison_original_outer_expired_or_regressed')
+            self._last=now;return now
+
+    def boundary(self):
+        self.check();boot=self._boot();self.check()
+        need(boot==self._original[4],'comparison_original_outer_boot_changed')
+        return self._last
+
+    def phase(self):
+        now=self.boundary()
+        need(now[0]+600000000<=self._original[1] and now[1]+600000000<=self._original[3],
+            'comparison_original_outer_cannot_fit_phase')
+        return now
+
+    def monotonic(self):return self.check()[1]/1000000
+    def epoch(self):return self.check()[0]
+    @property
+    def deadline(self):return self._original[3]/1000000
+
+    def read(self,path,limit=300000):
+        self.check();raw=read(path,limit);self.check();return raw
+
+    def record(self,path,pin,limit=2000000):
+        raw=self.read(path,limit);need(type(pin) is str and HEX.fullmatch(pin) and sha(raw)==pin,
+            'comparison_input_pin_changed');value=json.loads(raw);self.check();return value
+
+
+def outer_ssh_operator_type(base,outer):
+    # Retain the admitted end outside the operator's mutable optional field.
+    admitted=outer.deadline
+    class OuterSSHOperator(base):
+        def _outer_bound(self):
+            current=getattr(self,'_outer_deadline_monotonic',None)
+            need(type(current) is type(admitted) and current==admitted
+                and outer.deadline==admitted,'comparison_ssh_outer_deadline_changed')
+            outer.check()
+        def _argv(self,*args,**kwargs):
+            self._outer_bound();outer.boundary()
+            value=super()._argv(*args,**kwargs)
+            self._outer_bound();return value
+        def _command(self,*args,**kwargs):
+            self._outer_bound()
+            value=super()._command(*args,**kwargs)
+            self._outer_bound();outer.boundary();return value
+    return OuterSSHOperator
+
+
 def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path);value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
 
@@ -50,22 +137,27 @@ def safe_reason(error):
     return value if re.fullmatch('[A-Za-z0-9_.:-]{1,100}',value) else None
 
 
-def check_unissued(records):
+def check_unissued(records,*,outer=None):
+    record_input=record if outer is None else outer.record
+    if outer is not None:outer.check()
     need(type(records) is list and [v['sha256'] for v in records]==list(RETAINED_SCOPES),'comparison_unissued_roster_changed')
     for row in records:
-        path=Path(row['path']).absolute();old=record(path,row['sha256'])
+        path=Path(row['path']).absolute();old=record_input(path,row['sha256'])
         need(old['window_issued'] is False and old['native_permission'] is False,
             'retained_comparison_scope_already_issued')
         folder=Path(row['operation_directory']).absolute()
         need(folder.is_dir() and not os.path.lexists(folder/('ISSUE_USED-'+row['sha256']+'.json'))
             and not list(folder.glob('OPERATION-[0-9]*.json')),'retained_comparison_scope_consumed')
+    if outer is not None:outer.check()
 
 
-def source_tests(ready):
+def source_tests(ready,*,outer=None):
+    record_input=record if outer is None else outer.record
+    read_input=read if outer is None else outer.read
     folder=Path(ready['source_controls_directory']).absolute()
-    provenance=record(folder/'SOURCE_TEST_PROVENANCE.json',ready['source_tests_provenance_sha256'])
-    run=record(folder/'SOURCE_TEST_RUN.json',ready['full_source_run_sha256'])
-    report=read(Path(provenance['report']),20000000)
+    provenance=record_input(folder/'SOURCE_TEST_PROVENANCE.json',ready['source_tests_provenance_sha256'])
+    run=record_input(folder/'SOURCE_TEST_RUN.json',ready['full_source_run_sha256'])
+    report=read_input(Path(provenance['report']),20000000)
     need(sha(report)==ready['source_tests_sha256']==provenance['report_sha256'],'comparison_source_report_changed')
     suites=list(ET.fromstring(report).iter('testsuite'))
     need(suites and sum(int(v.get('tests',0)) for v in suites)>3800
@@ -80,13 +172,13 @@ def source_tests(ready):
         and run['native_qualification'] is False and type(run['returncode']) is int and run['returncode']==0
         and run['core_commit']==ready['core_commit'] and run['lantern_commit']==ready['lantern_commit'],
         'comparison_exact_source_provenance_required')
-    for name,pin in run['files'].items():need(sha(read(folder/name,20000000))==pin,'comparison_source_run_member_changed')
-    need(sha(read(Path(provenance['core_report']),20000000))==provenance['core_report_sha256'],'comparison_core_source_report_changed')
+    for name,pin in run['files'].items():need(sha(read_input(folder/name,20000000))==pin,'comparison_source_run_member_changed')
+    need(sha(read_input(Path(provenance['core_report']),20000000))==provenance['core_report_sha256'],'comparison_core_source_report_changed')
 
 
 def review(path,pin):
     raw=read(path,2000000);need(sha(raw)==pin,'comparison_operation_pin_changed');op=json.loads(raw)
-    need(op['schema']==SCHEMA and op['runner_sha256']==sha(read(Path(__file__),100000)),'wrong_comparison_operation')
+    need(op['schema']==SCHEMA,'wrong_comparison_operation')
     need(op.get('preparation_only') is False and op.get('not_for_issuance') is False
         and op.get('window_issued') is True,'comparison_operation_still_unissued')
     required=('core_commit','lantern_commit','source_lock_sha256','comparison_scope_sha256','ready_sha256',
@@ -94,14 +186,17 @@ def review(path,pin):
         'preflight_completion_sha256','inspection_receipt_sha256','native_adapter_sha256')
     need(all(type(op.get(k)) is str and re.fullmatch('[0-9a-f]{40}' if k.endswith('_commit') else '[0-9a-f]{64}',op[k]) for k in required),
         'pending_reviewed_comparison_inputs')
+    outer=OuterWindow(op)
+    need(op['runner_sha256']==sha(outer.read(Path(__file__),100000)),'wrong_comparison_operation')
     need(op['sample_count']==2 and op['phase_seconds']==600 and op['application_seconds']==180,
         'comparison_original_limits_changed')
     need(op['authorization']==dict(human_statement='run it bro',count_authorized=1,public_only=True,private_production=False),
         'comparison_original_authorization_missing')
     core,lantern=Path(op['core_path']).absolute(),Path(op['lantern_path']).absolute()
     for folder,commit in ((core,op['core_commit']),(lantern,op['lantern_commit'])):
+        outer.check()
         need(subprocess.check_output(['git','-C',str(folder),'rev-parse','HEAD'],text=True,timeout=5).strip()==commit
-            and not subprocess.check_output(['git','-C',str(folder),'status','--porcelain'],text=True,timeout=5),'comparison_source_changed')
+            and not subprocess.check_output(['git','-C',str(folder),'status','--porcelain'],text=True,timeout=5),'comparison_source_changed');outer.check()
     sys.path[:0]=[str(core/'src'),str(lantern/'software/meshticulum-integration/src')]
     from lantern_meshticulum.bench.lora_comparison import validate_descriptor,KIND
     from lantern_meshticulum.bench import mcu_artifact as mcu,retained_capture
@@ -111,7 +206,7 @@ def review(path,pin):
         and op['comparison_scope_sha256']==bindings['scope_sha256']
         and op['history_receipt_sha256']==bindings['history_receipt_sha256']==HISTORY_SHA
         and bindings['preceding_parent']==LATEST,'comparison_exact_source_scope_required')
-    scope=record(op['scope_path'],op['comparison_scope_sha256'])
+    scope=outer.record(op['scope_path'],op['comparison_scope_sha256'])
     need(scope['schema']==SCOPE_SCHEMA and scope['qualification_kind']==KIND and scope['core_commit']==op['core_commit']
         and scope['lora_mcu_artifact']==op['lora_mcu_artifact'] and scope['history_receipt_sha256']==HISTORY_SHA
         and scope['preceding_parent']==LATEST and scope['paid_history_count']==46 and scope['expected_mcu_boot']==MCU_BOOT
@@ -133,20 +228,20 @@ def review(path,pin):
     need(subprocess.run(['git','-C',str(lantern),'merge-base','--is-ancestor',scope['reviewed_implementation_commit'],
         op['lantern_commit']],timeout=5,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0,
         'comparison_reviewed_source_prefix_missing')
-    check_unissued(scope['retained_unissued_scopes']);need(op['retained_unissued_scopes']==scope['retained_unissued_scopes'],'comparison_retained_scopes_changed')
+    check_unissued(scope['retained_unissued_scopes'],outer=outer);need(op['retained_unissued_scopes']==scope['retained_unissued_scopes'],'comparison_retained_scopes_changed')
     absolute=op['absolute_device_window']
     need(type(absolute['issued_epoch_us']) is int and type(absolute['expires_epoch_us']) is int
         and absolute['expires_epoch_us']-absolute['issued_epoch_us']==720000000 and absolute['count_authorized']==1,
         'comparison_original_absolute_window_changed')
     need(op['history_parent_ids']==list(retained_capture.PAID_HISTORY) and len(op['history_parent_ids'])==46
         and set(op['controller_directories'])==set(op['history_parent_ids']),'comparison_full_history_required')
-    receipt=record(Path(op['history_path'])/'RECEIPT.json',HISTORY_SHA,100000)
+    receipt=outer.record(Path(op['history_path'])/'RECEIPT.json',HISTORY_SHA,100000)
     need(receipt['local_controllers_reobserved']==46 and receipt['no_refund'] is True,'comparison_old_debt_required')
-    ready=record(op['ready_path'],op['ready_sha256'])
+    ready=outer.record(op['ready_path'],op['ready_sha256'])
     need(all(ready[k]==op[k] for k in ('core_commit','lantern_commit','runtime_sha256','manifest_sha256'))
-        and ready['scope_sha256']==op['comparison_scope_sha256'],'comparison_ready_changed');source_tests(ready)
-    install=record(op['installation_result'],op['installation_result_sha256'])
-    previous=record(op['previous_installation_result'],op['previous_installation_result_sha256'])
+        and ready['scope_sha256']==op['comparison_scope_sha256'],'comparison_ready_changed');source_tests(ready,outer=outer)
+    install=outer.record(op['installation_result'],op['installation_result_sha256'])
+    previous=outer.record(op['previous_installation_result'],op['previous_installation_result_sha256'])
     need(all(install[k] is True for k in ('complete','local_clients_terminal','within_original_window',
         'all_owned_clients_exit_zero','source_unchanged','old_debt_retained')) and install['cleanup_errors']==[]
         and set(install['installations'])=={'unit-a','unit-b','unit-c'}
@@ -156,25 +251,25 @@ def review(path,pin):
         need(install[key]==op[opkey] and install['previous_'+key]==previous[key],'comparison_installation_ancestry_changed')
     need(install['phase_end_epoch_us']-install['started_epoch_us']==300000000
         and install['started_epoch_us']<=install['finished_epoch_us']<install['phase_end_epoch_us'],'comparison_installation_window_changed')
-    cfg=record(op['config_path'],op['config_sha256'],30000)
-    original=record(op['previous_config_path'],op['previous_config_sha256'],30000)
+    cfg=outer.record(op['config_path'],op['config_sha256'],30000)
+    original=outer.record(op['previous_config_path'],op['previous_config_sha256'],30000)
     allowed={'runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256','handoff_end_epoch_us'}
     need({k:v for k,v in cfg.items() if k not in allowed}=={k:v for k,v in original.items() if k not in allowed}
         and cfg['runtime_sha256']==op['runtime_sha256'] and cfg['manifest_sha256']==op['manifest_sha256'],
         'comparison_installed_config_changed')
-    proof=record(op['preflight_completion'],op['preflight_completion_sha256'])
+    proof=outer.record(op['preflight_completion'],op['preflight_completion_sha256'])
     need(proof['schema']=='meshticulum.lora-readonly-full46-capture-complete.v1' and proof['complete'] is True
         and proof['archive_sha256']==op['runtime_sha256'] and proof['manifest_sha256']==op['manifest_sha256']
         and proof['history_receipt_sha256']==HISTORY_SHA and proof['callbacks_exit_zero']==3
         and proof['owned_local_clients_terminal'] is True and proof['worker_threads_terminal'] is True
         and proof['native_state_writes'] is proof['radio_opened'] is False,'comparison_full46_preflight_required')
-    inspection=record(op['inspection_receipt'],op['inspection_receipt_sha256'])
+    inspection=outer.record(op['inspection_receipt'],op['inspection_receipt_sha256'])
     need(inspection['complete'] is True and inspection['archive_sha256']==op['runtime_sha256']
         and inspection['manifest_sha256']==op['manifest_sha256'] and inspection['owned_local_clients_terminal'] is True
         and inspection['arm_commands']==inspection['tx_commands']==inspection['reset_commands']==0,
         'comparison_closed_current_inspection_required')
     validate_a_status(inspection['observation'],op,None,min_remaining=160)
-    archive=read(op['runtime_archive'],2000000);need(sha(archive)==op['runtime_sha256'],'comparison_archive_changed')
+    archive=outer.read(op['runtime_archive'],2000000);need(sha(archive)==op['runtime_sha256'],'comparison_archive_changed')
     manifest,logical=archive_source_members(archive,op['manifest_sha256'])
     need(mcu.select_lora_runtime(manifest)==op['lora_mcu_artifact']
         and manifest['private_services_enabled'] is False and manifest['public_parent_claims_required'] is True,
@@ -184,20 +279,24 @@ def review(path,pin):
             lantern/'software/meshticulum-integration/src'/name if name.startswith('lantern_meshticulum/') else
             lantern/'firmware/meshticulum-bench/bench_node.py' if name=='bench_node.py' else
             lantern/'software/meshticulum-integration/meshticulum-source-lock.json' if name=='provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json' else core/name)
-        need(sha(read(source,500000))==sha(data),'comparison_runtime_source_closure_changed')
+        need(sha(outer.read(source,500000))==sha(data),'comparison_runtime_source_closure_changed')
     need(sha(logical['lantern_meshticulum/bench/pilot_resume_rpc.py'])==op['native_adapter_sha256'],'comparison_native_adapter_changed')
     required_support={'run_public_pilot.py','pilot_grant_bootstrap.py','runtime_bootstrap.py','run_public_sf5_c_bulk_8k.py',
         'run_public_gfsk250_mb1_fast_bundle100k.py','pair_launch_guard_sender_first.py','management_file_rpc.py'}
     need({f'firmware/meshticulum-bench/{v}' for v in required_support}<=set(op['source_pins']),'comparison_support_pins_missing')
     for name,pin in op['source_pins'].items():
-        need(not Path(name).is_absolute() and '..' not in Path(name).parts and sha(read(lantern/name,500000))==pin,'comparison_support_source_changed')
-    need(sha(read(op['rf_confirmation_path'],20000))==RF_SHA,'comparison_rf_consent_changed')
-    return op,core,lantern,manifest,receipt,load('comparison_pilot_helpers',lantern/'firmware/meshticulum-bench/run_public_pilot.py')
+        need(not Path(name).is_absolute() and '..' not in Path(name).parts and sha(outer.read(lantern/name,500000))==pin,'comparison_support_source_changed')
+    need(sha(outer.read(op['rf_confirmation_path'],20000))==RF_SHA,'comparison_rf_consent_changed')
+    helpers=load('comparison_pilot_helpers',lantern/'firmware/meshticulum-bench/run_public_pilot.py')
+    outer.boundary();need(helpers.controller_boot()==op['original_outer_controller_boot'],'comparison_verified_controller_boot_changed');outer.check()
+    return op,core,lantern,manifest,receipt,helpers,outer
 
 
-def consume_scope(op,operation_sha,parent_id,start,end):
-    check_unissued(op['retained_unissued_scopes'])
-    scope=record(op['scope_path'],op['comparison_scope_sha256'])
+def consume_scope(op,operation_sha,parent_id,start,end,*,outer=None):
+    if outer is not None:outer.boundary()
+    if outer is None:check_unissued(op['retained_unissued_scopes'])
+    else:check_unissued(op['retained_unissued_scopes'],outer=outer)
+    scope=(record if outer is None else outer.record)(op['scope_path'],op['comparison_scope_sha256'])
     folder=Path(op['output_directory']).absolute()
     need(str(folder)==scope['operation_directory'],'comparison_scope_marker_directory_changed')
     for path in (folder,*folder.parents):
@@ -218,6 +317,7 @@ def consume_scope(op,operation_sha,parent_id,start,end):
         finally:os.close(target)
         os.fsync(fd);after=folder.lstat()
         need(identity==(after.st_dev,after.st_ino,after.st_mode,after.st_uid),'comparison_scope_directory_rebound')
+        if outer is not None:outer.boundary()
     finally:os.close(fd)
 
 
@@ -266,11 +366,12 @@ def rpc_command(operator,cfg,op,unit,action,payload,seconds,parent_id,operation_
     return FileRPCCommand(values,staged,end,deadline)
 
 
-def fixtures(op):
+def fixtures(op,*,outer=None):
+    read_input=read if outer is None else outer.read
     from meshticulum.resources import lamplighter as ll,resource
     result=[]
     for i,decl in enumerate(op['fixtures']):
-        path=Path(decl['path']).absolute();raw=read(path/'FIXTURE.json',50000);need(sha(raw)==decl['sha256'],'batch_fixture_changed');f=json.loads(raw)
+        path=Path(decl['path']).absolute();raw=read_input(path/'FIXTURE.json',50000);need(sha(raw)==decl['sha256'],'batch_fixture_changed');f=json.loads(raw)
         need(f['public_only'] is True and f['private_data'] is False and len(f['chunks'])==1,'batch_public_fixture_required')
         trust=json.loads(read(path/'trust.json',16384));cache=ll.VerifiedCache(path/'pack',trust,f['manifest_sha256']);piece=f['chunks'][0]
         chunk=cache.entries[piece['content_address_sha256']];request=resource.encode_request('/packs/'+f['manifest_sha256']+'/chunks/'+chunk['sha256']+'.json',0,8164)
@@ -279,9 +380,10 @@ def fixtures(op):
             and f['manifest_sha256']==sample['resource_sha256'] and sha(request)==sample['request']['sha256']
             and sha(response)==sample['response']['sha256'] and piece['response_sha256']==sample['response']['sha256']
             and piece['request_sha256']==sample['request']['sha256']
-            and sha(read(path/'trust.json',16384))==f['trust_sha256']
-            and sha(read(path/'pack/manifest.sig.json',4096))==f['signature_sha256'],'batch_fixture_descriptor_changed')
+            and sha(read_input(path/'trust.json',16384))==f['trust_sha256']
+            and sha(read_input(path/'pack/manifest.sig.json',4096))==f['signature_sha256'],'batch_fixture_descriptor_changed')
         result.append(dict(path=path,fixture=f,trust=trust,cache=cache,piece=piece,request=request,response=response,sample=sample))
+    if outer is not None:outer.check()
     return result
 
 
@@ -375,7 +477,7 @@ def bulk_metrics(link, verified, piece, profile_name):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--operation',type=Path,required=True);parser.add_argument('--operation-sha256',required=True);parser.add_argument('--check',action='store_true');args=parser.parse_args();os.umask(0o077)
-    op,core,lantern,manifest,receipt,helpers=review(args.operation,args.operation_sha256);pieces=fixtures(op)
+    op,core,lantern,manifest,receipt,helpers,outer=review(args.operation,args.operation_sha256);pieces=fixtures(op,outer=outer)
     from lantern_meshticulum.bench.pilot_parent_caps import ParentPolicy,ParentCaps,UnitCaps,Cost
     from lantern_meshticulum.bench.pilot_parent_snapshot import Scope,collect
     from lantern_meshticulum.bench.pilot_ssh import SSHOperator,Job,one_record
@@ -384,29 +486,34 @@ def main():
     from lantern_meshticulum.bench.profiles import profile_for
     from meshticulum.contracts.identity import PeerID
     from run_public_sf5_c_bulk_8k import retained_controller_caps
-    histories={u:json.loads(read(Path(op['history_path'])/(u+'.json'),2000000)) for u in ('unit-a','unit-b','unit-c')}
-    for u,h in histories.items():need(sha(read(Path(op['history_path'])/(u+'.json'),2000000))==receipt['payload_sha256'][u],'batch_history_bytes_changed')
+    histories={u:json.loads(outer.read(Path(op['history_path'])/(u+'.json'),2000000)) for u in ('unit-a','unit-b','unit-c')}
+    for u,h in histories.items():need(sha(outer.read(Path(op['history_path'])/(u+'.json'),2000000))==receipt['payload_sha256'][u],'batch_history_bytes_changed')
     if args.check:print(json.dumps(dict(source_checked=True,samples=2,radio_opened=False)));return
     controllers=[];projection=('status','scoped_rows_complete','pending_unknown','policy_row_sha256','prior_lineage','detail','files')
     for i,pid in enumerate(op['history_parent_ids']):
-        directory=Path(op['controller_directories'][pid]);policy=ParentPolicy.from_dict(json.loads(read(directory/'POLICY.json')))
-        old=json.loads(read(Path(op['history_path'])/pid/'controller.json',2000000));scope=Scope('meshticulum.public-parent-snapshot-scope.v1','controller',os.geteuid(),pid,policy.digest,old['expected_database_sha256'],None,helpers.controller_boot(),time.time_ns()//1000+45000000)
-        actual=collect(directory,scope,clock=helpers.parent_clock,boot_reader=helpers.controller_boot).to_dict()
+        outer.check();directory=Path(op['controller_directories'][pid]);policy=ParentPolicy.from_dict(json.loads(outer.read(directory/'POLICY.json')))
+        old=json.loads(outer.read(Path(op['history_path'])/pid/'controller.json',2000000));scope=Scope('meshticulum.public-parent-snapshot-scope.v1','controller',os.geteuid(),pid,policy.digest,old['expected_database_sha256'],None,helpers.controller_boot(),min(outer.epoch()+45000000,op['absolute_device_window']['expires_epoch_us']))
+        actual=collect(directory,scope,clock=outer.check,boot_reader=helpers.controller_boot).to_dict()
         need(actual['status']=='scoped_rows_observed' and actual['scoped_rows_complete'] and actual['policy_expired_at_observation']
             and not actual['pending_unknown'] and canonical({k:actual[k] for k in projection})==canonical({k:old[k] for k in projection}),'batch_old_controller_changed')
         for u in histories:retained_controller_caps(u,histories[u]['previous'][i],actual)
-        controllers.append(actual)
-    cfg=json.loads(read(op['config_path'],30000));need(cfg['runtime_sha256']==op['runtime_sha256'] and cfg['manifest_sha256']==op['manifest_sha256'],'batch_installed_config_changed')
-    provision=read(lantern/'firmware/meshticulum-bench/pilot_grant_bootstrap.py',500000);bootstrap=read(lantern/'firmware/meshticulum-bench/runtime_bootstrap.py',500000)
+        controllers.append(actual);outer.check()
+    cfg=json.loads(outer.read(op['config_path'],30000));need(cfg['runtime_sha256']==op['runtime_sha256'] and cfg['manifest_sha256']==op['manifest_sha256'],'batch_installed_config_changed')
+    provision=outer.read(lantern/'firmware/meshticulum-bench/pilot_grant_bootstrap.py',500000);bootstrap=outer.read(lantern/'firmware/meshticulum-bench/runtime_bootstrap.py',500000)
     need(cfg['provision_sha256']==sha(provision) and cfg['runtime_bootstrap_sha256']==sha(bootstrap),'batch_native_support_pin_changed')
+    outer.boundary()
     password=getpass.getpass('A/B sudo for one finite public two-profile comparison (memory only): ')
-    epoch,mono=helpers.parent_clock();end=epoch+600000000;absolute=op['absolute_device_window'];need(absolute['issued_epoch_us']<=epoch and end<=absolute['expires_epoch_us'],'batch_original_absolute_window_unavailable')
-    cfg.update(schema=SSH_SCHEMA,lora_mcu_artifact=op['lora_mcu_artifact'],handoff_end_epoch_us=end,comparison_clock=dict(phase_start_epoch_us=epoch,phase_end_epoch_us=end,original_monotonic_us=mono,deadline_monotonic_us=mono+600000000));parent_id=secrets.token_hex(16);out=Path(op['output_directory'])/('lora-sf7-sf5-comparison-'+parent_id)
-    consume_scope(op,args.operation_sha256,parent_id,epoch,end);out.mkdir(mode=0o700)
+    try:
+        epoch,mono=outer.phase();end=epoch+600000000
+        cfg.update(schema=SSH_SCHEMA,lora_mcu_artifact=op['lora_mcu_artifact'],handoff_end_epoch_us=end,comparison_clock=dict(phase_start_epoch_us=epoch,phase_end_epoch_us=end,original_monotonic_us=mono,deadline_monotonic_us=mono+600000000));parent_id=secrets.token_hex(16);out=Path(op['output_directory'])/('lora-sf7-sf5-comparison-'+parent_id)
+        consume_scope(op,args.operation_sha256,parent_id,epoch,end,outer=outer);outer.boundary();out.mkdir(mode=0o700);outer.check()
+    except BaseException:
+        password=None;raise
     result=dict(schema='meshticulum.public-lora-sf7-sf5-comparison-result.v1',parent_id=parent_id,complete=False,qualification_complete=False,private_production=False,refunds=0,original_phase_start_epoch_us=epoch,original_phase_end_epoch_us=end,samples=[],rpc_clients=[],links=[],native_final={},previous_parent_ids=op['history_parent_ids'])
+    OuterSSHOperator=outer_ssh_operator_type(SSHOperator,outer)
     operator=parent=current=None;owned=[];owners={};priors={};preparations={u:{} for u in histories};facts={}
     def native(u,action,payload):
-        started=time.monotonic_ns();left=min(120 if action=='capture' else 45,max(0,int((end-time.time_ns()//1000)/1000000)-8))
+        outer.boundary();started=time.monotonic_ns();left=min(120 if action=='capture' else 45,max(0,int((end-time.time_ns()//1000)/1000000)-8))
         need(left>0,'comparison_original_remote_window_expired')
         command=rpc_command(operator,cfg,op,u,action,payload,left,parent_id,args.operation_sha256)
         job=None;audit=dict(unit=u,action=action,remote_terminal=False,local_terminal=False,
@@ -419,7 +526,7 @@ def main():
             if code!=0:audit['failure']=rpc_failure_diagnostic(bytes(job.output),code)
             need(code==0,'comparison_native_RPC_failed');value=one_record(bytes(job.output),'meshticulum.private-resume-native-rpc.v1')
             need(value['unit']==u and value['action']==action and value['radio_opened'] is False and value['private_production'] is False,'comparison_native_scope_changed')
-            audit['remote_terminal']=True;return value
+            outer.boundary();audit['remote_terminal']=True;return value
         finally:
             try:
                 if job is not None:
@@ -439,12 +546,12 @@ def main():
     def guarded(u,action='guard'):
         return native(u,action,dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u],preparation_sha256=preparations[u],review_sha256=args.operation_sha256,expected_cut_run=None))
     try:
-        operator=SSHOperator(cfg,provision_source=provision,runtime_source=bootstrap,passwords={'unit-a':password,'unit-b':password},parallel_preparation=True);password=None;operator.open_connections()
+        operator=OuterSSHOperator(cfg,provision_source=provision,runtime_source=bootstrap,passwords={'unit-a':password,'unit-b':password},parallel_preparation=True,clock=outer.monotonic,epoch=outer.epoch,outer_deadline_monotonic=outer.deadline);password=None;operator.open_connections()
         status=inspect_current_a(operator,op,manifest,None,min_remaining=160);result['pre_run_radio_status']=status
         import base64
         public=[]
         for piece in pieces:
-            f=piece['fixture'];public.append(dict(manifest=base64.b64encode(read(piece['path']/'pack/manifest.json',65536)).decode(),signature=base64.b64encode(read(piece['path']/'pack/manifest.sig.json',4096)).decode(),trust=base64.b64encode(read(piece['path']/'trust.json',16384)).decode(),pins=dict(manifest=f['manifest_sha256'],signature=f['signature_sha256'],trust=f['trust_sha256']),wanted=[piece['sample']['chunk_sha256']],recipient='unit-a'))
+            f=piece['fixture'];public.append(dict(manifest=base64.b64encode(outer.read(piece['path']/'pack/manifest.json',65536)).decode(),signature=base64.b64encode(outer.read(piece['path']/'pack/manifest.sig.json',4096)).decode(),trust=base64.b64encode(outer.read(piece['path']/'trust.json',16384)).decode(),pins=dict(manifest=f['manifest_sha256'],signature=f['signature_sha256'],trust=f['trust_sha256']),wanted=[piece['sample']['chunk_sha256']],recipient='unit-a'))
             absent=native('unit-a','observe-cache',public[-1])['observation'];need(not absent['verified_present'] and absent['absent']==public[-1]['wanted'],'batch_fresh_resource_exists')
             operator.seed(helpers.seed_package(cfg,'unit-c','source',piece['path']/'pack',piece['trust'],f['manifest_sha256'],piece['cache'].value));operator.seed(helpers.seed_package(cfg,'unit-a','recipient',piece['path']/'pack',piece['trust'],f['manifest_sha256'],piece['cache'].value))
         facts={u:stable(operator.facts(u)) for u in histories}
@@ -461,10 +568,11 @@ def main():
         aggregate=Cost()
         for unit in units:aggregate=aggregate.plus(unit.limits)
         policy=ParentPolicy(parent_id,helpers.controller_boot(),epoch,end-5000000,mono,mono+595000000,tuple(units),aggregate,sha(canonical(registry)),KIND)
-        owner=dict(schema='meshticulum.finite-public-resume-owner.v1',qualification_kind=KIND,policy_digest=policy.digest,authorization=op['authorization'],review_sha256=args.operation_sha256,prior_registry=registry,facts=facts,phase_start_epoch_us=epoch,phase_end_epoch_us=end,native_phase={u:captures[u]['native_phase'] for u in histories},runtime_sha256=op['runtime_sha256'],manifest_sha256=op['manifest_sha256'],rf_record=json.loads(read(op['rf_confirmation_path'],20000)),rf_record_sha256='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9',rf_profile=asdict(profile_for('sf7-500')),radio_profile_name='lora-sf7-sf5',lora_comparison=op['comparison_descriptor'],lora_mcu_artifact=op['lora_mcu_artifact'],core_commit=op['core_commit'],comparison_scope_sha256=op['comparison_scope_sha256'],history_receipt_sha256=op['history_receipt_sha256'],complete_global_debt=False,actual_cost=None)
+        owner=dict(schema='meshticulum.finite-public-resume-owner.v1',qualification_kind=KIND,policy_digest=policy.digest,authorization=op['authorization'],review_sha256=args.operation_sha256,prior_registry=registry,facts=facts,phase_start_epoch_us=epoch,phase_end_epoch_us=end,native_phase={u:captures[u]['native_phase'] for u in histories},runtime_sha256=op['runtime_sha256'],manifest_sha256=op['manifest_sha256'],rf_record=json.loads(outer.read(op['rf_confirmation_path'],20000)),rf_record_sha256='40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9',rf_profile=asdict(profile_for('sf7-500')),radio_profile_name='lora-sf7-sf5',lora_comparison=op['comparison_descriptor'],lora_mcu_artifact=op['lora_mcu_artifact'],core_commit=op['core_commit'],comparison_scope_sha256=op['comparison_scope_sha256'],history_receipt_sha256=op['history_receipt_sha256'],complete_global_debt=False,actual_cost=None)
         context=ComparisonContext.from_owner(owner,policy);owners={u:dict(owner,history_binding_sha256=captures[u]['history_binding_sha256'],capture_record_sha256=captures[u]['capture_record_sha256']) for u in histories}
-        write(out/'POLICY.json',policy.to_dict());write(out/'OWNER_APPROVAL.json',owners);write(out/'PRIOR.json',priors);write(out/'CONFIG.json',cfg);write(out/'OPERATION.json',op)
-        parent=ParentCaps.enroll(out/'caps.sqlite',policy,clock=helpers.parent_clock,boot_reader=helpers.controller_boot)
+        for name,value in (('POLICY.json',policy.to_dict()),('OWNER_APPROVAL.json',owners),('PRIOR.json',priors),('CONFIG.json',cfg),('OPERATION.json',op)):
+            outer.check();write(out/name,value);outer.check()
+        parent=ParentCaps.enroll(out/'caps.sqlite',policy,clock=outer.check,boot_reader=helpers.controller_boot)
         for u in ('unit-c','unit-b','unit-a'):native(u,'enroll',dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u]))
         original_prepare=operator.prepare
         def prepare(package):
@@ -479,8 +587,8 @@ def main():
         for index,piece in enumerate(pieces):
             # No current Controller or application lease is carried into the next resource.
             status=inspect_current_a(operator,op,manifest,status,min_remaining=80);result.setdefault('sample_radio_status',[]).append(status)
-            issued,issued_mono=helpers.parent_clock();expires=issued+180000000;need(expires<=policy.expires_epoch_us-15000000,'batch_fresh180_window_unavailable')
-            current=Controller(operator,campaign_id=piece['sample']['campaign_id'],resource_sha256=piece['sample']['resource_sha256'],expires_epoch_us=expires,handoff_deadline_monotonic=operator.deadline,peers=peers,boots={u:v['host_boot_id'] for u,v in cfg['units'].items()},parent=parent,radio_permission=dict(country='MY',antenna_confirmed=True),radio_profile=piece['sample']['radio_profile_name'],lora_sender_first=True,comparison_context=context)
+            issued,issued_mono=outer.check();expires=issued+180000000;need(expires<=policy.expires_epoch_us-15000000,'batch_fresh180_window_unavailable')
+            current=Controller(operator,campaign_id=piece['sample']['campaign_id'],resource_sha256=piece['sample']['resource_sha256'],expires_epoch_us=expires,handoff_deadline_monotonic=operator.deadline,peers=peers,boots={u:v['host_boot_id'] for u,v in cfg['units'].items()},parent=parent,radio_permission=dict(country='MY',antenna_confirmed=True),radio_profile=piece['sample']['radio_profile_name'],lora_sender_first=True,comparison_context=context,clock=outer.monotonic,epoch=outer.epoch)
             verified=current.direct_piece(piece['request'],piece['response'],'lora',publisher='unit-c',requester='unit-a');metrics=bulk_metrics(current.links[1],verified,piece['piece'],piece['sample']['radio_profile_name'])
             current=finish_sample(operator,current,result,index=index,
                 original_application=dict(epoch_us=issued,monotonic_us=issued_mono,expires_epoch_us=expires),
@@ -493,7 +601,7 @@ def main():
         password=None
         if current is not None:
             result['links'].extend(current.links)
-            try:cleanup_current(current,result)
+            try:outer.boundary();cleanup_current(current,result);outer.boundary()
             except BaseException:result['complete']=False;result['cleanup_error']='current_controller_cleanup_unproved'
         if operator is not None:
             for (u,run),job in operator.jobs.items():
@@ -514,8 +622,13 @@ def main():
             finally:
                 try:need(parent.close(),'batch_parent_close_uncertain')
                 except BaseException:result['complete']=False;result.setdefault('cleanup_errors',[]).append('controller_close_unproved')
+        try:outer.boundary();result['within_original_outer']=True
+        except BaseException:result['within_original_outer']=False;result['complete']=False
+        result['original_outer_controller_boot']=op['original_outer_controller_boot'];result['original_outer_monotonic_us']=op['original_outer_monotonic_us'];result['original_outer_deadline_monotonic_us']=op['original_outer_deadline_monotonic_us']
         result['finished_epoch_us']=time.time_ns()//1000;result['controller_elapsed_us']=result['finished_epoch_us']-epoch;result['placement']=op['placement'];result['within_original_phase']=result['finished_epoch_us']<end
         if not result['within_original_phase']:result['complete']=False
+        # Retain a truthful failure receipt even after the original window;
+        # this local audit write grants no controller/native operation.
         write(out/'RESULT.json',result);print(json.dumps(dict(complete=result['complete'],saved=str(out/'RESULT.json'),qualification_complete=False)));return 0 if result['complete'] else 1
 
 

@@ -9,6 +9,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -203,7 +204,7 @@ class Job:
 
 class SSHOperator:
     def __init__(self,config,*,provision_source,runtime_source=None,passwords=None,clock=time.monotonic,epoch=None,
-                 parallel_preparation=False,native_phase_timing=False):
+                 parallel_preparation=False,native_phase_timing=False,outer_deadline_monotonic=None):
         require(type(parallel_preparation) is bool,'invalid_parallel_preparation_mode')
         require(type(native_phase_timing) is bool,'invalid_native_phase_timing_mode')
         self.parallel_preparation=parallel_preparation;self._preparation_lock=Lock()
@@ -252,6 +253,10 @@ class SSHOperator:
         self.runtime_source=runtime_source.decode('utf-8') if runtime_source is not None else None
         self.clock=clock;self.epoch=epoch or (lambda:time.time_ns()//1000)
         now_epoch,now_mono=self.epoch(),self.clock()
+        require(outer_deadline_monotonic is None or (type(outer_deadline_monotonic) in (int,float)
+            and math.isfinite(outer_deadline_monotonic) and now_mono<outer_deadline_monotonic),
+            'original_ssh_outer_window_expired_or_invalid')
+        self._outer_deadline_monotonic=outer_deadline_monotonic
         remaining=(config['handoff_end_epoch_us']-now_epoch)/1e6
         maximum=(commitment['phase_end_epoch_us']-commitment['phase_start_epoch_us'])/1000000 if versioned else (600 if selected_lora else 900)
         require(20<remaining<=maximum,'current_finite_ssh_window_required')
@@ -266,6 +271,7 @@ class SSHOperator:
                 and comparison['original_monotonic_us']/1000000<=now_mono<comparison['deadline_monotonic_us']/1000000,
                 'ssh_comparison_original_clock_expired_or_regressed')
             self.deadline=min(self.deadline,comparison['deadline_monotonic_us']/1000000)
+        if outer_deadline_monotonic is not None:self.deadline=min(self.deadline,outer_deadline_monotonic)
         self.passwords=dict(passwords or {})
         self.next_port=config['port_base'];require(type(self.next_port) is int and 1024<=self.next_port<=65400,'invalid_pilot_port_range')
         self.jobs={};self.events=[];self.connections=None
@@ -414,6 +420,12 @@ class SSHOperator:
             # This branch cannot dispatch or extend an application callback.
             deadline=self.clock()+5+2+cleanup_transport_headroom
             audit['local_deadline_monotonic']=deadline
+        if self._outer_deadline_monotonic is not None:
+            # Original cleanup waits retain their own bounds, additionally
+            # limited by the caller's already-admitted outer end.
+            deadline=min(deadline,self._outer_deadline_monotonic)
+            require(self.clock()<deadline,'original_ssh_outer_window_expired')
+            if audit is not None:audit['local_deadline_monotonic']=deadline
         job=None
         try:
             job=Job(argv,password=self.passwords.get(unit),deadline=deadline,clock=self.clock)
