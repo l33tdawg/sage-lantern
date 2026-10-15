@@ -99,7 +99,7 @@ ARTIFACT_SHA256 = hashlib.sha256(_CURRENT_ARTIFACT).hexdigest()
 _ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT,
     IRQ020_SELECTOR:_IRQ_ARTIFACT, SELECTOR:_CURRENT_ARTIFACT})
 PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
-    scope_sha256=None,
+    scope_sha256='2bb3d00703a5cf3c1b3aaf84f3b113af0e3ff318d1920c099df431f2476dd0cf',
     history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
     preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
 
@@ -220,7 +220,7 @@ _LORA_ARTIFACT = canonical(dict(json.loads(_CURRENT_ARTIFACT),
     schema='meshticulum.explicit-lora-mcu-artifact.v1', selector=LORA_SELECTOR,
     radio_modem='lora', radio_profile_names=list(LORA_PROFILE_NAMES)))
 LORA_ARTIFACT_SHA256 = hashlib.sha256(_LORA_ARTIFACT).hexdigest()
-LORA_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256=None,
+LORA_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256='893d3f92784af5659f41fa692f55863e4401d23cc27d73ac7bf6fd0858524611',
     history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
     preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
 
