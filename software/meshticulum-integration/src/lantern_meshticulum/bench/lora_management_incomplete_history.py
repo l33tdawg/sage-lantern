@@ -13,7 +13,7 @@ FINAL_RESULT_SHA256 = 'ac30be916b612e6376a42e46b31329b3ed2d61d1bba432790b9e9b2ba
 NATIVE_COUNTS = {'unit-a': {'claim_count': 1, 'prepared_count': 0, 'resource_count': 1, 'start_count': 0},
  'unit-b': {'claim_count': 0, 'prepared_count': 0, 'resource_count': 0, 'start_count': 0},
  'unit-c': {'claim_count': 1, 'prepared_count': 0, 'resource_count': 1, 'start_count': 0}}
-NEXT_HISTORY_RECEIPT_SHA256 = None
+NEXT_HISTORY_RECEIPT_SHA256 = '20550444f2a434ad64f40a3d1c019df4066572823e1c797529e5f5e11074dfd0'
 ORIGINAL_ABSOLUTE_END = 1792096030744917
 ORIGINAL_HISTORY_RECEIPT_SHA256 = '4a17d04dd7c3cc2f61ac62aa027909203ee3a14ef2c55abf4851aafff908b08e'
 ORIGINAL_MANIFEST_SHA256 = '7aa80f1ea00495e93cc431f78f2ac96d9d0e9b5410dd306c856c160fdf7689b0'
