@@ -168,12 +168,12 @@ def test_accepted_part_cannot_be_rebound_or_counted_as_whole(typed_rows,fault):
     with pytest.raises((RuntimeError,TypeError,KeyError)):rpc.qualify_partial_bundle_costs(unit,p,o,v)
 
 
-@pytest.mark.parametrize('count',[30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45])
+@pytest.mark.parametrize('count',[30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46])
 def test_original_h42_checkpoint_owner_requires_exact_captured_history(count,monkeypatch):
     from lantern_meshticulum.bench import bundle_checkpoint_adapter as adapter
     policy=ParentPolicy.from_dict(DATA['policy']);owner=deepcopy(OWNER_PHASE['unit-a'])
     owner['bundle_radio_checkpoint']=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=count,maximum_checkpoints=4,producer_sha256='a'*64)
-    assert len(adapter.checkpoint_api.HISTORY)==45
+    assert len(adapter.checkpoint_api.HISTORY)==46
     if count==42:
         # The original checkpoint contract is H42; only this historical positive case uses its captured tuple.
         captured=tuple(retained.PAID_HISTORY[:42])
@@ -184,10 +184,10 @@ def test_original_h42_checkpoint_owner_requires_exact_captured_history(count,mon
         with pytest.raises(RuntimeError):adapter.context_for('unit-a',policy,owner,1)
 
 
-@pytest.mark.parametrize('count',[42,43,44,45])
+@pytest.mark.parametrize('count',[42,43,44,45,46])
 def test_original_h42_checkpoint_stays_closed_with_actual_h44(count,monkeypatch):
     from lantern_meshticulum.bench import bundle_checkpoint_adapter as adapter
-    assert len(adapter.checkpoint_api.HISTORY)==len(retained.PAID_HISTORY)==45
+    assert len(adapter.checkpoint_api.HISTORY)==len(retained.PAID_HISTORY)==46
     policy=ParentPolicy.from_dict(DATA['policy']);owner=deepcopy(OWNER_PHASE['unit-a'])
     owner['bundle_radio_checkpoint']=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=count,maximum_checkpoints=4,producer_sha256='a'*64)
     monkeypatch.setattr(adapter.checkpoint_api,'load_primitives',lambda _:pytest.fail('primitives reached before H44 refusal'))

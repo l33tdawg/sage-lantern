@@ -87,7 +87,7 @@ def test_new_kind_cannot_relabel_whole_or_renew_clock(gfdata,field,value):
 def test_pending_scope_stays_closed_and_fresh_boot_does_not_refund_debt(gfdata,monkeypatch):
     from lantern_meshticulum.bench import profiles,retained_capture
     actual=tuple(retained_capture.PAID_HISTORY)
-    assert len(actual)==45 and actual[42]=='bea52c6aa6a5a95501997a46247b514f' and actual[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual[-1]=='e2449e5bcd4af15d45f7a756dff7d997'
+    assert len(actual)==46 and actual[42]=='bea52c6aa6a5a95501997a46247b514f' and actual[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual[44]=='e2449e5bcd4af15d45f7a756dff7d997' and actual[-1]=='360514104bf80fa187276f24d6aa9d9c'
     # Only this historical bundle model uses H42; production stays closed on45.
     monkeypatch.setattr(retained_capture,'PAID_HISTORY',actual[:42])
     monkeypatch.setattr(profiles,'GFSK_HISTORY_RECEIPT_SHA256',None)

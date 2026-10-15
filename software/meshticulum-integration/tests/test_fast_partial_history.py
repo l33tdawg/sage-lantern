@@ -30,7 +30,7 @@ def test_original_context_and_full_caps_are_retained_without_live_scope(original
     assert context.value['whole_bytes']==100000 and len(context.value['stages'])==5
     assert history.declared_partition(policy)[unit]['declared_new_reservation']==asdict(Cost() if unit=='unit-b' else Cost(2560,600000000))
     assert rpc.HISTORY[:40]==history.H40_PREFIX and rpc.HISTORY[40]==history.PARENT
-    assert len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==45 and rpc.GUARDED_PAID[history.PARENT]==policy.digest
+    assert len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==46 and rpc.GUARDED_PAID[history.PARENT]==policy.digest
     assert value['native_observations'] is value['history_receipt'] is None
     assert all(outcome['complete'] and outcome['disarmed_on_exit'] for outcome in value['outcomes'][unit].values())
 

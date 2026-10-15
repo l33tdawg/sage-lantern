@@ -86,21 +86,24 @@ def test_pending_receipt_does_not_admit_even_complete_metadata(actual,monkeypatc
     with pytest.raises(WireError,match='pending_e244'):history.qualify_unmaterialized_costs(unit,policy,observed,row)
 
 
-def test_activated_source_binds_actual_H45_and_keeps_old_H44_scope_closed(inputs,monkeypatch):
+def test_historical_H45_pins_remain_exact_and_old_scopes_stay_closed(inputs,monkeypatch):
     from types import MappingProxyType
     from lantern_meshticulum.bench import mcu_artifact,retained_capture
-    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==45
-    assert rpc.HISTORY[:44]==tuple(inputs['parents'])and rpc.HISTORY[-1]==history.UNMATERIALIZED_PARENT
-    assert rpc.OLD_DIGESTS[-1]==history.UNMATERIALIZED_POLICY_DIGEST
+    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==46
+    assert rpc.HISTORY[:44]==tuple(inputs['parents'])and rpc.HISTORY[44]==history.UNMATERIALIZED_PARENT
+    assert rpc.OLD_DIGESTS[44]==history.UNMATERIALIZED_POLICY_DIGEST
     lane=Path(os.environ['MESHTICULUM_H45_FIXTURE']).parent/'meshticulum-e244-h45-activation-20261015'
-    raw=(lane/'SCOPE.json').read_bytes();scope=json.loads(raw);bindings=dict(mcu_artifact.PENDING_NATIVE_BINDINGS)
-    assert bindings==dict(scope_sha256=hashlib.sha256(raw).hexdigest(),
+    raw=(lane/'SCOPE.json').read_bytes();scope=json.loads(raw)
+    bindings=dict(scope_sha256=hashlib.sha256(raw).hexdigest(),
         history_receipt_sha256=history.UNMATERIALIZED_NEXT_HISTORY_SHA256,preceding_parent=history.UNMATERIALIZED_PARENT)
+    assert bindings['scope_sha256']=='61506fa5bb43deed513da9ddc3032d3a8362241a02947ff6dbe9e83fed5f438e'
     assert scope['paid_history_count']==45 and scope['history_receipt_sha256']==bindings['history_receipt_sha256']
     assert scope['reviewed_implementation_commit']=='7031efd78f6acdc224aef7a70e94c71539c48f75'
     assert scope['window_issued']is scope['native_permission']is scope['qualification_complete']is False
     assert scope['full_H45_prior_caps']=={unit:row['paid_caps']for unit,row in inputs['latest'].items()}
-    assert mcu_artifact.require_selector_scope(mcu_artifact.KIND)==bindings
+    monkeypatch.setattr(mcu_artifact,'PENDING_NATIVE_BINDINGS',MappingProxyType(bindings))
+    with pytest.raises(mcu_artifact.McuArtifactError,match='pending_mcu_artifact_native_scope_and_history'):
+        mcu_artifact.require_selector_scope(mcu_artifact.KIND)
     monkeypatch.setattr(mcu_artifact,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
         scope_sha256='54721794ad3a4b35d780c899351a033184ddae3f97b3c4668188e69e37d79cc4',
         history_receipt_sha256='04f6e18c9f9425796dc31fb203b7d92d826b6ef775a597903b2466aaf91cbee4',
