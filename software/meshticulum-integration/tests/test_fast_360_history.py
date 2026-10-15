@@ -124,11 +124,11 @@ def test_missing_real_h43_receipt_prevents_cost_admission(actual, monkeypatch):
 def test_active46_keeps_exact45_prefix_and_refuses_old45_scope(monkeypatch):
     from types import MappingProxyType
     from lantern_meshticulum.bench import capture_8120,mcu_artifact
-    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==46
-    assert rpc.HISTORY[:45]==history.H45_PREFIX and rpc.HISTORY[-1]==history.PARENT
+    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==47
+    assert rpc.HISTORY[:45]==history.H45_PREFIX and rpc.HISTORY[45]==history.PARENT and rpc.HISTORY[-1]=='02ec9185d218e44740b30227a11bd7cd'
     assert rpc.GUARDED_PAID[history.PARENT]==rpc.OLD_DIGESTS[45]==history.POLICY_DIGEST
     assert rpc.PARTIAL250[history.PARENT] is history and history in rpc.COMPLETE_FAST_HISTORY
-    assert history.pending_next_roster()==rpc.HISTORY
+    assert history.pending_next_roster()==rpc.HISTORY[:46]
     assert capture_8120.PARENT not in rpc.HISTORY and capture_8120.H42_RECEIPT_SHA256==h42.NEXT_HISTORY_RECEIPT_SHA256
     monkeypatch.setattr(mcu_artifact,'PENDING_NATIVE_BINDINGS',MappingProxyType(dict(
         scope_sha256=history.ORIGINAL_SCOPE_SHA256,history_receipt_sha256=history.ORIGINAL_HISTORY_RECEIPT_SHA256,

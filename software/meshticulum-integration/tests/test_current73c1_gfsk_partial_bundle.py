@@ -94,7 +94,7 @@ def test_partial_scope_debt_and_original_clocks_cannot_change(typed_rows,fault):
 
 def test_H35_extends_the_exact_H34_prefix_and_preserves_earlier_digest_positions():
     from lantern_meshticulum.bench import gfsk_bundle_history as old
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==46
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==47
     assert retained.PAID_HISTORY[:34]==contract.H34_PREFIX
     assert retained.PAID_HISTORY[33]==old.PARENT and rpc.OLD_DIGESTS[33]==old.POLICY_DIGEST
     assert retained.PAID_HISTORY[34]==contract.PARENT and rpc.OLD_DIGESTS[34]==contract.POLICY_DIGEST

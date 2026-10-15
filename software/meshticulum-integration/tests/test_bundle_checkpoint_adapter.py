@@ -93,8 +93,8 @@ def test_missing_original_optin_refuses_before_loading_source_or_opening_device(
 def historical_h42_checkpoint(monkeypatch):
     """Exercise the expired H42 contract under an explicit source-only model."""
     actual = adapter.checkpoint_api.HISTORY
-    assert len(actual) == 46
-    assert actual[42] == 'bea52c6aa6a5a95501997a46247b514f' and actual[43] == 'd1fd73cd772ff055140f17ca986a07d0' and actual[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and actual[-1] == '360514104bf80fa187276f24d6aa9d9c'
+    assert len(actual) == 47
+    assert actual[42] == 'bea52c6aa6a5a95501997a46247b514f' and actual[43] == 'd1fd73cd772ff055140f17ca986a07d0' and actual[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and actual[45] == '360514104bf80fa187276f24d6aa9d9c' and actual[-1] == '02ec9185d218e44740b30227a11bd7cd'
     monkeypatch.setattr(adapter.checkpoint_api, 'HISTORY', actual[:42])
     return actual[:42]
 
@@ -102,7 +102,7 @@ def historical_h42_checkpoint(monkeypatch):
 @pytest.mark.parametrize('count',(42,43,44,45,46))
 def test_original_h42_checkpoint_contract_stays_closed_with_current_h46(data,count,monkeypatch):
     _,_,value,policy=data
-    assert len(adapter.checkpoint_api.HISTORY) == 46
+    assert len(adapter.checkpoint_api.HISTORY) == 47
     owner=dict(bundle_context=value,bundle_radio_checkpoint=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',
         producer_sha256='a'*64,primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,
         retained_history_count=count,maximum_checkpoints=4))

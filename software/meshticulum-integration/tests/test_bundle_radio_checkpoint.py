@@ -104,7 +104,7 @@ def root_record(data,tmp_path,monkeypatch,root_observation):
     # roster. Exercise its historical checks under an explicit local model;
     # peer STATUS/projections remain modeled and confer no current permission.
     actual_history=tuple(module.HISTORY)
-    assert len(actual_history)==46 and actual_history[42]=='bea52c6aa6a5a95501997a46247b514f' and actual_history[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual_history[44]=='e2449e5bcd4af15d45f7a756dff7d997' and actual_history[-1]=='360514104bf80fa187276f24d6aa9d9c'
+    assert len(actual_history)==47 and actual_history[42]=='bea52c6aa6a5a95501997a46247b514f' and actual_history[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual_history[44]=='e2449e5bcd4af15d45f7a756dff7d997' and actual_history[45]=='360514104bf80fa187276f24d6aa9d9c' and actual_history[-1]=='02ec9185d218e44740b30227a11bd7cd'
     history=actual_history[:42]
     monkeypatch.setattr(module,'HISTORY',history)
     natives={};terminal=[]

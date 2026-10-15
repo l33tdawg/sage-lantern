@@ -10,7 +10,7 @@ from types import MappingProxyType
 
 import pytest
 
-from lantern_meshticulum.bench import mcu_artifact as mcu
+from lantern_meshticulum.bench import mcu_artifact as mcu,lora_enrollment_incomplete_history as incomplete
 from lantern_meshticulum.bench.profiles import profile_for
 from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
 
@@ -71,10 +71,22 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
     assert selected['firmware']==scope['firmware']=='mtb1-020e287255'
     assert selected['image_sha256']==scope['firmware_image_sha256']==mcu.IMAGE_SHA256
     assert scope['selector']==mcu.LORA_SELECTOR and scope['qualification_kind']==mcu.LORA_KIND
-    assert scope['paid_history_count']==len(PAID_HISTORY)==46
+    assert scope['paid_history_count']==len(PAID_HISTORY)==47
     assert scope['history_parent_ids']==list(PAID_HISTORY)
     assert scope['preceding_parent']==pins['preceding_parent']==PAID_HISTORY[-1]
-    assert scope['history_receipt_sha256']==pins['history_receipt_sha256']=='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826'
+    assert scope['history_receipt_sha256']==pins['history_receipt_sha256']==incomplete.NEXT_HISTORY_RECEIPT_SHA256
+    assert scope['preceding_parent']==incomplete.PARENT
+    history_root=Path(os.environ['MESHTICULUM_H47_FIXTURE'])/'resume-history-preparation-47'
+    receipt_raw=read(history_root/'RECEIPT.json');receipt=json.loads(receipt_raw)
+    assert sha(receipt_raw)==incomplete.NEXT_HISTORY_RECEIPT_SHA256
+    assert receipt['local_controllers_reobserved']==47 and receipt['native_counts']is None
+    assert receipt['original_run_complete']is receipt['original_cleanup_proved']is False
+    assert receipt['no_refund']is True and receipt['actual_unknown_cost']is None
+    assert scope['full_H47_prior_caps']=={u:json.loads(read(history_root/(u+'.json'),2500000))['previous'][-1]['paid_caps']for u in receipt['payload_sha256']}
+    assert scope['retained_H46_binding']['history_receipt_sha256']==incomplete.ORIGINAL_HISTORY_RECEIPT_SHA256
+    assert scope['retained_consumed_attempt']['parent_id']==incomplete.PARENT
+    assert scope['retained_consumed_attempt']['native_counts']is None
+    assert scope['required_inputs']['fresh_full47_preflight']is True
     assert scope['comparison_descriptor']['radio_profile_names']==list(mcu.LORA_PROFILE_NAMES)==['sf7-500','sf5-500']
     assert scope['sample_count']==scope['comparison_descriptor']['sample_count']==2
     assert scope['phase_seconds']==600 and scope['application_seconds']==180 and scope['absolute_window_seconds']==720

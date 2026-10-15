@@ -90,6 +90,7 @@ OLD_DIGESTS = (
     '1ce4ceb934200048b1210568022532ddb578793e5e849bf7cf199161af40ffc0',
     '0e89cbe48425763e06882ff08e368870acffd39771c529a6f35fcb8444ac13da',
     '5f460bad40ea0b900ac87f26c366c5aa3764723b0050bdeb0580d04eae7764f7',
+    '0da052d8f4acf70e165bf54c912a36a8f934460bb9d85f11403f42a458119ecd',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -229,6 +230,7 @@ from .fast_bundle_unstarted_history import PARENT as FAST_UNSTARTED_PAID, RUN as
 from . import fast_bundle_unstarted_history as unstarted_history
 from . import gfsk250_mb1_partial_history as partial250,fast_bundle_partial_history as fast_partial,fast_bundle_complete_history as fast_complete,fast_bundle_bea_history as bea_complete
 from . import fast_bundle_d1fd_history as d1fd_history,fast_bundle_360_history as completed360_history
+from . import lora_enrollment_incomplete_history as incomplete_lora_history
 PARTIAL250={partial250.PARENT:partial250,fast_partial.PARENT:fast_partial,fast_complete.PARENT:fast_complete,bea_complete.PARENT:bea_complete,completed360_history.PARENT:completed360_history}
 COMPLETE_FAST_HISTORY=(fast_complete,bea_complete,completed360_history)
 COMPLETE_FAST_PARENTS=tuple(c.PARENT for c in COMPLETE_FAST_HISTORY)
@@ -408,8 +410,10 @@ def retained_owner_view(record, policy, unit):
         return unstarted_history.unmaterialized_owner_view(record, policy, unit=unit)
     if policy.parent_id == completed360_history.PARENT:
         return completed360_history.owner_view(record, policy, unit=unit)
+    if policy.parent_id == incomplete_lora_history.PARENT:
+        return incomplete_lora_history.owner_view(record, policy, unit=unit)
     from .mcu_artifact import OWNER_SCHEMA
-    need(record.get('schema') != OWNER_SCHEMA, 'unreviewed_retained_mcu_owner')
+    need(record.get('schema') not in (OWNER_SCHEMA,incomplete_lora_history.OWNER_SCHEMA), 'unreviewed_retained_mcu_owner')
     return record
 
 
@@ -854,6 +858,15 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
     need(totals == inventory['full_caps_retained_totals'], 'original_cap_sum_changed')
     for index, (v, policy) in enumerate(zip(old, policies)):
         guard(); target = STATE/'parents'/policy.parent_id; reader.directory(target)
+        if policy.parent_id == incomplete_lora_history.PARENT:
+            incomplete_lora_history.require_final_bindings()
+            known.update(incomplete_lora_history.metadata_files(reader,STATE,unit,v,guard=guard,
+                clock=clock,current_boot=boot,previous_history=dict(legacy_inventory=inventory,previous=old[:index])))
+            need(index==46 and asdict(policy.unit(unit).prior_debt)==old[index-1]['paid_caps'],
+                 '02ec_original_H46_debt_chain_changed')
+            reports.append(dict(parent_id=policy.parent_id,paid_caps=v['paid_caps'],actual_children=None,
+                enrollment_incomplete=True,actual_cost=None,no_refund=True))
+            continue
         owner = retained_owner_view(v['owner'], policy, unit)
         prior = inventory if v['prior_kind'] == 'legacy' else dict(v['prior_metadata'],legacy_inventory=inventory)
         for name, value in (('policy.json',v['policy']),('owner.json',v['owner']),('prior.json',prior)):
@@ -1887,6 +1900,8 @@ def seal_inputs(reader, unit, known, original, newer):
     """Reobserve complete verified metadata before any own namespace creation."""
     identities={STATE/'parents'/parent/'prepared-identities' for parent in GUARDED_PAID}
     staging = ()
+    if incomplete_lora_history.PARENT in HISTORY:
+        identities.add(STATE/'parents'/incomplete_lora_history.PARENT/'prepared-identities')
     if unstarted_history.UNMATERIALIZED_PARENT in HISTORY:
         identities.add(STATE/'parents'/unstarted_history.UNMATERIALIZED_PARENT/'prepared-identities')
         staging = unstarted_history.unmaterialized_staging_names(unit)

@@ -80,7 +80,7 @@ def test_real_h44_roster_refuses_consumed_h43_scope(monkeypatch):
         scope_sha256='16f73f63ce91875dfcb907733ebae16b97a78450c7c769a3c9066b9752eac78e',
         history_receipt_sha256='4d27db070dc0106d067bc49372919b32431ff04a31894bff3d14746d4bca4594',
         preceding_parent='bea52c6aa6a5a95501997a46247b514f')))
-    assert PAID_HISTORY[43]=='d1fd73cd772ff055140f17ca986a07d0' and PAID_HISTORY[44]=='e2449e5bcd4af15d45f7a756dff7d997' and PAID_HISTORY[-1]=='360514104bf80fa187276f24d6aa9d9c'
+    assert PAID_HISTORY[43]=='d1fd73cd772ff055140f17ca986a07d0' and PAID_HISTORY[44]=='e2449e5bcd4af15d45f7a756dff7d997' and PAID_HISTORY[45]=='360514104bf80fa187276f24d6aa9d9c' and PAID_HISTORY[-1]=='02ec9185d218e44740b30227a11bd7cd'
     assert mcu.PENDING_NATIVE_BINDINGS['preceding_parent']=='bea52c6aa6a5a95501997a46247b514f'
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu_artifact_native_scope_and_history'):
         mcu.require_selector_scope(mcu.KIND)

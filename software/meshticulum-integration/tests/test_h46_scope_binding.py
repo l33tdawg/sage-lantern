@@ -26,7 +26,9 @@ def actual():
 def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     scope,raw,receipt,p=actual
     expected=dict(scope_sha256=hashlib.sha256(raw).hexdigest(),history_receipt_sha256=history.NEXT_HISTORY_RECEIPT_SHA256,preceding_parent=history.PARENT)
-    assert dict(mcu.PENDING_NATIVE_BINDINGS)==mcu.require_selector_scope(mcu.KIND)==expected
+    assert dict(mcu.PENDING_NATIVE_BINDINGS)==expected
+    with pytest.raises(mcu.McuArtifactError,match='pending_mcu_artifact_native_scope_and_history'):
+        mcu.require_selector_scope(mcu.KIND)
     assert scope['reviewed_implementation_commit']=='a5d57e55826470c1f6990f83c832f3b0dea8c291'
     assert scope['core_commit']==mcu.CORE=='b9ce259a915e1336ee2eda5c2cbe413d370e6b9d'
     assert scope['mcu_artifact']==mcu.artifact()

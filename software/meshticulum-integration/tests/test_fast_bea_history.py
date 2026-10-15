@@ -130,8 +130,8 @@ def test_active_roster_and_capture_only_parent_do_not_change(monkeypatch, pendin
             scope_sha256=None, history_receipt_sha256=None, preceding_parent=None)))
     bindings = mcu_artifact.PENDING_NATIVE_BINDINGS
     assert history.H42_PREFIX == retained_capture.PAID_HISTORY[:42] == rpc.HISTORY[:42]
-    assert len(rpc.OLD_DIGESTS) == len(rpc.HISTORY) == 46
-    assert rpc.HISTORY[42] == history.PARENT and rpc.HISTORY[43] == 'd1fd73cd772ff055140f17ca986a07d0' and rpc.HISTORY[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and rpc.HISTORY[-1] == '360514104bf80fa187276f24d6aa9d9c' and capture_8120.PARENT not in rpc.HISTORY
+    assert len(rpc.OLD_DIGESTS) == len(rpc.HISTORY) == 47
+    assert rpc.HISTORY[42] == history.PARENT and rpc.HISTORY[43] == 'd1fd73cd772ff055140f17ca986a07d0' and rpc.HISTORY[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and rpc.HISTORY[45] == '360514104bf80fa187276f24d6aa9d9c' and rpc.HISTORY[-1] == '02ec9185d218e44740b30227a11bd7cd' and capture_8120.PARENT not in rpc.HISTORY
     assert rpc.GUARDED_PAID[history.PARENT] == rpc.OLD_DIGESTS[42] == history.POLICY_DIGEST
     assert capture_8120.H42_RECEIPT_SHA256 == h42.NEXT_HISTORY_RECEIPT_SHA256
     assert rpc.PARTIAL250[history.PARENT] is history and history in rpc.COMPLETE_FAST_HISTORY
