@@ -35,7 +35,7 @@ def sample(request,synthetic_a658_capture):
 
 
 def test_actual_evidence_keeps_exact_paid_prefix_and_empty_enrollment_classification():
-    assert len(retained.PAID_HISTORY)==47 and pinned.PARENT not in retained.PAID_HISTORY
+    assert len(retained.PAID_HISTORY)==48 and pinned.PARENT not in retained.PAID_HISTORY
     assert sha(canonical(retained.PAID_HISTORY[:42]))=='ebf29572ee1b76fd9e14b536a2ad4b1cd0eca4016a195df108df84f7fb4a04b2'
     assert retained.PAID_HISTORY[42]=='bea52c6aa6a5a95501997a46247b514f'
     assert pinned.EXPIRY_COMPLETION_SHA256=='a996e21a8d632d4b26c2baf623a1ec8f981ebc66344de678352b0f3371de7aa2'

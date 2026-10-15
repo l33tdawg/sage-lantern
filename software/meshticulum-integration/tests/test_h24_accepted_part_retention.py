@@ -109,7 +109,7 @@ def test_exact_four_canonical_outcomes_are_required(unit):
 
 
 def test_roster_twenty_one_preserves_original_twenty_and_capture_twelve():
-    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==47
+    assert len(retained.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==48
     assert retained.PAID_HISTORY[22]==rpc.V2_FAILED_BUNDLE_PAID
     assert retained.PAID_HISTORY[23]==rpc.V3_PARTIAL_BUNDLE_PAID
     assert len(retained.UNADMITTED_PAID_HISTORY)==12
@@ -209,7 +209,7 @@ def test_original_h42_checkpoint_owner_requires_exact_captured_history(count,mon
     from lantern_meshticulum.bench import bundle_checkpoint_adapter as adapter
     policy=ParentPolicy.from_dict(DATA['policy']);owner=deepcopy(OWNER_PHASE['unit-a'])
     owner['bundle_radio_checkpoint']=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=count,maximum_checkpoints=4,producer_sha256='a'*64)
-    assert len(adapter.checkpoint_api.HISTORY)==47
+    assert len(adapter.checkpoint_api.HISTORY)==48
     if count==42:
         # The original checkpoint contract is H42; only this historical positive case uses its captured tuple.
         captured=tuple(retained.PAID_HISTORY[:42])
@@ -223,7 +223,7 @@ def test_original_h42_checkpoint_owner_requires_exact_captured_history(count,mon
 @pytest.mark.parametrize('count',[42,43,44,45,46])
 def test_original_h42_checkpoint_stays_closed_with_actual_h44(count,monkeypatch):
     from lantern_meshticulum.bench import bundle_checkpoint_adapter as adapter
-    assert len(adapter.checkpoint_api.HISTORY)==len(retained.PAID_HISTORY)==47
+    assert len(adapter.checkpoint_api.HISTORY)==len(retained.PAID_HISTORY)==48
     policy=ParentPolicy.from_dict(DATA['policy']);owner=deepcopy(OWNER_PHASE['unit-a'])
     owner['bundle_radio_checkpoint']=dict(schema='meshticulum.root-public100k-checkpoint-owner.v1',primitives_sha256=adapter.checkpoint_api.PRIMITIVES_SHA,retained_history_count=count,maximum_checkpoints=4,producer_sha256='a'*64)
     monkeypatch.setattr(adapter.checkpoint_api,'load_primitives',lambda _:pytest.fail('primitives reached before H44 refusal'))

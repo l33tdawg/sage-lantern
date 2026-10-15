@@ -91,7 +91,7 @@ def test_zero_child_conservative_bound_refuses_changed_actual_or_scope(zero_rows
 
 
 def test_exact_twenty_parent_roster_keeps_nineteen_and_capture_prefix_twelve():
-    assert len(retained_capture.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==47
+    assert len(retained_capture.PAID_HISTORY)==len(rpc.OLD_DIGESTS)==48
     assert retained_capture.PAID_HISTORY[19]==rpc.ENROLLED_ZERO_PAID
     assert resume_parent_guard.HISTORY is retained_capture.PAID_HISTORY
     assert len(retained_capture.UNADMITTED_PAID_HISTORY)==12

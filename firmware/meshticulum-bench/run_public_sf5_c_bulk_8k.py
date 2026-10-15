@@ -299,7 +299,7 @@ print(json.dumps(result,sort_keys=True),flush=True)
 
 def retained_controller_caps(unit,row,observation):
     from lantern_meshticulum.bench.pilot_parent_caps import Cost,ParentPolicy
-    from lantern_meshticulum.bench import fast_bundle_d1fd_history as d1fd,lora_enrollment_incomplete_history as incomplete_lora
+    from lantern_meshticulum.bench import fast_bundle_d1fd_history as d1fd,lora_enrollment_incomplete_history as incomplete_lora,lora_endpoint_incomplete_history as endpoint_lora
     policy=ParentPolicy.from_dict(row['policy']); local=policy.unit(unit)
     actual=next(v for v in observation['detail']['units'] if v['unit']==unit)
     need(observation['parent_id']==policy.parent_id and observation['policy_digest']==policy.digest==row['policy_digest']
@@ -308,6 +308,8 @@ def retained_controller_caps(unit,row,observation):
     spent=Cost(**actual['prior_plus_prepaid_caps'])
     if policy.parent_id==incomplete_lora.PARENT:
         return incomplete_lora.controller_caps(unit,row,observation)
+    if policy.parent_id==endpoint_lora.PARENT:
+        return endpoint_lora.controller_caps(unit,row,observation)
     if policy.parent_id==d1fd.PARENT:
         d1fd.owner_view(row['owner'],policy,unit=unit)
         native=Cost(**row['actual_native_paid_caps'])
