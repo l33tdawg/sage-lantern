@@ -27,7 +27,11 @@ def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     scope,raw,receipt,p=actual
     expected=dict(scope_sha256=hashlib.sha256(raw).hexdigest(),history_receipt_sha256=history.NEXT_HISTORY_RECEIPT_SHA256,preceding_parent=history.PARENT)
     assert dict(mcu.PENDING_NATIVE_BINDINGS)==mcu.require_selector_scope(mcu.KIND)==expected
-    assert scope['reviewed_implementation_commit']=='f23dba2a86912a6b80a298118ad0a3592b1f4ecf'
+    assert scope['reviewed_implementation_commit']=='9a9b1605ffb13e6b6a04b6e777c218719013d3ae'
+    assert scope['core_commit']==mcu.CORE=='d828aef5be0ed5aeff472f79bc3935fe50c17092'
+    assert scope['mcu_artifact']==mcu.artifact()
+    assert scope['source_lock_sha256']==mcu.artifact()['source_lock_sha256']
+    assert scope['mcu_artifact']['core_revision']==mcu.FIRMWARE_CORE
     assert scope['paid_history_count']==receipt['local_controllers_reobserved']==46
     assert scope['history_parent_ids']==list(history.pending_next_roster())
     assert scope['window_issued'] is scope['native_permission'] is scope['qualification_complete'] is False
@@ -59,7 +63,7 @@ def test_original_paid_owner_does_not_become_a_new_scope_grant(actual):
     manifest_path=Path(os.environ['MESHTICULUM_H46_FIXTURE']).parent/'meshticulum-e244-repaired-host-final-20261015/MANIFEST.json'
     manifest=json.loads(manifest_path.read_text())
     owner=deepcopy(p['owner_record']);before=json.dumps(owner,sort_keys=True)
-    with pytest.raises(mcu.McuArtifactError,match='mcu_artifact_native_scope_or_history_changed'):
+    with pytest.raises(mcu.McuArtifactError,match='historical_mcu_artifact_not_current'):
         mcu.require_native_scope(owner,ParentPolicy.from_dict(p['policy']),manifest)
     assert json.dumps(owner,sort_keys=True)==before
 
