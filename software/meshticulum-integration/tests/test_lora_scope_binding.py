@@ -10,13 +10,13 @@ from types import MappingProxyType
 
 import pytest
 
-from lantern_meshticulum.bench import mcu_artifact as mcu,lora_enrollment_incomplete_history as incomplete
+from lantern_meshticulum.bench import mcu_artifact as mcu,lora_enrollment_incomplete_history as incomplete,lora_endpoint_incomplete_history as endpoint
 from lantern_meshticulum.bench.profiles import profile_for
 from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
 
 EXPECTED_CORE = 'b9ce259a915e1336ee2eda5c2cbe413d370e6b9d'
-EXPECTED_PREFIX = '3bb09774a1c4550413e4e45d5d148a36019f4117'
-EXPECTED_SCOPE_SHA = '9bd679c58df85a45d883460ed5d88baed68ef911807e48606ee86224f313e5d9'
+EXPECTED_PREFIX = 'aecd3094c996f8e1bbeda7db11f72624e62d32e5'
+EXPECTED_SCOPE_SHA = 'b1c59d21937cd8864499f17dcf820bfdf3b550c280828c9d34e2ddbfd1cf18de'
 EXPECTED_LOCK_SHA = '3b37a55820ed9b7759359778a42b302f0e57500c328ec076023983d5ed05de76'
 OLD_SCOPES = (
     ('c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
@@ -60,6 +60,7 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
         pytest.skip('Explicit reviewed LoRa Scope fixture is required; no ready or native claim follows this skip.')
     assert all(type(v) is str for v in (EXPECTED_CORE,EXPECTED_PREFIX,EXPECTED_SCOPE_SHA,EXPECTED_LOCK_SHA))
     scope_raw=read(Path(configured)/'SCOPE.json');scope=json.loads(scope_raw)
+    lantern_source=Path(__file__).resolve().parents[3]
     selected=mcu.lora_artifact();pins=mcu.require_lora_selector_scope(mcu.LORA_KIND)
     assert sha(scope_raw)==EXPECTED_SCOPE_SHA==pins['scope_sha256']
     assert scope['schema']=='meshticulum.root-reviewed-lora-sf7-sf5-comparison-scope.v1'
@@ -71,22 +72,34 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
     assert selected['firmware']==scope['firmware']=='mtb1-020e287255'
     assert selected['image_sha256']==scope['firmware_image_sha256']==mcu.IMAGE_SHA256
     assert scope['selector']==mcu.LORA_SELECTOR and scope['qualification_kind']==mcu.LORA_KIND
-    assert scope['paid_history_count']==len(PAID_HISTORY)==47
+    assert scope['paid_history_count']==len(PAID_HISTORY)==48
     assert scope['history_parent_ids']==list(PAID_HISTORY)
     assert scope['preceding_parent']==pins['preceding_parent']==PAID_HISTORY[-1]
-    assert scope['history_receipt_sha256']==pins['history_receipt_sha256']==incomplete.NEXT_HISTORY_RECEIPT_SHA256
-    assert scope['preceding_parent']==incomplete.PARENT
-    history_root=Path(os.environ['MESHTICULUM_H47_FIXTURE'])/'resume-history-preparation-47'
+    assert scope['history_receipt_sha256']==pins['history_receipt_sha256']==endpoint.NEXT_HISTORY_RECEIPT_SHA256
+    assert scope['preceding_parent']==endpoint.PARENT
+    history_root=Path(os.environ['MESHTICULUM_H48_FIXTURE'])/'resume-history-preparation-48'
     receipt_raw=read(history_root/'RECEIPT.json');receipt=json.loads(receipt_raw)
-    assert sha(receipt_raw)==incomplete.NEXT_HISTORY_RECEIPT_SHA256
-    assert receipt['local_controllers_reobserved']==47 and receipt['native_counts']is None
+    assert sha(receipt_raw)==endpoint.NEXT_HISTORY_RECEIPT_SHA256
+    assert receipt['local_controllers_reobserved']==48 and receipt['native_counts']==endpoint.NATIVE_COUNTS
     assert receipt['original_run_complete']is receipt['original_cleanup_proved']is False
     assert receipt['no_refund']is True and receipt['actual_unknown_cost']is None
-    assert scope['full_H47_prior_caps']=={u:json.loads(read(history_root/(u+'.json'),2500000))['previous'][-1]['paid_caps']for u in receipt['payload_sha256']}
+    assert scope['full_H48_prior_caps']=={u:json.loads(read(history_root/(u+'.json'),2500000))['previous'][-1]['paid_caps']for u in receipt['payload_sha256']}
     assert scope['retained_H46_binding']['history_receipt_sha256']==incomplete.ORIGINAL_HISTORY_RECEIPT_SHA256
     assert scope['retained_consumed_attempt']['parent_id']==incomplete.PARENT
     assert scope['retained_consumed_attempt']['native_counts']is None
-    assert scope['required_inputs']['fresh_full47_preflight']is True
+    assert scope['required_inputs']['fresh_full48_preflight']is True
+    assert scope['required_inputs']['actual_consumed_ea4d_window_expiry']is True
+    retained=scope['retained_H47_binding']
+    assert retained['history_receipt_sha256']==endpoint.ORIGINAL_HISTORY_RECEIPT_SHA256==incomplete.NEXT_HISTORY_RECEIPT_SHA256
+    assert retained['preceding_parent']==incomplete.PARENT
+    old_root=Path(os.environ['MESHTICULUM_H47_FIXTURE'])/'resume-history-preparation-47'
+    old_receipt_raw=read(old_root/'RECEIPT.json');old_receipt=json.loads(old_receipt_raw)
+    assert sha(old_receipt_raw)==retained['history_receipt_sha256'] and old_receipt['native_counts']is None
+    assert retained['full_H47_prior_caps']=={u:json.loads(read(old_root/(u+'.json'),2500000))['previous'][-1]['paid_caps']for u in old_receipt['payload_sha256']}
+    actual=scope['retained_consumed_ea4d_attempt']
+    assert actual['parent_id']==endpoint.PARENT and actual['native_counts']==endpoint.NATIVE_COUNTS
+    assert actual['actual_cost']is None and actual['physical_quiescence_observed']is False and actual['refunds']==0
+    assert scope['sender_readiness_source']['sha256']==sha(read(lantern_source/'software/meshticulum-integration/src/lantern_meshticulum/bench/node.py',200000))
     assert scope['comparison_descriptor']['radio_profile_names']==list(mcu.LORA_PROFILE_NAMES)==['sf7-500','sf5-500']
     assert scope['sample_count']==scope['comparison_descriptor']['sample_count']==2
     assert scope['phase_seconds']==600 and scope['application_seconds']==180 and scope['absolute_window_seconds']==720
