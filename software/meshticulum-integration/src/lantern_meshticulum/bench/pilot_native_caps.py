@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import sys
 import threading
 from types import FunctionType
@@ -41,6 +42,16 @@ def require(value):
 def hashed(value): return hashlib.sha256(DOMAIN + canonical(value)).hexdigest()
 
 
+def _lexical_native_paths(path):
+    """Retain names only; every availability check still observes ancestry."""
+    require(path.anchor=='/' and '..' not in path.parts)
+    parent=path.parent;parts=parent.parts
+    prefixes=('/',)+tuple('/'+'/'.join(parts[1:index]) for index in range(2,len(parts)+1))
+    name=str(path)
+    return (name,path.parts,str(parent),prefixes,
+            (('owner',name+'.owner'),('db',name),('approval',name+'.approval')))
+
+
 def _claim_representation(claim_id,raw,run,unit,host_boot_id,policy_digest):
     """Validate immutable row bytes; never retain permission or a debt total."""
     claim=json.loads(raw);require(canonical(claim)==raw
@@ -51,6 +62,16 @@ def _claim_representation(claim_id,raw,run,unit,host_boot_id,policy_digest):
     return (claim['resource_id'],canonical(claim['resource']),
             (cost.radio_attempts,cost.estimated_airtime_us,cost.ip_frames,
              cost.tx_stream_bytes,cost.rx_stream_bytes))
+
+
+def _approval_binding_representation(raw):
+    """Decode exact immutable binding bytes; never retain a live decision."""
+    from .pilot_resume_rpc import parse
+    value=parse(raw);e=value['enrollment']
+    fields=(value['phase'],e['schema'],e['history_binding_sha256'],e['unit'],e['host_boot_id'],
+            e['original_epoch_us'],e['original_monotonic_us'],e['deadline_monotonic_us'])
+    require(all(type(item) in (str,int,float,bool,type(None)) for item in fields))
+    return fields[:2]+(canonical(e['policy']),)+fields[2:]
 
 
 def _state(value):
@@ -259,10 +280,15 @@ class _Public32Approval:
             self._phase_bounds=(captured['native_phase']['epoch_us'],captured['native_phase']['monotonic_us'],
                                 captured['native_phase']['deadline_monotonic_us'])
             self._bounds_ref=self._phase_bounds
+            self._policy_bytes=canonical(policy.to_dict())
+            self._binding_rows=lru_cache(maxsize=8,typed=True)(_approval_binding_representation)
+            self._binding_rows_binding=(type(self._binding_rows),_approval_binding_representation,
+                _approval_binding_representation.__code__,_approval_binding_representation.__defaults__)
             refs=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
                   self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
                   self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle,
-                  self._policy_comparison,self._facts_comparison,self.mcu_artifact)
+                  self._policy_comparison,self._facts_comparison,self.mcu_artifact,
+                  self._policy_bytes,self._binding_rows,self._binding_rows_binding)
             self._state_refs=self._state_refs_ref=refs
             self._captured_refs=lambda:refs
             self._last=None;self.check()
@@ -273,8 +299,9 @@ class _Public32Approval:
         current=(self.policy,self.unit,self.facts,self.clock,self.reader,self.runtime,
                  self._binding,self._phase,self._facts_bytes,self._start,self._end,self._pid,self._thread,
                  self._owner_ref,self._policy_state,self._facts_state,self._phase_bounds,self.bundle,
-                 self._policy_comparison,self._facts_comparison,self.mcu_artifact)
-        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==21
+                 self._policy_comparison,self._facts_comparison,self.mcu_artifact,
+                 self._policy_bytes,self._binding_rows,self._binding_rows_binding)
+        require(not self._closed and type(self._state_refs) is tuple and len(self._state_refs)==24
                 and self._state_refs is refs and self._state_refs_ref is refs
                 and len(current)==len(refs) and all(a is b for a,b in zip(current,refs))
                 and self._owner_ref==(os.getpid(),threading.get_ident())
@@ -285,6 +312,10 @@ class _Public32Approval:
                     self._facts_comparison[0],refs[19])
                 and self.bundle is self._bundle_ref is refs[17]
                 and (self.policy.qualification_kind=='c-bulk32-v1') is (refs[17] is None))
+        binding=refs[23];validator=binding[1]
+        require(type(self._binding_rows) is binding[0] and self._binding_rows.__wrapped__ is validator
+                and type(validator) is FunctionType and validator.__code__ is binding[2]
+                and validator.__defaults__ is binding[3] and validator.__closure__ is None)
         if self.mcu_artifact is not None:
             from .mcu_artifact import validate_artifact, select_runtime
             validate_artifact(self.mcu_artifact)
@@ -312,17 +343,17 @@ class _Public32Approval:
             return self._verified(last,second)
         except BaseException:self.close();raise
     def __call__(self,raw):
-        from .pilot_resume_rpc import parse
         last=self._last
         try:
-            first=self._time(last,last);value=parse(raw);self._bound(last)
-            e=value['enrollment'];local=self.policy.unit(self.unit)
-            require(value['phase'] in ('enroll','current','prepare','finalize','start') and e['schema']=='meshticulum.native-parent-enrollment.v2'
-                    and canonical(e['policy'])==canonical(self.policy.to_dict()) and e['history_binding_sha256']==self._binding
-                    and e['unit']==self.unit and e['host_boot_id']==local.host_boot_id
-                    and self._start<=e['original_epoch_us']<self.policy.expires_epoch_us
-                    and e['deadline_monotonic_us']==e['original_monotonic_us']+self.policy.expires_epoch_us-e['original_epoch_us']
-                    and e['deadline_monotonic_us']<self._phase_bounds[2])
+            first=self._time(last,last)
+            phase,schema,policy_bytes,history,unit,host,epoch,mono,deadline=self._binding_rows(raw)
+            self._bound(last);local=self.policy.unit(self.unit)
+            require(phase in ('enroll','current','prepare','finalize','start') and schema=='meshticulum.native-parent-enrollment.v2'
+                    and policy_bytes==self._policy_bytes and history==self._binding
+                    and unit==self.unit and host==local.host_boot_id
+                    and self._start<=epoch<self.policy.expires_epoch_us
+                    and deadline==mono+self.policy.expires_epoch_us-epoch
+                    and deadline<self._phase_bounds[2])
             self._bound(last);second=self._time(last,first)
             return self._verified(last,second)
         except BaseException:self.close();raise
@@ -354,6 +385,7 @@ class NativeCaps:
         if history_binding_sha256 is not None:
             require(enroll);digest(history_binding_sha256)
         self.path=Path(path).absolute();self.policy=policy;self.unit=policy.unit(unit)
+        self._lexical_paths=_lexical_native_paths(self.path)
         # Local cap enforcement implies an aggregate bound only with this
         # conservative partition. Controller receipts are not global authority.
         total=Cost()
@@ -364,7 +396,7 @@ class NativeCaps:
         self._closed=self._uncertain=False;self._busy=True;self._preparations={};self._active=self._active_ref=None
         self.pending=Path(str(self.path)+'.pending');self._fds={};self._fd_refs={};self._ids={}
         self.db=self._db_ref=None;self._enrollment=None;self._approval_bytes=None;self._last=None
-        self._policy_bytes=canonical(policy.to_dict());self._policy_state=_state(policy)
+        self._policy_bytes=canonical(policy.to_dict());self._policy_state=_state((policy,self._lexical_paths))
         self._policy_comparison=_state_comparator(self._policy_state)
         self._policy_comparator=self._policy_comparison[0]
         self._policy_digest=hashlib.sha256(POLICY_DOMAIN+self._policy_bytes).hexdigest()
@@ -461,10 +493,16 @@ class NativeCaps:
                 and self._fds==self._fd_refs and self.db is self._db_ref is r[12]
                 and self._policy_bytes is r[13] and self._policy_state is r[14] and self._policy_digest is r[15]
                 and self._policy_comparison is r[16]
-                and _compare_state(self.policy,self._policy_comparator,r[16]) and self._active is self._active_ref)
-        private(self.path.parent.lstat(),True);require(self.path.parent.resolve()==self.path.parent)
-        for name,target in self._names().items():
-            held,named=os.fstat(self._fds[name]),target.lstat();private(held);private(named)
+                and _compare_state((self.policy,self._lexical_paths),self._policy_comparator,r[16])
+                and self._active is self._active_ref)
+        names=self._lexical_paths
+        require(str(self.path)==names[0] and self.path.parts==names[1])
+        private(os.lstat(names[2]),True)
+        # Only lexical names are retained. Fresh directory lstats reject every
+        # symlink which resolve() would expand; no stat result is reused.
+        for prefix in names[3]:require(stat.S_ISDIR(os.lstat(prefix).st_mode))
+        for name,target in names[4]:
+            held,named=os.fstat(self._fds[name]),os.lstat(target);private(held);private(named)
             require((held.st_dev,held.st_ino)==(named.st_dev,named.st_ino)==self._ids[name])
         if self._approval_bytes is not None:
             require(os.pread(self._fds['approval'],129,0)==self._approval_bytes)

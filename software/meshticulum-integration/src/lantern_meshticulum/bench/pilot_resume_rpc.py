@@ -89,6 +89,7 @@ OLD_DIGESTS = (
     'bd3d9a1d2bd14c19fb91828a4213b41887d24a906fb4e111923927e55afeafe4',
     '1ce4ceb934200048b1210568022532ddb578793e5e849bf7cf199161af40ffc0',
     '0e89cbe48425763e06882ff08e368870acffd39771c529a6f35fcb8444ac13da',
+    '5f460bad40ea0b900ac87f26c366c5aa3764723b0050bdeb0580d04eae7764f7',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -227,13 +228,14 @@ from .fast_bundle_zero_history import PARENT as FAST_ZERO_PAID, NATIVE_DATABASE_
 from .fast_bundle_unstarted_history import PARENT as FAST_UNSTARTED_PAID, RUN as FAST_UNSTARTED_RUN
 from . import fast_bundle_unstarted_history as unstarted_history
 from . import gfsk250_mb1_partial_history as partial250,fast_bundle_partial_history as fast_partial,fast_bundle_complete_history as fast_complete,fast_bundle_bea_history as bea_complete
-from . import fast_bundle_d1fd_history as d1fd_history
-PARTIAL250={partial250.PARENT:partial250,fast_partial.PARENT:fast_partial,fast_complete.PARENT:fast_complete,bea_complete.PARENT:bea_complete}
-COMPLETE_FAST_HISTORY=(fast_complete,bea_complete)
+from . import fast_bundle_d1fd_history as d1fd_history,fast_bundle_360_history as completed360_history
+PARTIAL250={partial250.PARENT:partial250,fast_partial.PARENT:fast_partial,fast_complete.PARENT:fast_complete,bea_complete.PARENT:bea_complete,completed360_history.PARENT:completed360_history}
+COMPLETE_FAST_HISTORY=(fast_complete,bea_complete,completed360_history)
 COMPLETE_FAST_PARENTS=tuple(c.PARENT for c in COMPLETE_FAST_HISTORY)
 GUARDED_PAID = {LATEST_PAID: OLD_DIGESTS[3], COMPLETE_PAID: OLD_DIGESTS[4],
                 BULK_PAID: OLD_DIGESTS[5], MIXED_PAID: OLD_DIGESTS[6], SUCCESS_PAID: OLD_DIGESTS[7], PARTIAL_PAID: OLD_DIGESTS[8], ACCEPTED_BULK_PAID: OLD_DIGESTS[9], REVERSE_BULK_PAID: OLD_DIGESTS[10], SMALL_BULK_PAID: OLD_DIGESTS[11], ZERO_RETRY_BULK_PAID: OLD_DIGESTS[12], IMMEDIATE_RX_BULK_PAID: OLD_DIGESTS[13], SF7_REPLICATE_PAID: OLD_DIGESTS[14], PUBLIC32_PAID: OLD_DIGESTS[15], PUBLIC32_RETRY_PAID: OLD_DIGESTS[16], PUBLIC32_SENDER_READY_PAID: OLD_DIGESTS[17], PUBLIC32_COMPLETE_PAID: OLD_DIGESTS[18], ENROLLED_ZERO_PAID: OLD_DIGESTS[19], PARTIAL_BUNDLE_PAID: OLD_DIGESTS[20],V2_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[21],V2_FAILED_BUNDLE_PAID:OLD_DIGESTS[22],V3_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[23],V3_CHECKPOINT_BUNDLE_PAID:OLD_DIGESTS[24],V3_VERIFIED_BUNDLE_PAID:OLD_DIGESTS[25],SF5_STARTUP_PAID:OLD_DIGESTS[26],SF5_COMPLETED_PAID:OLD_DIGESTS[27],PARTIAL_BATCH_PAID:OLD_DIGESTS[28],COMPLETED_BATCH_PAID:OLD_DIGESTS[29],RX_PRIORITY_BATCH_PAID:OLD_DIGESTS[30],EARLY_RX_PARTIAL_PAID:OLD_DIGESTS[31],GFSK_COMPLETE_PAID:OLD_DIGESTS[32],GFSK_BUNDLE_PAID:OLD_DIGESTS[33],GFSK_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[34],MB1_PARTIAL_BUNDLE_PAID:OLD_DIGESTS[35],MB1_COMPLETE_BUNDLE_PAID:OLD_DIGESTS[36],GFSK250_MB1_PARTIAL_PAID:OLD_DIGESTS[37],FAST_ZERO_PAID:OLD_DIGESTS[38],FAST_UNSTARTED_PAID:OLD_DIGESTS[39],fast_partial.PARENT:OLD_DIGESTS[40],fast_complete.PARENT:OLD_DIGESTS[41],bea_complete.PARENT:OLD_DIGESTS[42]}
 GUARDED_PAID[d1fd_history.PARENT] = OLD_DIGESTS[43]
+GUARDED_PAID[completed360_history.PARENT] = OLD_DIGESTS[45]
 RETIRED_UNSTARTED = 'd17b99c6932332f4ae649166dd32f129'
 KNOWN_CUT_RUN = '01ab075dd06d1399fe2dc27c4a9331d3'
 KNOWN_CUTS = {LATEST_PAID: KNOWN_CUT_RUN, COMPLETE_PAID: '55dffd06faee2ca08ccfc61d816a34ef'}
@@ -363,6 +365,8 @@ def retained_owner_view(record, policy, unit):
         return d1fd_history.owner_view(record, policy, unit=unit)
     if policy.parent_id == unstarted_history.UNMATERIALIZED_PARENT:
         return unstarted_history.unmaterialized_owner_view(record, policy, unit=unit)
+    if policy.parent_id == completed360_history.PARENT:
+        return completed360_history.owner_view(record, policy, unit=unit)
     from .mcu_artifact import OWNER_SCHEMA
     need(record.get('schema') != OWNER_SCHEMA, 'unreviewed_retained_mcu_owner')
     return record
@@ -2471,6 +2475,7 @@ def qualify_gfsk250_mb1_partial_costs(unit,policy,observed,value):
     c=PARTIAL250[policy.parent_id];c.require_final_bindings()
     need(policy.digest==c.POLICY_DIGEST and policy.qualification_kind==c.QUALIFICATION_KIND,'partial_gfsk250_mb1_bundle_scope_changed')
     context=c.retained_context(value['owner'],policy,unit=unit,observation=observed)
+    owner=retained_owner_view(value['owner'],policy,unit)
     detail=observed['detail'];local=policy.unit(unit);complete=c in COMPLETE_FAST_HISTORY
     count=0 if unit=='unit-b' else (10 if complete else 2)
     allocated=Cost(count*256,count*60000000)
@@ -2479,7 +2484,7 @@ def qualify_gfsk250_mb1_partial_costs(unit,policy,observed,value):
     need(all(type(detail[k]) is int and detail[k]==count for k in ('claim_count','prepared_count','start_count'))
          and type(detail['resource_count']) is int and detail['resource_count']==count//2
          and detail['full_prepaid_caps']==asdict(allocated) and detail['approval_bytes_match_enrollment'] is True
-         and detail['enrollment']['history_binding_sha256']==value['owner']['history_binding_sha256']
+         and detail['enrollment']['history_binding_sha256']==owner['history_binding_sha256']
          and observed['expected_database_sha256']==value['database_sha256']==c.NATIVE_DATABASE_SHA256[unit],
          'partial_gfsk250_mb1_bundle_actual_rows_changed')
     need(detail['prior_plus_prepaid_caps']==value['actual_native_paid_caps']==value['actual_controller_paid_caps']
