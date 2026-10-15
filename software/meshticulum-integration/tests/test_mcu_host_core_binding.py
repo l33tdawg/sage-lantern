@@ -13,8 +13,8 @@ from tests.test_pilot_bundle import data
 
 
 FIRMWARE_CORE = '2b9db9e71dfa7d115d4e465225893b828c760171'
-HOST_CORE = 'd828aef5be0ed5aeff472f79bc3935fe50c17092'
-HOST_LOCK = '07a39b44c0313e53839010fd96512b6c72732a5b9eeace00926db88d26ef13ff'
+HOST_CORE = '81a8e2a9afc6371de433034432e2e3536655f8c0'
+HOST_LOCK = '898652df752145a21837b0ad533a5754b33f26cfec05d4c8f5cff8c43ecfa76f'
 OLD_IRQ_SHA = '9e478abcb07234a2f42ed70966b3ac4d82c303bafd8e20a8c5b08eaf681a1f57'
 
 
@@ -138,3 +138,21 @@ def test_current_source_pins_still_refuse_without_a_reviewed_new_scope(original,
     assert mcu.PENDING_NATIVE_BINDINGS['scope_sha256'] is None
     with pytest.raises(mcu.McuArtifactError,match='pending_mcu'):
         fast.require_owner(original['common'],original['policy'])
+
+
+@pytest.mark.parametrize('old_scope', [
+    'c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
+    'ba84af81f913d73013fdefa1b550725795f91d0bea11ee0e7367169b72999e50',
+])
+def test_retained_unissued_scopes_cannot_authorize_the_new_host(old_scope, modeled_current_bindings):
+    selected = mcu.artifact()
+    value = dict(schema='meshticulum.finite-public-resume-owner.v1',
+        qualification_kind=mcu.KIND, core_commit=HOST_CORE, policy_digest='a'*64,
+        mb1_bundle_scope_sha256=old_scope,
+        history_receipt_sha256=modeled_current_bindings['history_receipt_sha256'])
+    owner = mcu.owner_envelope(value, mcu.SELECTOR)
+    before = mcu.canonical(owner)
+    with pytest.raises(mcu.McuArtifactError, match='mcu_artifact_native_scope_or_history_changed'):
+        mcu.require_native_scope(owner, SimpleNamespace(digest='a'*64, qualification_kind=mcu.KIND),
+                                 manifest(selected))
+    assert mcu.canonical(owner) == before
