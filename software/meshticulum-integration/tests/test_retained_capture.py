@@ -62,8 +62,9 @@ def test_exact_capture_retained_without_becoming_a_paid_parent(state):
         '4034f8979b985660df21859606c4f8a7','ba4572e95e598ad6c17fc954c3792db7',
         '1df30b47fa36b8d47328fb886528a7a9','f153a7a87a2803db85078df81a6a1aaf',
         '25a990a2d565c50b237ee45812a8c75f','cb5869e6aa8de545a267007b085d4762','f6e147e70ec7ce07f673ea5e9cd2cdc2','b8f9b5d9c5479c8d363c7b7e8014bc3b','806fdca055e79dfc0b86ff8f304bcdf9','4ea23c6b8fa83366904ac62ffa98e2bf','c26cd03a8fd427daf6b8d894e4b1d04c','8dfcfdfe8f8be2c0b326520d70eab7f5','6f89e2a21919991e15224e393446928c','62bcef4f1c74532fd7ab3ada1b8b94e2','141c892d83b6064a800c11aab6444f28','05c36e09fd4056c94d341d2dd32243f4','bccb99afe6589968190b131eeaf372b3','487ae574816ff5444de03e3daa4401e4','e01508ddcae7389728add074de4876b7','2429969fcbb0f57b3deaeda7187036c2','7746ddba2544ce79c01a195f1e8746ce','57339cca60ddf62b41eafac60147a252','4aa3ad2bc1346cae82bc90d8abd6dcd4','a3ded77ef251c9d7e085ab790b9ac5b3','76fe38883690e058771940d51d0d57d6','7630420c0e72181d6e7239c105c165c6','4ca8d86644aa24e6fefd06872a9cd131','6be212b13351cb9852ed07ba7998be96','e8aac38a787f33daa91c80e39cfc8710','73c1cda8c02939409d0b1e7e2a39be67','3195cff3fc8fc8ee0b81694fe8f9e389','515c662fae6cc761c83e7fdef44cbda0','4675a437918764d62ddc53d288685367','27563497b7f6d89526f7249f2bf9005a','9f90bdec3df97edbbe1e77cfc8ab836e','1d4359b68baf1d8572bb33790f96fa21','60d9ca2aa760cb4460d0af637101c997')
-    assert len(set(retained.PAID_HISTORY))==44 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
-    assert retained.PAID_HISTORY[42:]==('bea52c6aa6a5a95501997a46247b514f','d1fd73cd772ff055140f17ca986a07d0')
+    assert len(set(retained.PAID_HISTORY))==45 and retained.CAPTURE_PARENT not in retained.PAID_HISTORY
+    assert retained.PAID_HISTORY[42:44]==('bea52c6aa6a5a95501997a46247b514f','d1fd73cd772ff055140f17ca986a07d0')
+    assert retained.PAID_HISTORY[-1]=='e2449e5bcd4af15d45f7a756dff7d997'
     assert guard.HISTORY is retained.PAID_HISTORY
     assert [r['parent_id'] for r in json.loads(before['capture.json'])['history']['previous']]==list(retained.PAID_HISTORY[:3])
     assert retained.historical_parent_ids(root,'unit-c',clock,require_retained=True)==retained.PAID_HISTORY+(retained.CAPTURE_PARENT,a658.PARENT,capture_8120.PARENT)
@@ -178,7 +179,7 @@ def test_unadmitted_capture_is_expired_metadata_without_paid_debt_or_new_admissi
     assert retained.historical_parent_ids(root,unit,clock,require_retained=True,
                                          require_unadmitted=True)==expected
     record=json.loads((target/'capture.json').read_bytes())
-    assert len(record['history']['previous'])==12 and len(retained.PAID_HISTORY)==44
+    assert len(record['history']['previous'])==12 and len(retained.PAID_HISTORY)==45
     assert tuple(v['policy']['parent_id'] for v in record['history']['previous'])==retained.UNADMITTED_PAID_HISTORY
     assert retained.PAID_HISTORY[-1] not in retained.UNADMITTED_PAID_HISTORY
     assert not set(retained.CAPTURE_ONLY_PARENTS)&set(retained.PAID_HISTORY)

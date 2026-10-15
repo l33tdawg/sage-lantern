@@ -34,7 +34,7 @@ def test_declared_reservations_preserve_each_old_cap_without_consumption_claim(o
 
 
 def test_bound_actual_evidence_appends_only_e8aa_without_live_authority(original,monkeypatch):
-    assert len(retained_capture.PAID_HISTORY)==44 and retained_capture.PAID_HISTORY[33]==history.PARENT
+    assert len(retained_capture.PAID_HISTORY)==45 and retained_capture.PAID_HISTORY[33]==history.PARENT
     assert history.FINAL_RESULT_SHA256=='c71b030dd357aa1e109b716f0e7ae1f9f6fb4ba1a64a0fad01e657aa4f79bcc4'
     assert history.EXPIRY_COMPLETION_SHA256=='b8d4b312298ec0296a6240b52aeda5ee064edc1da309ac931fa985b5134a2bd6'
     assert history.NEXT_HISTORY_RECEIPT_SHA256=='ddebe2592ab011cad4a7c4e0057764e2cddab2350b4e48e37eb125a0f0e5a648'

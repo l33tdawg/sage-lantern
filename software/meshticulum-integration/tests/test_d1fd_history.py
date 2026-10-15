@@ -133,10 +133,10 @@ def test_current_roster_is_append_only_and_old_native_scope_refuses_without_rebi
         history_receipt_sha256='4d27db070dc0106d067bc49372919b32431ff04a31894bff3d14746d4bca4594',
         preceding_parent='bea52c6aa6a5a95501997a46247b514f')))
     bindings=mcu_artifact.PENDING_NATIVE_BINDINGS
-    assert len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==44
-    assert rpc.HISTORY[:43]==history.H43_PREFIX and rpc.HISTORY[-1]==history.PARENT
+    assert len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==45
+    assert rpc.HISTORY[:43]==history.H43_PREFIX and rpc.HISTORY[43]==history.PARENT
     assert rpc.OLD_DIGESTS[43]==rpc.GUARDED_PAID[history.PARENT]==history.POLICY_DIGEST
-    assert history.pending_next_roster()==rpc.HISTORY==retained_capture.PAID_HISTORY
+    assert history.pending_next_roster()==rpc.HISTORY[:44]==retained_capture.PAID_HISTORY[:44]
     assert bindings['preceding_parent']==history.H43_PREFIX[-1]
     with pytest.raises(mcu_artifact.McuArtifactError,match='pending_mcu_artifact_native_scope_and_history'):
         mcu_artifact.require_selector_scope(mcu_artifact.KIND)

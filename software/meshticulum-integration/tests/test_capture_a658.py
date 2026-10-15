@@ -21,7 +21,7 @@ def sample(request,synthetic_a658_capture):
     finally:shutil.rmtree(base)
 
 def test_actual_scope_retains_captures_without_a_paid_scope():
-    assert len(retained.PAID_HISTORY)==44 and retained.PAID_HISTORY[34]=='73c1cda8c02939409d0b1e7e2a39be67' and retained.PAID_HISTORY[35]=='3195cff3fc8fc8ee0b81694fe8f9e389'
+    assert len(retained.PAID_HISTORY)==45 and retained.PAID_HISTORY[34]=='73c1cda8c02939409d0b1e7e2a39be67' and retained.PAID_HISTORY[35]=='3195cff3fc8fc8ee0b81694fe8f9e389'
     assert pinned.PARENT not in retained.PAID_HISTORY
     assert pinned.EXPIRY_COMPLETION_SHA256=='ac43ad90fdb5aab5c1e544ee5c8063bef76ce390af4e0dfb8555b65167ccf295'
     assert pinned.H35_RECEIPT_SHA256=='37d961c7e5078fb98a5c4e3e4b31b7aac51d0afa1433966a56b47c00d2de36ca'

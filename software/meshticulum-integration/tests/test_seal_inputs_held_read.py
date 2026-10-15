@@ -45,6 +45,8 @@ def seal_fixture(tmp_path,monkeypatch):
     for parent in rpc.HISTORY:(state/'parents'/parent).mkdir(mode=0o700)
     for parent in rpc.GUARDED_PAID:
         (state/'parents'/parent/'prepared-identities').mkdir(mode=0o700)
+    if rpc.unstarted_history.UNMATERIALIZED_PARENT in rpc.HISTORY:
+        (state/'parents'/rpc.unstarted_history.UNMATERIALIZED_PARENT/'prepared-identities').mkdir(mode=0o700)
     for relative in rpc.capture_paths(state,'unit-b')['directories']:
         (state/relative).mkdir(mode=0o700,parents=True,exist_ok=True)
     path = state/'parents'/rpc.HISTORY[0]/'policy.json'
@@ -69,7 +71,7 @@ def test_seal_inputs_uses_held_reader_and_unchanged_final_full_check(seal_fixtur
     assert observed.get('read_held_calls',0)==1 and observed.get('read_calls',0)==0
     # One fresh held reread plus the unchanged final Reader.check reread.
     assert observed['fresh_preads']==2
-    assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==44
+    assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==45
 
 
 @pytest.mark.parametrize('fault',['bytes','replacement','hardlink','mode','parent','offset'])
