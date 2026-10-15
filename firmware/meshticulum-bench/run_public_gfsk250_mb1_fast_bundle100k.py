@@ -82,7 +82,7 @@ def operation_bindings(op):
         return require_bindings()
     from lantern_meshticulum.bench.mcu_artifact import require_selector_scope, KIND
     pins=require_selector_scope(KIND)
-    return dict(pins,core_commit=selected['core_revision'])
+    return dict(pins,core_commit=selected.get('runtime_core_revision',selected['core_revision']))
 
 
 def original_owners_for(op, owner, captures, policy, manifest):

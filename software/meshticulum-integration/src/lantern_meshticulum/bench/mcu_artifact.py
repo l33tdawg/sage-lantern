@@ -60,16 +60,16 @@ _ARTIFACT = canonical(dict(
         'partitions.bin':'bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce'},
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
 LEGACY_ARTIFACT_SHA256 = hashlib.sha256(_ARTIFACT).hexdigest()
-SELECTOR = 'gfsk250-usb-rx2048-irq-v1'
-CORE = '2b9db9e71dfa7d115d4e465225893b828c760171'
+IRQ020_SELECTOR = 'gfsk250-usb-rx2048-irq-v1'
+FIRMWARE_CORE = '2b9db9e71dfa7d115d4e465225893b828c760171'
 FIRMWARE = 'mtb1-020e287255'
 IMAGE_SHA256 = 'eca7772095cc9c9e63c9f6e6d9fe48ba3c376cd6bfef557ffcc441621a846fa2'
 _IRQ_ARTIFACT = canonical(dict(
-    schema='meshticulum.explicit-mcu-artifact.v2', selector=SELECTOR,
+    schema='meshticulum.explicit-mcu-artifact.v2', selector=IRQ020_SELECTOR,
     local_unit='unit-a', target='mtbench_heltec_v4', board_id=1,
     firmware=FIRMWARE, image_bytes=391600, image_sha256=IMAGE_SHA256,
     radio_modem='gfsk250', capability_record_version=2,
-    core_revision=CORE, runtime_core_revision=CORE,
+    core_revision=FIRMWARE_CORE, runtime_core_revision=FIRMWARE_CORE,
     source_lock_sha256='b504150554abdf068eeabe1d140db1a0c132ecb93c84c3b351049cf78ca4d904',
     recipe_sha256='92eab8413b0e4dce22ff57ff3dc3abf4aa0909a7f30f1d269b7a79bb58116805',
     input_lock_sha256='9d2d534dbf784db3c13b729ab91d20832e0dd536dd8edf7ce2ccd79985c6dfb2',
@@ -90,10 +90,16 @@ _IRQ_ARTIFACT = canonical(dict(
         'bootloader.bin':'2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363',
         'partitions.bin':'bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce'},
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
-ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
-_ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT, SELECTOR:_IRQ_ARTIFACT})
+IRQ020_ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
+SELECTOR = 'gfsk250-usb-rx2048-irq-hostfair-v1'
+CORE = 'd828aef5be0ed5aeff472f79bc3935fe50c17092'
+_CURRENT_ARTIFACT = canonical(dict(json.loads(_IRQ_ARTIFACT), selector=SELECTOR,
+    runtime_core_revision=CORE, source_lock_sha256='07a39b44c0313e53839010fd96512b6c72732a5b9eeace00926db88d26ef13ff'))
+ARTIFACT_SHA256 = hashlib.sha256(_CURRENT_ARTIFACT).hexdigest()
+_ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT,
+    IRQ020_SELECTOR:_IRQ_ARTIFACT, SELECTOR:_CURRENT_ARTIFACT})
 PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
-    scope_sha256='c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
+    scope_sha256=None,
     history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
     preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
 
@@ -126,7 +132,7 @@ def select_runtime(manifest):
         and manifest.get('firmware') == value['firmware']
         and manifest.get('firmware_by_unit', {}).get('unit-a') == value['firmware'],
         'mcu_artifact_runtime_mismatch')
-    if value['selector'] == SELECTOR:
+    if value['selector'] in (IRQ020_SELECTOR, SELECTOR):
         source_files = manifest.get('source_files', manifest.get('files'))
         require(type(source_files) is dict and source_files.get(
             'provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json') == value['source_lock_sha256'],

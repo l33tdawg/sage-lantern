@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
     parser.add_argument('--execution-layout', choices=('directory', 'sealed-image', 'sealed-image-deflated'), default='directory')
     parser.add_argument('--fast-five-part',action='store_true')
-    parser.add_argument('--mcu-artifact-selector',choices=('gfsk250-usb-rx2048-v1','gfsk250-usb-rx2048-irq-v1'))
+    parser.add_argument('--mcu-artifact-selector',choices=('gfsk250-usb-rx2048-v1','gfsk250-usb-rx2048-irq-v1','gfsk250-usb-rx2048-irq-hostfair-v1'))
     parser.add_argument('--mcu-reproduced-build-dir',type=Path,action='append')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()

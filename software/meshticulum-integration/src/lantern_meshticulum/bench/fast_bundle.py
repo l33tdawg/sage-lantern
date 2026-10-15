@@ -46,7 +46,7 @@ def require_owner(owner, policy):
     from .mcu_artifact import OWNER_SCHEMA, decode_owner, require_selector_scope
     if owner.get('schema')==OWNER_SCHEMA:
         owner,selected=decode_owner(owner)
-        pins=dict(require_selector_scope(KIND),core_commit=selected['core_revision'])
+        pins=dict(require_selector_scope(KIND),core_commit=selected.get('runtime_core_revision',selected['core_revision']))
     else:pins = require_bindings()
     require(policy.qualification_kind == owner.get('qualification_kind') == KIND
         and owner.get('radio_modem') == owner.get('radio_profile_name') == GFSK250_NAME

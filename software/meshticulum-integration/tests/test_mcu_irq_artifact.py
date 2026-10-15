@@ -22,7 +22,7 @@ def manifest(selector=mcu.SELECTOR):
 def owner(selector):
     selected=mcu.artifact(selector)
     return mcu.owner_envelope(dict(schema='meshticulum.finite-public-resume-owner.v1',
-        qualification_kind=mcu.KIND,core_commit=selected['core_revision'],policy_digest='a'*64),selector)
+        qualification_kind=mcu.KIND,core_commit=selected.get('runtime_core_revision',selected['core_revision']),policy_digest='a'*64),selector)
 
 
 def test_original_4f_envelope_and_artifact_bytes_remain_exact():
