@@ -27,7 +27,7 @@ def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     scope,raw,receipt,p=actual
     expected=dict(scope_sha256=hashlib.sha256(raw).hexdigest(),history_receipt_sha256=history.NEXT_HISTORY_RECEIPT_SHA256,preceding_parent=history.PARENT)
     assert dict(mcu.PENDING_NATIVE_BINDINGS)==mcu.require_selector_scope(mcu.KIND)==expected
-    assert scope['reviewed_implementation_commit']=='91992e8c957c58634945372b19a2f10da134b7b5'
+    assert scope['reviewed_implementation_commit']=='5adfdf9188e5c38d845d09565a20d8e26cd10b4a'
     assert scope['core_commit']==mcu.CORE=='9ff232bb3b649ca7dbc100a152442f0a70dc9705'
     assert scope['mcu_artifact']==mcu.artifact()
     assert scope['source_lock_sha256']==mcu.artifact()['source_lock_sha256']
