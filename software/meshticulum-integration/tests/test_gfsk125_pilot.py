@@ -148,7 +148,7 @@ def synthetic_deployment_bindings(monkeypatch):
     """Explicit historical H42 model; never current native GFSK admission."""
     from lantern_meshticulum.bench import profiles,retained_capture
     actual=tuple(retained_capture.PAID_HISTORY)
-    assert len(actual)==44 and actual[42]=='bea52c6aa6a5a95501997a46247b514f' and actual[-1]=='d1fd73cd772ff055140f17ca986a07d0'
+    assert len(actual)==45 and actual[42]=='bea52c6aa6a5a95501997a46247b514f' and actual[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual[-1]=='e2449e5bcd4af15d45f7a756dff7d997'
     historical=actual[:42]
     assert historical[-1]=='60d9ca2aa760cb4460d0af637101c997'
     monkeypatch.setattr(profiles,'GFSK_FIRMWARE','mtb1-0000000000')
@@ -159,8 +159,8 @@ def synthetic_deployment_bindings(monkeypatch):
     return actual
 
 
-@pytest.mark.parametrize('preceding',['60d9ca2aa760cb4460d0af637101c997','bea52c6aa6a5a95501997a46247b514f','d1fd73cd772ff055140f17ca986a07d0'])
-def test_actual_current_H44_keeps_legacy_scope_closed_before_device_open(
+@pytest.mark.parametrize('preceding',['60d9ca2aa760cb4460d0af637101c997','bea52c6aa6a5a95501997a46247b514f','d1fd73cd772ff055140f17ca986a07d0','e2449e5bcd4af15d45f7a756dff7d997'])
+def test_actual_current_H45_keeps_legacy_scope_closed_before_device_open(
         synthetic_deployment_bindings,monkeypatch,preceding):
     from lantern_meshticulum.bench import profiles,retained_capture,node,mcu_artifact
     selected_before=dict(mcu_artifact.PENDING_NATIVE_BINDINGS)
