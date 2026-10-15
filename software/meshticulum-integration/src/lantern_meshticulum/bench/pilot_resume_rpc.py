@@ -821,7 +821,7 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
              and sorted(os.listdir(STATE/'runs')) == sorted(set(original)|set(newer)|set(own_runs)|staging),
              'foreign_or_missing_historical_namespace')
     def metadata(path, limit=MAX_FILE, lock=False):
-        raw = reader.read(path, limit, lock=lock); known[str(path.relative_to(STATE))] = sha(raw); return raw
+        raw = reader.read_held(path, limit, lock=lock); known[str(path.relative_to(STATE))] = sha(raw); return raw
     guard(); names(); totals = {k:0 for k in inventory['full_caps_retained_totals']}
     for relative, pin in capture_paths(STATE,unit)['files'].items():
         need(sha(metadata(STATE/relative)) == pin, 'retained_capture_file_changed')
