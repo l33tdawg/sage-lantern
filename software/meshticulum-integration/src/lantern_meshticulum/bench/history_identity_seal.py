@@ -17,7 +17,8 @@ from pathlib import Path
 from .history_metadata_fence import HistoricalMetadataFence, FenceError, _need, _stamp, _relative, _FLAGS
 
 MAX_SEAL = 2 * 1024 * 1024
-MAX_FILES, MAX_DIRS, MAX_ENTRIES = 2048, 512, 4096
+# H48 retains 2,059 files on C; reserve one finite 256-file capacity block.
+MAX_FILES, MAX_DIRS, MAX_ENTRIES = 2304, 512, 4096
 MAX_TOTAL_BYTES = 256 * 1024 * 1024
 SCHEMA = 'meshticulum.private-history-identity-seal.v2'
 

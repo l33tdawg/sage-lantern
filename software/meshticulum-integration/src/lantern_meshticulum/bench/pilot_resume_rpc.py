@@ -633,6 +633,38 @@ class Reader:
              and raw==retained[3],'rpc_metadata_changed_after_check')
         self._available();return raw
     @_reader_operation
+    def seal_candidate_bytes(self, path, maximum):
+        """Return immutable candidate bytes between seal_inputs' fresh checks.
+
+        This is not a current-byte observation or permission. Ordinary reads
+        remain unchanged; seal_inputs must freshly check every held byte before
+        returning, and capture independently reopens/hashes the candidate files.
+        """
+        self._available()
+        retained=self._file_index.get(path)
+        if retained is None:return self.read_held(path,maximum)
+        parent,name=self._named[path]
+        need(retained[0]==path and path.parent in self.directories
+             and self._nodes[path.parent][0]==parent and name==path.name,
+             'rpc_named_parent_rebound')
+        directory=os.fstat(parent)
+        need(stat.S_ISDIR(directory.st_mode) and directory.st_uid==os.geteuid()
+             and stat.S_IMODE(directory.st_mode)==0o700
+             and list(_stamp(directory)[:4])==self.directories[path.parent],
+             'rpc_directory_rebound')
+        fd=retained[1];first=os.fstat(fd);identity=tuple(_stamp(first))
+        need(stat.S_ISREG(first.st_mode) and first.st_uid==os.geteuid()
+             and stat.S_IMODE(first.st_mode)==0o600 and first.st_nlink==1
+             and 0<=first.st_size<=maximum and type(retained[3]) is bytes
+             and len(retained[3])==first.st_size,'unsafe_rpc_metadata')
+        need(identity==retained[2]==tuple(_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)))
+             and os.lseek(fd,0,os.SEEK_CUR)==self._tokens[fd],
+             'rpc_repeated_metadata_changed')
+        need(fcntl.fcntl(fd,fcntl.F_GETFL)&(os.O_ACCMODE|os.O_NONBLOCK)==os.O_RDONLY|os.O_NONBLOCK
+             and fcntl.fcntl(fd,fcntl.F_GETFD)&fcntl.FD_CLOEXEC,
+             'rpc_metadata_descriptor_flags_changed')
+        self._available();return retained[3]
+    @_reader_operation
     def check(self):
         self._check_nodes()
         for path, fd, identity, expected in self._held_state:
@@ -1916,6 +1948,7 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
 
 def seal_inputs(reader, unit, known, original, newer):
     """Reobserve complete verified metadata before any own namespace creation."""
+    reader.check()
     identities={STATE/'parents'/parent/'prepared-identities' for parent in GUARDED_PAID}
     staging = ()
     if endpoint_lora_history.PARENT in HISTORY:
@@ -1939,12 +1972,16 @@ def seal_inputs(reader, unit, known, original, newer):
                  and int(name[:-5],16)!=0 for name in entries),'prepared_identity_namespace_changed_before_seal')
         for name in entries:
             if name in _FILES or path in identities or str((path/name).relative_to(STATE)) in _EXTRA_FILES:
-                key=(rel+'/' if rel else '')+name;raw=reader.read_held(path/name,MAX_FILE)
+                key=(rel+'/' if rel else '')+name;raw=reader.seal_candidate_bytes(path/name,MAX_FILE)
                 files[key]=sha(raw)
                 need(key not in known or files[key]==known[key],'metadata_changed_before_seal')
     strict_known={key:pin for key,pin in known.items()
                   if not any(key.startswith('runs/'+run+'/') for run in original)}
     need(all(files.get(key)==pin for key,pin in strict_known.items()),'known_metadata_unsealed')
+    # A later iteration must not hide changed descriptor flags on an earlier
+    # candidate or an unrelated held file. Every original byte is then reread.
+    for path,_,identity,_ in reader._held_state:
+        reader.seal_candidate_bytes(path,identity[5])
     reader.check()
     return files,dirs
 

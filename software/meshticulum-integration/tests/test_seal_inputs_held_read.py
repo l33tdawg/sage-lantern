@@ -14,7 +14,8 @@ def counts(callback):
     codes = {rpc.Reader._check_nodes.__code__:'ancestry_sweeps',
              rpc.Reader.directory.__wrapped__.__code__:'directory_calls',
              rpc.Reader.read.__wrapped__.__code__:'read_calls',
-             rpc.Reader.read_held.__wrapped__.__code__:'read_held_calls'}
+             rpc.Reader.read_held.__wrapped__.__code__:'read_held_calls',
+             rpc.Reader.seal_candidate_bytes.__wrapped__.__code__:'seal_candidate_calls'}
     previous = sys.getprofile()
     def profile(frame,event,arg):
         if event=='call' and frame.f_code in codes:observed[codes[frame.f_code]] += 1
@@ -72,8 +73,9 @@ def test_seal_inputs_uses_held_reader_and_unchanged_final_full_check(seal_fixtur
     known = {str(path.relative_to(state)):rpc.sha(raw)}
     (files,dirs),observed = counts(lambda:rpc.seal_inputs(reader,'unit-b',known,{},{}))
     assert files == known
-    assert observed.get('read_held_calls',0)==1 and observed.get('read_calls',0)==0
-    # One fresh held reread plus the unchanged final Reader.check reread.
+    assert observed.get('seal_candidate_calls',0)==2 and observed.get('read_held_calls',0)==0
+    assert observed.get('read_calls',0)==0
+    # Full fresh Reader.check bookends reread every held byte.
     assert observed['fresh_preads']==2
     assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==48
 
