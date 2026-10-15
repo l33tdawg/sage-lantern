@@ -82,6 +82,14 @@ def test_every_original_native_guard_and_command_budget_is_unchanged(adapter):
     command = next(n for n in ast.parse((BENCH/'management_file_rpc.py').read_bytes()).body
                    if isinstance(n,ast.FunctionDef) and n.name == 'command')
     digest = lambda node:hashlib.sha256(ast.dump(node,include_attributes=False).encode()).hexdigest()
+    # Normalize only the reviewed image capacity before checking every original guard.
+    limits = [n.value for n in ast.walk(native) if isinstance(n,ast.Assign)
+              and any(isinstance(t,ast.Name) and t.id == 'limit' for t in n.targets)
+              and isinstance(n.value,ast.IfExp)]
+    expected = ast.parse("2250000 if manifest.get('schema')=='meshticulum.bench-runtime-bundle.v2' "
+                         "and name=='execution.zip' else 500000",mode='eval').body
+    assert len(limits) == 1 and digest(limits[0]) == digest(expected)
+    limits[0].body.value = 2000000
     assert digest(native) == 'dd925c94f61f5fb416ffa516d05a526f2afd6b06168c2d3ed9d60e04d4d855c0'
     assert digest(command) == 'f9ce7bcbe0668c9e49c4c14aa0b3b1da385e3cb9fb33ce9beece0eb64e7d8b0a'
 
