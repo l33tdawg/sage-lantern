@@ -32,6 +32,17 @@ def pinned(path, digest, maximum=2500000):
     return raw, json.loads(raw)
 
 
+def actual_identity_names():
+    base = Path(os.environ['MESHTICULUM_H43_FIXTURE']).resolve()
+    path = base.parent/'meshticulum-mcu-hardware-preflight-20261014/EXPIRED_BEA_ABC_COMPLETION.json'
+    _, completion = pinned(path, history.EXPIRY_COMPLETION_SHA256)
+    entry = completion['units']['unit-a']
+    _, wrapper = pinned(Path(entry['path']), entry['sha256'])
+    names = sorted(name for name in wrapper['observation']['public_metadata'] if name.startswith(PREPARED+'/'))
+    assert len(names) == 10
+    return names
+
+
 @pytest.fixture(scope='module', params=['unit-a','unit-b','unit-c'])
 def actual(request):
     value = os.environ.get('MESHTICULUM_H43_FIXTURE')
@@ -119,7 +130,27 @@ def test_exact_bea_allowance_refuses_unrelated_metadata(owned, fault):
 @pytest.mark.parametrize('fault',['missing_identity_pin','wrong_identity_pin','nine_identities','eleven_identities'])
 def test_ten_actual_identity_namespace_has_no_partial_acceptance(owned,fault):
     root, contents, expected, unit, native, row = owned
-    if unit == 'unit-b':pytest.skip('zero endpoint peer has no prepared identity record')
+    if unit == 'unit-b':
+        files, directories = expected()
+        assert directories[PREPARED] == []
+        assert not any(name.startswith(PREPARED+'/') for name in contents)
+        names = actual_identity_names()
+        if fault == 'wrong_identity_pin':
+            files[names[0]] = 'f'*64
+            reason = 'unscoped_file'
+        else:
+            if fault == 'nine_identities':names = names[:9]
+            elif fault == 'eleven_identities':names = names + [PREPARED+'/'+('f'*32)+'.json']
+            directories[PREPARED] = [Path(name).name for name in names]
+            reason = 'unverified_historical_prepared_identity' if fault == 'missing_identity_pin' \
+                else 'invalid_historical_prepared_identity_name'
+        # False expectations borrow names only; no metadata bytes are created.
+        with pytest.raises(FenceError, match=reason):
+            capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
+        files, directories = expected()
+        assert directories[PREPARED] == [] and not any((root/name).exists() for name in names)
+        capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
+        return
     relative = next(name for name in contents if name.startswith(PREPARED+'/'))
     if fault == 'nine_identities':(root/relative).unlink();contents.pop(relative)
     elif fault == 'eleven_identities':
@@ -138,7 +169,27 @@ def test_original_seal_refuses_changed_actual_metadata(owned,kind):
     endings = {'stage':'fast-stage-0.json','ack':'fast-final-ack.json','piece':'verified-piece.json',
                'identity':'.json','capture':'capture.json'}
     matches = [p for p in contents if p.endswith(endings[kind]) and (kind != 'identity' or p.startswith(PREPARED+'/'))]
-    if not matches:pytest.skip('this exact unit has no '+kind+' metadata')
+    if not matches:
+        assert (unit == 'unit-b' and kind in ('stage','ack','piece','identity')) or (unit,kind) == ('unit-c','piece')
+        absent = {'stage':PARENT+'/fast-stage-0.json',
+            'ack':'runs/'+next(iter(history.FINAL_ACK_SHA256['unit-a']))+'/fast-final-ack.json',
+            'piece':'runs/'+next(iter(history.VERIFIED_PIECE_SHA256['unit-a']))+'/verified-piece.json',
+            'identity':actual_identity_names()[0]}[kind]
+        pins = {'stage':history.FAST_STAGE_SHA256, 'ack':history.FINAL_ACK_SHA256,
+                'piece':history.VERIFIED_PIECE_SHA256}
+        if kind in pins:assert not pins[kind][unit]
+        else:assert not any(name.startswith(PREPARED+'/') for name in contents)
+        assert absent not in contents and not (root/absent).exists()
+        files,directories = expected();raw,pin = capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
+        with SealedHistory(root,owner_uid=os.geteuid(),seal_bytes=raw,expected_sha256=pin) as held:
+            held.check()
+            files[absent] = 'f'*64
+            with pytest.raises(FenceError, match='unscoped_file'):
+                capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
+            held.check()
+        assert held._closed and not held._fence._fds and not held._chain.fds
+        assert not (root/absent).exists()
+        return
     files,directories = expected();raw,pin = capture(root,owner_uid=os.geteuid(),expected_files=files,expected_directories=directories)
     with SealedHistory(root,owner_uid=os.geteuid(),seal_bytes=raw,expected_sha256=pin) as held:
         held.check();(root/matches[0]).write_bytes(b'changed')

@@ -2,6 +2,7 @@
 import json
 import hashlib
 import os
+from pathlib import Path
 import select
 import signal
 import subprocess
@@ -106,8 +107,13 @@ def test_wrong_native_identity_refused_before_process_operation(tmp_path,monkeyp
     assert not opened and not signals
 
 
-@pytest.mark.skipif(sys.platform!='linux' or not hasattr(os,'pidfd_open'),reason='Linux pidfd control')
 def test_actual_linux_child_is_inspected_and_stopped_by_its_held_handle(tmp_path):
+    if sys.platform != 'linux':
+        # Observe this host's actual unsupported /proc path; invent no Linux identity.
+        assert not (Path('/proc')/str(os.getpid())/'stat').exists()
+        assert job._handle({'pid':os.getpid()}) is None
+        return
+    assert hasattr(os,'pidfd_open'), 'Linux native handle control requires pidfd_open'
     path=tmp_path/'child';path.mkdir(mode=0o700)
     source='''import sys,time
 from lantern_meshticulum.bench.pilot_job import record
