@@ -159,7 +159,14 @@ def _actual_prepared(caps):
 
 def _held_provision(chain, run, receipt):
     raw = _read(chain.fds[-1], 'provision.json', 32768); value = _parse(raw)
-    _need(value['schema'] == 'meshticulum.provisioned-public-pilot.v2'
+    from .mcu_artifact import META_SCHEMA, PROVISION_SCHEMA, validate_artifact, validate_metadata
+    schema = 'meshticulum.provisioned-public-pilot.v2'
+    metadata = receipt['child_caps']['metadata']
+    if metadata.get('schema') == META_SCHEMA:
+        schema = PROVISION_SCHEMA
+        _need(validate_metadata(metadata) == validate_artifact(value.get('mcu_artifact')),
+              'protected_provision_artifact_changed')
+    _need(value['schema'] == schema
           and value['run_id'] == run and value['unit'] == receipt['unit']
           and value['parent'] == receipt, 'protected_provision_relation_changed')
     chain.check()

@@ -79,6 +79,13 @@ def _history_guarded(state, caps):
         private(parent.lstat(), True)
         require(stamp(os.fstat(fd))[:4] == stamp(parent_identity)[:4] == stamp(parent.lstat())[:4],
                 'pilot_history_parent_rebound')
+        from .mcu_artifact import OWNER_SCHEMA, KIND, decode_owner
+        owner = values['owner.json']
+        if owner is not None and owner.get('schema') == OWNER_SCHEMA:
+            owner, _ = decode_owner(owner)
+            require(caps.policy.qualification_kind == KIND and owner['policy_digest'] == caps.policy.digest,
+                    'pilot_mcu_history_owner_policy_changed')
+            values['owner.json'] = owner
         key = 'history_binding_sha256'
         declared = [item is not None and key in item for item in (values['owner.json'], values['prior.json'])]
         if enrolled_binding is None and raw_binding is None and not any(declared): return False
