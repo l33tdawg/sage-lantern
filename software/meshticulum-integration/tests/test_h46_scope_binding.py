@@ -28,7 +28,7 @@ def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     expected=dict(scope_sha256=hashlib.sha256(raw).hexdigest(),history_receipt_sha256=history.NEXT_HISTORY_RECEIPT_SHA256,preceding_parent=history.PARENT)
     assert dict(mcu.PENDING_NATIVE_BINDINGS)==mcu.require_selector_scope(mcu.KIND)==expected
     assert scope['reviewed_implementation_commit']=='91992e8c957c58634945372b19a2f10da134b7b5'
-    assert scope['core_commit']==mcu.CORE=='81a8e2a9afc6371de433034432e2e3536655f8c0'
+    assert scope['core_commit']==mcu.CORE=='9ff232bb3b649ca7dbc100a152442f0a70dc9705'
     assert scope['mcu_artifact']==mcu.artifact()
     assert scope['source_lock_sha256']==mcu.artifact()['source_lock_sha256']
     assert scope['mcu_artifact']['core_revision']==mcu.FIRMWARE_CORE
@@ -41,7 +41,8 @@ def test_exact_reviewed_unissued_scope_and_history_source_binding(actual):
     assert scope['retained_unissued_host_scopes'][0]==scope['retained_unissued_host_scope']
     assert [p['sha256']for p in scope['retained_unissued_host_scopes']]==[
         'c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
-        'ba84af81f913d73013fdefa1b550725795f91d0bea11ee0e7367169b72999e50']
+        'ba84af81f913d73013fdefa1b550725795f91d0bea11ee0e7367169b72999e50',
+        '3d88fb98b68c02c865fae66faa935744687227bf6cf9a07f595890ec774f0152']
     assert all(p['window_issued']is False and p['original_scope_not_consumed']is True
         and p['no_paid_history_entry_added']is True and p['refunds']==0
         for p in scope['retained_unissued_host_scopes'])
