@@ -251,7 +251,14 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
                     assert time.monotonic()<wait_end
                     phase='start';timing['start_enter']=time.monotonic();runner.start()
                     timing['started_at']=time.monotonic()
-                    deadline=time.monotonic()+35
+                    deadline=time.monotonic()+35;timing['step_deadline']=deadline
+                    # Both guarded starts must finish before either peer pumps.
+                    # This wait consumes the original step and stage budgets.
+                    phase='ready'
+                    step_wait_end=min(stage_wait_end,profile.child.application_deadline_monotonic_us/1000000,deadline)
+                    remaining=step_wait_end-time.monotonic();assert remaining>0
+                    ready.wait(timeout=remaining)
+                    assert time.monotonic()<step_wait_end
                     phase='step';timing['first_step_at']=time.monotonic()
                     while not runner.step():
                         assert time.monotonic()<deadline;time.sleep(.002)
@@ -270,6 +277,12 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
         except BaseException as error:
             if ready is not None:ready.abort()
             metadata=error_metadata(error,index,slot,phase)
+            try:
+                with os.fdopen(os.open(tmp_path/f'composition-error-{index}.json',
+                        os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w') as handle:
+                    json.dump(metadata,handle,indent=2);handle.write('\n')
+                    handle.flush();os.fsync(handle.fileno())
+            except OSError:pass # Diagnostic failure must preserve the original error reply.
             # Preserve the four-field error tuple used by the GFSK wrapper,
             # without exception args, frame locals, payloads or key material.
             replies.put(('error',index,type(error).__name__[:100],json.dumps(metadata)))
@@ -297,6 +310,8 @@ def test_five_radio_factories_wire_crypto_capture_and_one_private_inbox(tmp_path
         (tmp_path/'composition-timing.json').write_text(json.dumps(dict(fault=fault,timings=timings),indent=2)+'\n')
     assert all(not thread.is_alive()for thread in threads) and all(len(v)==5 for v in reports)
     assert all(max(side[slot]['prepared_at']for side in timings)<=min(side[slot]['start_enter']for side in timings)
+               for slot in range(5))
+    assert all(max(side[slot]['started_at']for side in timings)<=min(side[slot]['first_step_at']for side in timings)
                for slot in range(5))
     assert all(len(op.budget._permits)==5 and op.position==5 for op in active)
     assert all(sum(v['child']['cost']['radio_attempts']for v in side)==1280
