@@ -1941,7 +1941,7 @@ def enrolled_action(action, unit, p, runtime):
     else:
         from .mcu_artifact import select_runtime
         need(select_runtime(runtime.manifest) is None,'mcu_runtime_requires_original_owner')
-    from .lora_comparison import KIND as COMPARISON_KIND,ComparisonContext
+    from .lora_comparison import KIND as COMPARISON_KIND,ComparisonContext,EXPERIMENT_OWNER_SCHEMA
     from .mcu_artifact import select_lora_runtime,require_lora_runtime
     selected_lora=select_lora_runtime(runtime.manifest)
     if policy.qualification_kind==COMPARISON_KIND:
@@ -1951,7 +1951,8 @@ def enrolled_action(action, unit, p, runtime):
         ComparisonContext.from_owner(owner,policy)
     else:need(selected_lora is None,'lora_runtime_requires_comparison_owner')
     need(policy.parent_id not in HISTORY and policy.parent_id not in CAPTURE_ONLY_PARENTS
-         and owner['schema'] == 'meshticulum.finite-public-resume-owner.v1'
+         and (owner['schema'] == 'meshticulum.finite-public-resume-owner.v1'
+              or policy.qualification_kind==COMPARISON_KIND and owner['schema']==EXPERIMENT_OWNER_SCHEMA)
          and owner['policy_digest'] == policy.digest and owner['manifest_sha256'] == sha(
              runtime.reader.read(runtime.root/'manifest.json',65536)), 'wrong_own_parent_scope')
     need(runtime.root.name == 'runtime-'+owner['runtime_sha256'][:16]

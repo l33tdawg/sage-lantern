@@ -18,8 +18,62 @@ SCHEMA = 'meshticulum.finite-public-lora-sf7-sf5-comparison.v1'
 SSH_SCHEMA = 'meshticulum.finite-lora-sf7-sf5-comparison-ssh-pilot.v1'
 PROFILE_NAMES = ('sf7-500', 'sf5-500')
 COUNT = 2
+EXPERIMENT_MODE = 'public-radio-experiment-only'
+EXPERIMENT_OWNER_SCHEMA = 'meshticulum.public-radio-experiment-resume-owner.v1'
+EXPERIMENT_ADMISSION_SCHEMA = 'meshticulum.public-radio-experiment-admission.v1'
 HEX = re.compile(r'[0-9a-f]{64}\Z')
 SID = re.compile(r'[0-9a-f]{32}\Z')
+
+
+def validate_experiment_admission(value):
+    """Keep the limited report mode explicit in the protected native owner.
+
+    Root's source-pinned public runner verifies these exact report/exception
+    bytes before enrollment. This descriptor neither creates a grant nor
+    substitutes for the existing owner/history/runtime/phase/claim checks.
+    """
+    from .mcu_artifact import require_lora_selector_scope
+    pins=require_lora_selector_scope(KIND)
+    hashes=('experiment_source_run_sha256','experiment_source_tests_sha256',
+        'experiment_source_provenance_sha256','experiment_suite_sha256',
+        'experiment_exception_sha256','experiment_runner_sha256','experiment_validator_sha256')
+    flags=('full_source_green','alpha_qualified','private_production_enabled',
+        'physical_qualification','rf_qualified','ip_allowed','flash_allowed','reset_allowed')
+    require(type(value) is dict and set(value)==set(hashes+flags+(
+        'schema','admission_mode','operation_schema','ready_schema','comparison_scope_sha256',
+        'history_receipt_sha256','private_gate_currently_failing')),
+        'public_experiment_admission_shape')
+    require(value['schema']==EXPERIMENT_ADMISSION_SCHEMA and value['admission_mode']==EXPERIMENT_MODE
+        and value['operation_schema']=='meshticulum.public-radio-experiment-lora-operation.v1'
+        and value['ready_schema']=='meshticulum.public-radio-experiment-source-ready.v1'
+        and value['comparison_scope_sha256']==pins['scope_sha256']
+        and value['history_receipt_sha256']==pins['history_receipt_sha256']
+        and all(type(value[k]) is str and HEX.fullmatch(value[k]) for k in hashes)
+        and all(value[k] is False for k in flags)
+        and value['private_gate_currently_failing'] is True,
+        'public_experiment_must_remain_limited_and_source_bound')
+    return True
+
+
+def owner_admission(owner):
+    """Read the recorded schema directly; never rewrite it into standard mode."""
+    require(type(owner) is dict,'comparison_original_owner_changed')
+    if owner.get('schema')=='meshticulum.finite-public-resume-owner.v1':
+        require('admission_mode' not in owner and 'experiment_admission' not in owner,
+            'standard_comparison_owner_cannot_consume_experiment')
+        return None
+    require(owner.get('schema')==EXPERIMENT_OWNER_SCHEMA
+        and owner.get('admission_mode')==EXPERIMENT_MODE
+        and all(owner.get(k) is False for k in ('full_source_green','alpha_qualified',
+            'private_production_enabled','physical_qualification','rf_qualified'))
+        and owner.get('private_gate_currently_failing') is True,
+        'explicit_public_experiment_owner_required')
+    admission=owner.get('experiment_admission')
+    validate_experiment_admission(admission)
+    require(owner.get('comparison_scope_sha256')==admission['comparison_scope_sha256']
+        and owner.get('history_receipt_sha256')==admission['history_receipt_sha256'],
+        'public_experiment_owner_source_rebound')
+    return admission
 
 
 def validate_descriptor(descriptor):
@@ -63,11 +117,12 @@ class ComparisonContext:
         if name=='_ComparisonContext__anchor':raise AttributeError('comparison constructor binding is read-only')
         object.__delattr__(self,name)
 
-    def __init__(self, descriptor, policy, *, phase_end_epoch_us):
+    def __init__(self, descriptor, policy, *, phase_end_epoch_us, experiment_admission=None):
         from .mcu_artifact import require_lora_selector_scope
         pins=require_lora_selector_scope(KIND)
         require(type(policy) is ParentPolicy and policy.qualification_kind==KIND,'comparison_parent_policy_changed')
         validate_descriptor(descriptor)
+        if experiment_admission is not None:validate_experiment_admission(experiment_admission)
         require(type(phase_end_epoch_us) is int and phase_end_epoch_us-policy.issued_epoch_us==600000000
             and policy.expires_epoch_us==phase_end_epoch_us-5000000
             and policy.deadline_monotonic_us-policy.original_monotonic_us==595000000,
@@ -79,8 +134,9 @@ class ComparisonContext:
         self._refs=(descriptor,policy,phase_end_epoch_us)
         self._descriptor_bytes=canonical(descriptor);self._policy_bytes=canonical(policy.to_dict())
         self._pid,self._thread=os.getpid(),threading.get_ident()
+        self.experiment_admission=experiment_admission
         self.__anchor=(self._refs,self._descriptor_bytes,self._policy_bytes,self._pid,self._thread,
-            canonical(dict(pins)))
+            canonical(dict(pins)),experiment_admission,canonical(experiment_admission))
         self.check()
 
     def check(self):
@@ -94,13 +150,17 @@ class ComparisonContext:
             'comparison_context_rebound')
         require(canonical(dict(require_lora_selector_scope(KIND)))==anchor[5],
             'comparison_original_scope_rebound')
+        require(self.experiment_admission is anchor[6]
+            and canonical(self.experiment_admission)==anchor[7],'public_experiment_context_rebound')
+        if self.experiment_admission is not None:validate_experiment_admission(self.experiment_admission)
         return True
 
     @classmethod
     def from_owner(cls, owner, policy):
         from .mcu_artifact import lora_artifact, require_lora_selector_scope
         pins=require_lora_selector_scope(KIND);selected=lora_artifact()
-        require(type(owner) is dict and owner.get('schema')=='meshticulum.finite-public-resume-owner.v1'
+        admission=owner_admission(owner)
+        require(type(owner) is dict
             and owner.get('qualification_kind')==KIND and owner.get('radio_profile_name')=='lora-sf7-sf5'
             and owner.get('rf_profile')==asdict(profile_for('sf7-500'))
             and owner.get('lora_mcu_artifact')==selected
@@ -111,7 +171,8 @@ class ComparisonContext:
             and owner.get('complete_global_debt') is False and owner.get('actual_cost') is None
             and owner.get('phase_start_epoch_us')==policy.issued_epoch_us,
             'comparison_original_owner_changed')
-        return cls(owner['lora_comparison'],policy,phase_end_epoch_us=owner['phase_end_epoch_us'])
+        return cls(owner['lora_comparison'],policy,phase_end_epoch_us=owner['phase_end_epoch_us'],
+            experiment_admission=admission)
 
     def sample(self, campaign_id, resource_sha256, profile):
         self.check()
