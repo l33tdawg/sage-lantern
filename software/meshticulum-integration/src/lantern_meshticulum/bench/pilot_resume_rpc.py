@@ -224,6 +224,7 @@ from .gfsk250_mb1_partial_history import PARENT as GFSK250_MB1_PARTIAL_PAID, NAT
 from .gfsk_mb1_complete_history import PARENT as MB1_COMPLETE_BUNDLE_PAID, NATIVE_OUTCOME_SHA256 as MB1_COMPLETE_BUNDLE_OUTCOMES, NATIVE_DATABASE_SHA256 as MB1_COMPLETE_BUNDLE_DATABASES, FAILED_STARTED_RUNS as MB1_COMPLETE_BUNDLE_FAILED
 from .fast_bundle_zero_history import PARENT as FAST_ZERO_PAID, NATIVE_DATABASE_SHA256 as FAST_ZERO_DATABASES
 from .fast_bundle_unstarted_history import PARENT as FAST_UNSTARTED_PAID, RUN as FAST_UNSTARTED_RUN
+from . import fast_bundle_unstarted_history as unstarted_history
 from . import gfsk250_mb1_partial_history as partial250,fast_bundle_partial_history as fast_partial,fast_bundle_complete_history as fast_complete,fast_bundle_bea_history as bea_complete
 from . import fast_bundle_d1fd_history as d1fd_history
 PARTIAL250={partial250.PARENT:partial250,fast_partial.PARENT:fast_partial,fast_complete.PARENT:fast_complete,bea_complete.PARENT:bea_complete}
@@ -359,6 +360,8 @@ def retained_owner_view(record, policy, unit):
     need(type(record) is dict, 'invalid_retained_owner')
     if policy.parent_id == d1fd_history.PARENT:
         return d1fd_history.owner_view(record, policy, unit=unit)
+    if policy.parent_id == unstarted_history.UNMATERIALIZED_PARENT:
+        return unstarted_history.unmaterialized_owner_view(record, policy, unit=unit)
     from .mcu_artifact import OWNER_SCHEMA
     need(record.get('schema') != OWNER_SCHEMA, 'unreviewed_retained_mcu_owner')
     return record
@@ -746,6 +749,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
          and tuple(p.digest for p in policies) == OLD_DIGESTS, 'wrong_retained_parents')
     original = {r['run_id']:r for r in inventory['rows']}
     newer = {r['run_id']:r for v in old for r in v['runs']+v.get('retired_unstarted',[])}
+    staging = (set(unstarted_history.unmaterialized_staging_names(unit))
+               if unstarted_history.UNMATERIALIZED_PARENT in HISTORY else set())
     need(len(original) == {'unit-a':41,'unit-b':64,'unit-c':63}[unit]
          and len(original) == len(inventory['rows']) and not set(original)&set(newer), 'wrong_legacy_inventory')
     known, reports = {}, []
@@ -754,7 +759,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         retained = historical_parent_ids(STATE,unit,clock,require_retained=True,require_unadmitted=True)
         need(own_parent not in CAPTURE_ONLY_PARENTS
              and sorted(os.listdir(STATE/'parents')) == sorted(retained+((own_parent,) if own_parent else ()))
-             and sorted(os.listdir(STATE/'runs')) == sorted(set(original)|set(newer)|set(own_runs)),
+             and not staging & (set(original)|set(newer)|set(own_runs))
+             and sorted(os.listdir(STATE/'runs')) == sorted(set(original)|set(newer)|set(own_runs)|staging),
              'foreign_or_missing_historical_namespace')
     def metadata(path, limit=MAX_FILE, lock=False):
         raw = reader.read(path, limit, lock=lock); known[str(path.relative_to(STATE))] = sha(raw); return raw
@@ -822,15 +828,20 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             known.update(stage_files(reader,STATE,unit,v))
         if policy.parent_id == d1fd_history.PARENT:
             known.update(d1fd_history.metadata_files(reader, STATE, unit, v))
+        if policy.parent_id == unstarted_history.UNMATERIALIZED_PARENT:
+            known.update(unstarted_history.unmaterialized_metadata(reader, STATE, unit, v))
         if policy.parent_id in (fast_partial.PARENT,*COMPLETE_FAST_PARENTS):
             known.update(PARTIAL250[policy.parent_id].metadata_files(reader,STATE,unit,v))
         refs = sorted([dict(controller_allocation_id=c['controller_allocation_id'],child=c['child'])
                        for c in claims],key=lambda c:c['child']['run_id'])
         unstarted = v.get('retired_unstarted',[])
+        unmaterialized = v.get('unmaterialized_prepared',[])
+        need(not unmaterialized or policy.parent_id == unstarted_history.UNMATERIALIZED_PARENT,
+             'unreviewed_unmaterialized_prepared_scope')
         if policy.parent_id==PARTIAL_PAID:
             qualify_partial_costs(unit,observed,v,refs)
         else:need(refs == v['controller_endpoint_refs'], 'old_child_relation_changed')
-        qualify_history_claims(policy,unit,observed,v['runs'],unstarted)
+        qualify_history_claims(policy,unit,observed,v['runs'],unstarted+unmaterialized)
         for row in unstarted:
             evidence = retired_unstarted(reader,unit,policy,observed,row,clock)
             for name,pin in evidence['files'].items(): known[name] = pin
@@ -927,6 +938,8 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             need(name in _FILES and sha(metadata(target/name)) == record['sha256'], 'old_parent_file_changed')
         if policy.parent_id == d1fd_history.PARENT:
             d1fd_history.qualify_costs(unit, policy, observed, v)
+        elif policy.parent_id == unstarted_history.UNMATERIALIZED_PARENT:
+            unstarted_history.qualify_unmaterialized_costs(unit, policy, observed, v)
         elif policy.parent_id==FAST_UNSTARTED_PAID:
             from .fast_bundle_unstarted_history import qualify_costs
             qualify_costs(unit,policy,observed,v)
@@ -1062,6 +1075,9 @@ def qualify_history_claims(policy,unit,observed,started,unstarted):
     elif policy.parent_id==FAST_UNSTARTED_PAID:
         need(not ids and absent==({FAST_UNSTARTED_RUN} if unit in ('unit-a','unit-c') else set()),
              'fast_unstarted_child_scope_changed')
+    elif policy.parent_id == unstarted_history.UNMATERIALIZED_PARENT:
+        need(not ids and absent == ({unstarted_history.UNMATERIALIZED_RUN} if unit in ('unit-a','unit-c') else set()),
+             'e244_unmaterialized_child_scope_changed')
     elif policy.parent_id == d1fd_history.PARENT:
         need(not ids and not absent and not claims and all(type(detail[k]) is int and detail[k] == 0
              for k in ('claim_count', 'prepared_count', 'resource_count', 'start_count')), 'd1fd_zero_child_scope_changed')
@@ -1810,9 +1826,14 @@ def retired_unstarted(reader,unit,policy,observed,row,now):
 def seal_inputs(reader, unit, known, original, newer):
     """Reobserve complete verified metadata before any own namespace creation."""
     identities={STATE/'parents'/parent/'prepared-identities' for parent in GUARDED_PAID}
+    staging = ()
+    if unstarted_history.UNMATERIALIZED_PARENT in HISTORY:
+        identities.add(STATE/'parents'/unstarted_history.UNMATERIALIZED_PARENT/'prepared-identities')
+        staging = unstarted_history.unmaterialized_staging_names(unit)
     paths=[STATE,STATE/'parents',STATE/'runs',*[STATE/'parents'/v for v in HISTORY],
            *[STATE/v for v in capture_paths(STATE,unit)['directories']],
-           *sorted(identities),*[STATE/'runs'/v for v in sorted(newer)]]
+           *sorted(identities),*[STATE/'runs'/v for v in sorted(newer)],
+           *[STATE/'runs'/v for v in staging]]
     files,dirs={},{}
     for path in paths:
         reader.directory(path);rel=str(path.relative_to(STATE)) if path!=STATE else ''
