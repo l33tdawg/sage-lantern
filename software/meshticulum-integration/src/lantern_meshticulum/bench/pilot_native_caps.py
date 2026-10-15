@@ -632,6 +632,9 @@ class NativeCaps:
         child=child_caps(base,self.policy);require(child.to_dict()==parent['child'])
         from .sf5_batch import BatchApproval
         from .gfsk_batch import BatchApproval as GfskApproval
+        from .lora_comparison import ComparisonApproval,KIND as COMPARISON_KIND
+        if self.policy.qualification_kind==COMPARISON_KIND:
+            require(type(self._approve) is ComparisonApproval);self._approve.context.package(package)
         if self.policy.qualification_kind=='c-gfsk125-8k-batch-v1':
             require(type(self._approve) is GfskApproval);self._approve.context.package(package)
         if self.policy.qualification_kind=='c-bulk-8k-batch-v1':
@@ -644,7 +647,8 @@ class NativeCaps:
             bundle = getattr(self._approve,'bundle',None)
             from .sf5_batch import BatchApproval
             from .gfsk_batch import BatchApproval as GfskApproval
-            if type(self._approve) in (BatchApproval,GfskApproval):
+            from .lora_comparison import ComparisonApproval
+            if type(self._approve) in (BatchApproval,GfskApproval,ComparisonApproval):
                 self._approve.context.metadata(meta)
                 for prior_claim, in self.db.execute('SELECT body FROM claims'):
                     old=json.loads(prior_claim)['child']['metadata']
@@ -776,7 +780,8 @@ class NativeCaps:
         approval=self._refs[6] if hasattr(self,'_refs') else self._approve
         from .sf5_batch import BatchApproval
         from .gfsk_batch import BatchApproval as GfskApproval
-        if type(approval) in (_Public32Approval,BatchApproval,GfskApproval):approval.close()
+        from .lora_comparison import ComparisonApproval
+        if type(approval) in (_Public32Approval,BatchApproval,GfskApproval,ComparisonApproval):approval.close()
         return valid and not self._uncertain
 
     def public32_owner_current(self):
@@ -807,6 +812,9 @@ def _open_existing(state,parent_id,facts,clock):
         approve=lambda _:True
         from .sf5_batch import BatchApproval,KIND as BATCH_KIND
         from .gfsk_batch import BatchApproval as GfskApproval,KIND as GFSK_KIND
+        from .lora_comparison import ComparisonApproval,KIND as COMPARISON_KIND
+        if policy.qualification_kind==COMPARISON_KIND:
+            approve=ComparisonApproval(directory,policy,unit.unit,facts,clock)
         if policy.qualification_kind==GFSK_KIND:
             approve=GfskApproval(directory,policy,unit.unit,facts,clock)
         if policy.qualification_kind==BATCH_KIND:
@@ -815,7 +823,7 @@ def _open_existing(state,parent_id,facts,clock):
             approve=_Public32Approval(directory,policy,unit.unit,facts,clock)
         try:return NativeCaps.open(path,policy,unit=unit.unit,clock=clock,facts=observed,approve=approve)
         except BaseException:
-            if type(approve) in (_Public32Approval,BatchApproval,GfskApproval):approve.close()
+            if type(approve) in (_Public32Approval,BatchApproval,GfskApproval,ComparisonApproval):approve.close()
             raise
     except Exception:raise NativeCapsError() from None
 

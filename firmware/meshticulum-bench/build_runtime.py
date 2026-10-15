@@ -29,18 +29,38 @@ def validate_package(files, *, sealed):
         raise SystemExit('Runtime container exceeds its reviewed packaging limit.')
 
 
+def selected_mcu_artifact(radio_profile, fast_five_part, selector):
+    """Exact source choice only; this never supplies finite native permission."""
+    from lantern_meshticulum.bench import mcu_artifact as mcu
+    if selector == mcu.LORA_SELECTOR:
+        if radio_profile != mcu.LORA_RUNTIME_PROFILE or fast_five_part:
+            raise RuntimeError('lora_mcu_artifact_requires_explicit_comparison_runtime')
+        return mcu.lora_artifact(selector)
+    if selector is not None:
+        if radio_profile != 'gfsk250' or not fast_five_part:
+            raise RuntimeError('mcu_artifact_requires_explicit_gfsk250_fast_runtime')
+        return mcu.artifact(selector)
+    if radio_profile == mcu.LORA_RUNTIME_PROFILE:
+        raise RuntimeError('lora_runtime_requires_explicit_artifact')
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-test-report', type=Path)
     parser.add_argument('--meshticulum-root', type=Path)
-    parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250'), default='gfsk125')
+    parser.add_argument('--radio-profile', choices=('gfsk125','gfsk250','lora-sf7-sf5'), default='gfsk125')
     parser.add_argument('--execution-layout', choices=('directory', 'sealed-image', 'sealed-image-deflated'), default='directory')
     parser.add_argument('--fast-five-part',action='store_true')
-    parser.add_argument('--mcu-artifact-selector',choices=('gfsk250-usb-rx2048-v1','gfsk250-usb-rx2048-irq-v1','gfsk250-usb-rx2048-irq-hostfair-v1'))
+    parser.add_argument('--mcu-artifact-selector',choices=('gfsk250-usb-rx2048-v1','gfsk250-usb-rx2048-irq-v1','gfsk250-usb-rx2048-irq-hostfair-v1','lora-sf7-sf5-usb-rx2048-irq-v1'))
     parser.add_argument('--mcu-reproduced-build-dir',type=Path,action='append')
     parser.add_argument('--output-dir', type=Path, default=WORK)
     args = parser.parse_args()
     source = core_source(args.meshticulum_root)
+    application_source = ROOT / 'software/meshticulum-integration/src'
+    from sys import path as import_path
+    import_path[:0]=[str(source/'src'),str(application_source)]
+    selected = selected_mcu_artifact(args.radio_profile, args.fast_five_part, args.mcu_artifact_selector)
     work = args.output_dir.resolve()
     work.mkdir(parents=True, exist_ok=True)
     test_report = test_hash = None
@@ -74,7 +94,6 @@ def main():
             if package == 'flow' and path.name in FLOW_PINS and hashlib.sha256(data).hexdigest() != FLOW_PINS[path.name]:
                 raise SystemExit('Accepted flow source changed; review required before deployment.')
             files[str(path.relative_to(source / 'src'))] = data
-    application_source = ROOT / 'software/meshticulum-integration/src'
     for package in ('bench', 'ip'):
         for path in sorted((application_source / 'lantern_meshticulum' / package).glob('*.py')):
             files[str(path.relative_to(application_source))] = path.read_bytes()
@@ -104,16 +123,22 @@ def main():
         manifest['firmware']=GFSK250_FIRMWARE
         manifest['firmware_by_unit']['unit-a']=GFSK250_FIRMWARE
         manifest['radio_profile_name']='gfsk250'
-    if args.mcu_artifact_selector is not None:
-        if args.radio_profile!='gfsk250' or not args.fast_five_part:
-            raise RuntimeError('mcu_artifact_requires_explicit_gfsk250_fast_runtime')
-        from lantern_meshticulum.bench.mcu_artifact import artifact, PAID_SCHEMA
+    if selected is not None:
+        from lantern_meshticulum.bench.mcu_artifact import artifact, LORA_SELECTOR, LORA_KIND, LORA_PROFILE_NAMES, PAID_SCHEMA
         from build_mcu_artifact_packet import validate_source,reproduced
-        selected=artifact(args.mcu_artifact_selector);validate_source(source,selected)
-        reproduced(args.mcu_reproduced_build_dir or [],selected)
-        manifest.update(mcu_artifact=selected,firmware=selected['firmware'])
+        # LoRa uses the identical compiled 020 application and reproduction
+        # records; source validation supplies no modem or native authority.
+        firmware_source=artifact() if args.mcu_artifact_selector==LORA_SELECTOR else selected
+        validate_source(source,firmware_source)
+        reproduced(args.mcu_reproduced_build_dir or [],firmware_source)
+        if args.mcu_artifact_selector == LORA_SELECTOR:
+            manifest.update(lora_mcu_artifact=selected,radio_profile_name=args.radio_profile,
+                radio_profile_names=list(LORA_PROFILE_NAMES),native_operation_kind=LORA_KIND)
+        else:
+            manifest['mcu_artifact']=selected
+            manifest['public_pilot_package_schemas'].append(PAID_SCHEMA)
+        manifest['firmware']=selected['firmware']
         manifest['firmware_by_unit']['unit-a']=selected['firmware']
-        manifest['public_pilot_package_schemas'].append(PAID_SCHEMA)
     elif args.mcu_reproduced_build_dir:
         raise RuntimeError('reproduced_mcu_builds_require_explicit_artifact_selection')
     if args.execution_layout in ('sealed-image', 'sealed-image-deflated'):

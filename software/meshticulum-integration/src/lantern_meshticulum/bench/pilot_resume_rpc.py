@@ -295,6 +295,9 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
     """Exact owner-bound public scope; no caller-selected arbitrary maxima."""
     need(unit in ('unit-a','unit-b','unit-c'), 'unknown_endpoint_budget_unit')
     need(qualification_kind is None or type(qualification_kind) is str, 'unknown_public_qualification_kind')
+    from .lora_comparison import KIND as COMPARISON_KIND
+    if qualification_kind==COMPARISON_KIND:
+        return Cost() if unit=='unit-b' else Cost(radio.radio_attempts*4,radio.estimated_airtime_us*4)
     if qualification_kind is None:
         return Cost() if unit=='unit-a' else radio.plus(radio).plus(
             Cost(ip_frames=tcp.ip_frames*8,tx_stream_bytes=tcp.tx_stream_bytes*8,
@@ -317,6 +320,10 @@ def endpoint_budget(unit, qualification_kind, radio, tcp):
 def owner_radio_profile(owner, policy):
     """An explicit SF5 choice is confined to the two-link C/A 8 KiB scope."""
     name = owner.get('radio_profile_name', 'sf7-500')
+    from .lora_comparison import KIND as COMPARISON_KIND,ComparisonContext
+    if policy.qualification_kind==COMPARISON_KIND:
+        ComparisonContext.from_owner(owner,policy)
+        return profile_for('sf7-500')
     if name==GFSK250_NAME:
         if policy.qualification_kind==GFSK250_FAST_BUNDLE_KIND:
             from .fast_bundle import require_owner
@@ -1934,6 +1941,15 @@ def enrolled_action(action, unit, p, runtime):
     else:
         from .mcu_artifact import select_runtime
         need(select_runtime(runtime.manifest) is None,'mcu_runtime_requires_original_owner')
+    from .lora_comparison import KIND as COMPARISON_KIND,ComparisonContext
+    from .mcu_artifact import select_lora_runtime,require_lora_runtime
+    selected_lora=select_lora_runtime(runtime.manifest)
+    if policy.qualification_kind==COMPARISON_KIND:
+        need(mcu_owner is None and selected_lora==owner.get('lora_mcu_artifact'),
+            'comparison_runtime_requires_original_owner')
+        require_lora_runtime(runtime.manifest,COMPARISON_KIND)
+        ComparisonContext.from_owner(owner,policy)
+    else:need(selected_lora is None,'lora_runtime_requires_comparison_owner')
     need(policy.parent_id not in HISTORY and policy.parent_id not in CAPTURE_ONLY_PARENTS
          and owner['schema'] == 'meshticulum.finite-public-resume-owner.v1'
          and owner['policy_digest'] == policy.digest and owner['manifest_sha256'] == sha(

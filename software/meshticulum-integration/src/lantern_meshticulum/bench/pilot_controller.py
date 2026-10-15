@@ -118,19 +118,19 @@ def pair_packages(*, campaign_id, resource_sha256, application_expires_epoch_us,
 
 
 class Controller:
-    __slots__=('__mcu_owner','__dict__','__weakref__')
+    __slots__=('__mcu_owner','__comparison_context','__dict__','__weakref__')
     def __setattr__(self,name,value):
-        if name=='_Controller__mcu_owner' and hasattr(self,name):
+        if name in ('_Controller__mcu_owner','_Controller__comparison_context') and hasattr(self,name):
             raise RuntimeError('mcu_controller_constructor_choice_rebound')
         object.__setattr__(self,name,value)
     def __delattr__(self,name):
-        if name=='_Controller__mcu_owner':raise RuntimeError('mcu_controller_constructor_choice_rebound')
+        if name in ('_Controller__mcu_owner','_Controller__comparison_context'):raise RuntimeError('mcu_controller_constructor_choice_rebound')
         object.__delattr__(self,name)
     def __init__(self, operator, *, campaign_id, resource_sha256, expires_epoch_us,
                  handoff_deadline_monotonic, peers, boots, parent, radio_permission=None,
                  clock=time.monotonic, epoch=None, sleep=time.sleep, public32=False, lora_sender_first=False, bundle_context=None,
                  radio_profile='sf7-500', batch_context=None, ip_startup_mode=None,
-                 mcu_owner=None):
+                 mcu_owner=None, comparison_context=None):
         self.operator,self.clock,self.sleep=operator,clock,sleep
         require(ip_startup_mode is None or (type(ip_startup_mode) is str and ip_startup_mode==READY_MODE
             and not public32),'invalid_pilot_ip_startup_mode')
@@ -161,7 +161,10 @@ class Controller:
                 require_selector_scope(parent.policy.qualification_kind)
         require((radio_profile==GFSK_NAME)==(parent.policy.qualification_kind in (GFSK_KIND,GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND)),'gfsk_parent_kind_mismatch')
         self.radio_profile = self._radio_profile = radio_profile
-        require(type(lora_sender_first) is bool and (not lora_sender_first or public32 or radio_profile in ('sf5-500',GFSK_NAME,GFSK250_NAME)),
+        from .lora_comparison import KIND as COMPARISON_KIND, ComparisonContext
+        require(type(lora_sender_first) is bool and (not lora_sender_first or public32
+                or radio_profile in ('sf5-500',GFSK_NAME,GFSK250_NAME)
+                or parent.policy.qualification_kind==COMPARISON_KIND),
                 'invalid_lora_startup_order')
         self.lora_sender_first = self._lora_sender_first = lora_sender_first
         self.bundle_context = None
@@ -185,6 +188,25 @@ class Controller:
                         for r in batch_context.descriptor['samples']), 'batch_controller_resource_undeclared')
         else:require(batch_context is None, 'unexpected_batch_controller_context')
         self.batch_context=self._batch_context_ref=batch_context
+        self.comparison_context=self._comparison_context_ref=comparison_context
+        self.__comparison_context=comparison_context
+        if parent.policy.qualification_kind==COMPARISON_KIND:
+            from .mcu_artifact import require_lora_selector_scope,validate_lora_artifact
+            from .lora_comparison import SSH_SCHEMA as COMPARISON_SSH_SCHEMA
+            require_lora_selector_scope(COMPARISON_KIND)
+            require(type(comparison_context) is ComparisonContext and comparison_context.policy is parent.policy
+                and comparison_context.check() and mcu_owner is None and not public32 and lora_sender_first,
+                'comparison_controller_context_missing')
+            comparison_context.sample(campaign_id,resource_sha256,radio_profile)
+            require(operator.config.get('schema')==COMPARISON_SSH_SCHEMA
+                and validate_lora_artifact(operator.config['lora_mcu_artifact'])
+                and operator.config.get('comparison_clock')==dict(phase_start_epoch_us=parent.policy.issued_epoch_us,
+                    phase_end_epoch_us=comparison_context.phase_end_epoch_us,
+                    original_monotonic_us=parent.policy.original_monotonic_us,
+                    deadline_monotonic_us=parent.policy.deadline_monotonic_us+5000000),
+                'comparison_operator_runtime_selection_changed')
+            self._comparison_config_bytes=canonical(operator.config)
+        else:require(comparison_context is None,'unexpected_comparison_controller_context')
         self._bundle_context_ref=self.bundle_context
         self.public32 = public32
         self.parent = self._parent_ref = parent
@@ -223,6 +245,15 @@ class Controller:
         require(self.ip_startup_mode is self._ip_startup_mode,'pilot_ip_startup_mode_changed')
         require(self.batch_context is self._batch_context_ref, 'batch_controller_context_rebound')
         if self.batch_context is not None:self.batch_context.check()
+        require(self.comparison_context is self._comparison_context_ref is self.__comparison_context,
+            'comparison_controller_context_rebound')
+        if self.comparison_context is not None:
+            from .lora_comparison import KIND as COMPARISON_KIND
+            from .mcu_artifact import require_lora_selector_scope
+            require_lora_selector_scope(COMPARISON_KIND)
+            require(canonical(self.operator.config)==self._comparison_config_bytes,
+                'comparison_operator_runtime_selection_changed')
+            self.comparison_context.sample(self.campaign_id,self.resource_sha256,self.radio_profile)
         require(self.radio_profile == self._radio_profile, 'pilot_radio_profile_changed')
         require(self.lora_sender_first is self._lora_sender_first, 'pilot_startup_order_changed')
         require(self.bundle_context is self._bundle_context_ref, 'bundle_controller_context_rebound')
@@ -251,6 +282,8 @@ class Controller:
             for package in pair['packages'].values(): self.bundle_context.package(package,self.epoch())
         if self.batch_context is not None:
             for package in pair['packages'].values():self.batch_context.package(package)
+        if self.comparison_context is not None:
+            for package in pair['packages'].values():self.comparison_context.package(package)
         require(test_rx_cutoff is None or (transport=='tcp' and format=='MR1.response'
                 and type(test_rx_cutoff) is int and 8<=test_rx_cutoff<len(payload)),
                 'invalid_controller_tcp_loss_control')

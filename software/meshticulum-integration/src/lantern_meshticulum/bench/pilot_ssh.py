@@ -126,6 +126,16 @@ def preparation_schema(config,package):
     """Pure exact receipt dispatch; selection itself supplies no permission."""
     from .mcu_artifact import SSH_SCHEMA, PAID_SCHEMA, PROVISION_SCHEMA, validate_artifact, validate_metadata
     require(type(config) is dict and type(package) is dict,'invalid_pilot_preparation')
+    from .lora_comparison import SSH_SCHEMA as COMPARISON_SSH_SCHEMA,KIND as COMPARISON_KIND
+    from .mcu_artifact import validate_lora_artifact,lora_profile_name,require_lora_selector_scope
+    if config.get('schema')==COMPARISON_SSH_SCHEMA:
+        validate_lora_artifact(config['lora_mcu_artifact']);require_lora_selector_scope(COMPARISON_KIND)
+        require(package.get('schema')=='meshticulum.public-pilot-package.v2'
+            and package['unit'] in ('unit-a','unit-c') and package['transport']=='lora'
+            and 'radio_modem' not in package['grant'],'comparison_original_package_changed')
+        from meshticulum.bench.serial_protocol import RadioProfile
+        lora_profile_name(RadioProfile(**package['grant']['profile']))
+        return 'meshticulum.provisioned-public-pilot.v2'
     if config.get('schema')==SSH_SCHEMA:
         selected=validate_artifact(config['mcu_artifact'])
         require(package.get('schema')==PAID_SCHEMA and package['unit'] in ('unit-a','unit-c')
@@ -133,7 +143,8 @@ def preparation_schema(config,package):
             and validate_metadata(package['parent']['child']['metadata'])==selected
             and package['grant'].get('radio_modem')=='gfsk250','ssh_mcu_original_package_changed')
         return PROVISION_SCHEMA
-    require('mcu_artifact' not in config and package.get('schema')=='meshticulum.public-pilot-package.v2',
+    require('mcu_artifact' not in config and 'lora_mcu_artifact' not in config
+            and package.get('schema')=='meshticulum.public-pilot-package.v2',
             'pilot_parent_package_required')
     return 'meshticulum.provisioned-public-pilot.v2'
 
@@ -200,15 +211,19 @@ class SSHOperator:
         require(type(config) is dict,'invalid_ssh_pilot_config')
         from .pilot_bundle import SSH_SCHEMA_V2, SSH_SCHEMA_V3, COMMITTED_CONTRACTS, public_context_commitment
         from .mcu_artifact import SSH_SCHEMA as MCU_SSH_SCHEMA, KIND as MCU_KIND, validate_artifact, require_selector_scope
+        from .lora_comparison import SSH_SCHEMA as COMPARISON_SSH_SCHEMA,KIND as COMPARISON_KIND
+        from .mcu_artifact import validate_lora_artifact,require_lora_selector_scope
         schemas=tuple(v[5] for v in COMMITTED_CONTRACTS.values())
         selected_mcu=config.get('schema')==MCU_SSH_SCHEMA
+        selected_lora=config.get('schema')==COMPARISON_SSH_SCHEMA
         versioned=config.get('schema') in schemas or selected_mcu
         fields={'schema','runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256',
                 'handoff_end_epoch_us','port_base','units'}
         expected=fields|{'bundle_parent_id','bundle_context','bundle_capture_commitment'} if versioned else fields
         if selected_mcu:expected|={'mcu_artifact'}
+        if selected_lora:expected|={'lora_mcu_artifact','comparison_clock'}
         require(set(config)==expected
-            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',*schemas,MCU_SSH_SCHEMA),'invalid_ssh_pilot_config')
+            and config['schema'] in ('meshticulum.finite-ssh-pilot.v1',*schemas,MCU_SSH_SCHEMA,COMPARISON_SSH_SCHEMA),'invalid_ssh_pilot_config')
         commitment=None
         if versioned:
             commitment=public_context_commitment(config['bundle_context'],parent_id=config['bundle_parent_id'])
@@ -218,6 +233,15 @@ class SSHOperator:
         if selected_mcu:
             validate_artifact(config['mcu_artifact']);require_selector_scope(MCU_KIND)
             require(commitment['qualification_kind']==MCU_KIND,'ssh_mcu_original_kind_changed')
+        if selected_lora:
+            validate_lora_artifact(config['lora_mcu_artifact']);require_lora_selector_scope(COMPARISON_KIND)
+            comparison=config['comparison_clock']
+            require(type(comparison) is dict and set(comparison)=={'phase_start_epoch_us','phase_end_epoch_us',
+                'original_monotonic_us','deadline_monotonic_us'} and all(type(v) is int for v in comparison.values())
+                and comparison['phase_end_epoch_us']==config['handoff_end_epoch_us']
+                and comparison['phase_end_epoch_us']-comparison['phase_start_epoch_us']==600000000
+                and comparison['deadline_monotonic_us']-comparison['original_monotonic_us']==600000000,
+                'ssh_comparison_original_clock_changed')
         for key in ('runtime_sha256','manifest_sha256','provision_sha256','runtime_bootstrap_sha256'):
             require(type(config[key]) is str and re.fullmatch('[0-9a-f]{64}',config[key]),'invalid_ssh_pilot_pin')
         require(hashlib.sha256(provision_source).hexdigest()==config['provision_sha256'], 'pilot_provision_source_changed')
@@ -229,7 +253,7 @@ class SSHOperator:
         self.clock=clock;self.epoch=epoch or (lambda:time.time_ns()//1000)
         now_epoch,now_mono=self.epoch(),self.clock()
         remaining=(config['handoff_end_epoch_us']-now_epoch)/1e6
-        maximum=(commitment['phase_end_epoch_us']-commitment['phase_start_epoch_us'])/1000000 if versioned else 900
+        maximum=(commitment['phase_end_epoch_us']-commitment['phase_start_epoch_us'])/1000000 if versioned else (600 if selected_lora else 900)
         require(20<remaining<=maximum,'current_finite_ssh_window_required')
         self.deadline=now_mono+remaining
         if versioned:
@@ -237,6 +261,11 @@ class SSHOperator:
             require(commitment['phase_start_epoch_us']<=now_epoch and commitment['original_monotonic_us']/1000000<=now_mono<original_end,
                     'ssh_v2_original_clock_expired_or_regressed')
             self.deadline=min(self.deadline,original_end)
+        if selected_lora:
+            require(comparison['phase_start_epoch_us']<=now_epoch<comparison['phase_end_epoch_us']
+                and comparison['original_monotonic_us']/1000000<=now_mono<comparison['deadline_monotonic_us']/1000000,
+                'ssh_comparison_original_clock_expired_or_regressed')
+            self.deadline=min(self.deadline,comparison['deadline_monotonic_us']/1000000)
         self.passwords=dict(passwords or {})
         self.next_port=config['port_base'];require(type(self.next_port) is int and 1024<=self.next_port<=65400,'invalid_pilot_port_range')
         self.jobs={};self.events=[];self.connections=None

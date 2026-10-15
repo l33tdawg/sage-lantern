@@ -92,14 +92,14 @@ _IRQ_ARTIFACT = canonical(dict(
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
 IRQ020_ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
 SELECTOR = 'gfsk250-usb-rx2048-irq-hostfair-v1'
-CORE = '9ff232bb3b649ca7dbc100a152442f0a70dc9705'
+CORE = 'af5b1fd23a454746122d0b256908a0b2cdfc1741'
 _CURRENT_ARTIFACT = canonical(dict(json.loads(_IRQ_ARTIFACT), selector=SELECTOR,
-    runtime_core_revision=CORE, source_lock_sha256='5e2e242f30eb518596c2f01da3c34a5e491cf7dce42ce40e26f542d983284cb6'))
+    runtime_core_revision=CORE, source_lock_sha256='a367469b88cc0bce515d187d7fd29bd1b6d12d462403763623564ed30a11871c'))
 ARTIFACT_SHA256 = hashlib.sha256(_CURRENT_ARTIFACT).hexdigest()
 _ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT,
     IRQ020_SELECTOR:_IRQ_ARTIFACT, SELECTOR:_CURRENT_ARTIFACT})
 PENDING_NATIVE_BINDINGS = MappingProxyType(dict(
-    scope_sha256='c4ce1ce81748084ede8b8731c1479fc70f36a196ad5601a7651c570e66014c9e',
+    scope_sha256=None,
     history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
     preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
 
@@ -209,3 +209,91 @@ def validate_original_claim(parent, plan, selected):
         and hashlib.sha256(DOMAIN+b'child\0'+canonical(meta)).hexdigest()==child['digest'],
         'mcu_original_context_or_child_changed')
     return selected
+
+
+# A separate LoRa source choice; the three paid GFSK descriptors above stay exact.
+LORA_SELECTOR = 'lora-sf7-sf5-usb-rx2048-irq-v1'
+LORA_KIND = 'c-lora-sf7-sf5-8k-comparison-v1'
+LORA_RUNTIME_PROFILE = 'lora-sf7-sf5'
+LORA_PROFILE_NAMES = ('sf7-500', 'sf5-500')
+_LORA_ARTIFACT = canonical(dict(json.loads(_CURRENT_ARTIFACT),
+    schema='meshticulum.explicit-lora-mcu-artifact.v1', selector=LORA_SELECTOR,
+    radio_modem='lora', radio_profile_names=list(LORA_PROFILE_NAMES)))
+LORA_ARTIFACT_SHA256 = hashlib.sha256(_LORA_ARTIFACT).hexdigest()
+LORA_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256=None,
+    history_receipt_sha256='cf01a817a18458f0ca2b91dca012afcc29044a9c65bb426ee9316e003cb32826',
+    preceding_parent='360514104bf80fa187276f24d6aa9d9c'))
+
+
+def lora_artifact(selector=LORA_SELECTOR):
+    require(type(selector) is str and selector == LORA_SELECTOR,
+        'unreviewed_lora_mcu_artifact_selector')
+    return json.loads(_LORA_ARTIFACT)
+
+
+def validate_lora_artifact(value):
+    require(type(value) is dict and canonical(value) == _LORA_ARTIFACT,
+        'lora_mcu_artifact_binding_changed')
+    return value
+
+
+def select_lora_runtime(manifest):
+    require(type(manifest) is dict, 'invalid_lora_runtime_manifest')
+    value = manifest.get('lora_mcu_artifact')
+    if value is None:
+        require('lora_mcu_artifact' not in manifest
+            and manifest.get('radio_profile_name') != LORA_RUNTIME_PROFILE,
+            'lora_runtime_requires_explicit_artifact')
+        return None
+    validate_lora_artifact(value)
+    source_files = manifest.get('source_files', manifest.get('files'))
+    require('mcu_artifact' not in manifest
+        and manifest.get('radio_profile_name') == LORA_RUNTIME_PROFILE
+        and manifest.get('radio_profile_names') == list(LORA_PROFILE_NAMES)
+        and manifest.get('native_operation_kind') == LORA_KIND
+        and manifest.get('firmware') == value['firmware']
+        and manifest.get('firmware_by_unit', {}).get('unit-a') == value['firmware']
+        and type(source_files) is dict and source_files.get(
+            'provenance/LANTERN_MESHTICULUM_SOURCE_LOCK.json') == value['source_lock_sha256'],
+        'lora_mcu_artifact_runtime_mismatch')
+    return value
+
+
+def lora_profile_name(profile):
+    from dataclasses import asdict
+    from meshticulum.bench.serial_protocol import RadioProfile
+    from .profiles import profile_for
+    require(type(profile) is RadioProfile, 'lora_comparison_profile_required')
+    profile.encode(board_id=1)
+    matches = []
+    for name in LORA_PROFILE_NAMES:
+        original = profile_for(name)
+        current = asdict(profile)
+        # The original pair producer may tighten its lease to the remaining
+        # application interval. No other profile or budget field may change.
+        if type(profile.lease_ms) is int and 10000 <= profile.lease_ms <= original.lease_ms:
+            current['lease_ms'] = original.lease_ms
+            if canonical(current) == canonical(asdict(original)):
+                matches.append(name)
+    require(len(matches) == 1, 'lora_comparison_profile_not_reviewed')
+    return matches[0]
+
+
+def require_lora_runtime(manifest, kind, profile=None):
+    selected = select_lora_runtime(manifest)
+    require(selected is not None and kind == LORA_KIND,
+        'lora_comparison_runtime_or_kind_required')
+    if profile is not None:
+        lora_profile_name(profile)
+    return selected
+
+
+def require_lora_selector_scope(kind):
+    from .retained_capture import PAID_HISTORY
+    pins = dict(LORA_NATIVE_BINDINGS)
+    require(kind == LORA_KIND and all(type(pins[k]) is str and len(pins[k]) == 64
+        and all(c in '0123456789abcdef' for c in pins[k])
+        for k in ('scope_sha256', 'history_receipt_sha256'))
+        and pins['preceding_parent'] == PAID_HISTORY[-1],
+        'pending_lora_mcu_artifact_native_scope_and_history')
+    return pins

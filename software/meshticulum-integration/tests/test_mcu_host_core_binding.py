@@ -13,8 +13,8 @@ from tests.test_pilot_bundle import data
 
 
 FIRMWARE_CORE = '2b9db9e71dfa7d115d4e465225893b828c760171'
-HOST_CORE = '9ff232bb3b649ca7dbc100a152442f0a70dc9705'
-HOST_LOCK = '5e2e242f30eb518596c2f01da3c34a5e491cf7dce42ce40e26f542d983284cb6'
+HOST_CORE = 'af5b1fd23a454746122d0b256908a0b2cdfc1741'
+HOST_LOCK = 'a367469b88cc0bce515d187d7fd29bd1b6d12d462403763623564ed30a11871c'
 OLD_IRQ_SHA = '9e478abcb07234a2f42ed70966b3ac4d82c303bafd8e20a8c5b08eaf681a1f57'
 
 
@@ -144,6 +144,7 @@ def test_current_source_pins_still_refuse_without_a_reviewed_new_scope(original,
     'c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
     'ba84af81f913d73013fdefa1b550725795f91d0bea11ee0e7367169b72999e50',
     '3d88fb98b68c02c865fae66faa935744687227bf6cf9a07f595890ec774f0152',
+    'c4ce1ce81748084ede8b8731c1479fc70f36a196ad5601a7651c570e66014c9e',
 ])
 def test_retained_unissued_scopes_cannot_authorize_the_new_host(old_scope, modeled_current_bindings):
     selected = mcu.artifact()

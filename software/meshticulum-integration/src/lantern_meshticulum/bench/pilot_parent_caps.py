@@ -31,7 +31,8 @@ from .profiles import RADIO_ADMISSION, LEGACY_SF5_8_PARENT, LEGACY_SF5_8_ADMISSI
 BUNDLE_KINDS = frozenset(('c-bundle100k-v1','c-bundle100k-v2','c-bundle100k-v3',GFSK_BUNDLE_KIND,GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND))
 PUBLIC32_KINDS = BUNDLE_KINDS | {'c-bulk32-v1'}
 BATCH_KIND = 'c-bulk-8k-batch-v1'
-POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND,GFSK_KIND}
+COMPARISON_KIND = 'c-lora-sf7-sf5-8k-comparison-v1'
+POLICY_KINDS = PUBLIC32_KINDS | {BATCH_KIND,GFSK_KIND,COMPARISON_KIND}
 
 SCHEMA = 'meshticulum.public-parent-caps.v1'
 DOMAIN = b'meshticulum.public-parent-caps.v1\0'
@@ -240,6 +241,11 @@ def child_caps(package, policy):
             admission = (LEGACY_SF5_8_ADMISSION if policy.parent_id == LEGACY_SF5_8_PARENT
                          else admission_for(rp))
             admission.check(p['country'], p['antenna_confirmed'], rp)
+            if policy.qualification_kind==COMPARISON_KIND:
+                require((rp.frequency_hz,rp.bandwidth_hz,rp.spreading_factor,rp.coding_rate,
+                    rp.chip_power_dbm,rp.preamble,rp.sync_word) in (
+                    (921375000,500000,7,5,0,8,0x42),(921375000,500000,5,5,0,12,0x42))
+                    and rp.max_boot_attempts==256 and rp.max_boot_estimated_airtime_us==60000000)
             route=radio_route(p)
             session = SessionKey(PeerID(**p['initiator']), PeerID(**p['responder']), bytes.fromhex(p['session_id']), bytes.fromhex(p['generation']))
             grant = BenchGrant(session, 'bench_transfer', hashlib.sha256(canonical(route)).digest(),
@@ -265,12 +271,17 @@ def child_caps(package, policy):
                 rp.coding_rate,rp.chip_power_dbm,rp.preamble,rp.sync_word)==(921375000,500000,7,5,0,8,0x42)
                 and rp.max_boot_attempts==256 and rp.max_boot_estimated_airtime_us==60000000)
         identifier(run); digest(obj['sha256'])
+        if policy.qualification_kind==COMPARISON_KIND:
+            require(package['transport']=='lora' and fmt in ('MR1.request','MR1.response')
+                and obj['bytes']==(74 if fmt=='MR1.request' else 8192))
         require(fmt in ('MR1.request','MR1.response') and type(obj['bytes']) is int and 0 < obj['bytes'] <= object_limit(p.get('service',{}))
                 and (not public32 or fmt != 'MR1.response' or mb1_pin is not None or obj['bytes'] == 32768)
                 and type(expiry) is int and expiry == package['application_expires_epoch_us']
                 and policy.issued_epoch_us <= p['issued_epoch_us'] < expiry <= p['expires_epoch_us'] <= policy.expires_epoch_us)
         sender, receiver = [next((u.unit for u in policy.units if u.peer == peer), None) for peer in peers]
         require(sender is not None and receiver is not None and sender != receiver)
+        if policy.qualification_kind==COMPARISON_KIND:
+            require((sender,receiver)==(('unit-a','unit-c') if fmt=='MR1.request' else ('unit-c','unit-a')))
         if public32:
             require((sender,receiver)==(('unit-a','unit-c') if fmt=='MR1.request' else ('unit-c','unit-a')))
         source = package['source_run_id']

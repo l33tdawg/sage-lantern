@@ -78,12 +78,18 @@ def main():
     else:
         sys.path.insert(0, str(bundle))
     from lantern_meshticulum.bench import node; from meshticulum.bench import authority
-    from lantern_meshticulum.bench.mcu_artifact import select_runtime
+    from lantern_meshticulum.bench.mcu_artifact import select_runtime, select_lora_runtime
     mcu_selection=select_runtime(manifest)
+    lora_selection=select_lora_runtime(manifest)
     mcu_selector=mcu_selection['selector'] if mcu_selection is not None and args.unit=='unit-a' else None
     mcu_options={'mcu_artifact_selector':mcu_selector} if mcu_selector is not None else {}
+    if lora_selection is not None and args.unit=='unit-a':
+        mcu_options['lora_mcu_artifact_selector']=lora_selection['selector']
     if args.action == 'inspect':
-        if manifest.get('radio_profile_name')=='gfsk250' and args.unit=='unit-a':
+        if lora_selection is not None and args.unit=='unit-a':
+            result=node.inspect(args.unit,qualification_kind=manifest['native_operation_kind'],
+                lora_manifest=manifest,**mcu_options)
+        elif manifest.get('radio_profile_name')=='gfsk250' and args.unit=='unit-a':
             if manifest.get('native_operation_kind')=='c-gfsk250-mb1-fast-bundle100k-v1':
                 result=node.inspect(args.unit,radio_modem='gfsk250',qualification_kind=manifest['native_operation_kind'],
                                     **mcu_options)

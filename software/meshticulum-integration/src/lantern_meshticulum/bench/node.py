@@ -119,9 +119,34 @@ def _disarmed_status(worker,identity):
         dropped_receive=int.from_bytes(reply.body[42:46],'big'))
 
 
-def _serial(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selector=None):
+def _serial(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selector=None,
+            lora_mcu_artifact_selector=None,lora_manifest=None,lora_profile=None,
+            lora_authority=None,lora_parent_current=None,lora_readonly=False):
     require(radio_modem in (None,GFSK_NAME,GFSK250_NAME),'unsupported_native_radio_modem')
+    require(type(lora_readonly) is bool,'invalid_lora_readonly_selection')
     firmware=FIRMWARE_BY_UNIT[unit]
+    if lora_mcu_artifact_selector is not None:
+        from .mcu_artifact import lora_artifact, require_lora_runtime
+        selected=lora_artifact(lora_mcu_artifact_selector)
+        require(unit=='unit-a' and radio_modem is None and mcu_artifact_selector is None,
+                'lora_mcu_artifact_wrong_route')
+        require(require_lora_runtime(lora_manifest,qualification_kind,lora_profile)==selected,
+                'lora_mcu_artifact_runtime_changed')
+        if lora_readonly:
+            require(lora_profile is None and lora_authority is None and lora_parent_current is None,
+                    'lora_inspection_cannot_supply_authority')
+        else:
+            from .mcu_artifact import require_lora_selector_scope
+            require_lora_selector_scope(qualification_kind)
+            require(type(lora_authority) is RunAuthority and lora_profile is lora_authority.profile
+                and callable(lora_parent_current) and lora_parent_current() is True
+                and lora_authority.live() is True and lora_parent_current() is True,
+                'lora_original_finite_authority_required')
+        firmware=selected['firmware']
+    else:
+        require(not lora_readonly and all(value is None for value in
+            (lora_manifest,lora_profile,lora_authority,lora_parent_current)),
+            'lora_mcu_artifact_selection_required')
     if radio_modem==GFSK_NAME:
         require_gfsk_bindings();require(unit=='unit-a','gfsk_USB_unit_not_reviewed')
         from .profiles import GFSK_FIRMWARE
@@ -152,7 +177,16 @@ def _serial(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selecto
         channel.close();raise
 
 
-def inspect(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selector=None):
+def inspect(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selector=None,
+            lora_mcu_artifact_selector=None,lora_manifest=None):
+    if lora_mcu_artifact_selector is not None:
+        from .mcu_artifact import lora_artifact, require_lora_runtime
+        require(unit=='unit-a' and radio_modem is None and mcu_artifact_selector is None,
+                'lora_mcu_artifact_wrong_route')
+        require(require_lora_runtime(lora_manifest,qualification_kind)==lora_artifact(lora_mcu_artifact_selector),
+                'lora_mcu_artifact_runtime_changed')
+    else:
+        require(lora_manifest is None,'lora_mcu_artifact_selection_required')
     if mcu_artifact_selector is not None:
         from .mcu_artifact import KIND,artifact
         artifact(mcu_artifact_selector)
@@ -164,7 +198,9 @@ def inspect(unit,*,radio_modem=None,qualification_kind=None,mcu_artifact_selecto
               'cryptography': cryptography.__version__, 'services_before': before,
               'radio_opened': False, 'arm_commands': 0, 'tx_commands': 0}
     if unit in USB:
-        channel, worker, status = (_serial(unit) if radio_modem is None else
+        channel, worker, status = (_serial(unit,qualification_kind=qualification_kind,
+            lora_mcu_artifact_selector=lora_mcu_artifact_selector,lora_manifest=lora_manifest,lora_readonly=True)
+            if lora_mcu_artifact_selector is not None else _serial(unit) if radio_modem is None else
             _serial(unit,radio_modem=radio_modem) if qualification_kind is None else
             _serial(unit,radio_modem=radio_modem,qualification_kind=qualification_kind,
                     mcu_artifact_selector=mcu_artifact_selector))
@@ -249,7 +285,7 @@ def run(unit, directory, object_directory):
 
 
 def run_public_service(unit, directory, *, sender_receive_ready=False,native_phase_timing=False,
-                       mcu_artifact_selector=None):
+                       mcu_artifact_selector=None,lora_mcu_artifact_selector=None):
     """Finite public MR1 service flow; private native provider stays unwired.
 
     Received bytes are quarantined in the root-only run directory. They are
@@ -257,7 +293,8 @@ def run_public_service(unit, directory, *, sender_receive_ready=False,native_pha
     No service, listener or autonomous forwarding is commissioned by this run.
     """
     return _run(unit, directory, None, public_service=True, sender_receive_ready=sender_receive_ready,
-                native_phase_timing=native_phase_timing,mcu_artifact_selector=mcu_artifact_selector)
+                native_phase_timing=native_phase_timing,mcu_artifact_selector=mcu_artifact_selector,
+                lora_mcu_artifact_selector=lora_mcu_artifact_selector)
 
 
 def _quarantine(directory, data, *, maximum=16384):
@@ -278,8 +315,10 @@ def _quarantine(directory, data, *, maximum=16384):
 
 
 def _run(unit, directory, object_directory, *, public_service, sender_receive_ready=False,native_phase_timing=False,
-         mcu_artifact_selector=None):
+         mcu_artifact_selector=None,lora_mcu_artifact_selector=None):
     require(mcu_artifact_selector is None or public_service,'mcu_artifact_public_service_only')
+    require(lora_mcu_artifact_selector is None or (public_service and mcu_artifact_selector is None),
+            'lora_mcu_artifact_public_service_only')
     require(type(sender_receive_ready) is bool and (not sender_receive_ready or public_service),
             'invalid_native_sender_receive_ready_mode')
     require(type(native_phase_timing) is bool and (not native_phase_timing or public_service),
@@ -303,7 +342,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
               'native_phase_timing_requested': native_phase_timing,
               'native_phase_timing_enabled': False}
     worker = authority = flow = journal = store = channel = None
-    caps = phase_profile = transfer_timing = None
+    caps = phase_profile = transfer_timing = lora_selected = None
     authority_ref = grant_ref = profile_ref = authority_lifetime = start_binding = None
     runner = None
     saved_handlers = {}
@@ -372,6 +411,17 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             if selected is not None:
                 require(caps.public32_owner_current() is True and caps._approve.mcu_artifact==selected,
                         'mcu_artifact_original_owner_changed')
+            from .mcu_artifact import LORA_KIND, require_lora_runtime
+            if caps.policy.qualification_kind==LORA_KIND or lora_mcu_artifact_selector is not None:
+                from .lora_comparison import ComparisonApproval
+                approval=caps._approve
+                require(type(approval) is ComparisonApproval and approval.check() is True
+                    and caps.current() is True,'lora_original_comparison_owner_required')
+                lora_selected=require_lora_runtime(approval.runtime.manifest,caps.policy.qualification_kind,
+                    profile_from_plan(native_plan,board_id=1))
+                require(lora_selected==approval.lora_mcu_artifact and selected is None
+                    and (lora_selected['selector'] if unit=='unit-a' else None)==lora_mcu_artifact_selector,
+                    'lora_mcu_artifact_original_claim_mismatch')
             if native_phase_timing:
                 from .phase_timing import enable
                 phase_profile=enable(caps)
@@ -433,11 +483,19 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         # The fixed paths contain only bench state. No system or personal store
         # is queried as an identity/key source.
         require(parent_current(), 'pilot_parent_not_current')
+        if lora_selected is not None:
+            require(authority.live() is True and parent_current(),
+                    'lora_original_finite_authority_required')
         store = SessionStore(directory / 'wire.sqlite', grant, authority.local_peer,
                              boot_id=boot, clock=clock, create=True)
         require(parent_current(), 'pilot_parent_not_current')
         if unit in USB:
-            channel,worker,radio=(_serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind,
+            channel,worker,radio=(_serial(unit,qualification_kind=caps.policy.qualification_kind,
+                                        lora_mcu_artifact_selector=lora_mcu_artifact_selector,
+                                        lora_manifest=caps._approve.runtime.manifest,lora_profile=profile,
+                                        lora_authority=authority,lora_parent_current=parent_current)
+                                 if lora_selected is not None else
+                                 _serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind,
                                         mcu_artifact_selector=mcu_artifact_selector)
                                  if mcu_artifact_selector is not None else
                                  _serial(unit,radio_modem=modem_for(profile),qualification_kind=caps.policy.qualification_kind)
