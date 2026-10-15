@@ -31,7 +31,7 @@ def test_original_genuine_bundle_is_checked_at_both_boundaries(case,monkeypatch)
     monkeypatch.setattr(BundleContext,'current',checked)
     assert ap(raw) is True and clock.calls==2
     assert len(events)==2 and all(item[0] is original for item in events)
-    assert len(ap._state_refs)==21 and ap._state_refs[17] is original
+    assert len(ap._state_refs)==24 and ap._state_refs[17] is original
 
 
 @pytest.mark.parametrize('when',[1,2])
