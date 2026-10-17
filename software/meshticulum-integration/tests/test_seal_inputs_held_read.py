@@ -52,6 +52,8 @@ def seal_fixture(tmp_path,monkeypatch):
         (state/'parents'/rpc.endpoint_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     if rpc.management_lora_history.PARENT in rpc.HISTORY:
         (state/'parents'/rpc.management_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
+    if rpc.reporter_lora_history.PARENT in rpc.HISTORY:
+        (state/'parents'/rpc.reporter_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     if rpc.unstarted_history.UNMATERIALIZED_PARENT in rpc.HISTORY:
         (state/'parents'/rpc.unstarted_history.UNMATERIALIZED_PARENT/'prepared-identities').mkdir(mode=0o700)
     for relative in rpc.capture_paths(state,'unit-b')['directories']:
@@ -79,7 +81,7 @@ def test_seal_inputs_uses_held_reader_and_unchanged_final_full_check(seal_fixtur
     assert observed.get('read_calls',0)==0
     # Full fresh Reader.check bookends reread every held byte.
     assert observed['fresh_preads']==2
-    assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==49
+    assert set(rpc.HISTORY) <= set(dirs['parents']) and len(rpc.HISTORY)==50
 
 
 @pytest.mark.parametrize('fault',['bytes','replacement','hardlink','mode','parent','offset'])

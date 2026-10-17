@@ -64,7 +64,22 @@ def test_four_verified_H49_capture_files_seal_reopen_and_detect_drift(verified_h
 def test_same_verified_inputs_fail_with_exact_original_whitelist(verified_h49):
     state, _ = verified_h49
     files, directories = seal_inputs(verified_h49)
+    # The old source receives exactly its pre-H50 synthetic namespace.
+    later = 'parents/291fcf787d7b336134735a239a6e334d'
+    assert directories[later] == ['prepared-identities']
+    assert directories[later + '/prepared-identities'] == []
+    assert not any(key == later or key.startswith(later + '/') for key in files)
+    (state / later / 'prepared-identities').rmdir()
+    (state / later).rmdir()
+    directories = {key: value for key, value in directories.items()
+                   if key != later and not key.startswith(later + '/')}
+    directories['parents'] = [name for name in directories['parents'] if name != later.split('/')[1]]
     current = Path(fence_source.__file__).read_text()
+    reporter_block = "_LORA_REPORTER_INCOMPLETE_DIRECTORY = 'parents/291fcf787d7b336134735a239a6e334d'\n_IDENTITY_COUNTS[_LORA_REPORTER_INCOMPLETE_DIRECTORY+'/prepared-identities'] = (0,2)\n_EXTRA_FILES |= frozenset(('runs/891a03b0fd31296af6956eee7d09dc2f/verified-piece.json','runs/891a03b0fd31296af6956eee7d09dc2f/radio-ready.json','runs/caca7959819077eaf5d1456b4ea31500/radio-ready.json'))\n"
+    assert current.count(reporter_block) == 1
+    current = current.replace(reporter_block, '')
+    current = current.replace('_LORA_MANAGEMENT_INCOMPLETE_DIRECTORY,_LORA_REPORTER_INCOMPLETE_DIRECTORY),', '_LORA_MANAGEMENT_INCOMPLETE_DIRECTORY),')
+    assert hashlib.sha256(current.encode()).hexdigest() == '6b87e5328b4ddee63d04f00e6a6f51d84432a65c462c412d51c1df745817da71'
     fixed = '_LORA_INCOMPLETE_DIRECTORY,_LORA_ENDPOINT_INCOMPLETE_DIRECTORY,_LORA_MANAGEMENT_INCOMPLETE_DIRECTORY),'
     original = '_LORA_INCOMPLETE_DIRECTORY,_LORA_ENDPOINT_INCOMPLETE_DIRECTORY),'
     assert current.count(fixed) == 1

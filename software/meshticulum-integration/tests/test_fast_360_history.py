@@ -124,8 +124,8 @@ def test_missing_real_h43_receipt_prevents_cost_admission(actual, monkeypatch):
 def test_active46_keeps_exact45_prefix_and_refuses_old45_scope(monkeypatch):
     from types import MappingProxyType
     from lantern_meshticulum.bench import capture_8120,mcu_artifact
-    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==49
-    assert rpc.HISTORY[:45]==history.H45_PREFIX and rpc.HISTORY[45]==history.PARENT and rpc.HISTORY[46]=='02ec9185d218e44740b30227a11bd7cd' and rpc.HISTORY[47]=='ea4d3adb8508e75f5a0e2e822ecc1cd0' and rpc.HISTORY[-1]=='1a02ac26e525311caa32e180596d7160'
+    assert rpc.HISTORY==retained_capture.PAID_HISTORY and len(rpc.HISTORY)==len(rpc.OLD_DIGESTS)==50
+    assert rpc.HISTORY[:45]==history.H45_PREFIX and rpc.HISTORY[45]==history.PARENT and rpc.HISTORY[46]=='02ec9185d218e44740b30227a11bd7cd' and rpc.HISTORY[47]=='ea4d3adb8508e75f5a0e2e822ecc1cd0' and rpc.HISTORY[-2]=='1a02ac26e525311caa32e180596d7160'
     assert rpc.GUARDED_PAID[history.PARENT]==rpc.OLD_DIGESTS[45]==history.POLICY_DIGEST
     assert rpc.PARTIAL250[history.PARENT] is history and history in rpc.COMPLETE_FAST_HISTORY
     assert history.pending_next_roster()==rpc.HISTORY[:46]

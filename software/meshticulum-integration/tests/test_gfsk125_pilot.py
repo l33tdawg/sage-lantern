@@ -148,7 +148,7 @@ def synthetic_deployment_bindings(monkeypatch):
     """Explicit historical H42 model; never current native GFSK admission."""
     from lantern_meshticulum.bench import profiles,retained_capture
     actual=tuple(retained_capture.PAID_HISTORY)
-    assert len(actual)==49 and actual[42]=='bea52c6aa6a5a95501997a46247b514f' and actual[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual[44]=='e2449e5bcd4af15d45f7a756dff7d997' and actual[45]=='360514104bf80fa187276f24d6aa9d9c' and actual[46]=='02ec9185d218e44740b30227a11bd7cd' and actual[47]=='ea4d3adb8508e75f5a0e2e822ecc1cd0' and actual[-1]=='1a02ac26e525311caa32e180596d7160'
+    assert len(actual)==49 and actual[42]=='bea52c6aa6a5a95501997a46247b514f' and actual[43]=='d1fd73cd772ff055140f17ca986a07d0' and actual[44]=='e2449e5bcd4af15d45f7a756dff7d997' and actual[45]=='360514104bf80fa187276f24d6aa9d9c' and actual[46]=='02ec9185d218e44740b30227a11bd7cd' and actual[47]=='ea4d3adb8508e75f5a0e2e822ecc1cd0' and actual[-2]=='1a02ac26e525311caa32e180596d7160'
     historical=actual[:42]
     assert historical[-1]=='60d9ca2aa760cb4460d0af637101c997'
     monkeypatch.setattr(profiles,'GFSK_FIRMWARE','mtb1-0000000000')

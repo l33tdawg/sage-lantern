@@ -109,10 +109,10 @@ def test_runtime_refuses_unpinned_or_foreign_root():
 
 def test_rpc_contract_schema_and_import_scope():
     assert rpc.CONTRACT_SCHEMA == 'meshticulum.private-resume-native-rpc.v1'
-    assert len(rpc.HISTORY) == 49 and len(set(rpc.HISTORY)) == 49
-    assert len(rpc.OLD_DIGESTS) == 49
+    assert len(rpc.HISTORY) == 50 and len(set(rpc.HISTORY)) == 50
+    assert len(rpc.OLD_DIGESTS) == 50
     assert rpc.HISTORY[42:44] == ('bea52c6aa6a5a95501997a46247b514f','d1fd73cd772ff055140f17ca986a07d0')
-    assert rpc.HISTORY[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and rpc.HISTORY[45] == '360514104bf80fa187276f24d6aa9d9c' and rpc.HISTORY[46] == '02ec9185d218e44740b30227a11bd7cd' and rpc.HISTORY[47] == 'ea4d3adb8508e75f5a0e2e822ecc1cd0' and rpc.HISTORY[-1] == '1a02ac26e525311caa32e180596d7160'
+    assert rpc.HISTORY[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and rpc.HISTORY[45] == '360514104bf80fa187276f24d6aa9d9c' and rpc.HISTORY[46] == '02ec9185d218e44740b30227a11bd7cd' and rpc.HISTORY[47] == 'ea4d3adb8508e75f5a0e2e822ecc1cd0' and rpc.HISTORY[-2] == '1a02ac26e525311caa32e180596d7160'
     assert rpc.sha(rpc.canonical(rpc.HISTORY[:42])) == 'ebf29572ee1b76fd9e14b536a2ad4b1cd0eca4016a195df108df84f7fb4a04b2'
     assert rpc.HISTORY[22] == rpc.V2_FAILED_BUNDLE_PAID
     assert rpc.HISTORY[23] == rpc.V3_PARTIAL_BUNDLE_PAID

@@ -93,6 +93,7 @@ OLD_DIGESTS = (
     '0da052d8f4acf70e165bf54c912a36a8f934460bb9d85f11403f42a458119ecd',
     '75a7ff373bbe95eb53d11e1d9c26331a240a61994d4426f1d6b289a5b87c80e0',
     '1765f2cd0e04d69d796af8cd71c56b689f78c0a8bf4ccfe33875914275063c84',
+    '6ec91261a76631d1798d2a5b0ded4be4c142b8885d9447ff81d6da5462c01e35',
 )
 LATEST_PAID = 'd60d8308326314a7753e651fa43a99e3'
 COMPLETE_PAID = '4559277fa43913ce3935b078d6744a55'
@@ -235,6 +236,7 @@ from . import fast_bundle_d1fd_history as d1fd_history,fast_bundle_360_history a
 from . import lora_enrollment_incomplete_history as incomplete_lora_history
 from . import lora_endpoint_incomplete_history as endpoint_lora_history
 from . import lora_management_incomplete_history as management_lora_history
+from . import lora_reporter_incomplete_history as reporter_lora_history
 PARTIAL250={partial250.PARENT:partial250,fast_partial.PARENT:fast_partial,fast_complete.PARENT:fast_complete,bea_complete.PARENT:bea_complete,completed360_history.PARENT:completed360_history}
 COMPLETE_FAST_HISTORY=(fast_complete,bea_complete,completed360_history)
 COMPLETE_FAST_PARENTS=tuple(c.PARENT for c in COMPLETE_FAST_HISTORY)
@@ -420,6 +422,8 @@ def retained_owner_view(record, policy, unit):
         return endpoint_lora_history.owner_view(record, policy, unit=unit)
     if policy.parent_id == management_lora_history.PARENT:
         return management_lora_history.owner_view(record, policy, unit=unit)
+    if policy.parent_id == reporter_lora_history.PARENT:
+        return reporter_lora_history.owner_view(record, policy, unit=unit)
     from .mcu_artifact import OWNER_SCHEMA
     need(record.get('schema') not in (OWNER_SCHEMA,incomplete_lora_history.OWNER_SCHEMA), 'unreviewed_retained_mcu_owner')
     return record
@@ -855,6 +859,10 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
         endpoints=endpoint_lora_history.endpoint_rows(unit)
         need(not set(newer)&{r['run_id']for r in endpoints},'duplicate_incomplete_endpoint_scope')
         newer.update({r['run_id']:r for r in endpoints})
+    if reporter_lora_history.PARENT in HISTORY:
+        endpoints=reporter_lora_history.endpoint_rows(unit)
+        need(not set(newer)&{r['run_id']for r in endpoints},'duplicate_reporter_endpoint_scope')
+        newer.update({r['run_id']:r for r in endpoints})
     staging = (set(unstarted_history.unmaterialized_staging_names(unit))
                if unstarted_history.UNMATERIALIZED_PARENT in HISTORY else set())
     need(len(original) == {'unit-a':41,'unit-b':64,'unit-c':63}[unit]
@@ -930,6 +938,16 @@ def full_history(reader, unit, history, guard, *, own_parent=None, own_runs=()):
             reports.append(dict(parent_id=policy.parent_id,paid_caps=v['paid_caps'],
                 actual_children=v['management_incomplete']['actual_claim_resource_prepared_start_counts'],
                 management_incomplete=True,actual_cost=None,no_refund=True))
+            continue
+        if policy.parent_id == reporter_lora_history.PARENT:
+            reporter_lora_history.require_final_bindings()
+            known.update(reporter_lora_history.metadata_files(reader,STATE,unit,v,guard=guard,
+                clock=clock,current_boot=boot,previous_history=dict(legacy_inventory=inventory,previous=old[:index])))
+            need(index==49 and asdict(policy.unit(unit).prior_debt)==old[index-1]['paid_caps'],
+                 '291fcf_original_H49_debt_chain_changed')
+            reports.append(dict(parent_id=policy.parent_id,paid_caps=v['paid_caps'],
+                actual_children=v['reporter_incomplete']['actual_claim_resource_prepared_start_counts'],
+                reporter_incomplete=True,actual_cost=None,no_refund=True))
             continue
         owner = retained_owner_view(v['owner'], policy, unit)
         prior = inventory if v['prior_kind'] == 'legacy' else dict(v['prior_metadata'],legacy_inventory=inventory)
@@ -1969,6 +1987,8 @@ def seal_inputs(reader, unit, known, original, newer):
         identities.add(STATE/'parents'/endpoint_lora_history.PARENT/'prepared-identities')
     if management_lora_history.PARENT in HISTORY:
         identities.add(STATE/'parents'/management_lora_history.PARENT/'prepared-identities')
+    if reporter_lora_history.PARENT in HISTORY:
+        identities.add(STATE/'parents'/reporter_lora_history.PARENT/'prepared-identities')
     if incomplete_lora_history.PARENT in HISTORY:
         identities.add(STATE/'parents'/incomplete_lora_history.PARENT/'prepared-identities')
     if unstarted_history.UNMATERIALIZED_PARENT in HISTORY:

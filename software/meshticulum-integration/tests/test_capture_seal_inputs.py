@@ -31,6 +31,8 @@ def prepared(monkeypatch,synthetic_a658_capture):
         (state/'parents'/rpc.endpoint_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     if rpc.management_lora_history.PARENT in rpc.HISTORY:
         (state/'parents'/rpc.management_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
+    if rpc.reporter_lora_history.PARENT in rpc.HISTORY:
+        (state/'parents'/rpc.reporter_lora_history.PARENT/'prepared-identities').mkdir(mode=0o700)
     for parent,count in counts.items():
         directory=state/'parents'/parent/'prepared-identities';directory.mkdir(mode=0o700)
         for index in range(count):

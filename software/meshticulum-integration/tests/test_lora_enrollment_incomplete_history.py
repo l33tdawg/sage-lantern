@@ -235,7 +235,7 @@ def test_actual_H47_roster_append_preserves_every_original46_identifier_and_dige
     from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
     base,values=inputs
     assert PAID_HISTORY[:47]==history.H46_PREFIX+(history.PARENT,)==rpc.HISTORY[:47]
-    assert len(PAID_HISTORY)==len(rpc.OLD_DIGESTS)==49
+    assert len(PAID_HISTORY)==len(rpc.OLD_DIGESTS)==50
     assert tuple(v['policy_digest']for v in values['histories']['unit-a']['previous'])==rpc.OLD_DIGESTS[:46]
     assert rpc.OLD_DIGESTS[46]==history.POLICY_DIGEST
     assert history.require_final_bindings()
