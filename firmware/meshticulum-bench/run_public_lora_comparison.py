@@ -23,7 +23,7 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 
-from run_public_sf5_c_bulk_8k import read,write,sha,canonical,stable,need
+from run_public_sf5_c_bulk_8k import read,write,sha,canonical,stable,need,PUBLISHER,REQUESTER
 from run_public_gfsk250_mb1_fast_bundle100k import (archive_source_members,FileRPCCommand,
     cleanup_rpc_input,rpc_failure_diagnostic,parallel_captures)
 

@@ -337,7 +337,14 @@ class ComparisonApproval:
 
     def __call__(self, raw):
         from .pilot_resume_rpc import parse
-        self.check();value=parse(raw);e=value['enrollment'];local=self.policy.unit(self.unit)
+        # Parsing only compares the enrollment. Check the binding here and
+        # read protected files once, immediately before granting permission.
+        try:
+            self._bound(self._last)
+        except BaseException:
+            self.close()
+            raise
+        value=parse(raw);e=value['enrollment'];local=self.policy.unit(self.unit)
         require(value['phase'] in ('enroll','current','prepare','finalize','start')
             and e['schema']=='meshticulum.native-parent-enrollment.v2'
             and canonical(e['policy'])==self._policy_bytes and e['unit']==self.unit and e['host_boot_id']==local.host_boot_id
