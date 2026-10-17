@@ -92,9 +92,9 @@ _IRQ_ARTIFACT = canonical(dict(
     source_only=True, flashed=False, rf_qualified=False, notices_complete=False))
 IRQ020_ARTIFACT_SHA256 = hashlib.sha256(_IRQ_ARTIFACT).hexdigest()
 SELECTOR = 'gfsk250-usb-rx2048-irq-hostfair-v1'
-CORE = 'b9ce259a915e1336ee2eda5c2cbe413d370e6b9d'
+CORE = 'fb1653c6c9cb344cf819e666e6c9c0af998307cf'
 _CURRENT_ARTIFACT = canonical(dict(json.loads(_IRQ_ARTIFACT), selector=SELECTOR,
-    runtime_core_revision=CORE, source_lock_sha256='3b37a55820ed9b7759359778a42b302f0e57500c328ec076023983d5ed05de76'))
+    runtime_core_revision=CORE, source_lock_sha256='61416c2271061ee8870eb49cfa3a7e83f9a6a6bb277879c9c48fdae0c12b1616'))
 ARTIFACT_SHA256 = hashlib.sha256(_CURRENT_ARTIFACT).hexdigest()
 _ARTIFACTS = MappingProxyType({LEGACY_SELECTOR:_ARTIFACT,
     IRQ020_SELECTOR:_IRQ_ARTIFACT, SELECTOR:_CURRENT_ARTIFACT})

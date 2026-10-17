@@ -160,3 +160,67 @@ def test_current_A_status_preserves_same_boot_and_cumulative_counters(runner):
     for damage,value in [('mcu_boot','0'*32),('boot_attempts',11),('boot_reserved_estimated_airtime_us',29999),('dropped_receive',1)]:
         bad=deepcopy(later);bad['radio'][damage]=value
         with pytest.raises(RuntimeError):runner.validate_a_status(bad,op,before,min_remaining=80)
+
+
+@pytest.fixture
+def cumulative_radio_status(runner):
+    expected=dict(mcu_boot=runner.MCU_BOOT,boot_attempts=12,
+        boot_reserved_estimated_airtime_us=30000,dropped_receive=2)
+    inspection=dict(schema='meshticulum.native-bench-inspection.v1',unit='unit-a',
+        arm_commands=0,tx_commands=0,services_before={},services_after={},
+        radio=dict(disarmed=True,firmware='mtb1-020e287255',usb_serial='F8:5B:1B:A5:F6:08',**expected))
+    return dict(radio_status_expected=expected),inspection
+
+
+def test_retained_receive_drops_are_accepted_initially_and_after_sample(runner,cumulative_radio_status):
+    op,before=cumulative_radio_status
+    assert runner.validate_a_status(before,op,None,min_remaining=160) is before
+    later=deepcopy(before);later['radio'].update(boot_attempts=80,boot_reserved_estimated_airtime_us=50000)
+    assert runner.validate_a_status(later,op,before,min_remaining=80) is later
+
+
+@pytest.mark.parametrize('previous_phase',[False,True],ids=['initial','sample'])
+@pytest.mark.parametrize('drops',[1,3],ids=['drop_counter_regression','new_receive_drop'])
+def test_current_drop_count_must_equal_issued_baseline(runner,cumulative_radio_status,previous_phase,drops):
+    op,before=cumulative_radio_status;bad=deepcopy(before);bad['radio']['dropped_receive']=drops
+    with pytest.raises(RuntimeError,match='comparison_A_boot_or_cumulative_caps_changed'):
+        runner.validate_a_status(bad,op,before if previous_phase else None,min_remaining=80)
+
+
+@pytest.mark.parametrize('baseline',[False,True,-1,2.0,'2',None],ids=['false','true','negative','float','string','null'])
+def test_receive_drop_baseline_requires_nonnegative_integer(runner,cumulative_radio_status,baseline):
+    op,before=cumulative_radio_status
+    op['radio_status_expected']['dropped_receive']=baseline
+    with pytest.raises(RuntimeError,match='comparison_A_drop_baseline_invalid'):
+        runner.validate_a_status(before,op,None,min_remaining=160)
+
+
+@pytest.mark.parametrize('field,value',[('boot_attempts',79),('boot_reserved_estimated_airtime_us',49999)])
+def test_retained_drop_baseline_does_not_permit_cumulative_cost_regression(runner,cumulative_radio_status,field,value):
+    op,before=cumulative_radio_status;previous=deepcopy(before)
+    previous['radio'].update(boot_attempts=80,boot_reserved_estimated_airtime_us=50000)
+    bad=deepcopy(previous);bad['radio'][field]=value
+    with pytest.raises(RuntimeError,match='comparison_A_counters_regressed'):
+        runner.validate_a_status(bad,op,previous,min_remaining=80)
+
+
+@pytest.mark.parametrize('field,value,remaining',[
+    ('boot_attempts',177,80),('boot_reserved_estimated_airtime_us',60000000,80),
+    ('boot_attempts',97,160)])
+def test_retained_drop_baseline_preserves_remaining_and_airtime_caps(runner,cumulative_radio_status,field,value,remaining):
+    op,before=cumulative_radio_status;bad=deepcopy(before);bad['radio'][field]=value
+    with pytest.raises(RuntimeError,match='comparison_A_boot_or_cumulative_caps_changed'):
+        runner.validate_a_status(bad,op,before,min_remaining=remaining)
+
+
+@pytest.mark.parametrize('explicit',[False,True],ids=['legacy_absent_baseline','explicit_zero'])
+def test_zero_drop_baseline_remains_compatible_and_rejects_boolean_observation(runner,cumulative_radio_status,explicit):
+    op,before=cumulative_radio_status
+    if explicit:op['radio_status_expected']['dropped_receive']=0
+    else:del op['radio_status_expected']['dropped_receive']
+    before['radio']['dropped_receive']=0
+    assert runner.validate_a_status(before,op,None,min_remaining=160) is before
+    for drops in (1,False,0.0):
+        bad=deepcopy(before);bad['radio']['dropped_receive']=drops
+        with pytest.raises(RuntimeError,match='comparison_A_boot_or_cumulative_caps_changed'):
+            runner.validate_a_status(bad,op,before,min_remaining=80)

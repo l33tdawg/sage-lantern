@@ -542,7 +542,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
         require(parent_current() and authority.live(), 'pilot_parent_or_grant_not_current_before_arm')
         if unit in USB:
             worker.arm(journal=journal, profile=profile, context_digest=grant.digest,
-                       authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline)
+                       authorize=lambda: (not public_service or authority_bound()) and authority.live() and parent_current(), authority_deadline=deadline)
             if getattr(worker, 'arm_lease_ms', None) is not None:
                 result['radio_arm'] = dict(clock_basis='host_monotonic',
                     admitted_lease_ms=profile.lease_ms, actual_lease_ms=worker.arm_lease_ms,
@@ -553,7 +553,7 @@ def _run(unit, directory, object_directory, *, public_service, sender_receive_re
             worker_type=(Gfsk250HATWorker if type(profile) is Gfsk250Profile
                          else GfskHATWorker if type(profile) is GfskProfile else HATWorker)
             worker = worker_type(channel, journal=journal, profile=profile, context_digest=grant.digest,
-                authorize=lambda: parent_current() and authority.live() and parent_current(), authority_deadline=deadline,
+                authorize=lambda: (not public_service or authority_bound()) and authority.live() and parent_current(), authority_deadline=deadline,
                 antenna_confirmed=authority.plan['antenna_confirmed'])
         require(parent_current(), 'pilot_parent_not_current')
         now = clock()[1]

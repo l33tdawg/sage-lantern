@@ -242,6 +242,9 @@ def run_public_service(unit, directory, *, test_rx_cutoff=None):
                         _write(directory / 'receiver.bin', data, directory_fd=directory_fd)
                         result.update(service_object_sha256=hashlib.sha256(data).hexdigest(),
                                       service_object_durable=True, application_status='public_block_quarantined')
+                while not flow.finish_stream():
+                    require(not result['stop_requested'], 'ip_stream_finish_stopped')
+                    time.sleep(.001)
                 result['complete'] = True
                 break
             time.sleep(.001)

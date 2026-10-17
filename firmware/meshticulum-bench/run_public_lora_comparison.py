@@ -47,6 +47,13 @@ def current_peers(config):
         for unit,row in config['units'].items()}
 
 
+def parallel_enroll(native,policy,owners,priors,capture_payloads):
+    """Join every independent native enrollment before any worker setup."""
+    payloads={u:dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u])
+        for u in ('unit-c','unit-b','unit-a')}
+    return parallel_captures(lambda u,_action,_capture:native(u,'enroll',payloads[u]),capture_payloads)
+
+
 def controller_boot():
     # Same observation as run_public_pilot.controller_boot; available before
     # importing the not-yet-verified paired source during operation review.
@@ -333,10 +340,13 @@ def validate_a_status(inspection,op,previous,*,min_remaining):
         and inspection['arm_commands']==inspection['tx_commands']==0
         and inspection['services_before']==inspection['services_after'],'comparison_inspection_changed')
     radio=inspection['radio'];expected=op['radio_status_expected']
+    expected_drops=expected.get('dropped_receive',0)
+    need(type(expected_drops) is int and expected_drops>=0,'comparison_A_drop_baseline_invalid')
     need(radio['disarmed'] is True and radio['firmware']=='mtb1-020e287255'
         and radio['usb_serial']=='F8:5B:1B:A5:F6:08' and radio['mcu_boot']==expected['mcu_boot']==MCU_BOOT
         and all(type(radio[k]) is int and radio[k]>=0 for k in ('boot_attempts','boot_reserved_estimated_airtime_us'))
-        and radio['dropped_receive']==0 and 256-radio['boot_attempts']>=min_remaining
+        and type(radio['dropped_receive']) is int and radio['dropped_receive']==expected_drops
+        and 256-radio['boot_attempts']>=min_remaining
         and radio['boot_reserved_estimated_airtime_us']<60000000,'comparison_A_boot_or_cumulative_caps_changed')
     old=expected if previous is None else previous['radio']
     if previous is None:need(all(radio[k]==expected[k] for k in ('boot_attempts','boot_reserved_estimated_airtime_us')),'comparison_A_initial_counters_changed')
@@ -580,7 +590,7 @@ def main():
         for name,value in (('POLICY.json',policy.to_dict()),('OWNER_APPROVAL.json',owners),('PRIOR.json',priors),('CONFIG.json',cfg),('OPERATION.json',op)):
             outer.check();write(out/name,value);outer.check()
         parent=ParentCaps.enroll(out/'caps.sqlite',policy,clock=outer.check,boot_reader=helpers.controller_boot)
-        for u in ('unit-c','unit-b','unit-a'):native(u,'enroll',dict(policy=policy.to_dict(),owner=owners[u],prior=priors[u]))
+        parallel_enroll(native,policy,owners,priors,capture_payloads)
         original_prepare=operator.prepare
         def prepare(package):
             # Each parallel metadata thread owns its own context; no controller
