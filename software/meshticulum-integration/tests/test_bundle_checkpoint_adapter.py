@@ -93,7 +93,7 @@ def test_missing_original_optin_refuses_before_loading_source_or_opening_device(
 def historical_h42_checkpoint(monkeypatch):
     """Exercise the expired H42 contract under an explicit source-only model."""
     actual = adapter.checkpoint_api.HISTORY
-    assert len(actual) == 49
+    assert len(actual) == 50 and actual[-1] == '291fcf787d7b336134735a239a6e334d'
     assert actual[42] == 'bea52c6aa6a5a95501997a46247b514f' and actual[43] == 'd1fd73cd772ff055140f17ca986a07d0' and actual[44] == 'e2449e5bcd4af15d45f7a756dff7d997' and actual[45] == '360514104bf80fa187276f24d6aa9d9c' and actual[46] == '02ec9185d218e44740b30227a11bd7cd' and actual[47] == 'ea4d3adb8508e75f5a0e2e822ecc1cd0' and actual[-2] == '1a02ac26e525311caa32e180596d7160'
     monkeypatch.setattr(adapter.checkpoint_api, 'HISTORY', actual[:42])
     return actual[:42]
