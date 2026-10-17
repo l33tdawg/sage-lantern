@@ -10,13 +10,13 @@ from types import MappingProxyType
 
 import pytest
 
-from lantern_meshticulum.bench import mcu_artifact as mcu,lora_enrollment_incomplete_history as incomplete,lora_endpoint_incomplete_history as endpoint,lora_management_incomplete_history as management,management_input
+from lantern_meshticulum.bench import mcu_artifact as mcu,lora_enrollment_incomplete_history as incomplete,lora_endpoint_incomplete_history as endpoint,lora_management_incomplete_history as management,lora_reporter_incomplete_history as reporter,management_input
 from lantern_meshticulum.bench.profiles import profile_for
 from lantern_meshticulum.bench.retained_capture import PAID_HISTORY
 
 EXPECTED_CORE = 'b9ce259a915e1336ee2eda5c2cbe413d370e6b9d'
-EXPECTED_PREFIX = '224d77bd0eccbbe83e04acf9ba703d79a3cfe832'
-EXPECTED_SCOPE_SHA = 'fc507188288f2831c1836766a2993099c1d763e6b6ce033f9946d784d6860f36'
+EXPECTED_PREFIX = '02c13f49bf511d9da45fab746e06276a1baea170'
+EXPECTED_SCOPE_SHA = '7826a42e6b642eb6b10a9c3b6394f39564c78e260d91838781a550ac66ee1671'
 EXPECTED_LOCK_SHA = '3b37a55820ed9b7759359778a42b302f0e57500c328ec076023983d5ed05de76'
 OLD_SCOPES = (
     ('c922e922b97590a69fc331a83134c6d94f0ee700a2524b803c7e2dc0928c5f1f',
@@ -72,31 +72,38 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
     assert selected['firmware']==scope['firmware']=='mtb1-020e287255'
     assert selected['image_sha256']==scope['firmware_image_sha256']==mcu.IMAGE_SHA256
     assert scope['selector']==mcu.LORA_SELECTOR and scope['qualification_kind']==mcu.LORA_KIND
-    assert scope['paid_history_count']==len(PAID_HISTORY)==49
+    assert scope['paid_history_count']==len(PAID_HISTORY)==50
     assert scope['history_parent_ids']==list(PAID_HISTORY)
-    assert scope['preceding_parent']==pins['preceding_parent']==PAID_HISTORY[-1]==management.PARENT
-    assert scope['history_receipt_sha256']==pins['history_receipt_sha256']==management.NEXT_HISTORY_RECEIPT_SHA256=='20550444f2a434ad64f40a3d1c019df4066572823e1c797529e5f5e11074dfd0'
+    assert scope['preceding_parent']==pins['preceding_parent']==PAID_HISTORY[-1]==reporter.PARENT
+    assert scope['history_receipt_sha256']==pins['history_receipt_sha256']==reporter.NEXT_HISTORY_RECEIPT_SHA256=='25d5b0ee2c7c6f5f3e4c70fdb96fbe868d67399e1ef4b2c7765fc81455569a6f'
     assert management_input.RAW_MAX==2750000
-    history_root=Path(os.environ['MESHTICULUM_H49_FIXTURE'])/'resume-history-preparation-49'
+    history_root=Path(os.environ['MESHTICULUM_H50_FIXTURE'])/'resume-history-preparation-50'
     receipt_raw=read(history_root/'RECEIPT.json');receipt=json.loads(receipt_raw)
-    assert sha(receipt_raw)==management.NEXT_HISTORY_RECEIPT_SHA256
-    assert receipt['schema']=='meshticulum.local-forty-nine-paid-parent-history-preparation.v1'
-    assert receipt['latest_parent_id']==management.PARENT
-    assert receipt['local_controllers_reobserved']==49 and receipt['native_counts']==management.NATIVE_COUNTS
+    assert sha(receipt_raw)==reporter.NEXT_HISTORY_RECEIPT_SHA256
+    assert receipt['schema']=='meshticulum.local-fifty-paid-parent-history-preparation.v1'
+    assert receipt['latest_parent_id']==reporter.PARENT
+    assert receipt['local_controllers_reobserved']==50 and receipt['native_counts']==reporter.NATIVE_COUNTS
     assert receipt['original_run_complete']is receipt['original_cleanup_proved']is False
     assert receipt['no_refund']is True and receipt['actual_unknown_cost']is None
     proof_raw=read(history_root/'INPUT_PROOF.json');proof=json.loads(proof_raw)
-    assert sha(proof_raw)==receipt['input_proof_sha256']==scope['history_input_proof']['sha256']=='1fbb0f75c19eb929869fa7afdcb2eb6f32ed833a36e5dbb8b91837f191914722'
-    assert proof['schema']=='meshticulum.exact-H49-management-failure-input-proof.v1'
-    assert proof['parents']==list(PAID_HISTORY) and proof['latest_parent_id']==management.PARENT
-    assert proof['native_counts']==management.NATIVE_COUNTS and proof['actual_cost']is None
+    assert sha(proof_raw)==receipt['input_proof_sha256']==scope['history_input_proof']['sha256']=='f6582b01990b359b94ad7fa2380d6e4d95a6077e5af41db7cb03c77336abaee8'
+    assert proof['schema']=='meshticulum.exact-H50-reporter-failure-input-proof.v1'
+    assert proof['parents']==list(PAID_HISTORY) and proof['latest_parent_id']==reporter.PARENT
+    assert proof['native_counts']==reporter.NATIVE_COUNTS and proof['actual_cost']is None
     assert proof['no_refund']is True and proof['global_debt_complete']is False
     payloads={}
     for unit,pin in receipt['payload_sha256'].items():
         raw=read(history_root/(unit+'.json'),management_input.RAW_MAX)
         assert sha(raw)==pin
         payloads[unit]=json.loads(raw)
-    assert scope['full_H49_prior_caps']==proof['full_paid_caps']==receipt['full_paid_caps']=={u:value['previous'][-1]['paid_caps']for u,value in payloads.items()}
+    assert scope['full_H50_prior_caps']==proof['full_paid_caps']==receipt['full_paid_caps']=={u:value['previous'][-1]['paid_caps']for u,value in payloads.items()}
+    retained49=scope['retained_H49_binding']
+    assert retained49['history_receipt_sha256']==reporter.ORIGINAL_HISTORY_RECEIPT_SHA256==management.NEXT_HISTORY_RECEIPT_SHA256
+    assert retained49['preceding_parent']==management.PARENT
+    old49_root=Path(os.environ['MESHTICULUM_H49_FIXTURE'])/'resume-history-preparation-49'
+    old49_raw=read(old49_root/'RECEIPT.json');old49_receipt=json.loads(old49_raw)
+    assert sha(old49_raw)==retained49['history_receipt_sha256']and old49_receipt['local_controllers_reobserved']==49
+    assert retained49['full_H49_prior_caps']=={u:json.loads(read(old49_root/(u+'.json'),2750000))['previous'][-1]['paid_caps']for u in old49_receipt['payload_sha256']}
     retained48=scope['retained_H48_binding']
     assert retained48['history_receipt_sha256']==management.ORIGINAL_HISTORY_RECEIPT_SHA256==endpoint.NEXT_HISTORY_RECEIPT_SHA256
     assert retained48['preceding_parent']==endpoint.PARENT
@@ -108,7 +115,7 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
     assert scope['retained_H46_binding']['history_receipt_sha256']==incomplete.ORIGINAL_HISTORY_RECEIPT_SHA256
     assert scope['retained_consumed_attempt']['parent_id']==incomplete.PARENT
     assert scope['retained_consumed_attempt']['native_counts']is None
-    assert scope['required_inputs']['fresh_full49_preflight']is True
+    assert scope['required_inputs']['fresh_full50_preflight']is True
     assert scope['required_inputs']['actual_consumed_1a02_window_expiry']is True
     assert scope['required_inputs']['actual_consumed_ea4d_window_expiry']is True
     retained=scope['retained_H47_binding']
@@ -124,10 +131,13 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
     consumed=scope['retained_consumed_1a02_attempt']
     assert consumed['parent_id']==management.PARENT and consumed['native_counts']==management.NATIVE_COUNTS
     assert consumed['actual_cost']is None and consumed['physical_quiescence_observed']is False and consumed['refunds']==0
+    consumed=scope['retained_consumed_291fcf_attempt']
+    assert consumed['schema']=='meshticulum.retained-consumed-reporter-failure.v1'
+    assert consumed['original_native_final_audit_missing']is True and consumed['refunds']==0
     old_scope_raw=read(Path(consumed['scope']['path']));old_scope=json.loads(old_scope_raw)
-    assert sha(old_scope_raw)==consumed['scope']['sha256']==management.ORIGINAL_SCOPE_SHA256
+    assert sha(old_scope_raw)==consumed['scope']['sha256']==reporter.ORIGINAL_SCOPE_SHA256
     old_operation_raw=read(Path(consumed['operation']['path']));old_operation=json.loads(old_operation_raw)
-    assert sha(old_operation_raw)==consumed['operation']['sha256']==management.ORIGINAL_OPERATION_SHA256
+    assert sha(old_operation_raw)==consumed['operation']['sha256']==reporter.ORIGINAL_OPERATION_SHA256
     freshness=scope['campaign_freshness']
     assert freshness['schema']=='meshticulum.reviewed-comparison-campaign-freshness.v1'
     assert freshness['source_scope_sha256']==consumed['scope']['sha256']
@@ -142,15 +152,40 @@ def test_actual_lora_scope_binds_exact_source_history_and_unissued_predecessors(
             pending.extend(value.values())
         elif type(value)is list:
             pending.extend(value)
-    assert len(retained_ids)==138 and freshness['retained_known_campaign_ids']==sorted(retained_ids)
+    assert len(retained_ids)==140 and freshness['retained_known_campaign_ids']==sorted(retained_ids)
     campaigns=[sample['campaign_id']for sample in scope['comparison_descriptor']['samples']]
     assert campaigns==freshness['new_campaign_ids'] and len(set(campaigns))==2
     assert all(type(v)is str and len(v)==32 and all(c in '0123456789abcdef'for c in v) and int(v,16)>0 for v in campaigns)
     assert set(campaigns).isdisjoint(retained_ids)
-    restored=json.loads(json.dumps(scope['comparison_descriptor']))
-    for sample,old in zip(restored['samples'],old_scope['comparison_descriptor']['samples']):
-        sample['campaign_id']=old['campaign_id']
-    assert restored==old_scope['comparison_descriptor']==old_operation['comparison_descriptor']
+    from meshticulum.resources import lamplighter as ll,resource
+    descriptor=scope['comparison_descriptor'];previous_descriptor=old_scope['comparison_descriptor']
+    assert previous_descriptor==old_operation['comparison_descriptor']
+    assert {k:v for k,v in descriptor.items()if k!='samples'}=={k:v for k,v in previous_descriptor.items()if k!='samples'}
+    assert len(scope['fixtures'])==len(descriptor['samples'])==2
+    old_resources={v['resource_sha256']for v in previous_descriptor['samples']}
+    old_chunks={v['chunk_sha256']for v in previous_descriptor['samples']}
+    for sample,old_sample,reference in zip(descriptor['samples'],previous_descriptor['samples'],scope['fixtures']):
+        assert set(sample)==set(old_sample)
+        assert sample['index']==old_sample['index']and sample['radio_profile_name']==old_sample['radio_profile_name']
+        assert sample['resource_sha256']not in old_resources and sample['chunk_sha256']not in old_chunks
+        assert sample['request']['bytes']==old_sample['request']['bytes']==74
+        assert sample['response']['bytes']==old_sample['response']['bytes']==8192
+        directory=Path(reference['path']);fixture_raw=read(directory/'FIXTURE.json');fixture=json.loads(fixture_raw)
+        assert sha(fixture_raw)==reference['sha256']and fixture['schema']=='meshticulum.synthetic-public-fixture.v1'
+        assert fixture['public_only']is True and fixture['private_data']is False and fixture['licence']=='CC0-1.0'
+        assert fixture['native_admission']is fixture['dispatch_permission']is fixture['rf_activation']is False
+        assert fixture['publisher_private_key_persisted_or_exported']is False
+        assert len(fixture['chunks'])==1 and fixture['manifest_sha256']==sample['resource_sha256']
+        piece=fixture['chunks'][0]
+        assert (piece['chunk_bytes'],piece['request_bytes'],piece['response_bytes'])==(8164,74,8192)
+        assert piece['content_address_sha256']==piece['sha256']==sample['chunk_sha256']
+        assert sha(read(directory/'trust.json'))==fixture['trust_sha256']
+        assert sha(read(directory/'pack/manifest.sig.json'))==fixture['signature_sha256']
+        cache=ll.VerifiedCache(directory/'pack',json.loads(read(directory/'trust.json')),fixture['manifest_sha256'])
+        request=resource.encode_request('/packs/'+fixture['manifest_sha256']+'/chunks/'+piece['content_address_sha256']+'.json',0,8164)
+        response=resource.BlockServer(cache.read).handle(request)
+        assert len(request)==74 and sha(request)==piece['request_sha256']==sample['request']['sha256']
+        assert len(response)==8192 and sha(response)==piece['response_sha256']==sample['response']['sha256']
     assert scope['sender_readiness_source']['sha256']==sha(read(lantern_source/'software/meshticulum-integration/src/lantern_meshticulum/bench/node.py',200000))
     assert scope['comparison_descriptor']['radio_profile_names']==list(mcu.LORA_PROFILE_NAMES)==['sf7-500','sf5-500']
     assert scope['sample_count']==scope['comparison_descriptor']['sample_count']==2

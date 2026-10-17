@@ -220,7 +220,7 @@ _LORA_ARTIFACT = canonical(dict(json.loads(_CURRENT_ARTIFACT),
     schema='meshticulum.explicit-lora-mcu-artifact.v1', selector=LORA_SELECTOR,
     radio_modem='lora', radio_profile_names=list(LORA_PROFILE_NAMES)))
 LORA_ARTIFACT_SHA256 = hashlib.sha256(_LORA_ARTIFACT).hexdigest()
-LORA_NATIVE_BINDINGS = MappingProxyType(dict(scope_sha256='fc507188288f2831c1836766a2993099c1d763e6b6ce033f9946d784d6860f36', history_receipt_sha256='20550444f2a434ad64f40a3d1c019df4066572823e1c797529e5f5e11074dfd0', preceding_parent='1a02ac26e525311caa32e180596d7160'))
+LORA_NATIVE_BINDINGS = MappingProxyType({'scope_sha256': '7826a42e6b642eb6b10a9c3b6394f39564c78e260d91838781a550ac66ee1671', 'history_receipt_sha256': '25d5b0ee2c7c6f5f3e4c70fdb96fbe868d67399e1ef4b2c7765fc81455569a6f', 'preceding_parent': '291fcf787d7b336134735a239a6e334d'})
 
 
 def lora_artifact(selector=LORA_SELECTOR):
