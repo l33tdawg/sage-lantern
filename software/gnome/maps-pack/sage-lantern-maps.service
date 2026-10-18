@@ -1,0 +1,22 @@
+[Unit]
+Description=SAGE Lantern local PMTiles map pack server
+After=network.target
+
+[Service]
+Type=simple
+User=sage
+Group=sage
+ExecStart=/usr/bin/python3 /opt/sage-lantern/maps-pack/serve_pack.py --root /opt/sage-lantern/maps --host 127.0.0.1 --port 8091
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/opt/sage-lantern/maps
+RestrictAddressFamilies=AF_INET AF_UNIX
+MemoryMax=64M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

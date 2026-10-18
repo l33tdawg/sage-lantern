@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import build_pack
+import serve_pack
 
 
 class PlannerTests(unittest.TestCase):
@@ -65,6 +66,34 @@ class GuardrailTests(unittest.TestCase):
         text = (root / "build_pack.py").read_text(encoding="utf-8").lower()
         self.assertNotIn("google", text)
         self.assertIn("openstreetmap", text)
+
+
+class RangeTests(unittest.TestCase):
+    def test_full_and_partial_ranges(self):
+        self.assertIsNone(serve_pack.parse_range(None, 100))
+        self.assertEqual(serve_pack.parse_range("bytes=0-9", 100), (0, 9))
+        self.assertEqual(serve_pack.parse_range("bytes=90-", 100), (90, 99))
+        self.assertEqual(serve_pack.parse_range("bytes=-10", 100), (90, 99))
+
+    def test_range_is_capped(self):
+        start, end = serve_pack.parse_range("bytes=0-999999999", 20 * 1024 * 1024)
+        self.assertEqual(start, 0)
+        self.assertEqual(end, serve_pack.MAX_RANGE - 1)
+
+    def test_invalid_range(self):
+        with self.assertRaises(ValueError):
+            serve_pack.parse_range("items=0-1", 100)
+        with self.assertRaises(ValueError):
+            serve_pack.parse_range("bytes=100-", 100)
+
+    def test_path_resolution_is_flat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "penang.pmtiles"
+            path.write_bytes(b"PMTiles")
+            self.assertEqual(serve_pack.resolve_file(tmp, "/penang.pmtiles"),
+                             path.resolve())
+            with self.assertRaises(ValueError):
+                serve_pack.resolve_file(tmp, "/../secret")
 
 
 if __name__ == "__main__":

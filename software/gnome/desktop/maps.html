@@ -15,6 +15,7 @@
     main { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr); gap:18px; padding:18px 34px 30px; }
     .map { position:relative; min-height:480px; overflow:hidden; border:1px solid var(--line); border-radius:20px; background:#0b1820; box-shadow:0 18px 44px #0005; }
     .map svg { display:block; width:100%; height:100%; min-height:480px; }
+    #live-map { position:absolute; inset:0; min-height:480px; }
     .map-status { position:absolute; left:14px; bottom:12px; max-width:70%; padding:6px 10px; border-radius:7px; background:#061018cc; color:var(--muted); font-size:11px; }
     aside { display:flex; flex-direction:column; gap:14px; }
     .card { padding:18px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(145deg,var(--panel2),var(--panel)); box-shadow:0 12px 30px #0004; }
@@ -45,11 +46,11 @@
 <body>
   <header>
     <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><g stroke="#ffbe62" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10V8a6 6 0 0 1 12 0v2M15 13h18l5 24-14 7-14-7 5-24ZM15 13l9 6 9-6M24 19v25M10 37l14-7 14 7"/></g><path d="m18 22-3 11 6-3V24l-3-2ZM30 22l3 11-6-3V24l3-2Z" fill="#ffbe62"/></svg>
-    <div><h1>Maps &amp; Location</h1><p>Online maps now · offline OSM path · GNSS gate</p></div>
+    <div><h1>Maps &amp; Location</h1><p>Online + local OSM · GNSS gate</p></div>
   </header>
   <main>
     <section class="map" aria-label="Maps and location panel">
-      <svg viewBox="0 0 900 520" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustrative map panel centered on Kuala Lumpur">
+      <svg id="map-fallback" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustrative map panel centered on Kuala Lumpur">
         <defs>
           <pattern id="map-grid" width="52" height="52" patternUnits="userSpaceOnUse"><path d="M52 0H0V52" fill="none" stroke="#ffbe62" stroke-width=".8" opacity=".12"/></pattern>
           <radialGradient id="map-glow" cx="52%" cy="46%" r="55%"><stop offset="0" stop-color="#1b4254"/><stop offset="1" stop-color="#0b1820"/></radialGradient>
@@ -72,6 +73,7 @@
           <circle r="9" fill="#75e1b5" stroke="#061018" stroke-width="3"/>
         </g>
       </svg>
+      <div id="live-map" hidden aria-label="Local OpenStreetMap panel"></div>
       <div class="map-status">Illustrative location panel · live maps open online; offline OSM pack pending.</div>
     </section>
     <aside>
@@ -98,8 +100,8 @@
       </section>
       <section class="card">
         <h2>Offline maps</h2>
-        <p>No offline pack is installed yet. The planned path is a bounded OpenStreetMap/PMTiles regional pack served locally, with attribution and a documented disk budget. Google offline tiles are not redistributable.</p>
-        <span class="tag">OSM / ODbL</span><span class="tag">bounded region</span><span class="tag">no Google cache</span>
+        <p>Penang OpenStreetMap pack installed locally: 90 tiles, 2.6 MB, zoom 0–13. It is served only on <code>127.0.0.1:8091</code> with range requests and attribution. Other regions need their own bounded pack.</p>
+        <span class="tag">OSM / ODbL</span><span class="tag">Penang</span><span class="tag">2.6 MB</span><span class="tag">no Google cache</span>
       </section>
       <section class="card">
         <h2>Desktop</h2>
@@ -107,17 +109,25 @@
       </section>
     </aside>
   </main>
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/pmtiles.js"></script>
   <script>
     (function () {
       "use strict";
       const statusUrl = "http://127.0.0.1:8090/status";
+      const packUrl = "http://127.0.0.1:8091/penang.pmtiles";
       const toggle = document.getElementById("gnss-position");
       const dot = document.getElementById("gnss-dot");
       const state = document.getElementById("gnss-state");
       const detail = document.getElementById("gnss-detail");
       const marker = document.getElementById("gnss-marker");
+      const liveMapNode = document.getElementById("live-map");
+      const fallbackNode = document.getElementById("map-fallback");
       const positionText = document.getElementById("gnss-position-text");
       const set = (id, value) => { document.getElementById(id).textContent = value; };
+      let liveMap = null;
+      let fixMarker = null;
 
       function render(data) {
         const fix = data && data.has_fix === true;
@@ -140,9 +150,19 @@
           positionText.hidden = false;
           positionText.textContent = "Live position: " + Number(data.latitude).toFixed(5) +
             "°, " + Number(data.longitude).toFixed(5) + "°";
+          if (liveMap) {
+            if (!fixMarker) {
+              fixMarker = new maplibregl.Marker({color: "#75e1b5"})
+                .setLngLat([data.longitude, data.latitude]).addTo(liveMap);
+              liveMap.easeTo({center: [data.longitude, data.latitude], zoom: 12});
+            } else {
+              fixMarker.setLngLat([data.longitude, data.latitude]);
+            }
+          }
         } else {
           positionText.hidden = true;
           positionText.textContent = "";
+          if (fixMarker) { fixMarker.remove(); fixMarker = null; }
         }
       }
 
@@ -167,10 +187,58 @@
       }
 
       toggle.addEventListener("change", poll);
+      async function initMap() {
+        if (!window.maplibregl || !window.pmtiles) return;
+        try {
+          const response = await fetch(packUrl, {method: "HEAD", cache: "no-store"});
+          if (!response.ok) return;
+          const protocol = new pmtiles.Protocol();
+          maplibregl.addProtocol("pmtiles", protocol.tile);
+          liveMapNode.hidden = false;
+          liveMap = new maplibregl.Map({
+            container: liveMapNode,
+            style: {
+              version: 8,
+              sources: {
+                osm: {
+                  type: "vector",
+                  url: "pmtiles://" + packUrl,
+                  attribution: "© OpenMapTiles © OpenStreetMap contributors"
+                }
+              },
+              layers: [
+                {id: "background", type: "background", paint: {"background-color": "#0b1820"}},
+                {id: "water", type: "fill", source: "osm", "source-layer": "water",
+                 paint: {"fill-color": "#173746"}},
+                {id: "landuse", type: "fill", source: "osm", "source-layer": "landuse",
+                 paint: {"fill-color": "#10212b"}},
+                {id: "roads", type: "line", source: "osm", "source-layer": "transportation",
+                 paint: {"line-color": "#b9cbd4", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 13, 2]}},
+                {id: "buildings", type: "fill", source: "osm", "source-layer": "building",
+                 minzoom: 12, paint: {"fill-color": "#173746"}}
+              ]
+            },
+            center: [100.35, 5.35],
+            zoom: 11,
+            attributionControl: true
+          });
+          liveMap.on("load", () => {
+            liveMapNode.hidden = false;
+            fallbackNode.hidden = true;
+            document.querySelector(".map-status").textContent =
+              "Local OpenStreetMap pack · © OpenMapTiles © OpenStreetMap contributors";
+          });
+        } catch (error) {
+          liveMap = null;
+          liveMapNode.hidden = true;
+          fallbackNode.hidden = false;
+        }
+      }
       poll();
+      initMap();
       setInterval(poll, 2000);
     }());
   </script>
-  <footer>SAGE Lantern desktop · maps require network until the offline pack is installed · location publishing is off by default.</footer>
+  <footer>SAGE Lantern desktop · Penang local pack installed; other regions require a reviewed pack · location publishing is off by default.</footer>
 </body>
 </html>

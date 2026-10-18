@@ -105,7 +105,34 @@ off by default; `?position=1` returns no coordinates while there is no fix.
 The offline pack planner is
 `software/gnome/maps-pack/build_pack.py` (`49e2ae68…`). A Penang test plan
 (bbox `100.20,5.20,100.50,5.50`, zoom `10-13`) estimated 80 tiles / 960,000
-bytes. No pack has been downloaded or installed yet.
+bytes; the real Planetiler build is recorded below.
+
+### Penang pack and local renderer — 19 October 2026
+
+The first real pack is built from the 252,129,357-byte Geofabrik
+Malaysia-Singapore-Brunei extract (`bc65fdec…`) with Planetiler 0.10.3. The
+Penang bbox produced **90 tiles / 2,766,338 bytes** at zoom 0–13:
+
+- Pack: `/opt/sage-lantern/maps/penang.pmtiles`
+- Pack SHA-256: `15d9a3ec13f6dd1664beb4807a72417fd7beac4ba0aaef44b9757c605272984d`
+- Manifest: `/opt/sage-lantern/maps/penang.pmtiles.manifest.json`
+- Range server: `sage-lantern-maps.service` on `127.0.0.1:8091`
+- Server SHA-256: `beb359a5…`; unit `c8f731f2…`
+
+The server is loopback-only, supports HTTP Range with a 16-byte first range
+returning `PMTiles` magic/version 3, and exposes CORS for the `file://` page.
+MapLibre GL JS 4.7.1 and PMTiles JS 3.2.1 are vendored locally; no external
+tiles are requested. The Maps page (`c8fbad00…`) uses
+`pmtiles://http://127.0.0.1:8091/penang.pmtiles` with a minimal water,
+landuse, road and building style and the required
+“© OpenMapTiles © OpenStreetMap contributors” credit.
+
+A 1560×720 headless Chromium render on C shows the Penang local map, the
+no-fix GNSS panel (mode 1, 0/0 satellites, HDOP 25.5, bridge Live), the
+privacy toggle off, and the installed-pack status. The screenshot is
+`work/lantern-maps-20261019/maps-1560-final.png`; this is a software/render
+check, not physical panel or antenna acceptance. The antenna is still open and
+no fix is claimed.
 
 ## Verification
 

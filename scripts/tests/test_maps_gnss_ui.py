@@ -15,8 +15,14 @@ class MapsGnssUiTests(unittest.TestCase):
 
     def test_status_bridge_and_polling(self):
         self.assertIn("http://127.0.0.1:8090/status", self.html)
+        self.assertIn("http://127.0.0.1:8091/penang.pmtiles", self.html)
         self.assertIn("setInterval(poll, 2000)", self.html)
         self.assertIn("?position=1", self.html)
+        self.assertIn("vendor/maplibre-gl.js", self.html)
+        self.assertIn("vendor/pmtiles.js", self.html)
+        self.assertIn("pmtiles://", self.html)
+        self.assertIn("OpenStreetMap contributors", self.html)
+        self.assertIn("Penang OpenStreetMap pack installed", self.html)
 
     def test_privacy_toggle_is_off_by_default(self):
         match = re.search(r'<input[^>]*id="gnss-position"[^>]*>', self.html)
@@ -26,7 +32,8 @@ class MapsGnssUiTests(unittest.TestCase):
     def test_required_status_fields_and_fallback(self):
         for ident in ("gnss-state", "gnss-mode", "gnss-sats", "gnss-hdop",
                       "gnss-accuracy", "gnss-age", "gnss-bridge",
-                      "gnss-position-text", "gnss-marker"):
+                      "gnss-position-text", "gnss-marker", "map-fallback",
+                      "live-map"):
             self.assertIn(f'id="{ident}"', self.html)
         self.assertIn("No GNSS fix", self.html)
         self.assertIn("illustrative map", self.html.lower())
