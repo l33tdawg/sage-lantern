@@ -28,12 +28,14 @@ world view independent of the regional pack's bbox.
 | Pack | Coverage | Zoom | Bytes | Tiles |
 |---|---|---|---:|---:|
 | Penang | `100.20,5.20,100.50,5.50` | 0–13 | 2,766,338 | 90 |
+| Malaysia | `99.6,0.85,119.3,7.4` | 0–11 | 18,793,137 | 5,970 |
 | Malaysia | `99.6,0.85,119.3,7.4` | 0–12 | 44,260,241 | 21,023 |
 | World base | global | 0–6 | about 425,000 | n/a (GeoJSON) |
 
-Malaysia at z0–11 has not been measured yet. The z0–12 build is the upper bound
-for the country tier; a z0–11 build should be smaller, but it is not quoted as
-a number until it is built and verified.
+The z0–11 Malaysia build is the country-tier pack: 18.8 MB for 5,970 tiles,
+verified and installed on C on 19 October 2026. The z0–12 build (44.3 MB) is
+retained as a comparison; it roughly doubles every zoom-12 tile that a country
+pack rarely needs.
 
 ## Budget
 
@@ -50,7 +52,7 @@ The owner's working region first, then the places a demo or neighbour will
 plausibly ask for:
 
 1. **Malaysia** — country tier, z0–11. Build from the current Geofabrik
-   Malaysia–Singapore–Brunei extract.
+   Malaysia–Singapore–Brunei extract. Built and installed 19 October 2026.
 2. **Penang** — metro tier, z0–13. Already built and installed.
 3. **Klang Valley** — metro tier, z0–13/14 (Kuala Lumpur, Putrajaya, Selangor
    core).

@@ -29,6 +29,12 @@ pack needs no page or service restart. `pack_manager.py` `2670501c…` is
 installed at `/opt/sage-lantern/maps-pack/` for verified list/install/remove
 with timestamped backups.
 
+The **Malaysia country pack** is built and installed: z0–11, 5,970 tiles,
+18,793,137 bytes, SHA-256 `6764fe59…`, Planetiler 0.10.2, Geofabrik source
+SHA-256 `bc65fdec…`. The pack manager selected it for a Kuala Lumpur view and
+the page rendered at 1560×720 on C. Penang remains the preferred pack when the
+view is inside its smaller bbox.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.
@@ -110,8 +116,8 @@ labels or a different base, not more self-generated pairs.
 1. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait.
-2. Build and verify the Malaysia country pack and a Klang Valley metro pack
-   through the installed pack manager; then time a sideload install on C.
+2. Build the Klang Valley metro pack (z13/14) and the Singapore/Johor pair
+   through the installed pack manager; then rehearse an SD/USB sideload.
 3. Continue C-native and conversation-product acceptance.
 4. Resume weights only with independent preference labels or a different base.
 
