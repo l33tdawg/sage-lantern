@@ -84,8 +84,10 @@
     "url": "https://github.com/l33tdawg/sage-lantern/releases/tag/v81-research-preview",
     "tag": "v81-research-preview",
     "commit": "8f98275377c8d22d97988e5603741b6ed1fe55e0",
-    "asset_sha256": "8805b3dddebb2580ba10f2d10c2299f473987d616aa10c8c62cd59572353d2f0",
-    "asset_bytes": 773591717,
+    "asset_sha256": "ee290ebe98e2a849a2defba5fa1681570054745cbc4fb41b8df5603acaa39eee",
+    "asset_bytes": 773593726,
+    "model_card": "docs/lantern/models/LANTERN_3B_V81_MODEL_CARD.md",
+    "model_card_sha256": "9e576656077d509c89054fd8572ae8f81a410ee8596055b8b4c091bdb2feaebb",
     "prerelease": true
   },
   "local_evidence": "work/lantern-curriculum-v80-20261018/V81_RESULT.json, captures/, pipeline/, sealed_v81/"

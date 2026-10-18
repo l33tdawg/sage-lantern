@@ -330,10 +330,17 @@ derailment remains the one disclosed model-quality gap.
 The non-commercial research preview is published at
 [`v81-research-preview`](https://github.com/l33tdawg/sage-lantern/releases/tag/v81-research-preview)
 as a GitHub prerelease. The tag resolves to commit `8f98275`; the asset is a
-738 MB zip (SHA-256 `8805b3dd…`, 40 files, 839 MB uncompressed) containing the
+738 MB zip (SHA-256 `ee290ebe…`, 40 files, 839 MB uncompressed) containing the
 ordered adapter chain, guard code, model card, Qwen Research License, sealed
 prompts/references and raw/guarded evaluation results. Do not publish bare
 weights, and do not claim commercial use without Alibaba Cloud permission.
+
+The full standard model card — model details, intended use, factors, metrics,
+evaluation and training data, quantitative analyses, ethical considerations,
+caveats and reproduction — is tracked at
+[`docs/lantern/models/LANTERN_3B_V81_MODEL_CARD.md`](models/LANTERN_3B_V81_MODEL_CARD.md)
+and included in the release asset. It is the primary documentation for this
+preview.
 
 ## Deployment and rollback
 
