@@ -20,7 +20,7 @@ tags:
 **Model type:** Ordered LoRA adapter chain for a text-only English assistant  
 **Base model:** [Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)  
 **License:** Qwen Research License — **non-commercial research/evaluation only**  
-**Contact:** [Open an issue](https://github.com/l33tdawg/sage-lantern/issues)
+**Contact:** [Open an issue](https://github.com/l33tdawg/lantern-3b/issues)
 
 ## 1. Model details
 
@@ -234,9 +234,9 @@ RK3588, thermal-soak, field or multi-user results.
    `evaluation/score_v81_guarded.json`.
 5. Verify every file against `MANIFEST.json`.
 
-Repository: `https://github.com/l33tdawg/sage-lantern`  
-Release: `https://github.com/l33tdawg/sage-lantern/releases/tag/v81-research-preview`  
-Commit at release: `8f98275`
+Repository: `https://github.com/l33tdawg/lantern-3b`  
+Release: `https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview`  
+Model snapshot: V81 adapter `eddb21695aec95bb72fca99c67c5430619988cb0e2761fd509f523263e1fe077`
 
 ## 11. License
 

@@ -81,13 +81,13 @@
     "recommendation": "Publish a guarded Lantern research preview, not bare V81 weights. The guarded path clears sealed 64/64, fresh64 24/24, stock28 28/28 and E12/E13/S03; disclose E03_A arithmetic and the non-commercial license. No general or commercial claim."
   },
   "published_release": {
-    "url": "https://github.com/l33tdawg/sage-lantern/releases/tag/v81-research-preview",
+    "url": "https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview",
     "tag": "v81-research-preview",
-    "commit": "8f98275377c8d22d97988e5603741b6ed1fe55e0",
-    "asset_sha256": "ee290ebe98e2a849a2defba5fa1681570054745cbc4fb41b8df5603acaa39eee",
-    "asset_bytes": 773593726,
-    "model_card": "docs/lantern/models/LANTERN_3B_V81_MODEL_CARD.md",
-    "model_card_sha256": "9e576656077d509c89054fd8572ae8f81a410ee8596055b8b4c091bdb2feaebb",
+    "commit": "27944a4be946093f6a83cc92574a46303ac4630b",
+    "asset_sha256": "3b83fba223811f39b7fea45d62c6c9c46f78ca2d8d4405d75b21281fff3c4299",
+    "asset_bytes": 773574496,
+    "model_card": "https://github.com/l33tdawg/lantern-3b/blob/main/MODEL_CARD.md",
+    "model_card_sha256": "eed9963687873c81446f5913dc39d75226863b5d6178fdeaff65ed4058c036bb",
     "prerelease": true
   },
   "local_evidence": "work/lantern-curriculum-v80-20261018/V81_RESULT.json, captures/, pipeline/, sealed_v81/"
