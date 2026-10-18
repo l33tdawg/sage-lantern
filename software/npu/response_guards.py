@@ -46,6 +46,40 @@ STATUS_QUESTION = re.compile(
     r"|(?:\b(?:outcome|status)\s+(?:shown|reported)\s+by\s+the\s+receipt\b)",
     re.I,
 )
+LABEL_WORDS = {
+    "teal", "amber", "cobalt", "ochre", "russet", "plum", "slate", "coral",
+    "ivory", "saffron", "indigo", "olive", "brass", "copper", "cream",
+    "charcoal", "pearl", "rust", "sage", "silver", "lilac", "maroon",
+    "mustard", "navy", "moss", "clay", "flint", "dusk", "cerulean",
+    "verdigris", "marigold", "mulberry", "ultramarine", "puce", "gamboge",
+    "carmine", "celadon", "auburn", "periwinkle", "chartreuse", "mauve",
+    "sepia", "azure", "tangerine", "glaucous", "cinnabar", "cerise",
+    "mazarine", "viridian", "orpiment", "hematite", "amaranth", "peridot",
+    "zaffre", "bitumen", "fuchsia", "smaragdine", "minium", "luteolin",
+    "kermes", "red", "blue", "green", "yellow", "orange", "purple",
+    "pink", "brown", "black", "white", "gray", "grey",
+}
+LABEL_PATTERNS = (
+    re.compile(
+        r"\b(?:what\s+does|what\s+do)\s+(?:the\s+)?([a-z][a-z-]{2,})\s+"
+        r"(?:label|tag|code|mark|colou?r)\s+(?:mean|signify|indicate)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bwhat\s+does\s+(?:the\s+)?([a-z][a-z-]{2,})\s+"
+        r"(?:mean|signify|indicate)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bi\s+see\s+([a-z][a-z-]{2,})\s+on\b[^?]{0,120}"
+        r"\b(?:mean|signify|indicate)\b",
+        re.I,
+    ),
+)
+LABEL_DEFINITION = re.compile(
+    r"\b{label}\b[^.]{{0,70}}\b(?:means|stands for|indicates|marks|denotes|signals|is)\b",
+    re.I,
+)
 PARAGRAPH_REQUEST = re.compile(
     r"\b(?:exactly\s+)?(one|two|three|four|five|six|seven|eight|nine|ten|\d+)"
     r"[\s-]+paragraphs?\b",
@@ -173,6 +207,43 @@ def _last_user_text(messages):
             return parsed["request"]
         return content
     return ""
+
+
+def _label_in_question(text):
+    for pattern in LABEL_PATTERNS:
+        match = pattern.search(text)
+        if match is not None:
+            label = match.group(1).lower()
+            if label in LABEL_WORDS:
+                return label
+    return None
+
+
+def _label_is_defined(messages, label):
+    pattern = re.compile(LABEL_DEFINITION.pattern.format(label=re.escape(label)),
+                         LABEL_DEFINITION.flags)
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") not in {"user", "assistant"}:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        parsed = _parse_content(message)
+        text = json.dumps(parsed, ensure_ascii=False) if parsed is not None else content
+        if pattern.search(text):
+            return True
+    return False
+
+
+def label_answer(messages):
+    """Short-circuit a question about an undefined color/label meaning."""
+    label = _label_in_question(_last_user_text(messages))
+    if label is None or _label_is_defined(messages, label):
+        return None
+    return (
+        f"The meaning of the {label} label isn't specified here. "
+        f"What does {label} mean in this context?"
+    )
 
 
 def requested_paragraphs(messages):

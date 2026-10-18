@@ -1,7 +1,7 @@
 {
   "schema": "sage.lantern.v81-curriculum-evidence.v1",
   "date": "2026-10-18",
-  "scope": "Host-only synthetic development evidence for the rank-32 balanced V81 candidate. Not device, release, production or general qualification.",
+  "scope": "Synthetic development evidence, the public model release and the Unit C V81 deployment. Development panels are not a general-capability or long-form qualification.",
   "curriculum": {
     "unique_rows": 2028,
     "written_rows": 4056,
@@ -68,7 +68,61 @@
     "E13_A_B": "2/2",
     "S03_B": "1/1",
     "guard_module_sha256": "50835b209594108abfa864c97bb7b9f0f986a13296e9bc516e9ffe0951413972",
-    "tests": "38/38 action guard tests pass"
+    "response_guards_sha256": "ac69b131412ada129483c9003e301f5fb930ed37536919a3ec4ca90fd199ae07",
+    "action_guard_tests": "38/38 pass",
+    "response_guard_tests": "57 pass, 20 subtests pass"
+  },
+  "device_deployment": {
+    "unit": "Unit C, RK3588 engineering device",
+    "service": "sage-lantern-llm.service",
+    "service_active": true,
+    "voice_service_active": true,
+    "health": "{\"status\":\"ok\"}",
+    "model_path": "/opt/sage-lantern/npu/models/v81-fused-w8a8-opt1-ctx16384-rk3588.rkllm",
+    "model_sha256": "ac7021b61909b9682ea25f21400c195d477c6ad3d2a595adc7d632808dfa6285",
+    "model_bytes": 3823749236,
+    "quantization": "W8A8 opt1",
+    "context": 16384,
+    "max_new_tokens": 8192,
+    "server_sha256": "40f14b71e4f2e729c811290b297fbcdb06db7ebc6fe021caf6532581ee028ec8",
+    "response_guards_sha256": "ac69b131412ada129483c9003e301f5fb930ed37536919a3ec4ca90fd199ae07",
+    "dropin": "/etc/systemd/system/sage-lantern-llm.service.d/60-v81-token.conf",
+    "dropin_sha256": "bc96bf53713f05b2e602359ceb3ce99e7926ebe73f199eb00e95b4de64154fce",
+    "rollback_model": "V79.6 via 50-v79.6-token.conf",
+    "merged_hf_sha256": "a94aec13c01ea176fb9c467997c4224fe1d0f485e877577848f62140290d00ce",
+    "merged_hf_bytes": 7509337686,
+    "guard_check": {
+      "E13_A": "pass",
+      "E13_B": "pass",
+      "S03_B": "pass",
+      "capture": "/var/tmp/device_v81_guard_check.json"
+    },
+    "live_probes": {
+      "undefined_label": "The meaning of the glaucous label isn't specified here. What does glaucous mean in this context?",
+      "undefined_cadence": "The check frequency isn't specified here. What is the check interval?",
+      "defined_label": "Pending in our intake, as you specified."
+    },
+    "benchmark": {
+      "capture": "work/lantern-curriculum-v80-20261018/captures/device_v81_http48_live16k_20261018.json",
+      "requests": 48,
+      "failed_requests": 0,
+      "quality_prompts": {
+        "count": 36,
+        "ttft_median_ms": 646.9349694998527,
+        "ttft_p90_ms": 777.561642999899,
+        "response_median_ms": 5226.966130499932,
+        "decode_median_tps": 7.961650656056387,
+        "decode_aggregate_tps": 7.944718727292005,
+        "generated_tokens_mean": 43.22222222222222
+      },
+      "all": {
+        "ttft_median_ms": 726.6816700002892,
+        "ttft_p90_ms": 7528.135116999692,
+        "response_median_ms": 6702.621397000257,
+        "decode_median_tps": 7.933091672252983,
+        "decode_aggregate_tps": 7.665678844037382
+      }
+    }
   },
   "assessment": {
     "improvement": "V81 restores fresh64 to V79.6's 21/24 while keeping the curriculum gains and reaching 64/64 on the fresh sealed set.",
@@ -84,10 +138,17 @@
     "url": "https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview",
     "tag": "v81-research-preview",
     "commit": "27944a4be946093f6a83cc92574a46303ac4630b",
-    "asset_sha256": "3b83fba223811f39b7fea45d62c6c9c46f78ca2d8d4405d75b21281fff3c4299",
-    "asset_bytes": 773574496,
+    "docs_commit": "026565d",
+    "asset_sha256": "25734c54f44e02416d3c5143722a650a5708e3bd603eba23ecccb562e5c0f4bc",
+    "asset_bytes": 773579444,
     "model_card": "https://github.com/l33tdawg/lantern-3b/blob/main/MODEL_CARD.md",
-    "model_card_sha256": "eed9963687873c81446f5913dc39d75226863b5d6178fdeaff65ed4058c036bb",
+    "model_card_sha256": "93f705c874ae3ca41878d50e966b035c26acd7e45ea70eb332799c11ed7fef7c",
+    "device_artifact_parts": {
+      "v81-rkllm.part-00": "e6d70853019f653732249ad29b9dd27ad645160bc9cefa002e488316c85c642b",
+      "v81-rkllm.part-01": "53aad1669a21886603e0088419186cf9615cd2323513c1bda37ababcbd5a1b91",
+      "v81-rkllm.part-02": "09c6440166386d9fd0dc2d38911f0c9bc21a109def93601ae55c26620511fea2"
+    },
+    "device_artifact_sha256": "ac7021b61909b9682ea25f21400c195d477c6ad3d2a595adc7d632808dfa6285",
     "prerelease": true
   },
   "local_evidence": "work/lantern-curriculum-v80-20261018/V81_RESULT.json, captures/, pipeline/, sealed_v81/"

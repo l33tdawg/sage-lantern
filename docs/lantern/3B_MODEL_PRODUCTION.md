@@ -1,32 +1,31 @@
 # Lantern 3B model — Unit C production deployment
 
-**Status:** live on Unit C, 18 October 2026. Owner-authorized, Unit C only.
+**Status:** V81 live on Unit C, 18 October 2026. Owner-authorized, Unit C only.
 
 Unit C's production chat port (8081) runs a 3B English model through the
-RKLLM token engine with deterministic interval and status response guards. The
-previous 2B prompt-string service remains the rollback; the NPU vision lane on
-8082 is unchanged.
+RKLLM token engine with deterministic interval, label and status response
+guards. V79.6 remains the rollback model; the NPU vision lane on 8082 is
+unchanged.
 
 ## What runs
 
 | Component | Path / identity |
 |---|---|
-| Model | `/opt/sage-lantern/npu/models/v79_6-fused-w8a8-opt1-ctx16384-rk3588.rkllm` |
-| Model SHA-256 | `41172d782a6a401549ab2000f2ef44debb890d69c6a72e228c4548ccc3de78c6` |
+| Model | `/opt/sage-lantern/npu/models/v81-fused-w8a8-opt1-ctx16384-rk3588.rkllm` |
+| Model SHA-256 | `ac7021b61909b9682ea25f21400c195d477c6ad3d2a595adc7d632808dfa6285` |
 | Token engine | `/opt/sage-lantern/npu/token-engine/bin/rkllm_engine_token` (`11fcb514…`) |
 | RKLLM runtime | `/opt/sage-lantern/npu/token-engine/lib/librkllmrt.so` (`f25e9b09…`) |
 | Tokenizer | `/opt/sage-lantern/npu/token-engine/assets/tokenizer.json` (`c0382117…`) |
-| Server | `/opt/sage-lantern/npu/token-engine/libexec/rkllm_server.py` (`b568af7d…`) |
-| Guards | `/opt/sage-lantern/npu/token-engine/libexec/response_guards.py` (`07d64238…`) |
-| Engine | `/opt/sage-lantern/npu/token-engine/bin/rkllm_engine_token` (`c4cf4fda…`, 16k/8192 limits) |
+| Server | `/opt/sage-lantern/npu/token-engine/libexec/rkllm_server.py` (`40f14b71…`) |
+| Guards | `/opt/sage-lantern/npu/token-engine/libexec/response_guards.py` (`ac69b131…`) |
 | Tokenizer runtime | dedicated venv, `tokenizers` 0.23.3 |
 | Service | `sage-lantern-llm.service`, loopback port 8081, model id `lantern-native5-2b` |
 | Fallback | `--fallback-url http://127.0.0.1:8082` (NPU vision lane) |
 
-The model is the V79.6 fine-tune, built from the V72→V79.6 adapter chain and
-merged into the publisher layout before RKLLM conversion. It is W8A8 with a
-16,384-token compiled context. The training/evaluation host model remains
-32,768-context; the device artifact cap comes from RKLLM toolkit 1.3.0.
+The model is the V81 rank-32 fine-tune, built from the V72→V81 adapter chain
+and merged into the publisher layout before RKLLM conversion. The merged HF
+source is `a94aec13…`; the device artifact is W8A8 opt1 with a 16,384-token
+compiled context. The training/evaluation host model remains 32,768-context.
 
 **Served caps:** the current Unit C service is configured with
 `--context 16384 --max-new-tokens 8192`. The 16k artifact is active; the
@@ -81,8 +80,9 @@ Unit C, RK3588 SDK 1.3.1, W8A8, 48 requests (36 quality + 12 latency), greedy
 decode, fresh KV cache per request. The stock/V79.6 table below is the
 historical native comparison at the 2048-token serving profile with guards off.
 The live 16k/8192 profile was re-run through the full 48-request matrix on
-18 October 2026 over streaming HTTP with guards on; see the next subsection.
-Because the path and profile differ, the two runs are not a clean delta.
+18 October 2026 over streaming HTTP with guards on; the V81 run is the next
+subsection and the V79.6 run that follows is retained as history. Because the
+path and profile differ, the runs are not a clean delta.
 
 | Metric | Stock 3B | V79.6 |
 |---|---:|---:|
@@ -99,7 +99,40 @@ against stock 11,544 ms and 7.23 tok/s. The 128-token median favors V79.6; the
 longest prompt is slightly slower. These are local near-bench timings, not a
 field, thermal-soak or multi-user claim.
 
-### Live 16k/8192 profile
+### V81 live 16k/8192 profile
+
+Run 18 October 2026 against the production service on port 8081
+(`--context 16384 --max-new-tokens 8192`, model `ac7021b6…`, guard
+`ac69b131…`), streaming HTTP with guards on. All 48 requests completed; none
+failed. The capture is `device_v81_http48_live16k_20261018.json` in the
+development work directory.
+
+The 36 quality prompts:
+
+| Metric | V81 live 16k, HTTP, guards on |
+|---|---:|
+| TTFT median | 646.9 ms |
+| TTFT p90 | 777.6 ms |
+| Decode median | 7.96 tok/s |
+| Decode aggregate | 7.94 tok/s |
+| Response median | 5227.0 ms |
+| Generated tokens mean | 43.2 |
+
+Fixed latency set (64 output tokens; three cases per prompt length):
+
+| Prompt tokens | TTFT median | Response median | Decode median |
+|---:|---:|---:|---:|
+| 128 | 786.7 ms | 8747.9 ms | 7.93 tok/s |
+| 512 | 3419.4 ms | 11756.9 ms | 7.56 tok/s |
+| 1024 | 7528.1 ms | 16504.7 ms | 6.96 tok/s |
+| 1536 | 11932.6 ms | 21687.1 ms | 6.46 tok/s |
+
+Across all 48 cases: TTFT median 726.7 ms, p90 7528.1 ms, response median
+6702.6 ms, decode median 7.93 tok/s and aggregate 7.67 tok/s. These are
+near-bench measurements from one engineering unit, not a correctness score,
+thermal soak or multi-user claim.
+
+### V79.6 live 16k/8192 profile (historical)
 
 Run 18 October 2026 against the production service on port 8081
 (`--context 16384 --max-new-tokens 8192`, guard `54cd4829…`), streaming HTTP
@@ -316,9 +349,10 @@ instead of the authorized private home), `V58_S03_B` (errored-lookup absence
 prose), `V58_S16_B` (ignored a supplied recall query) and `V58_E03_A`
 (arithmetic derailment). The existing save guard canonicalizes S13_B to the
 private home and the status guard repairs S03_B; S16_B and E03_A remain raw
-failures. No export or device claim is made. Bare V81 weights
-would carry the raw S13_B authorization failure, so a publication would need
-the guarded runtime or a targeted raw repair. Evidence:
+failures. V81 is now exported to merged HF and RKLLM, and deployed on Unit C.
+Bare V81 weights would carry the raw S13_B authorization failure, so the
+publication ships the guarded runtime rather than implying the weights are
+safe alone. Evidence:
 [`V81_CURRICULUM_20261018.json`](evidence/V81_CURRICULUM_20261018.json).
 
 The guarded path is now clean. `guard_action` adds canonical recall handling
@@ -327,14 +361,25 @@ for supplied/null queries; the guarded V81 capture scores **64/64 sealed,
 S03_B all passing. The action guard suite is 38/38. The raw E03_A arithmetic
 derailment remains the one disclosed model-quality gap.
 
+The live product policy exposed one more raw-model failure: it invented a
+meaning for an undefined label and a cadence for an unspecified interval.
+`response_guards.label_answer()` now short-circuits undefined colour/label
+questions before inference, while leaving a definition supplied in the same
+conversation alone. The deployed response-guard suite passes 57 tests plus 20
+subtests. Live probes on Unit C return a clarification for undefined
+`glaucous` and check frequency, and honor a supplied "teal means pending"
+definition.
+
 The non-commercial research preview is published in the public model-only repo
 [`l33tdawg/lantern-3b`](https://github.com/l33tdawg/lantern-3b) at
 [`v81-research-preview`](https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview),
-as a GitHub prerelease. The tag resolves to commit `27944a4`; the asset is a
-738 MB zip (SHA-256 `3b83fba2…`, 42 files, 839 MB uncompressed) containing the
-ordered adapter chain, guard code, model card, Qwen Research License, sealed
-prompts/references and raw/guarded evaluation results. Do not publish bare
-weights, and do not claim commercial use without Alibaba Cloud permission.
+as a GitHub prerelease. The tag resolves to commit `27944a4`; the documentation
+update is `026565d`. The release ships the refreshed 773,579,444-byte adapter
+bundle (SHA-256 `25734c54…`, 45 files, including the merged-model receipt and
+reassembly instructions), the exact RK3588 artifact split into
+`v81-rkllm.part-00` through `part-02`, the part checksums and the full model
+card. Reassembled device SHA-256 is `ac7021b6…`. Do not publish bare weights,
+and do not claim commercial use without Alibaba Cloud permission.
 The `sage-lantern` monorepo remains private; the public model repo is the
 canonical home for the V81 card, adapters and evaluation.
 
@@ -347,60 +392,62 @@ preview.
 
 ## Deployment and rollback
 
-The systemd drop-in
-`/etc/systemd/system/sage-lantern-llm.service.d/50-v79.6-token.conf`
-(`298b5b50…`) overrides only `ExecStart` and `LD_LIBRARY_PATH`. The base unit,
-user/group, render/video supplementary groups, restart policy, fallback URL and
-sleep/read-write drop-ins are preserved.
+V81 is activated by
+`/etc/systemd/system/sage-lantern-llm.service.d/60-v81-token.conf`
+(`bc96bf53…`), which overrides only `ExecStart` and `LD_LIBRARY_PATH`. The base
+unit, user/group, render/video supplementary groups, restart policy, fallback
+URL and sleep/read-write drop-ins are preserved. The earlier V79.6 drop-in
+`50-v79.6-token.conf` (`298b5b50…`) remains in place as the rollback.
 
-Rollback:
+The deployment script
+[`work/lantern-curriculum-v80-20261018/deploy_v81_unit_c.sh`](../../work/lantern-curriculum-v80-20261018/deploy_v81_unit_c.sh)
+stages the 3.8 GB model, verifies it, installs the drop-in, restarts the
+service, waits for `/health`, and restores the V79.6 drop-in if health does not
+come up. The backup directory `/var/backups/lantern-v81-20261018/` holds the
+previous drop-in and `V81_MODEL.sha256`.
+
+Rollback to V79.6:
 
 ```sh
 sudo systemctl stop sage-lantern-llm.service
-sudo rm /etc/systemd/system/sage-lantern-llm.service.d/50-v79.6-token.conf
+sudo rm /etc/systemd/system/sage-lantern-llm.service.d/60-v81-token.conf
 sudo systemctl daemon-reload
 sudo systemctl start sage-lantern-llm.service
 ```
 
-The 2B unit backup is
-`/var/tmp/lantern-focused-finetune-20261012/deploy-20261018/sage-lantern-llm.service.pre-v79.6-token.bak`
-(`1c5888ae…`). The 2B model file was not modified.
+The V79.6 model file remains on disk. `sage-lantern-voice-loop.service` is
+restarted after the V81 health check and is active.
 
 ## Reproduce
 
 ```sh
-# Export the merged V79.6 HF model to RKLLM W8A8 at the toolkit context cap
+# Export the merged V81 HF model to RKLLM W8A8 at the toolkit context cap
 python3 export_rkllm_chat_candidate.py \
-  --model fused_hf_v79_6_20261018 \
-  --output export_v79_6_rkllm_16384_20261018 \
+  --model fused_hf_v81_20261018 \
+  --output export_v81_rkllm_16384_20261018 \
   --name <fresh-owned-container> \
   --max-context 16384 --execute
 
 # Device performance (existing 48-request harness)
 python3 run_device_comparison.py \
-  --model /var/tmp/lantern-focused-finetune-20261012/v79_6.rkllm \
-  --output device_v79_6_48
+  --model /opt/sage-lantern/npu/models/v81-fused-w8a8-opt1-ctx16384-rk3588.rkllm \
+  --output device_v81_48
 
 # Live-profile 48-request run against the production service (streaming HTTP)
 python3 run_device_http_benchmark.py \
   --base-url http://127.0.0.1:8081 \
   --requests device_requests48.jsonl \
-  --output device_v79_6_http48_live16k_20261018.json
+  --output device_v81_http48_live16k_20261018.json
 
 # Guarded functional check against the production port
 python3 run_device_guard_check.py \
   --base-url http://127.0.0.1:8081 \
-  --output device_v79_6_production_guard_check_final2.json
+  --output device_v81_guard_check.json
 
-python3 run_device_stream_guard_check.py \
-  --base-url http://127.0.0.1:8081 \
-  --output device_v79_6_stream_guard_final4.json
+python3 run_device_stream_guard_check.py --base-url http://127.0.0.1:8081
 ```
 
-Local evidence: `work/lantern-3b-focused-finetune-20261012/V40_DEVELOPMENT_DECISION.json`,
-`V79_6_HANDOFF.md`, `RESULT_V79_6_DEVICE_20261018.json`,
-`device_v79_6_production_smoke_final2.json`,
-`device_v79_6_production_guard_check_final2.json`,
-`device_v79_6_stream_guard_final4.json` and `device_long_tests_final2.json`.
-The tracked summary and hashes are in
-[`evidence/V79_6_DEVICE_20261018.json`](evidence/V79_6_DEVICE_20261018.json).
+Local evidence: `work/lantern-curriculum-v80-20261018/captures/device_v81_http48_live16k_20261018.json`,
+`V81_RESULT.json`, the exported merged HF model and the RKLLM artifact. The
+tracked summary and hashes are in
+[`evidence/V81_CURRICULUM_20261018.json`](evidence/V81_CURRICULUM_20261018.json).

@@ -352,6 +352,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.response_guards:
             deterministic = response_guards().interval_answer(messages)
             if deterministic is None:
+                deterministic = response_guards().label_answer(messages)
+            if deterministic is None:
                 deterministic = response_guards().private_owner_refusal(messages)
             if deterministic is None:
                 deterministic = response_guards().receipt_status_answer(messages)

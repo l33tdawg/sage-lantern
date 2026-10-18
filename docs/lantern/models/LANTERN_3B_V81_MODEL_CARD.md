@@ -27,8 +27,10 @@ tags:
 Lantern V81 is an English-focused 3B research preview for a local, offline
 assistant with guarded memory and tool actions. It is distributed as an
 ordered chain of ten MLX LoRA adapters on Qwen2.5-VL-3B-Instruct, not as a
-standalone model. The base weights, a merged HF model and the RK3588 `.rkllm`
-artifact are not included.
+standalone model. The base weights are not included. The release also
+publishes the exact RK3588 W8A8 `.rkllm` device artifact as three split parts;
+the merged HF weights are reproducible from the adapter chain. See
+`MODEL_ARTIFACTS.md`.
 
 | Item | Value |
 |---|---|
@@ -80,13 +82,16 @@ Alibaba Cloud or the Qwen team.
 - **Prompt style:** Short, explicit instructions. The model is trained for
   direct answers and structured memory/tool requests, not free-running prose.
 - **Guard/runtime:** The intended deployment uses `guard_action` for saves and
-  recalls, `status_text` for failed/empty lookup prose and `interval_answer`
-  for the published interval cases. The raw model is not action-safe.
+  recalls, `status_text` for failed/empty lookup prose, `interval_answer`
+  for the published interval cases and `label_answer` for undefined
+  colour/label meanings. The raw model is not action-safe.
 - **Context:** Host training uses a 2,048-token training sequence. The base
-  model and any device deployment have separate context limits; no long-context
-  qualification is claimed.
-- **Device:** The preview is a host MLX adapter chain. RK3588 CPU/NPU behavior
-  is not represented by these results.
+  model and the device deployment have separate limits. The Unit C build is
+  compiled for 16,384 tokens and serves up to 8,192 new tokens. That is a
+  runtime envelope, not a long-context or long-form qualification.
+- **Device:** The preview ships a host MLX adapter chain and a verified RK3588
+  `.rkllm` build. The device figures below come from one engineering unit; no
+  thermal, battery, field or multi-user claim is made.
 - **Data:** Synthetic English task material. No private facts, real user
   conversations, credentials or contact details were used.
 
@@ -192,6 +197,46 @@ tokens/s; the frozen fresh64 prompts were about 254 ms and 40.0 tokens/s.
 Peak host memory was about 10.9 GB. These are desktop-host measurements, not
 RK3588, thermal-soak, field or multi-user results.
 
+### Device deployment (Unit C)
+
+The release artifact is the build serving on Unit C, an RK3588 engineering
+device. It is the same merged V81 model converted to RKLLM, not a second
+training run.
+
+| Item | Value |
+|---|---|
+| Artifact | `qwen2_5-vl-3b_fused_w8a8_opt1_ctx16384_rk3588.rkllm` |
+| SHA-256 | `ac7021b61909b9682ea25f21400c195d477c6ad3d2a595adc7d632808dfa6285` |
+| Size | 3,823,749,236 bytes |
+| Quantization | W8A8 opt1 |
+| Context / max output | 16,384 / 8,192 tokens |
+| Service | `sage-lantern-llm.service`, loopback port 8081 |
+| Response guard | `ac69b131412ada129483c9003e301f5fb930ed37536919a3ec4ca90fd199ae07` |
+| Server | `40f14b71e4f2e729c811290b297fbcdb06db7ebc6fe021caf6532581ee028ec8` |
+| Health | `/health` returns `{"status":"ok"}` |
+| Guard check | E13_A, E13_B and S03_B pass |
+
+Live probes on the deployed server:
+
+- An undefined label question returns: "The meaning of the glaucous label
+  isn't specified here. What does glaucous mean in this context?"
+- A missing cadence question returns: "The check frequency isn't specified
+  here. What is the check interval?"
+- A supplied definition ("teal means pending") is honored: "Pending in our
+  intake, as you specified."
+
+The full 48-request streaming HTTP suite completed on 18 October 2026 at the
+live 16k/8192 profile. All 48 requests returned; none failed.
+
+| Panel | Requests | TTFT median | TTFT p90 | Response median | Decode median |
+|---|---:|---:|---:|---:|---:|
+| Quality prompts | 36 | 646.9 ms | 777.6 ms | 5,227.0 ms | 7.96 tok/s |
+| All requests | 48 | 726.7 ms | 7,528.1 ms | 6,702.6 ms | 7.93 tok/s |
+
+The p90 rises because the fixed latency set includes 1,536-token prompts;
+those measured 11,932.6 ms TTFT and 21,687.1 ms response median. These are
+latency measurements from one unit, not a correctness or capability score.
+
 ## 8. Ethical considerations
 
 - **Privacy:** The curriculum and evaluation are synthetic. No private facts
@@ -212,12 +257,17 @@ RK3588, thermal-soak, field or multi-user results.
 ## 9. Caveats and recommendations
 
 - Use the guard for every save/recall action and for interval/status prose.
+- Use `label_answer` for undefined colour/label questions. It covers a bounded
+  vocabulary and does not make the model factually reliable elsewhere.
 - Do not publish or deploy bare weights as an autonomous action agent.
 - Disclose `E03_A` arithmetic as unqualified; verify arithmetic independently.
+- Long-form factual writing is not qualified. The model can still invent
+  meanings, cadences and world knowledge outside the guarded cases.
 - Treat the 64-case sealed result as synthetic development evidence, not a
   general capability score.
-- Run a device-specific qualification before claiming RK3588 performance,
-  memory, thermal or battery behavior.
+- The 48-request suite covers latency and guard behavior on one Unit C build.
+  Run thermal, battery, memory-soak and multi-user qualification before
+  claiming production performance.
 - Keep the Qwen Research License and NOTICE with every redistribution.
 - Report issues or evaluation gaps through the repository issue tracker.
 
@@ -226,13 +276,17 @@ RK3588, thermal-soak, field or multi-user results.
 1. Obtain Qwen2.5-VL-3B-Instruct separately under its license.
 2. Apply `adapters/00-v72` through `adapters/10-v81` in the order in
    `adapters/ORDER.json`.
-3. Load the guard from `guard/` and use `guard_action` for actions,
-   `status_text` for failed/empty lookups and `interval_answer` for interval
-   cases.
-4. Reproduce the evaluation with `evaluation/prompts.jsonl`,
+3. To run the device build, download `v81-rkllm.part-00` through
+   `v81-rkllm.part-02`, reassemble them as described in `REASSEMBLE.md`, and
+   verify the SHA-256 above.
+4. Load the guard from `guard/` and use `guard_action` for actions,
+   `status_text` for failed/empty lookups, `interval_answer` for interval
+   cases and `label_answer` for undefined label meanings.
+5. Reproduce the evaluation with `evaluation/prompts.jsonl`,
    `evaluation/references.jsonl`, `evaluation/score_v81.json` and
    `evaluation/score_v81_guarded.json`.
-5. Verify every file against `MANIFEST.json`.
+6. Verify every adapter against `adapters/ORDER.json`; the merged and device
+   hashes are in `MODEL_ARTIFACTS.md` and `MERGE_RECEIPT.public.json`.
 
 Repository: `https://github.com/l33tdawg/lantern-3b`  
 Release: `https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview`  

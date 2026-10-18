@@ -818,5 +818,44 @@ class PrivateOwnerGuardTests(unittest.TestCase):
         self.assertEqual(answer, "The save is committed; completion is established.")
 
 
+class LabelGuardTests(unittest.TestCase):
+    def test_undefined_label_is_short_circuited(self):
+        answer = GUARDS.label_answer([
+            {"role": "user",
+             "content": "What does the glaucous label mean in the rope walk?"},
+        ])
+        self.assertIn("isn't specified", answer)
+        self.assertIn("What does glaucous mean", answer)
+        self.assertNotIn("coated", answer)
+
+    def test_undefined_label_without_the_word_label(self):
+        answer = GUARDS.label_answer([
+            {"role": "user", "content": "What does teal signify on the intake sheet?"},
+        ])
+        self.assertIn("What does teal mean", answer)
+
+    def test_undefined_label_with_see_phrasing(self):
+        answer = GUARDS.label_answer([
+            {"role": "user",
+             "content": "I see teal on the sample tray. What does it indicate?"},
+        ])
+        self.assertIn("What does teal mean", answer)
+
+    def test_same_turn_definition_is_left_to_the_model(self):
+        self.assertIsNone(GUARDS.label_answer([
+            {"role": "user",
+             "content": "In the bindery, glaucous means scrapped after the leak. "
+                        "What does the glaucous label mean?"},
+        ]))
+
+    def test_general_knowledge_question_is_not_a_label_question(self):
+        self.assertIsNone(GUARDS.label_answer([
+            {"role": "user", "content": "What does photosynthesis mean?"},
+        ]))
+        self.assertIsNone(GUARDS.label_answer([
+            {"role": "user", "content": "What does a red traffic light mean?"},
+        ]))
+
+
 if __name__ == "__main__":
     unittest.main()
