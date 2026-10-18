@@ -9,6 +9,7 @@ from functools import wraps
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .action_guard import ActionDispatcher, DispatchResult, SageRememberExecutor
 from .conversation_context import (
     ConversationEntry, VOICE_CONTEXT_BYTES, VOICE_CONVERSATION_BYTES,
     format_conversation_context, format_knowledge_context,
@@ -179,6 +180,36 @@ class ConversationService:
             if check() is not True:
                 raise RuntimeError("Correction access unavailable")
             return getattr(self._correction_attempts, operation)(access_check=check, **arguments)
+
+    def dispatch_save(self, request_json: str, routing_json: str) -> DispatchResult:
+        """Execute one request-authorized save within the current owner session.
+
+        The model's prose is deliberately not an input: the dispatcher derives
+        the call from the structured request and trusted routing, then invokes
+        the same admission-checked SAGE client used by conversation memory.
+        """
+        backend = self.backend
+        if backend is None or not all(
+                hasattr(backend, name) for name in ("client", "domain", "classification")):
+            return DispatchResult(
+                "error", "The SAGE action backend is unavailable; nothing was saved.",
+                reason="sage_action_backend_unavailable")
+        executor = SageRememberExecutor(
+            backend.client,
+            default_domain=backend.domain,
+            classification=backend.classification,
+            admission_check=self._action_admitted,
+        )
+        with self._activity():
+            return ActionDispatcher(executor).dispatch_save(request_json, routing_json)
+
+    def _action_admitted(self) -> bool:
+        if self._admitted() is not True:
+            return False
+        authorize = getattr(self.backend, "authorize_action", None)
+        if callable(authorize) and authorize(write=True) is not True:
+            return False
+        return True
 
     def _current_access_epoch(self):
         try:

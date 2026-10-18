@@ -19,6 +19,15 @@ was run with guards off; guard-on streaming and receipt/policy checks are
 separate evidence. This does not close the broader model-quality,
 long-conversation, field, power or multi-unit acceptance items below.
 
+The runtime action boundary is now tracked in
+`software/runtime/src/sage_lantern/action_guard.py` and
+`ConversationService.dispatch_save()`: canonical request-derived call, one
+admission-checked SAGE proposal, raw receipt, and no automatic retry on an
+uncertain outcome. The product UI/HTTP route still needs to call it; a
+non-self owner grant also needs an owner-bound executor before it can execute.
+The wheel is installed in Unit C's production venv and the package-level
+verification passed.
+
 ## Historical consolidated execution order (September 12)
 
 **Messaging resume checkpoint (2026-09-12):** Fresh-session execution task

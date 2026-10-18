@@ -1,0 +1,130 @@
+{
+  "requests": 12,
+  "ttft_median_ms": 5132.422240989399,
+  "ttft_p90_ms": 11662.305074796313,
+  "total_median_ms": 13356.628516994533,
+  "decode_median_tps": 7.650163611018055,
+  "decode_aggregate_tps": 7.561076697321699,
+  "items": [
+    {
+      "ttft_ms": 821.1041649919935,
+      "total_ms": 8786.661335005192,
+      "prefill_ms": 791.752,
+      "generate_ms": 7961.62,
+      "generate_tokens": 63,
+      "prefill_tokens": 128,
+      "text": "To organize a small workshop with tools easily accessible, follow these steps:\n\n1. **Designate a Workbench**: Place your workbench in a central location, ideally near the entrance or a door, so tools are always within easy reach.\n\n2. **Tool Storage**: Use toolboxes or drawers to store tools. Label",
+      "id": "5323d294e1c9"
+    },
+    {
+      "ttft_ms": 757.0027619949542,
+      "total_ms": 8527.759937016526,
+      "prefill_ms": 748.031,
+      "generate_ms": 7766.64,
+      "generate_tokens": 63,
+      "prefill_tokens": 128,
+      "text": "To organize a small workshop with tools easily accessible, follow these steps:\n\n1. **Designate a Workbench**: Place your workbench in a central location, ideally near the entrance or a door, so tools are always within easy reach.\n\n2. **Tool Storage**: Use toolboxes or drawers to store tools. Label",
+      "id": "b7790936a936"
+    },
+    {
+      "ttft_ms": 760.4826249880716,
+      "total_ms": 8623.43793999753,
+      "prefill_ms": 751.442,
+      "generate_ms": 7859.19,
+      "generate_tokens": 63,
+      "prefill_tokens": 128,
+      "text": "To organize a small workshop with tools easily accessible, follow these steps:\n\n1. **Designate a Workbench**: Place your workbench in a central location, ideally near the entrance or a door, so tools are always within easy reach.\n\n2. **Tool Storage**: Use toolboxes or drawers to store tools. Label",
+      "id": "2a17b8a5fa3f"
+    },
+    {
+      "ttft_ms": 3173.430004011607,
+      "total_ms": 11336.69478300726,
+      "prefill_ms": 3157.48,
+      "generate_ms": 8158.99,
+      "generate_tokens": 63,
+      "prefill_tokens": 512,
+      "text": "To organize a small workshop with easy-to-find tools, follow these steps:\n\n1. **Centralized Tool Storage**: Place all tools in a central, easily accessible location, such as a tool chest or a wall-mounted rack. This keeps them organized and within reach of all participants.\n\n2. **Tool Categories**: Group tools",
+      "id": "1624fff5c2c5"
+    },
+    {
+      "ttft_ms": 3244.6702159941196,
+      "total_ms": 11340.235603012843,
+      "prefill_ms": 3228.8,
+      "generate_ms": 8091.46,
+      "generate_tokens": 63,
+      "prefill_tokens": 512,
+      "text": "To organize a small workshop with easy-to-find tools, follow these steps:\n\n1. **Centralized Tool Storage**: Place all tools in a central, easily accessible location, such as a tool chest or a wall-mounted rack. This keeps them organized and within reach of all participants.\n\n2. **Tool Categories**: Group tools",
+      "id": "5a60171b4ce3"
+    },
+    {
+      "ttft_ms": 3245.7867119810544,
+      "total_ms": 11363.188814983005,
+      "prefill_ms": 3230.15,
+      "generate_ms": 8113.65,
+      "generate_tokens": 63,
+      "prefill_tokens": 512,
+      "text": "To organize a small workshop with easy-to-find tools, follow these steps:\n\n1. **Centralized Tool Storage**: Place all tools in a central, easily accessible location, such as a tool chest or a wall-mounted rack. This keeps them organized and within reach of all participants.\n\n2. **Tool Categories**: Group tools",
+      "id": "937c6267341e"
+    },
+    {
+      "ttft_ms": 7019.057769997744,
+      "total_ms": 15474.703663989203,
+      "prefill_ms": 6994.7,
+      "generate_ms": 8451.85,
+      "generate_tokens": 63,
+      "prefill_tokens": 1024,
+      "text": "To organize a small workshop with easy-to-find tools, start by creating a clear, labeled tool storage area. Use pegboards or hooks to hang tools like wrenches, screwdrivers, and pliers. Keep similar tools together, such as all screwdrivers in one section. Label each tool with its name and type for",
+      "id": "6b6f5cf1454d"
+    },
+    {
+      "ttft_ms": 7033.962468005484,
+      "total_ms": 15350.068219006062,
+      "prefill_ms": 7009.36,
+      "generate_ms": 8312.68,
+      "generate_tokens": 63,
+      "prefill_tokens": 1024,
+      "text": "To organize a small workshop with easy-to-find tools, start by creating a clear, labeled tool storage area. Use pegboards or hooks to hang tools like wrenches, screwdrivers, and pliers. Keep similar tools together, such as all screwdrivers in one section. Label each tool with its name and type for",
+      "id": "a6eaf4bf5352"
+    },
+    {
+      "ttft_ms": 7123.93782500294,
+      "total_ms": 15611.228569003288,
+      "prefill_ms": 7099.31,
+      "generate_ms": 8483.63,
+      "generate_tokens": 63,
+      "prefill_tokens": 1024,
+      "text": "To organize a small workshop with easy-to-find tools, start by creating a clear, labeled tool storage area. Use pegboards or hooks to hang tools like wrenches, screwdrivers, and pliers. Keep similar tools together, such as all screwdrivers in one section. Label each tool with its name and type for",
+      "id": "5e45c3aafe19"
+    },
+    {
+      "ttft_ms": 11626.371574006043,
+      "total_ms": 20322.088640008587,
+      "prefill_ms": 11592.8,
+      "generate_ms": 8691.61,
+      "generate_tokens": 63,
+      "prefill_tokens": 1536,
+      "text": "To organize a small workshop with tools easily accessible, start by setting up a well-organized tool storage area. Use clear, labeled shelves or cabinets to categorize tools by type (e.g., hand tools, power tools, measuring instruments). Hang tools like wrenches and pliers on hooks or rails for quick access.",
+      "id": "85bc140fa410"
+    },
+    {
+      "ttft_ms": 11788.027556991437,
+      "total_ms": 20647.133391990792,
+      "prefill_ms": 11754.0,
+      "generate_ms": 8855.27,
+      "generate_tokens": 63,
+      "prefill_tokens": 1536,
+      "text": "To organize a small workshop with tools easily accessible, start by setting up a well-organized tool storage area. Use clear, labeled shelves or cabinets to categorize tools by type (e.g., hand tools, power tools, measuring instruments). Hang tools like wrenches and pliers on hooks or rails for quick access.",
+      "id": "de3bc1483915"
+    },
+    {
+      "ttft_ms": 11666.297685995232,
+      "total_ms": 20909.24777899636,
+      "prefill_ms": 11633.1,
+      "generate_ms": 9239.17,
+      "generate_tokens": 63,
+      "prefill_tokens": 1536,
+      "text": "To organize a small workshop with tools easily accessible, start by setting up a well-organized tool storage area. Use clear, labeled shelves or cabinets to categorize tools by type (e.g., hand tools, power tools, measuring instruments). Hang tools like wrenches and pliers on hooks or rails for quick access.",
+      "id": "50c6921930c1"
+    }
+  ]
+}

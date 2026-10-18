@@ -65,6 +65,30 @@ against stock 11,544 ms and 7.23 tok/s. The 128-token median favors V79.6; the
 longest prompt is slightly slower. These are local near-bench timings, not a
 field, thermal-soak or multi-user claim.
 
+### Guard-on latency probe
+
+The 48-request comparison above is guards-off. A separate 12-case fixed latency
+set (128/512/1024/1536 prompt tokens, 64 output tokens, streaming HTTP) measured
+the same V79.6 artifact and 2048 context with guards on and off:
+
+| Metric | Guards off | Guards on | Difference |
+|---|---:|---:|---:|
+| TTFT median | 5090.9 ms | 5132.4 ms | +41.5 ms |
+| TTFT p90 | 11885.7 ms | 11662.3 ms | within run noise |
+| Total median | 13349.1 ms | 13356.6 ms | +7.5 ms |
+| Decode median | 7.645 tok/s | 7.650 tok/s | flat |
+| Decode aggregate | 7.519 tok/s | 7.561 tok/s | within run noise |
+
+The stock direct-engine reference on the same 12 IDs was 5078.0 ms median TTFT,
+11540.8 ms p90, 13340.7 ms total and 7.620 tok/s median decode. It is not the
+same HTTP transport, so it is evidence for the same artifact and prompt scope,
+not a claim that guards add no absolute device cost.
+
+Combined server+engine RSS was 3,554,756 KB with guards on and 3,558,820 KB
+with guards off: a 4,064 KB difference in the direction of guards-on, i.e.
+inside run-to-run noise. This is process RSS, not the RKLLM SDK allocator
+counter.
+
 ## Quality evidence
 
 - The three measured English failures are fixed: the train arrival comparison
@@ -77,8 +101,9 @@ field, thermal-soak or multi-user claim.
 - Fresh64: raw 15/16 tool calls, guarded 16/16. The remaining raw miss also
   fails on stock.
 - The guards correct E13_A/E13_B interval arithmetic and the failed-lookup
-  absence claim. They do not authorize tool actions; action dispatch remains
-  with SAGE/OpenClaw.
+  absence claim. They do not authorize tool actions; the runtime action
+  dispatcher now owns canonical request selection and the SAGE executor owns
+  the authenticated call and receipt.
 - The hardened guard revision correlates write receipts by tool identity and
   preceding action, refuses another owner's private memory unless a trusted
   grant is present, and buffers only the first assistant turn after a recall
@@ -96,10 +121,17 @@ Known limits:
 - The device artifact is 16k context; the host model is 32k.
 - The guards are response-side checks, not an authorization boundary. They
   cannot make an action permitted.
-- Action canonicalization and authorization remain at the SAGE/OpenClaw
-  dispatcher; the model can still produce prose such as "I remembered it" for
-  an edge-case save request, which the dispatcher must convert to the
-  canonical tool call.
+- The runtime action boundary is implemented in
+  [`software/runtime/src/sage_lantern/action_guard.py`](../../software/runtime/src/sage_lantern/action_guard.py)
+  and `ConversationService.dispatch_save()`. It executes only canonical
+  request-derived calls through an admission-checked SAGE executor and returns
+  the receipt unchanged. The wheel is installed in Unit C's production venv
+  (`1e4b8184…`; `action_guard.py` `f844e2ed…`) and the staged package
+  verification passes. The product UI/HTTP route that will invoke this service
+  method is still separate work.
+- Memory was measured as process RSS on a one-request probe, not as the RKLLM
+  SDK allocator under a longer soak; the reading showed no guard-attributable
+  increase.
 - The model remains a 3B near-bench build; broader arithmetic, field-range,
   long-conversation and multi-user claims need their own measurements.
 

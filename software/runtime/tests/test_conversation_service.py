@@ -49,10 +49,11 @@ class FakeConversationSDK:
         return [0.25, 0.75]
 
     def propose(self, content, memory_type, domain_tag, confidence, embedding=None,
-                classification=None, provider=None):
+                classification=None, provider=None, tags=None):
         self._call("propose", dict(content=content, memory_type=memory_type,
                                    domain_tag=domain_tag, confidence=confidence,
-                                   embedding=embedding, classification=classification, provider=provider))
+                                   embedding=embedding, classification=classification,
+                                   provider=provider, tags=tags))
         memory_id = str(uuid4())
         self.records[memory_id] = SimpleNamespace(
             memory_id=memory_id, content=content,
@@ -179,7 +180,63 @@ class ConversationServiceTests(unittest.TestCase):
             self.assertEqual(payload["kind"], operation["kind"])
             self.assertEqual(payload["session_id"], self.item["session_id"])
             self.assertEqual(payload["created_at"], self.item["created_at"])
-            self.assertEqual(operation["payload_sha256"], hashlib.sha256(operation["payload"].encode()).hexdigest())
+            self.assertEqual(operation["payload_sha256"],
+                             hashlib.sha256(operation["payload"].encode()).hexdigest())
+
+    def test_dispatch_save_uses_canonical_request_and_owner_admission(self):
+        request = json.dumps({
+            "action": "remember",
+            "content": "The launch checklist is in the blue folder.",
+            "memory_type": "fact",
+            "tags": ["launch"],
+        })
+        routing = json.dumps({
+            "owned_home": "self",
+            "permitted_public_domains": [],
+            "private_grants": [],
+        })
+        result = self.service.dispatch_save(request, routing)
+        self.assertEqual(result.kind, "result")
+        self.assertEqual(result.receipt["status"], "proposed")
+        self.assertEqual(self.client.count("propose"), 1)
+        propose = [arguments for name, arguments in self.client.calls
+                   if name == "propose"][0]
+        self.assertEqual(propose["domain_tag"], "local-field-knowledge")
+        self.assertEqual(propose["content"],
+                         "The launch checklist is in the blue folder.")
+        self.assertIn("get_profile", [name for name, _ in self.client.calls])
+        self.assertIn("domain_access_sample", [name for name, _ in self.client.calls])
+
+    def test_dispatch_save_refuses_locked_device_and_cross_owner(self):
+        request = json.dumps({
+            "action": "remember",
+            "content": "The launch checklist is in the blue folder.",
+            "memory_type": "fact",
+        })
+        routing = json.dumps({
+            "owned_home": "self",
+            "permitted_public_domains": [],
+            "private_grants": [],
+        })
+        self.unlocked = False
+        locked = self.service.dispatch_save(request, routing)
+        self.assertEqual(locked.kind, "error")
+        self.assertEqual(locked.reason, "not_admitted:access_unavailable")
+        self.assertEqual(self.client.count("propose"), 0)
+
+        self.unlocked = True
+        other = self.service.dispatch_save(
+            json.dumps({
+                "action": "remember",
+                "content": "The spare key is under the mat.",
+                "memory_type": "fact",
+                "memory_owner": "Talven",
+            }),
+            routing,
+        )
+        self.assertEqual(other.kind, "clarification")
+        self.assertEqual(other.reason, "unauthorized_private_owner")
+        self.assertEqual(self.client.count("propose"), 0)
 
     def test_without_consent_record_and_tick_do_not_dispatch(self):
         self.assertEqual(self.service.record(None, self.item), [])

@@ -112,13 +112,79 @@
     "loopback_fake_engine_suite": {
       "passed": 6,
       "failed": 0
+    },
+    "runtime_action_guard_suite": {
+      "passed": 33,
+      "failed": 0
+    },
+    "conversation_service_suite": {
+      "passed": 42,
+      "failed": 0
+    },
+    "conversation_sage_suite": {
+      "passed": 81,
+      "failed": 0
     }
   },
+  "action_runtime": {
+    "wheel": "sage_lantern_runtime-0.2.0-py3-none-any.whl",
+    "wheel_sha256": "1e4b8184b704652f486170db07423ecb48dbb762ea4debc960e552910975270e",
+    "action_guard_sha256": "f844e2ed88d91ff4a02f6ff3e8730c5188012bd9fd265c6dab626ead62dca612",
+    "conversation_service_sha256": "2b11cfd78dd3fbc8c26fcaa213743f8da7775a07d38c57499a318dbc3b5b79e8",
+    "conversation_sage_sha256": "495190a838429a707e28482cbe632c9ed1207ffc28d6af60c9bac39f3b8be87d",
+    "installed_version": "0.2.0",
+    "device_verification": {
+      "all_pass": true,
+      "result_kind": "result",
+      "receipt_status": "proposed",
+      "cross_owner_refused": "unauthorized_private_owner",
+      "conversation_service_boundary": true
+    },
+    "evidence": "docs/lantern/evidence/V79_6_ACTION_RUNTIME_DEVICE_20261018.json",
+    "rollback": "/var/tmp/lantern-focused-finetune-20261012/runtime-pre-action-guard-20261018",
+    "product_route": "not yet wired to HTTP or UI"
+  },
+  "guard_on_probe_20261018": {
+    "scope": "12 fixed latency prompts (128/512/1024/1536 prompt tokens), 64 output tokens, streaming HTTP, same V79.6 artifact and 2048 context",
+    "guards_on": {
+      "ttft_median_ms": 5132.4,
+      "ttft_p90_ms": 11662.3,
+      "total_median_ms": 13356.6,
+      "decode_median_tokens_per_second": 7.650,
+      "decode_aggregate_tokens_per_second": 7.561,
+      "server_rss_kb": 90880,
+      "engine_rss_kb": 3463876,
+      "combined_rss_kb": 3554756,
+      "sha256": "8ffe6c76ed38d24a4f8fd0ea6524b602bbc4081e47850ed58616b08e61483b6e"
+    },
+    "guards_off": {
+      "ttft_median_ms": 5090.9,
+      "ttft_p90_ms": 11885.7,
+      "total_median_ms": 13349.1,
+      "decode_median_tokens_per_second": 7.645,
+      "decode_aggregate_tokens_per_second": 7.519,
+      "server_rss_kb": 91068,
+      "engine_rss_kb": 3467752,
+      "combined_rss_kb": 3558820,
+      "sha256": "537b430d0618f907d913fbd29b4e54aaf127549eadfb970ab1f0fff2a0a64d47"
+    },
+    "stock_direct_engine_same_12_ids": {
+      "ttft_median_ms": 5078.0,
+      "ttft_p90_ms": 11540.8,
+      "total_median_ms": 13340.7,
+      "decode_median_tokens_per_second": 7.620,
+      "decode_aggregate_tokens_per_second": 7.587
+    },
+    "guards_on_ttft_overhead_ms": 41.5,
+    "guards_on_total_overhead_ms": 7.5,
+    "memory_note": "Combined server+engine RSS difference was -4064 KB (guards on lower), which is run-to-run noise; this is process RSS, not the RKLLM SDK allocator counter.",
+    "note": "Ordinary chat guard overhead is within run-to-run noise; stock is a direct-engine reference, not the same HTTP transport."
+  },
   "known_limits": [
-    "The 48-request performance comparison was measured with guards off; guard-on latency and memory were not benchmarked.",
+    "The 48-request performance comparison was measured with guards off; a separate 12-case guard-on/off latency probe was run, but guard-on memory was not measured.",
     "The live service serves 2048 context and 256 output tokens, not the 16k artifact or 32k host context.",
     "The first assistant turn after a named recall receipt is buffered for the absence guard; later ordinary chat remains streamed.",
-    "Response guards are not an authorization boundary; SAGE/OpenClaw still owns action authorization and canonicalization.",
+    "The action runtime is installed on Unit C, but its product HTTP/UI route is not yet wired; cross-owner grants also need an owner-bound executor.",
     "The raw model still has E13 interval drift and the S03_B absence clause when guards are disabled."
   ]
 }

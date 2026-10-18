@@ -1,0 +1,30 @@
+{
+  "schema": "sage.lantern.action-runtime-device.v1",
+  "date": "2026-10-18",
+  "device": "Unit C",
+  "wheel": {
+    "name": "sage_lantern_runtime-0.2.0-py3-none-any.whl",
+    "sha256": "1e4b8184b704652f486170db07423ecb48dbb762ea4debc960e552910975270e"
+  },
+  "installed_package": {
+    "version": "0.2.0",
+    "action_guard_sha256": "f844e2ed88d91ff4a02f6ff3e8730c5188012bd9fd265c6dab626ead62dca612",
+    "conversation_service_sha256": "2b11cfd78dd3fbc8c26fcaa213743f8da7775a07d38c57499a318dbc3b5b79e8",
+    "conversation_sage_sha256": "495190a838429a707e28482cbe632c9ed1207ffc28d6af60c9bac39f3b8be87d"
+  },
+  "verification": {
+    "all_pass": true,
+    "result_kind": "result",
+    "receipt_status": "proposed",
+    "cross_owner_refused": "unauthorized_private_owner",
+    "conversation_service_boundary": true
+  },
+  "services_after_install": {
+    "sage-lantern-runtime.service": "inactive",
+    "sage-lantern-llm.service": "active",
+    "llm_health": "ok"
+  },
+  "rollback": "/var/tmp/lantern-focused-finetune-20261012/runtime-pre-action-guard-20261018",
+  "product_route": "not yet wired to HTTP or UI",
+  "scope": "Package-level canonical dispatch and receipt test with a fake SAGE executor; no live memory write or product action was performed."
+}

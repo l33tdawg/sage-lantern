@@ -744,7 +744,8 @@ The production guard revision is final-reviewed at `response_guards.py`
 preceding action and tool identity, refuses another owner's private memory
 without a grant, and buffers only the first assistant turn after a recall
 receipt; later ordinary chat remains token-streamed. The SAGE/OpenClaw
-dispatcher still owns action authorization and canonicalization.
+executor still owns the authenticated SAGE call; the runtime dispatcher owns
+request canonicalization and one-shot dispatch (D-026).
 
 **Affects:** [software/npu/README.md](../../software/npu/README.md),
 [3B_MODEL_PRODUCTION.md](3B_MODEL_PRODUCTION.md),
@@ -771,6 +772,29 @@ publication remain separate gates.
 
 **Affects:** root `README.md`, the Meshticulum release notes and Lantern public
 communications.
+
+## D-026 — The canonical request, not the model call, is the execution input
+
+**Decision (2026-10-18):** Lantern memory actions execute only a canonical call
+derived from the structured request and trusted routing. The model's
+`<tool_call>` is evidence, never the execution source. The runtime dispatcher
+invokes a trusted executor once, returns its receipt unchanged, and treats an
+exception or malformed receipt as `uncertain` without automatic retry.
+
+**Reason:** model text can invent tags, confidence, destinations or completion
+claims; the action guard's request-derived call removes that authority. The
+runtime still needs the owner session, admission check and SAGE client to
+authorize and execute the action.
+
+**Consequence:** `ConversationService.dispatch_save()` is the runtime boundary;
+`SageRememberExecutor` is bound to the current owner. A grant for another
+person's private memory cannot execute until an explicitly owner-bound executor
+is supplied. A missing product UI/HTTP route is a separate integration gap, not
+permission to let the model write directly.
+
+**Affects:** [ACTION_GUARD.md](ACTION_GUARD.md),
+`software/runtime/src/sage_lantern/action_guard.py`,
+`software/runtime/src/sage_lantern/conversation_service.py`.
 
 ## Open decisions
 
