@@ -70,6 +70,13 @@ def test_the_bound_session_is_the_operator_on_the_expected_seat(inert, monkeypat
     assert reason == 'bound' and binding.session_id == '3' and binding.uid == '1000'
 
 
+def test_keyboard_alone_triggers_desktop_and_mouse_is_optional(monkeypatch):
+    monkeypatch.setattr(MODULE, 'override_setting', lambda: '')
+    assert MODULE.wanted_mode({}, True, False) == ('desktop', 'auto')
+    assert MODULE.wanted_mode({}, True, True) == ('desktop', 'auto')
+    assert MODULE.wanted_mode({}, False, True) == ('kiosk', 'auto')
+
+
 def test_a_session_for_another_account_or_seat_is_not_bound(inert, monkeypatch):
     def run(command, **_kwargs):
         if command[1] == 'list-sessions':

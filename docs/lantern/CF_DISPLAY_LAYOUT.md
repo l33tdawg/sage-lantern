@@ -60,15 +60,15 @@ The landscape rules remain in effect on A/B's landscape viewports.
 
 ### Owner desktop requirement — 28 September 2026
 
-**Settled by D-020 (owner, 2026-09-30):** portrait stays the device default —
-the handheld question-and-answer posture — and landscape is the **desk mode**,
-entered when a USB keyboard *and* mouse are attached (the supervisor's
-automatic switch) or forced with the explicit control. Landscape is not the
-boot default and no orientation sensor is required. Everything below records
-how the first version was built and what remains open.
+**Settled by D-020 (owner, 2026-09-30; trigger amended 2026-10-18):** portrait
+stays the device default — the handheld question-and-answer posture — and
+landscape is the **desk mode**, entered when a USB keyboard is attached (mouse
+optional, supervisor's automatic switch) or forced with the explicit control.
+Landscape is not the boot default and no orientation sensor is required. The
+desktop login uses the `sage` account and the owner's Lantern password.
 
 The owner wants a custom desktop when the device is turned onto its side and
-used with a keyboard and mouse, alongside the portrait Lantern interface.
+used with a keyboard (and optional mouse), alongside the portrait Lantern interface.
 This is a product requirement, not an implemented mode switch. The existing
 landscape CSS is only the application layout; it is not a desktop session.
 Both the current Armbian Ubuntu base and a suitable board-specific Ubuntu
@@ -76,7 +76,7 @@ image can host a custom desktop. The base still needs graphics, NPU, touch,
 boot and update qualification independently of its theme or branding.
 
 Physical orientation sensing has not been verified. A proposed first version
-can detect keyboard/mouse attachment and offer an explicit Desktop control;
+can detect keyboard attachment and offer an explicit Desktop control;
 automatic physical rotation requires a supported orientation sensor. Preserve
 the running Lantern session and inference service during any mode transition,
 and rotate the display and touch mapping together. These are design proposals
@@ -89,10 +89,10 @@ awaiting implementation and physical testing, not claims of current behavior.
 provides the two modes without touching the app server, the conversation state
 or the device lock:
 
-- **Portrait (default):** no mouse attached — the console runs fullscreen
+- **Portrait (default):** no USB keyboard attached — the console runs fullscreen
   (Chromium `--kiosk`, Wayland-native) on the 720 × 1560 panel, output
   transform `normal`.
-- **Docked:** USB keyboard *and* mouse both attached — the fullscreen browser is
+- **Docked:** USB keyboard attached (mouse optional) — the fullscreen browser is
   replaced by an ordinary window on the GNOME desktop and the output rotates to
   the side (`rotate-90` by default), so the device can be turned on its side
   with the companion app still available.

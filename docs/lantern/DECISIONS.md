@@ -599,12 +599,18 @@ must deploy the same bundle and record each unit's own receipts.
 
 ## D-020 — Portrait is the device default; landscape is the desk mode
 
-**Decision (owner, 2026-09-30):** a Lantern is **portrait by default** — the
-handheld question-and-answer posture. It becomes a **landscape Linux desktop
-only when a USB keyboard *and* mouse are attached**, which is the mode
-supervisor's automatic switch, and the operator can force either state with the
-explicit `sage-lantern-desktop-mode on|off|auto` control. Landscape is not the
-boot default, and no orientation sensor is required to make the switch.
+**Decision (owner, 2026-09-30; trigger amended 2026-10-18):** a Lantern is
+**portrait by default** — the handheld question-and-answer posture. It becomes a
+**landscape Linux desktop when a USB keyboard is attached**; the mouse is
+optional. The operator can force either state with the explicit
+`sage-lantern-desktop-mode on|off|auto` control. Landscape is not the boot
+default, and no orientation sensor is required to make the switch. The desktop
+login is the `sage` account with the owner's Lantern password; D-022's fresh
+operator-login gate still applies.
+
+**History:** the original 30 September wording required a USB keyboard *and*
+mouse. The owner corrected that on 18 October: the keyboard is the posture
+signal, and a user may plug in a mouse after the desktop appears.
 
 **Reason:** the primary interaction is hold-to-talk → read the answer, one
 handed, and the console layout, the panel's native shape and the controls are
@@ -613,7 +619,7 @@ reads better landscape. Triggering on keyboard-and-mouse attachment matches the
 posture change exactly, and physical orientation sensing is unverified, so
 automatic rotation stays out of the supported path.
 
-**Consequence:** portrait is the resting state; the docked switch rotates
+**Consequence:** portrait is the resting state; the keyboard-triggered switch rotates
 display and touch together through the logical monitor. Still open and recorded
 with this decision: the app's session hand-off across a mode switch (the unlock
 token lives in browser memory, so the UI re-locks today), the physical

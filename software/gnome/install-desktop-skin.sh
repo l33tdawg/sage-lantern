@@ -28,10 +28,14 @@ g() {
 install_files() {
   install -Dm644 "$assets/sage-lantern-desktop.svg" "$wallpaper"
   install -Dm644 "$assets/sage-lantern-start.html" "$start_page"
+  install -Dm644 "$assets/maps.html" /usr/share/sage-lantern/desktop/maps.html
   install -Dm644 "$assets/sage-lantern-desktop-icon.svg" "$icon_dir/sage-lantern-desktop.svg"
   install -Dm644 "$assets/sage-cerebrum.svg" "$icon_dir/sage-cerebrum.svg"
+  install -Dm644 "$assets/sage-maps.svg" "$icon_dir/sage-maps.svg"
   install -Dm644 "$assets/sage-lantern-desktop.desktop" "$app_dir/sage-lantern-desktop.desktop"
   install -Dm644 "$assets/sage-cerebrum.desktop" "$app_dir/sage-cerebrum.desktop"
+  install -Dm644 "$assets/sage-maps.desktop" "$app_dir/sage-maps.desktop"
+  install -Dm644 "$assets/sage-lantern-portrait.desktop" "$app_dir/sage-lantern-portrait.desktop"
   if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q "$app_dir" || true; fi
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
 }
@@ -69,7 +73,7 @@ import ast, sys
 raw = sys.argv[1].strip()
 if raw.startswith("@as "): raw = raw[4:]
 values = list(ast.literal_eval(raw)) if raw else []
-add = ["sage-lantern-desktop.desktop", "sage-cerebrum.desktop", "sage-lantern-console.desktop"]
+add = ["sage-lantern-desktop.desktop", "sage-cerebrum.desktop", "sage-maps.desktop", "sage-lantern-console.desktop"]
 for item in reversed(add):
     if item in values: values.remove(item)
     values.insert(0, item)
@@ -117,12 +121,15 @@ case "${1:-install}" in
     echo "Installed SAGE Lantern desktop skin for $user"
     echo "  wallpaper: $wallpaper"
     echo "  start page: $start_page"
-    echo "  shortcuts: SAGE Lantern Desktop, SAGE CEREBRUM"
+    echo "  shortcuts: SAGE Lantern Desktop, SAGE CEREBRUM, SAGE Maps & Location"
+    echo "  controls: Return to Lantern Portrait (app grid)"
     ;;
   uninstall)
     restore_state
     rm -f "$wallpaper" "$start_page" "$icon_dir/sage-lantern-desktop.svg" "$icon_dir/sage-cerebrum.svg" \
-      "$app_dir/sage-lantern-desktop.desktop" "$app_dir/sage-cerebrum.desktop"
+      "$icon_dir/sage-maps.svg" "$app_dir/sage-lantern-desktop.desktop" "$app_dir/sage-cerebrum.desktop" \
+      "$app_dir/sage-maps.desktop" "$app_dir/sage-lantern-portrait.desktop" \
+      /usr/share/sage-lantern/desktop/maps.html
     rm -rf "$state_dir"
     echo "Removed SAGE Lantern desktop skin and restored previous desktop settings"
     ;;

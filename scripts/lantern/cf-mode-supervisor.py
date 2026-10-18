@@ -2,7 +2,7 @@
 """Portrait app mode / docked desktop mode for C-F; not a session switch.
 
 Portrait (default): the Lantern console fullscreen through the installed
-kiosk launcher. Docked: keyboard AND mouse attached (or an explicit override)
+kiosk launcher. Docked: a USB keyboard attached (mouse optional), or an explicit override,
 closes the kiosk, rotates the panel for side use, and serves the same console
 as an ordinary window on the GNOME desktop. One browser at a time; the app
 server, conversation state and device lock are untouched by a mode change.
@@ -152,12 +152,13 @@ def inputs():
 
 
 def wanted_mode(values, keyboard, mouse):
+    """Resolve the mode. A keyboard alone is the owner's docked trigger."""
     override = override_setting()
     if override in {'desktop', 'kiosk'}:
         return override, 'override'
     if override not in {'', 'auto'}:
-        return ('desktop' if keyboard and mouse else 'kiosk'), 'invalid-override'
-    return ('desktop' if keyboard and mouse else 'kiosk'), 'auto'
+        return ('desktop' if keyboard else 'kiosk'), 'invalid-override'
+    return ('desktop' if keyboard else 'kiosk'), 'auto'
 
 
 def override_setting():

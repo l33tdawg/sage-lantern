@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SAGE Maps & Location
+Comment=Online maps, GNSS status and the offline-map path
+Exec=/usr/bin/chromium --ozone-platform=wayland --app=file:///usr/share/sage-lantern/desktop/maps.html
+Icon=/usr/share/icons/hicolor/scalable/apps/sage-maps.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=true
