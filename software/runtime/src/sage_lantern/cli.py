@@ -5,15 +5,19 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 from . import __version__
-from .adapters import LanternConversationContext, LlamaCppHTTP, NoSpeechDetected, PiperTTS, SageSDKContext, StaticContext, WhisperCppSTT
+from .adapters import AplayPlayback, LanternConversationContext, LlamaCppHTTP, NoSpeechDetected, PiperTTS, SageSDKContext, StaticContext, WhisperCppSTT
 from .answer_verification import AnswerVerifier
 from .config import RuntimeConfig
 from .envelope import LanternEnvelope
 from .orchestrator import VoiceOrchestrator, validated_question
+from .power_settings import PowerSettingsError
 from .public_queue import ProposalOutbox
+from .settings import SettingId, playback_decision, spoken_responses_intent
+from .spoken_responses import SpokenResponsesStore
 from .state import JsonlEventLog, StateMachine
 from .active_conversation import MAX_INPUT_BYTES, validate_messages
 
@@ -38,6 +42,29 @@ def _conversation_input(stream, *, text):
     return question, validate_messages(value['messages'])
 
 
+def spoken_intent(config: RuntimeConfig) -> Mapping[SettingId, bool] | None:
+    """The user's stored choice, or `None` when there is no store to read.
+
+    `None` and `{SettingId.TTS: False}` are deliberately different inputs: `None`
+    means no user layer is configured at all, while an explicit `False` means a
+    user turned it off. Both resolve to silence today, but a caller that wanted to
+    explain *why* the device is quiet can tell them apart, and keeping the
+    distinction here stops it being flattened by an accident later.
+
+    An unreadable store resolves to `None` rather than raising. The voice loop has
+    to keep answering: `build_orchestrator` failing would take the screen answer
+    down with the speaker, turning a settings fault into a device that does not
+    work. Silence plus a readable reason is the smaller failure, and `health()`
+    reports the store's state separately so an operator can see it.
+    """
+    if config.spoken_dir is None:
+        return None
+    try:
+        return spoken_responses_intent(SpokenResponsesStore(config.spoken_dir).load())
+    except (PowerSettingsError, ValueError, OSError):
+        return None
+
+
 def build_orchestrator(config: RuntimeConfig) -> VoiceOrchestrator:
     context = (
         StaticContext(config.static_context)
@@ -47,6 +74,15 @@ def build_orchestrator(config: RuntimeConfig) -> VoiceOrchestrator:
             _required(config.sage_identity_path, "sage.identity_path"),
             config.sage_domain,
         )
+    )
+    # Both layers, and the shared decision rather than a local restatement of it.
+    # `tts.enabled` gates the engine, the `[audio]` keys gate the routing, and the
+    # stored preference gates the sound — so the construction site cannot drift
+    # from `playback_decision`, which the end-to-end test also pins.
+    decision = playback_decision(
+        engine_enabled=config.tts_enabled,
+        device=config.audio_device if config.audio_enabled else None,
+        desired=spoken_intent(config),
     )
     return VoiceOrchestrator(
         StateMachine(JsonlEventLog(config.state_log)),
@@ -63,6 +99,10 @@ def build_orchestrator(config: RuntimeConfig) -> VoiceOrchestrator:
         AnswerVerifier(config.verifier_base_url, config.verifier_model,
                        timeout_seconds=config.verifier_timeout_seconds)
         if config.verify_answers else None,
+        playback=AplayPlayback(
+            config.audio_device,
+            target_rate=config.audio_target_rate,
+        ) if decision.enabled else None,
     )
 
 

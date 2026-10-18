@@ -8,6 +8,8 @@ User-reported current baseline: Qwen3.5-4B Q4_K_M, llama.cpp CPU, six threads, a
 
 Local evidence in `UNIT_A_PERFORMANCE_20260905.md` rejects blind A76 affinity: six threads/all CPUs gave photo TTFT 37.187/37.217 s versus 41.979/41.843 s with six threads confined to CPUs 4–7; four confined threads gave 39.107/39.275 s. That earlier record used one slot, so it does not describe today's four-slot configuration. Preserve six-thread unrestricted placement as the comparison baseline.
 
+> **UPDATE 2026-09-13.** The six-thread baseline above is superseded for the **text/answer** path by a measured 11-arm bisect (`work/cpu-tier-prefill-20260913/REPORT.md`): four threads is ~25-30% faster than six on the warm per-question prefill, and eight threads is worse still, so `--threads 4 --threads-batch 4 --parallel 1 --cache-ram 0` is now the shipped `sage-lantern-llm.service`. **The photo finding on this line is not superseded and is why affinity was not promoted with it** — the bisect contained no image, and it measured pinning to 4–7 as neutral on text, so there is no measured gain to weigh against the loss recorded above. Photo/-mmproj thread placement remains open.
+
 **Priority:** explicit single-slot/prompt profiling → smaller matched CPU model → Vulkan only if the installed stack permits it → separate RKLLM integration. None is a promised speedup.
 
 ## 1. Existing CPU path: low implementation cost

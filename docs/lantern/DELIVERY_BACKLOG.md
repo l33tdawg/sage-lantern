@@ -1,10 +1,47 @@
 # SAGE Lantern delivery backlog
 
-**Updated:** 2026-09-11
+**Current role/task map:** 2026-09-27 — [Device roles](DEVICE_ROLES.md) and
+[SAGE task map](SAGE_TASKS_20260927.md) supersede the execution order below.
+A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units. C–F are
+real Orange Pi 5 Plus user Lanterns with dual LoRa, GPS and WiFi. A/B endpoint
+completion is no longer a gate. Their public seeds are active and native personal
+SAGE stores deleted; LoRa/repeater and C–F acceptance remain open.
+
+**Historical checkpoint date:** 2026-09-12
 **Purpose:** One operational backlog for the Lantern device, Fleet Admin, Fleet
 Authority, radio bring-up, and later Commons federation work.
 
-## Current consolidated execution order
+**Current model lane (2026-10-18):** Unit C production chat is the V79.6 3B
+token engine with the final-reviewed response guards; see
+[3B_MODEL_PRODUCTION.md](3B_MODEL_PRODUCTION.md). The live server is
+`e80bd651…` and the guards are `64609722…`. The 48-request device comparison
+was run with guards off; guard-on streaming and receipt/policy checks are
+separate evidence. This does not close the broader model-quality,
+long-conversation, field, power or multi-unit acceptance items below.
+
+## Historical consolidated execution order (September 12)
+
+**Messaging resume checkpoint (2026-09-12):** Fresh-session execution task
+`e24e895c-3210-4725-b563-d1e7b416ef97` supersedes the session record
+`a3ecb114-e1df-447c-a7a7-7872662894d6`, whose uninstalled radio-meter and drain
+rollout it carries forward. B's durable receive slot — interrupted since
+9 September — was reconciled through the new audited `mesh_receive_recovery`
+module (audit `64ef6431-dcc8-596a-80ad-a19b1479bd1e`, slot back to `idle` at
+revision 74 with its UUID unchanged), and B now answers
+`messaging: {"available": true, "reason": "ready"}` with its provider
+initialized. A remains blocked: every provider attempt fails inside
+`meshcore_transport.get_contacts` while the health path still logs
+`radio_measurement`, so A's community endpoint returns
+`community_unavailable` (the on-screen "radio not ready"). The first repair step
+is the reviewed cold-broker restart; if it repeats, dump the raw `0x04`
+contact-list response with the daemon stopped. Owner-PIN sessions need a roughly
+six-second presence heartbeat, which is why a plain API unlock lapses. Staged on
+both units under `/root/lantern-contact-import/`: the owner-session driver and
+the reviewed contact operator tool for the owner-approved card refresh and the
+first real A→B / B→A message test. Source-only from the same session: one shared
+device header on every screen and a small x over the signal meter when no
+verified radio chip is present. Evidence: `work/messages-ab-20260912/`,
+`work/device-header-20260912/`, `work/radio-signal-x-20260912/`.
 
 **Current SAGE consolidation (2026-09-11):** [Task map and completed milestones](SAGE_TASKS_20260911.md)
 records **12 open tasks: eight in progress and four planned**. The completed A

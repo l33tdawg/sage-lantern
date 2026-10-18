@@ -15,6 +15,10 @@ from .conversation_context import (
 )
 from .conversation_sage import ConversationSage, exclude_from_general_context
 from .conversation_store import ConversationStore
+from .selected_thread_context import (
+    format_selected_thread_context, selected_snapshot_items, validated_thread_id,
+    MAX_SOURCE_ITEMS, MAX_SOURCE_BYTES,
+)
 
 
 def _store_activity(method):
@@ -523,13 +527,40 @@ class ConversationService:
         return result
 
     @_store_activity
-    def context(self, query):
+    def context(self, query, *, thread_id=None, selected_items=None):
+        """Recall general knowledge and optionally a bounded selected-chat branch.
+
+        Legacy callers retain cross-session conversation recall. A trusted
+        voice owner may supply its frozen Snapshot's exact history rows; even
+        an empty prefix is authoritative and never falls back to saved rows.
+        Supplying only thread_id uses the effective saved branch. These keyword
+        arguments are internal contracts, never independent authorization.
+        """
         if not isinstance(query, str) or not query.strip() or len(query.encode()) > 16384:
             raise ValueError("invalid_query")
+        if selected_items is not None and thread_id is None:
+            raise ValueError("selected_items_require_thread")
+        if thread_id is not None:
+            validated_thread_id(thread_id)
+            if selected_items is not None:
+                selected = selected_snapshot_items(selected_items, thread_id=thread_id)
         self._require_admission()
         suppressed = self.store.suppressed_ids()
-        memories, embedding = self.backend.recall_conversations_with_embedding(
-            query, suppressed_session_ids=suppressed, limit=3, recent_fallback=True)
+        if thread_id is None:
+            memories, embedding = self.backend.recall_conversations_with_embedding(
+                query, suppressed_session_ids=suppressed, limit=3, recent_fallback=True)
+        else:
+            if selected_items is None:
+                from .conversation_branch import effective_thread_items
+                selected = effective_thread_items(self.store.list(), thread_id)[-MAX_SOURCE_ITEMS:]
+                while sum(len((row["question"] + row["answer"]).encode("utf-8")) for row in selected) > MAX_SOURCE_BYTES:
+                    selected = selected[1:]
+            # Preserve the same private-domain general knowledge authorization,
+            # embedding validation and committed/provider exclusion below.
+            self.backend._authorize()
+            embedding = self.backend.client.embed(query)
+            self.backend._validate_embedding(embedding)
+            memories = ()
         entries = []
         entry_sessions = {}
         for memory in memories:
@@ -559,7 +590,12 @@ class ConversationService:
         latest_suppressed = self.store.suppressed_ids()
         entries = [entry for entry in entries if entry_sessions[entry.record_id] not in latest_suppressed]
         result = []
-        if entries:
+        if thread_id is not None:
+            selected = [row for row in selected if row["session_id"] not in latest_suppressed]
+            scoped = format_selected_thread_context(selected, thread_id=thread_id, query=query)
+            if scoped:
+                result.append(scoped)
+        elif entries:
             result.append(format_conversation_context(entries, max_turns=6, max_chars=VOICE_CONVERSATION_BYTES))
         remaining = VOICE_CONTEXT_BYTES - sum(len(part.encode("utf-8")) for part in result)
         knowledge_context = format_knowledge_context(records, domain=self.backend.domain, max_bytes=remaining)

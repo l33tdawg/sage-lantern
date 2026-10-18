@@ -1,0 +1,18 @@
+[Unit]
+Description=SAGE Lantern Ollama-compatible shim for local nomic embeddings
+After=sage-lantern-embed.service
+Wants=sage-lantern-embed.service
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+ExecStart=/usr/bin/python3 /opt/sage-lantern/nomic-shim/nomic-shim.py --upstream http://127.0.0.1:8083 --port 8084
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -104,7 +104,7 @@ def test_no_start_enable_or_identity_generation():
     for forbidden in ('systemctl', 'owner.start(', 'load_identity(', 'init-lantern-private', 'workflow_put('):
         assert forbidden not in source
 
-@pytest.mark.parametrize('unit_id', ['unit-a', 'unit-b'])
+@pytest.mark.parametrize('unit_id', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
 def test_independent_identity(unit_id):
     config = dict(unit_id=unit_id, chain_id='private-' + unit_id, agent_id=unit_id + '-agent')
     identity = dict(config, operator_account='radxa')

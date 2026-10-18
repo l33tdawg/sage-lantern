@@ -35,7 +35,7 @@ install_root="/opt/sage-lantern"
 state_root="/var/lib/sage-lantern"
 config_root="/etc/sage-lantern"
 
-for command in python3 cmake c++ tar nproc systemctl useradd install mkdir; do
+for command in python3 cmake c++ tar nproc systemctl useradd install mkdir getent; do
   if ! command -v "${command}" >/dev/null 2>&1; then
     printf 'Missing prerequisite: %s\n' "${command}" >&2
     exit 2
@@ -131,6 +131,10 @@ python3 "${source_root}/scripts/verify-lantern-bundle.py"
 python3 "${source_root}/scripts/verify-runtime-release.py" --bundle
 python3 "${source_root}/scripts/verify-runtime-release.py" --binary-target
 
+# Both groups are named explicitly by the NPU unit. Do not create substitute
+# device groups or relax permissions when the board image lacks its GPU/NPU setup.
+getent group render >/dev/null || { printf 'Missing render device group.\n' >&2; exit 2; }
+getent group video >/dev/null || { printf 'Missing video device group.\n' >&2; exit 2; }
 fresh_target_preflight
 
 claim_install_root() {
@@ -156,6 +160,11 @@ install -m 0644 "${source_root}/software/cache/models/qwen3.5-4b-q4_k_m.gguf" "$
 install -m 0644 "${source_root}/software/cache/models/mmproj-BF16.gguf" "${install_root}/models/mmproj-BF16.gguf"
 install -m 0644 "${source_root}/software/cache/models/en_US-lessac-medium.onnx" "${install_root}/models/en_US-lessac-medium.onnx"
 install -m 0644 "${source_root}/software/cache/models/en_US-lessac-medium.onnx.json" "${install_root}/models/en_US-lessac-medium.onnx.json"
+
+install -m 0644 "${source_root}/software/cache/models/nomic-embed-text-v1.5.Q8_0.gguf" "${install_root}/models/nomic-embed-text-v1.5.Q8_0.gguf"
+python3 "${source_root}/scripts/lantern/install-npu-payload.py" --payload "${source_root}"
+install -d -o root -g root -m 0755 "${install_root}/nomic-shim"
+install -o root -g root -m 0644 "${source_root}/scripts/lantern/nomic-shim.py" "${install_root}/nomic-shim/nomic-shim.py"
 
 python3 -m venv "${install_root}/venv"
 "${install_root}/venv/bin/python" -m pip install --no-index --find-links "${source_root}/software/bundle/python-wheels" \
@@ -193,6 +202,10 @@ else
   printf 'Preserving existing configuration: %s/lantern.toml\n' "${config_root}"
 fi
 install -m 0644 "${source_root}/software/systemd/sage-lantern-llm.service" /etc/systemd/system/sage-lantern-llm.service
+install -m 0644 "${source_root}/software/systemd/sage-lantern-audio-capture.service" /etc/systemd/system/sage-lantern-audio-capture.service
+for model_service in llm-cpu vlm embed embed-shim; do
+  install -o root -g root -m 0644 "${source_root}/software/systemd/sage-lantern-${model_service}.service" "/etc/systemd/system/sage-lantern-${model_service}.service"
+done
 install -m 0644 "${source_root}/software/systemd/sage-lantern-personal-sage.service" /etc/systemd/system/sage-lantern-personal-sage.service
 install -m 0644 "${source_root}/software/systemd/sage-lantern-runtime.service" /etc/systemd/system/sage-lantern-runtime.service
 install -m 0755 "${source_root}/scripts/smoke-test-lantern-unit.sh" /usr/local/sbin/smoke-test-lantern-unit

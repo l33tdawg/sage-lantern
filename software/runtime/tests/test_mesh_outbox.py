@@ -558,6 +558,47 @@ def test_revocation_after_dispatch_commit_stops_rf(setup, change):
     assert setup.stored()['body']['state'] == 'dispatching'
 
 
+def test_dispatch_bounds_contact_reads_without_caching_between_fragments(setup, monkeypatch):
+    setup.queue()
+    original = setup.outbox.verify_contact
+    contacts = []
+    def verify(action):
+        contacts.append(action.fragment_index)
+        return original(action)
+    monkeypatch.setattr(setup.outbox, 'verify_contact', verify)
+    device = setup.radio()
+    inventory = device.get_contacts(authorize=setup.access)
+    setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500,
+                             access_check=setup.access, inventory=inventory)
+    # Entry, after dispatch CAS, immediate RF admission, after RF, after
+    # progress CAS. Internal journal guards must not expand these five reads.
+    assert len(contacts) == 5
+    setup.contact_allowed = False
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=setup.radio(), radio_timestamp=500,
+                                 access_check=setup.access, inventory=inventory)
+    assert len(setup.radios) == 1
+
+
+@pytest.mark.parametrize('change', ['guard', 'consent', 'expiry'])
+def test_revocation_after_progress_commit_refuses_success(setup, change):
+    setup.queue()
+    device = setup.radio()
+    def revoke(state):
+        if state == 'queued':
+            if change == 'guard':
+                setup.allowed = False
+            elif change == 'consent':
+                setup.contact_allowed = False
+            else:
+                setup.now = 1000
+    setup.after_commit = revoke
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access)
+    assert len(setup.radios) == 1
+    assert setup.stored()['body']['next_fragment'] == 1
+
+
 def test_queue_commit_timeout_reconciles_without_resealing(setup):
     setup.fault = 'after'
     with pytest.raises(MeshOutboxError):

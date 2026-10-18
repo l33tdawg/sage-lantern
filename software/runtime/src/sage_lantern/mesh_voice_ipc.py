@@ -183,7 +183,12 @@ class MeshVoiceFacade:
                 while True:
                     remaining = deadline - time.monotonic()
                     require(remaining > 0)
-                    connection.settimeout(remaining if method == "close" else min(5, remaining))
+                    # A request can wait behind a whole background radio job.
+                    # Silence while queued is not loss of authorization: the
+                    # daemon challenges the live session again before acting.
+                    # Match its 45-second request bound instead of abandoning
+                    # an otherwise valid request after five quiet seconds.
+                    connection.settimeout(remaining if method == "close" else min(45, remaining))
                     response = receive(connection)
                     if set(response) == {"guard"}:
                         require(method != "close" and type(response["guard"]) is str

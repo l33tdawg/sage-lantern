@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Nonmutating two-unit configuration planner; not hardware verification/install.
+"""Nonmutating A–F unit configuration planner; not hardware verification/install.
 
 Reads only explicitly supplied prepared metadata and public radio inventories.
 Peer comparison establishes uniqueness only within the supplied comparison set.
 Hardware arguments are operator-supplied bindings, not live device evidence.
+Radio may be explicitly declared absent with --radio-absent, and capture audio
+may be an explicitly named platform codec device (--audio-platform-id-path)
+instead of a USB microphone; neither mode is live hardware evidence.
 Voice-activation output maps a freshly validated plan to the installer's config;
 the installer must still validate all identity/recovery evidence and hardware.
 """
@@ -71,7 +74,7 @@ def radio_inventory(filename):
     value = json.loads(read_public(filename, "meshcore-radio-public.json"), object_pairs_hook=unique_object)
     if type(value) is not dict or value.get("schema") != "sage.lantern.meshcore-radio-public.v1":
         raise PlanError("invalid_radio_schema")
-    unit = match(value.get("unit_id"), r"unit-[a-z]", "invalid_radio_unit")
+    unit = match(value.get("unit_id"), r"unit-[a-f]", "invalid_radio_unit")
     usb = value.get("usb")
     identity = value.get("radio_identity")
     if type(usb) is not dict or type(identity) is not dict:
@@ -91,8 +94,15 @@ def radio_inventory(filename):
             "public_fingerprint": fingerprint}
 
 
+def platform_device(id_path):
+    match(id_path, r"platform-[a-z0-9]+(-[a-z0-9]+)*", "invalid_platform_id_path")
+    if len(id_path) > 64:
+        raise PlanError("invalid_platform_id_path")
+    return id_path[len("platform-"):]
+
+
 def build_plan(args):
-    unit = match(args.unit_id, r"unit-[a-z]", "invalid_unit_id")
+    unit = match(args.unit_id, r"unit-[a-f]", "invalid_unit_id")
     account = match(args.account, r"[a-z][a-z0-9_-]{0,31}", "invalid_account")
     if account in {"root", "sage-lantern", "nobody"}:
         raise PlanError("reserved_operator_account")
@@ -113,33 +123,61 @@ def build_plan(args):
     evidence = safe_path(args.evidence_root or str(repo / f"evidence/{unit}-provisioning"))
     if app != repo / "apps/lantern-fleet-admin" or evidence != repo / f"evidence/{unit}-provisioning":
         raise PlanError("inconsistent_unit_paths")
-    radio = radio_inventory(args.radio_inventory)
-    if radio["unit_id"] != unit:
-        raise PlanError("radio_unit_mismatch")
-    expected = {"usb_serial": args.radio_usb_serial, "vendor_id": args.radio_vendor_id,
-                "product_id": args.radio_product_id, "stable_path": args.radio_stable_path,
-                "public_fingerprint": args.radio_public_fingerprint}
-    if any(radio[key] != value for key, value in expected.items()):
-        raise PlanError("radio_hardware_binding_mismatch")
-    if len(args.peer_radio_inventory) > 16:
-        raise PlanError("peer_inventory_limit")
-    peers = [radio_inventory(path) for path in args.peer_radio_inventory]
-    records = [radio, *peers]
-    for field in ("unit_id", "usb_serial", "public_fingerprint", "stable_path"):
-        if len({record[field] for record in records}) != len(records):
-            raise PlanError("duplicate_radio_binding")
-    audio_serial = match(args.audio_usb_serial, r"[A-Za-z0-9:_-]{1,128}", "invalid_audio_serial")
-    audio_path = str(safe_path(args.audio_stable_path))
-    if not audio_path.startswith("/dev/snd/by-id/") or len(Path(audio_path).parts) != 5:
-        raise PlanError("invalid_audio_path")
-    if audio_serial not in Path(audio_path).name:
-        raise PlanError("audio_binding_mismatch")
-    if unit != "unit-a" and "SAGE-LANTERN-A-AUDIO" in audio_path:
-        raise PlanError("unit_a_audio_on_other_unit")
-    audio = {"usb_serial": audio_serial, "stable_path": audio_path}
-    if args.audio_vendor_id is not None or args.audio_product_id is not None:
-        audio["vendor_id"] = match(args.audio_vendor_id, r"[0-9a-f]{4}", "invalid_audio_vendor")
-        audio["product_id"] = match(args.audio_product_id, r"[0-9a-f]{4}", "invalid_audio_product")
+    radio_absent = bool(getattr(args, "radio_absent", False))
+    if radio_absent == bool(args.radio_inventory):
+        raise PlanError("radio_binding_choice_required")
+    peers = []
+    if radio_absent:
+        for value in (args.radio_usb_serial, args.radio_vendor_id, args.radio_product_id,
+                      args.radio_stable_path, args.radio_public_fingerprint):
+            if value is not None:
+                raise PlanError("radio_pins_with_absent_radio")
+        if args.peer_radio_inventory:
+            raise PlanError("peer_inventory_with_absent_radio")
+        radio = {"present": False, "reason": "operator-declared-absent"}
+    else:
+        radio = radio_inventory(args.radio_inventory)
+        if radio["unit_id"] != unit:
+            raise PlanError("radio_unit_mismatch")
+        expected = {"usb_serial": args.radio_usb_serial, "vendor_id": args.radio_vendor_id,
+                    "product_id": args.radio_product_id, "stable_path": args.radio_stable_path,
+                    "public_fingerprint": args.radio_public_fingerprint}
+        if any(value is None for value in expected.values()):
+            raise PlanError("radio_hardware_binding_required")
+        if any(radio[key] != value for key, value in expected.items()):
+            raise PlanError("radio_hardware_binding_mismatch")
+        if len(args.peer_radio_inventory) > 16:
+            raise PlanError("peer_inventory_limit")
+        peers = [radio_inventory(path) for path in args.peer_radio_inventory]
+        records = [radio, *peers]
+        for field in ("unit_id", "usb_serial", "public_fingerprint", "stable_path"):
+            if len({record[field] for record in records}) != len(records):
+                raise PlanError("duplicate_radio_binding")
+        radio = {"present": True, **radio}
+    platform_id = getattr(args, "audio_platform_id_path", None)
+    if platform_id is not None and args.audio_usb_serial is not None:
+        raise PlanError("audio_binding_choice_required")
+    if platform_id is not None:
+        if args.audio_vendor_id is not None or args.audio_product_id is not None:
+            raise PlanError("usb_audio_pins_with_platform_audio")
+        audio_path = str(safe_path(args.audio_stable_path))
+        if audio_path != "/dev/snd/by-path/" + platform_id:
+            raise PlanError("platform_audio_path_mismatch")
+        audio = {"present": True, "source": "platform", "stable_path": audio_path,
+                 "id_path": platform_id, "platform_device": platform_device(platform_id)}
+    else:
+        audio_serial = match(args.audio_usb_serial, r"[A-Za-z0-9:_-]{1,128}", "invalid_audio_serial")
+        audio_path = str(safe_path(args.audio_stable_path))
+        if not audio_path.startswith("/dev/snd/by-id/") or len(Path(audio_path).parts) != 5:
+            raise PlanError("invalid_audio_path")
+        if audio_serial not in Path(audio_path).name:
+            raise PlanError("audio_binding_mismatch")
+        if unit != "unit-a" and "SAGE-LANTERN-A-AUDIO" in audio_path:
+            raise PlanError("unit_a_audio_on_other_unit")
+        audio = {"present": True, "source": "usb", "usb_serial": audio_serial, "stable_path": audio_path}
+        if args.audio_vendor_id is not None or args.audio_product_id is not None:
+            audio["vendor_id"] = match(args.audio_vendor_id, r"[0-9a-f]{4}", "invalid_audio_vendor")
+            audio["product_id"] = match(args.audio_product_id, r"[0-9a-f]{4}", "invalid_audio_product")
     return {"schema": "sage.lantern.unit-plan.v1", "mode": "plan-only", "unit_id": unit,
             "hostname": f"sage-lantern-{unit[-1]}", "operator_account": account,
             "service_account": "sage-lantern", "repo_root": str(repo), "app_root": str(app),
@@ -153,12 +191,18 @@ def build_plan(args):
                             "Uniqueness covers supplied public inventories only.",
                             "SAGE identity remains the security principal; radio binding needs authenticated enrollment.",
                             "Target paths are lexical plans; installer must reject target symlinks at use time.",
-                            "No installer, account existence, recovery or security acceptance performed."]}
+                            "No installer, account existence, recovery or security acceptance performed.",
+                            *(["Radio explicitly declared absent; no radio inventory was supplied or compared."]
+                              if radio_absent else []),
+                            *(["Capture audio is an operator-named platform codec, not a USB microphone."]
+                              if platform_id is not None else [])]}
 
 
 def voice_activation_config(args, plan):
-    if plan["unit_id"] not in {"unit-a", "unit-b"} or plan["operator_account"] != "radxa":
+    if plan["unit_id"] not in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"} or plan["operator_account"] != "radxa":
         raise PlanError("voice_installer_target_unsupported")
+    if plan["radio"].get("present") is not True:
+        raise PlanError("voice_activation_requires_radio_binding")
     if not args.identity_inventory:
         raise PlanError("identity_inventory_required")
     inventory = {}
@@ -176,7 +220,7 @@ def voice_activation_config(args, plan):
         evidence = safe_path(args.activation_staging_root) / evidence.relative_to("/")
     audio = plan["audio"]["stable_path"]
     match(audio, r"/dev/snd/by-id/usb-[A-Za-z0-9_-]+", "unsupported_voice_audio_path")
-    if plan["unit_id"] == "unit-b" and "SAGE-LANTERN-A-AUDIO" in audio:
+    if plan["unit_id"] != "unit-a" and "SAGE-LANTERN-A-AUDIO" in audio:
         raise PlanError("unit_a_audio_on_unit_b")
     return {"schema": "sage-lantern-voice-activation-v1", "unit_id": plan["unit_id"],
             "prepared_metadata": args.prepared_metadata, "inventory": args.identity_inventory,
@@ -187,6 +231,12 @@ def voice_activation_config(args, plan):
 
 def audio_udev_rules(plan):
     audio = plan["audio"]
+    if audio.get("source") == "platform":
+        device = match(audio.get("platform_device"), r"[a-z0-9]+(-[a-z0-9]+)*", "invalid_platform_audio_device")
+        if audio.get("stable_path") != "/dev/snd/by-path/" + audio.get("id_path"):
+            raise PlanError("platform_audio_path_mismatch")
+        return (f'SUBSYSTEM=="sound", KERNELS=="{device}", '
+                'GROUP="sage-lantern", MODE="0660"')
     vendor = match(audio.get("vendor_id"), r"[0-9a-f]{4}", "audio_vendor_required")
     product = match(audio.get("product_id"), r"[0-9a-f]{4}", "audio_product_required")
     serial = match(audio.get("usb_serial"), r"[A-Za-z0-9:_-]{1,128}", "invalid_audio_serial")
@@ -207,11 +257,15 @@ def parser():
     result.add_argument("--prepared-metadata", required=True)
     for name in ("repo-root", "app-root", "evidence-root"):
         result.add_argument("--" + name)
-    result.add_argument("--radio-inventory", required=True)
+    result.add_argument("--radio-absent", action="store_true",
+                        help="Explicitly declare no radio fitted; forbids radio pins, inventories and peers")
+    result.add_argument("--radio-inventory")
     result.add_argument("--peer-radio-inventory", action="append", default=[])
+    result.add_argument("--audio-platform-id-path",
+                        help="Explicit platform codec udev ID_PATH (for example platform-es8388-sound); replays as a KERNELS rule")
     for name in ("radio-usb-serial", "radio-vendor-id", "radio-product-id",
                  "radio-stable-path", "radio-public-fingerprint", "audio-usb-serial", "audio-stable-path"):
-        result.add_argument("--" + name, required=True)
+        result.add_argument("--" + name)
     return result
 
 

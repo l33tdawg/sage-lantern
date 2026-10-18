@@ -27,6 +27,20 @@ POLICY = (
     'user asked for no follow-up.'
 )
 
+# The separate, metadata-only request. POLICY above asks one completion to answer
+# and annotate at once, and the small on-device model drops the annotation on
+# exactly its shortest answers, so this narrower instruction is the fallback for
+# those turns. It carries no answer of its own, which is why it can be bounded
+# hard in both tokens and time.
+REQUEST_POLICY = (
+    'You suggest what a user might ask next. You are given the question that was '
+    'answered and the answer it received. Reply with ONLY a JSON array of two '
+    'short questions, written as the user asking, and nothing else: no tags, no '
+    'explanation, no answer of your own. Both questions must be about the subject '
+    'of the answer just given - never about another country, city or topic - and '
+    'must differ from each other and from the question already asked.'
+)
+
 
 def validate_suggestions(value):
     if type(value) is not list or len(value) > 2:

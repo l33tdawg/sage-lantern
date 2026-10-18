@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+if [[ -f /etc/sage-lamplighter-lab/enabled ]]; then
+  exec /usr/local/bin/sage-lamplighter-kiosk "$@"
+fi
+
 readonly console_url=http://127.0.0.1:3100/device
 profile_dir="${HOME:?}/.config/sage-lantern/chromium"
 if (($#)); then
-  [[ $# == 2 && $1 == --profile-dir && $2 =~ ^/home/[a-z][a-z0-9_-]*/\.config/sage-lantern/unit-[ab]/chromium$ ]] || exit 2
+  [[ $# == 2 && $1 == --profile-dir && $2 =~ ^/home/[a-z][a-z0-9_-]*/\.config/sage-lantern/unit-[a-f]/chromium$ ]] || exit 2
   profile_dir=$2
 fi
 readonly profile_dir
@@ -60,6 +64,7 @@ while true; do
   fi
   /usr/bin/chromium \
     --kiosk \
+    --ozone-platform=wayland \
     "${window_options[@]}" \
     --no-first-run \
     --no-default-browser-check \

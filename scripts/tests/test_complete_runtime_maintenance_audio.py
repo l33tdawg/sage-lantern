@@ -167,8 +167,11 @@ def full_tail(tmp_path, monkeypatch):
     backend.audio_coordinator = types.SimpleNamespace(lifetime=lambda *args: json.loads(args[0]))
     coordinator = tmp_path / 'candidate-coordinator.py'
     coordinator.write_bytes(b'new-coordinator')
-    tools = {name: dict(path='/staged/' + name, sha256='a' * 64)
-             for name in ('helper', 'collector', 'runtime_wheel', 'adapter')}
+    tools = {}
+    for name in ('helper', 'collector', 'runtime_wheel', 'adapter'):
+        source = tmp_path / ('staged-' + name)
+        source.write_bytes(('pinned-' + name).encode())
+        tools[name] = dict(path=str(source), sha256=sha(source.read_bytes()))
     tools['coordinator'] = dict(path=str(coordinator), sha256=sha(coordinator.read_bytes()))
     def preserve(backend, source, destination, durable_copy=None):
         calls.append(('preserve', source))
@@ -225,6 +228,12 @@ def test_full_tail_orders_capture_bootstrap_and_next_boot_publication(full_tail)
     config = json.loads(MODULE.STARTUP.read_bytes())
     assert config['initial_lifetime'] == latest
     assert config['coordinator']['sha256'] == sha(MODULE.COORDINATOR.read_bytes())
+    policy = json.loads(checked(config['policy']))
+    for name in ('adapter', 'helper', 'collector', 'runtime_wheel'):
+        pin = config[name] if name == 'adapter' else policy[name]
+        assert Path(pin['path']).parent == Path(latest['path']).parent
+        assert pin['path'] != tools[name]['path']
+        assert checked(pin) == checked(tools[name])
     assert not any(isinstance(value, tuple) and value[0] == 'contained' for value in calls)
 
 

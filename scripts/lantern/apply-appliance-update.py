@@ -307,7 +307,7 @@ def main(argv=None):
     mode.add_argument('--apply', action='store_true')
     mode.add_argument('--inspect-journal')
     parser.add_argument('--stage')
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'))
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
     parser.add_argument('--candidate-manifest-sha256')
     parser.add_argument('--rollback-manifest-sha256')
     args = parser.parse_args(argv)

@@ -3,8 +3,12 @@
 Generate/review/install --print-guard and --print-alsa before capture. --inspect prints public
 input hashes for operator review; --capture requires their exact digest and
 explicit microphone consent. --check is a short-lived capture-status consumer.
---admit instead checks durable commissioning plus current device/config binding;
-normal boot, wake and process restart do not require another microphone test.
+--admit instead checks durable commissioning plus current device/config binding
+(the capture contract: device declaration, ALSA access config, voice config and
+recorder binary); normal boot, wake and process restart do not require another
+microphone test, and a reviewed code change does not invalidate the physical
+capture proof. The receipt still records the reviewed code and start fragments
+for audit, and the start contract is checked structurally on every snapshot.
 Historical capture is not current capture, PTT, ASR or intelligibility evidence.
 """
 
@@ -42,8 +46,37 @@ COMMISSION = Path("/etc/sage-lantern/audio-commissioned.json")
 MARKER = Path("/var/lib/sage-lantern/LOCAL_VOICE_READY")
 PENDING = Path("/run/sage-lantern-audio-validation.pending")
 BINDINGS = Path("/etc/sage-lantern/appliance-bindings.json")
+# The reviewed local question lane (D-019) runs the question service on a unit
+# with no radio and no working capture path. It may replace the audio *start*
+# gate with its own bytes and pick its own drain request; the capture path the
+# audio evidence is about stays exactly the same. Optional capabilities never
+# gate the question lane, and only a corrupted commissioning state fails closed.
+QUESTION_GATE_PATH = Path("/etc/systemd/system/" + VOICE + ".d/60-local-question-lane.conf")
+QUESTION_GATE_LINES = frozenset({
+    "[Unit]", "ConditionPathExists=", "ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY",
+    "ConditionPathExists=!/run/sage-lantern-sleep.fenced", "[Service]", "ExecCondition=",
+    "Restart=on-failure",
+})
+LOCAL_DRAIN = "/run/sage-lantern-voice-drain-request.json"
+MESH_DRAIN = "/run/sage-lantern-mesh-control/voice-drain-request.json"
 TTL = 600
 BYTE_COUNT = 16000 * 2 * 2 * 2
+# The admission binding is the capture *contract* — what a physical capture
+# proof must be tied to. Reviewed code (the question-loop helper and every
+# installed package module) and the systemd start fragments are recorded in the
+# same receipt but are deliberately not part of the binding: the start contract
+# is verified structurally on every snapshot, and a reviewed change to an
+# optional lane must not invalidate a physical proof or force a re-commission
+# (D-018/D-019: optional capability churn never fails closed).
+CONTRACT_FILES = (str(BINDINGS), str(ALSA_PATH), "/etc/sage-lantern/lantern.toml", "/usr/bin/arecord")
+
+
+def evidence_files(*, helper, unit, dropins, sources):
+    """Split the observed file set into the admission contract and the record."""
+    contract = tuple(sorted(set(CONTRACT_FILES)))
+    recorded = tuple(sorted({helper, unit, *dropins, *sources}))
+    require(not set(contract) & set(recorded))
+    return contract, recorded
 
 
 def require(value):
@@ -160,6 +193,27 @@ def property_value(system, name):
     return value["data"]
 
 
+def question_gate_present(dropins):
+    """The reviewed local question gate, by path and by contents.
+
+    A unit with no radio carries this file (D-019); it is the only reviewed way
+    the audio start gate may be replaced, so an empty `ExecCondition` is only
+    ever accepted together with these exact lines. Any other shape still
+    refuses — a corrupted commissioning state fails closed.
+    """
+    if str(QUESTION_GATE_PATH) not in dropins:
+        return False
+    try:
+        text = trusted_bytes(QUESTION_GATE_PATH).decode("utf-8")
+    except Exception:
+        return False
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return ("ExecCondition=" in lines and "Restart=on-failure" in lines
+            and "ConditionPathExists=" in lines
+            and "ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY" in lines
+            and all(line in QUESTION_GATE_LINES for line in lines))
+
+
 def snapshot():
     binding = json.loads(trusted_bytes(BINDINGS), object_pairs_hook=unique_object)
     require(binding.get("schema") == "sage.lantern.unit-plan.v1" and binding.get("unit_id") in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"})
@@ -168,32 +222,42 @@ def snapshot():
     system = SuspendSystem()
     value = system._show(VOICE, system.clock() + 5, ("FragmentPath", "DropInPaths", "NeedDaemonReload", "User", "Group", "Restart", "Environment"))
     require(value["FragmentPath"] == "/etc/systemd/system/" + VOICE and value["NeedDaemonReload"] == "no"
-        and value["User"] == value["Group"] == "sage-lantern" and value["Restart"] == "no")
+        and value["User"] == value["Group"] == "sage-lantern"
+        and value["Restart"] in {"no", "on-failure"})
     dropins = value["DropInPaths"].split()
     require(str(GUARD_PATH) in dropins and len(dropins) == len(set(dropins)) and len(dropins) <= 16)
     require(trusted_bytes(GUARD_PATH) == GUARD.encode())
     require(trusted_bytes(ALSA_PATH) == ALSA_CONFIG.encode())
     environment = [entry for entry in shlex.split(value["Environment"]) if entry.startswith("ALSA_CONFIG_PATH=")]
     require(environment == ["ALSA_CONFIG_PATH=" + str(ALSA_PATH)])
+    local_gate = question_gate_present(dropins)
     conditions = property_value(system, "ExecCondition")
-    require(type(conditions) is list and len(conditions) == 1 and len(conditions[0]) == 10
-        and conditions[0][:3] == [PYTHON, [PYTHON, "-m", "sage_lantern.audio_readiness", "--admit"], False])
+    admit = [PYTHON, [PYTHON, "-m", "sage_lantern.audio_readiness", "--admit"], False]
+    # Either the audio start gate is in force, or the reviewed local question
+    # lane replaced it by name and installed its own file (verified above).
+    require(type(conditions) is list and (
+        (len(conditions) == 1 and len(conditions[0]) == 10 and conditions[0][:3] == admit)
+        or (not conditions and local_gate)))
     starts = property_value(system, "ExecStart")
-    argv = ["/usr/local/libexec/sage-lantern-voice-loop", "--config", "/etc/sage-lantern/lantern.toml",
-        "--alsa-device", audio["alsa_device"], "--drain-request", "/run/sage-lantern-mesh-control/voice-drain-request.json"]
-    require(type(starts) is list and len(starts) == 1 and len(starts[0]) == 10 and starts[0][0] == argv[0]
-        and starts[0][1] in (argv, argv + ["--photo-ready"]) and starts[0][2] is False)
-    files = {str(BINDINGS), str(ALSA_PATH), "/etc/sage-lantern/lantern.toml", "/usr/bin/arecord", argv[0], value["FragmentPath"], *dropins}
+    base = ["/usr/local/libexec/sage-lantern-voice-loop", "--config", "/etc/sage-lantern/lantern.toml",
+            "--alsa-device", audio["alsa_device"]]
+    mesh = base + ["--drain-request", MESH_DRAIN]
+    local = base + ["--photo-ready", "--drain-request", LOCAL_DRAIN]
+    require(type(starts) is list and len(starts) == 1 and len(starts[0]) == 10 and starts[0][0] == base[0]
+        and starts[0][1] in (mesh, mesh + ["--photo-ready"], local)
+        and starts[0][2] is False)
     package = Path(__file__).resolve().parent
     sources = list(package.glob("*.py"))
     require(1 <= len(sources) <= 512)
-    files.update(str(path) for path in sources)
-    hashes = {path: hashlib.sha256(trusted_bytes(path)).hexdigest() for path in sorted(files)}
+    contract, recorded = evidence_files(helper=base[0], unit=value["FragmentPath"], dropins=dropins,
+                                        sources=[str(path) for path in sources])
+    hashes = {path: hashlib.sha256(trusted_bytes(path)).hexdigest() for path in contract}
+    code = {path: hashlib.sha256(trusted_bytes(path)).hexdigest() for path in recorded}
     services = {}
     for service in ("sage-lantern-llm.service", "sage-lantern-personal-sage.service"):
         services[service] = commissioning_service(system, service)
-    return dict(unit_id=binding["unit_id"], audio=audio, hardware=observed, inputs=hashes, services=services,
-        boot_id=Path("/proc/sys/kernel/random/boot_id").read_text().strip())
+    return dict(unit_id=binding["unit_id"], audio=audio, hardware=observed, inputs=hashes, code=code,
+        services=services, boot_id=Path("/proc/sys/kernel/random/boot_id").read_text().strip())
 
 
 def commissioning_service(system, service):
@@ -230,6 +294,27 @@ def commissioned_binding(observed):
     return {name: observed[name] for name in ("unit_id", "audio", "inputs")}
 
 
+def contract_satisfied(stored, observed):
+    """Is an admission binding still satisfied by the observed capture contract?
+
+    The binding is the capture contract (`CONTRACT_FILES`). Bindings minted
+    before the contract was split from the recorded code carry every recorded
+    file in `inputs`; those code paths are ignored here on purpose: reviewed
+    code churn (the question loop, the installed package) must not invalidate a
+    physical capture proof or force a re-commission (D-018/D-019). A binding
+    that does not cover a contract path, or covers it with another digest,
+    still refuses; the recorded code stays in the receipt for audit.
+    """
+    inputs = stored.get("inputs")
+    if type(inputs) is not dict or not inputs:
+        return False
+    return all(inputs.get(path) == observed["inputs"].get(path) for path in contract_inputs())
+
+
+def contract_inputs():
+    return sorted(set(CONTRACT_FILES))
+
+
 def capture_document(value):
     require(type(value) is dict and set(value) == {"schema", "snapshot", "captured_at", "expires_at", "capture"}
         and value["schema"] == "sage.lantern.audio-capture.v1")
@@ -264,7 +349,9 @@ def admission_verified(*, commissioning=False):
     try:
         value = commissioned_receipt()
         observed = snapshot()
-        require(commissioned_binding(observed) == value["binding"] and not os.path.lexists(PENDING))
+        binding = value["binding"]
+        require(observed["unit_id"] == binding["unit_id"] and observed["audio"] == binding["audio"]
+                and contract_satisfied(binding, observed) and not os.path.lexists(PENDING))
         require(commissioning is True or observed["services"]["sage-lantern-llm.service"]["ActiveState"] == "active")
         return True
     except Exception:

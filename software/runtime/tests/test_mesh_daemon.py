@@ -531,6 +531,36 @@ def test_real_socket_facade_to_real_sdk_and_synthetic_radio(runtime):
             assert not worker.is_alive()
 
 
+@pytest.mark.parametrize("revoke", [False, True])
+def test_ipc_waits_for_queued_work_and_rechecks_authority(runtime, monkeypatch, revoke):
+    state, supervisor, resource, config, opened = runtime
+    daemon = MeshDaemon(supervisor, resource, epoch_reader=lambda: "e" * 32)
+    connector, workers = socket_connector(daemon)
+    facade = MeshVoiceFacade(connector=connector, epoch_reader=lambda: "e" * 32)
+    allowed = [True]
+    original = resource.invoke
+    def queued(*args, **kwargs):
+        # A whole background job can legitimately hold the serial queue longer
+        # than the old five-second socket read timeout, without any new action.
+        time.sleep(5.2)
+        if revoke:
+            allowed[0] = False
+        return original(*args, **kwargs)
+    monkeypatch.setattr(resource, "invoke", queued)
+    try:
+        if revoke:
+            with pytest.raises(MeshIPCError):
+                facade.ready(access_check=lambda: allowed[0])
+            assert not opened
+        else:
+            assert facade.ready(access_check=lambda: allowed[0]) is True
+        assert not state.transmits
+    finally:
+        for worker in workers:
+            worker.join(3)
+            assert not worker.is_alive()
+
+
 @pytest.mark.parametrize("failure", ["lock", "broker", "guard"])
 def test_ipc_revocation_never_discloses_or_submits(runtime, failure):
     state, supervisor, resource, config, opened = runtime
@@ -613,8 +643,15 @@ def test_background_capture_uses_owned_root_lease_and_drains(runtime):
     config["messaging_enabled"] = True
     assert resource.invoke("ready", {}, lambda: True) is True
     deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and state.runtime.config.receiver_slot not in state.rows:
+    # Seeing the initial row is not proof that capture admission completed.
+    # Drain after a completed empty receive, whose durable state is idle.
+    while time.monotonic() < deadline:
+        row = state.rows.get(state.runtime.config.receiver_slot, {})
+        if row.get("revision", 0) >= 3 and row["payload"]["state"] == "idle":
+            break
         time.sleep(0.01)
+    assert row.get("revision", 0) >= 3 and row["payload"]["state"] == "idle"
+    state.scheduler.submit(lambda device: None).result(timeout=2)
     assert resource._provider._runtime._poller is not None
     worker = resource._provider._runtime._poller
     supervisor.phase = "draining"
@@ -623,13 +660,21 @@ def test_background_capture_uses_owned_root_lease_and_drains(runtime):
     assert resource._provider._runtime._poller is None
 
 
-def test_authenticated_access_rearms_cleanly_paused_background_not_unknown(runtime):
+def test_supervisor_rearms_cleanly_paused_background_not_unknown(runtime):
     state, supervisor, resource, config, opened = runtime
     config["messaging_enabled"] = True
     assert resource.invoke("ready", {}, lambda: True) is True
     provider = resource._provider
     assert provider.pause_receiving(timeout=2) is True
     assert resource.invoke("ready", {}, lambda: True) is True
+    # Re-admission belongs to the supervisor; an authenticated request no
+    # longer restarts the worker synchronously on its own critical path.
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        worker = provider._runtime._poller
+        if worker is not None and worker.is_alive():
+            break
+        time.sleep(0.01)
     assert provider._runtime._poller.is_alive()
     assert provider.pause_receiving(timeout=2) is True
     provider._runtime._uncertain = True

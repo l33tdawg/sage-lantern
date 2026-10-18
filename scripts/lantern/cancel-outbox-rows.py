@@ -127,6 +127,7 @@ def owner_session(pin, evidence):
 
 def cancel_rows(store, outbox, guard, *, now, binding, only, apply):
     """End every lapsed, pre-terminal row the owner is allowed to end."""
+    from sage_lantern.mesh_outbox import SCHEMAS as OUTBOX_SCHEMAS
     rows = []
     for record in store.scan(limit=50, max_records=4096, access_check=guard):
         if record['kind'] != 'mesh_outbound':
@@ -138,7 +139,7 @@ def cancel_rows(store, outbox, guard, *, now, binding, only, apply):
             body = outbox._verified(record)
         except Exception:
             continue
-        if body.get('schema') != 'sage.lantern.mesh-outbound.v1':
+        if body.get('schema') not in OUTBOX_SCHEMAS:
             continue
         allowed, verdict = eligible(body, now)
         entry = {'message_id': identifier, 'revision_before': record['revision'],

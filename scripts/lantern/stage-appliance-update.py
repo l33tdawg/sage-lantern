@@ -235,7 +235,7 @@ def inspect_stage(directory):
         phases.append(record['phase'])
         previous = digest
     require(type(binding) is dict and set(binding) == {'transaction_id', 'unit_id', 'candidate_manifest_sha256', 'rollback_manifest_sha256'}
-            and binding['unit_id'] in {'unit-a', 'unit-b'} and type(binding['transaction_id']) is str
+            and binding['unit_id'] in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'} and type(binding['transaction_id']) is str
             and str(uuid.UUID(binding['transaction_id'])) == binding['transaction_id'] == directory.name,
             'invalid staging transaction binding')
     require(type(binding['candidate_manifest_sha256']) is str and re.fullmatch(r'[0-9a-f]{64}', binding['candidate_manifest_sha256'])
@@ -270,7 +270,7 @@ def inspect_stage(directory):
 
 
 def stage_update(args):
-    require(args.unit_id in {'unit-a', 'unit-b'}, 'explicit unit required')
+    require(args.unit_id in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'}, 'explicit unit required')
     require(bool(args.rollback_output) == bool(args.rollback_manifest_sha256), 'rollback output/hash must be paired')
     for value in (args.output, args.stage_root, *([args.rollback_output] if args.rollback_output else [])):
         lexical_path(value)
@@ -322,7 +322,7 @@ def main(argv=None):
     parser.add_argument('--output')
     parser.add_argument('--manifest-sha256')
     parser.add_argument('--stage-root')
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'))
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
     parser.add_argument('--rollback-output')
     parser.add_argument('--rollback-manifest-sha256')
     args = parser.parse_args(argv)

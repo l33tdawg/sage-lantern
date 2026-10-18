@@ -87,7 +87,7 @@ def no_unknown():
             require(set(intent) == {'schema', 'broker_id', 'epoch', 'unit_id', 'attempt_id',
                 'config_sha256', 'request_sha256', 'card_sha256'})
             require(intent['schema'] == 'sage.lantern.radio-commission.v1'
-                and intent['attempt_id'] == directory.name and intent['unit_id'] in ('unit-a', 'unit-b'))
+                and intent['attempt_id'] == directory.name and intent['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
             for name, width in (('broker_id', 32), ('epoch', 32), ('config_sha256', 64),
                                 ('request_sha256', 64), ('card_sha256', 64)):
                 require(type(intent[name]) is str and re.fullmatch('[0-9a-f]{' + str(width) + '}', intent[name]) is not None)

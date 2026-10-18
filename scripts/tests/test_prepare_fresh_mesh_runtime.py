@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from sage_lantern.mesh_serial_owner import SerialOwnerError
 
 
 SCRIPT = Path(__file__).parents[1] / "lantern/prepare-fresh-mesh-runtime.py"
@@ -58,6 +59,17 @@ def policy(config):
         vendored_agent_bootstrap=dict(agent_key_file=MODULE.PRIVATE_KEY, home_domain='local-field-knowledge', clearance=1),
         private_media=dict(enabled=True, actor_bytes=1024, node_bytes=2048, actor_objects=10,
                            node_objects=20, min_free_bytes=4096))
+
+
+@pytest.mark.parametrize('unit', ['unit-c', 'unit-d', 'unit-e', 'unit-f'])
+def test_fleet_mesh_requires_matching_independent_public_receipts(documents, unit):
+    for document in documents:
+        document['unit_id'] = unit
+    documents[4]['radio']['unit_id'] = unit
+    assert validate(documents).unit_id == unit
+    documents[5]['unit_id'] = 'unit-a'
+    with pytest.raises(SerialOwnerError, match='invalid_unit_binding'):
+        validate(documents)
 
 
 def test_fresh_public_receipts_need_no_legacy_attestations(documents):

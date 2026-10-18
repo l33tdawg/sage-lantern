@@ -179,16 +179,24 @@ def release(backend, service):
 
 
 def documents(root, tools, baseline, lifetime, helper):
+    # Staging may live under /root, which ProtectHome hides from the startup
+    # service. Retain the exact pinned bytes beside the new lifetime instead.
+    retained = {}
+    boot_tools = {}
+    for name in ('adapter', 'helper', 'collector', 'runtime_wheel'):
+        filename = 'startup-' + name + ('.whl' if name == 'runtime_wheel' else '.py')
+        retained[filename] = helper.pinned(tools[name])
+        boot_tools[name] = dict(path=str(root / filename), sha256=tools[name]['sha256'])
     baseline_raw = helper.canonical(baseline)
     policy = dict(schema='sage.lantern.startup-audio-policy.v1',
-        **{name: tools[name] for name in ('helper', 'collector', 'runtime_wheel')},
+        **{name: boot_tools[name] for name in ('helper', 'collector', 'runtime_wheel')},
         baseline=dict(path=str(root / 'baseline.json'), sha256=helper.sha(baseline_raw)))
     policy_raw = helper.canonical(policy)
-    config = dict(schema='sage.lantern.startup-coordinator.v1', adapter=tools['adapter'],
+    config = dict(schema='sage.lantern.startup-coordinator.v1', adapter=boot_tools['adapter'],
         coordinator=dict(path=str(COORDINATOR), sha256=tools['coordinator']['sha256']),
         policy=dict(path=str(root / 'policy.json'), sha256=helper.sha(policy_raw)),
         initial_lifetime=dict(path=str(root / 'new-lifetime.json'), sha256=helper.sha(lifetime)))
-    return {'baseline.json': baseline_raw, 'policy.json': policy_raw,
+    return {**retained, 'baseline.json': baseline_raw, 'policy.json': policy_raw,
             'startup.json': helper.canonical(config), 'new-lifetime.json': lifetime}
 
 

@@ -59,6 +59,7 @@ class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.appliance = object.__new__(MODULE.Appliance)
         self.appliance.owner = 123
+        self.appliance.voice = True
         self.appliance.auth_instance = "a" * 32
         self.appliance.transition_id = "transition-123"
         self.appliance.voice_identity = dict(instance_id="instance", pid=123, start_ticks="1234",
@@ -120,6 +121,36 @@ class RunnerTests(unittest.TestCase):
         with patch.object(MODULE, "command", return_value=data + "queued"):
             with self.assertRaises(ValueError):
                 MODULE.service_identity(MODULE.AUTH)
+
+
+class ModelStartHookTests(unittest.TestCase):
+    def test_model_started_binds_the_exact_reviewed_unit_only(self):
+        data = "MainPID=123\nInvocationID=" + "a" * 32 + "\nActiveState=activating"
+        with patch.object(MODULE, "command", return_value=data), \
+                patch.object(MODULE.os, "geteuid", return_value=0), \
+                patch.object(MODULE, "publish") as publish, \
+                patch.object(Path, "read_text",
+                             return_value="123 (model) " + " ".join(["S"] + ["0"] * 18 + ["456"])):
+            self.assertEqual(MODULE.model_started(MODULE.VLM), 0)
+            self.assertEqual(publish.call_args.args[0], MODULE.model_baseline_path(MODULE.VLM))
+            publish.reset_mock()
+            self.assertEqual(MODULE.model_started(MODULE.MODEL), 0)
+            self.assertEqual(publish.call_args.args[0], MODULE.model_baseline_path(MODULE.MODEL))
+            publish.reset_mock()
+            self.assertEqual(MODULE.model_started("sage-lantern-other.service"), 1)
+            publish.assert_not_called()
+
+    def test_model_started_requires_root_and_activating_instance(self):
+        data = "MainPID=123\nInvocationID=" + "a" * 32 + "\nActiveState=active"
+        with patch.object(MODULE, "command", return_value=data), \
+                patch.object(MODULE.os, "geteuid", return_value=0), \
+                patch.object(MODULE, "publish") as publish:
+            self.assertEqual(MODULE.model_started(MODULE.MODEL), 1)
+            publish.assert_not_called()
+        with patch.object(MODULE.os, "geteuid", return_value=1000), \
+                patch.object(MODULE, "command") as command:
+            self.assertEqual(MODULE.model_started(MODULE.MODEL), 1)
+            command.assert_not_called()
 
 
 class PriorAuthTests(unittest.TestCase):

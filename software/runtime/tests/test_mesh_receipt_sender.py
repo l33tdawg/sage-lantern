@@ -175,6 +175,43 @@ def test_current_authority_rechecked_before_rf(sender,change):
     assert sender.rig.rows[progress.receipt_id]["payload"]["body"]["state"]=="queued"
 
 
+@pytest.mark.parametrize("phase", ["dispatching", "queued"])
+@pytest.mark.parametrize("change", ["lock", "contact", "read", "expiry"])
+def test_authority_change_during_receipt_cas_is_observed(sender, monkeypatch, phase, change):
+    progress = sender.queue("read")
+    device = device_for(sender, progress.receipt_id)
+    original = sender.sender.store.put
+    def put(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if result["payload"]["body"]["state"] == phase:
+            if change == "lock": sender.allowed = False
+            elif change == "contact": sender.radio_allowed = False
+            elif change == "read": sender.read_approved = False
+            else: sender.rig.now = 900
+        return result
+    monkeypatch.setattr(sender.sender.store, "put", put)
+    with pytest.raises(ReceiptSenderError):
+        sender.sender.dispatch_one(progress.receipt_id, device=device,
+                                   radio_timestamp=500, access_check=sender.access)
+    body = sender.rig.rows[progress.receipt_id]["payload"]["body"]
+    assert body["next_fragment"] == (0 if phase == "dispatching" else 1)
+    assert sender.sender.close() is False
+
+
+def test_receipt_journal_guards_do_not_expand_contact_reads(sender, monkeypatch):
+    progress = sender.queue()
+    original = sender.sender.verify_contact
+    contacts = []
+    def verify(action):
+        contacts.append(action)
+        return original(action)
+    monkeypatch.setattr(sender.sender, "verify_contact", verify)
+    sender.sender.dispatch_one(progress.receipt_id, device=device_for(sender, progress.receipt_id),
+                               radio_timestamp=500, access_check=sender.access)
+    # Five dispatch boundaries plus the radio inventory's four guards.
+    assert len(contacts) == 9
+
+
 def test_missing_or_tampered_admission_no_receipt(sender):
     sender.rig.rows[sender.local_id]["payload"]["attestation"]["body"]["envelope_digest"]="f"*64
     with pytest.raises(ReceiptSenderError): sender.queue()

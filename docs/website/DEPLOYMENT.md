@@ -583,3 +583,65 @@ marketing-side decision rather than an origin change.
 Training) for the two new zones, the www→apex redirect rules, and the Porkbun
 mail-forwarding configuration — all dashboard actions on the comms side; the
 owner's calls are recorded in the reply to that lane.
+
+## 2026-10-01 — the port-80 vhost for the four new hostnames (the 520 fix)
+
+Owner report: browsers got Cloudflare **520** ("web server is returning an
+unknown error") on **sage-commons.org** and **sage-foundation.net** while
+**sage.ngo** stayed fine.
+
+**Cause.** The stream SNI map already routed the four new names to the website
+backend on 443, so HTTPS was healthy. But the **port-80** server block in
+`30-sage-website.conf` still claimed only `sage.ngo`, so HTTP requests for the
+other four fell to the `10-sage-http.conf` `default_server` (`return 444`) —
+nginx closes the connection with no reply, and Cloudflare renders that as 520.
+The 2026-09-30 entry recorded this vhost as listing all five hostnames on :80;
+it did not (the pre-change backup and the live file were byte-identical), so
+that line was aspirational, not shipped. The same gap would have failed the
+December Let's Encrypt HTTP-01 renewal for the four names, because challenge
+requests arrive on port 80 with their own Host.
+
+**Fix.** The :80 block (and the loopback TLS listener, for the record) now list
+all five hostnames, and the port-80 redirect uses `$host` so each name keeps
+itself. Backup `/etc/nginx/conf.d/30-sage-website.conf.bak-20261001T044714Z`;
+`nginx -t` clean, reload, verified immediately.
+
+**Verified, direct to the origin** (Host-routed on :80): all five return 308 to
+their own `https://` hostname, and the ACME challenge path returns 404 from the
+webroot instead of an empty reply. **Verified through Cloudflare:** all five
+308 http→https and 200 on https, including `/`, `/commons/`, `/hardware/`,
+`/foundation/` and `robots.txt`. The repo copy
+`apps/sage-website/deploy/30-sage-website.conf` is synced with the origin
+(sha256 `c168223f8e302adbe54ddf692a0fd1785a3d10946edf9b2fe55c47e9d0c9fa1a`).
+
+## Release 20261001-91b7a9cf6728 — sage-foundation.net is the primary domain
+
+Owner direction: **sage-foundation.net is the primary domain**; sage.ngo and
+sage-commons.org are secondary.
+
+Changed, in the export only — no hostname routing changed: every page now
+declares `https://sage-foundation.net` as its canonical and `og:url`, and its
+`og:image` assets live on that host (`lib/metadata.ts`, `app/layout.tsx`).
+`robots.txt` points at `https://sage-foundation.net/sitemap.xml`, and the
+sitemap lists the four canonical pages on the primary domain (lastmod
+2026-10-01). The export verifier now pins the direction: each page's canonical
+must be the primary host, the only `sage.ngo` string allowed in page HTML is
+the public contact address `dhillon@sage.ngo`, and robots and sitemap are
+checked too. This supersedes the "SEO shape" note in the 2026-09-30 section
+above, which still described consolidation onto sage.ngo.
+
+Deliberately unchanged: all five hostnames keep answering on their own names
+(the 2026-09-30 direction, "answering on their own hostnames rather than
+forwarding"), the www forms keep serving the same pages, and the public contact
+stays `dhillon@sage.ngo`. Consolidation is by canonical, not by redirect. If
+the secondary domains should instead 301 to the primary, that is a small
+follow-up nginx change.
+
+Built from commit `91b7a9c`, 67 verified files, tarball sha256
+`059e112d3041337e274f6cbea9103b5858455d85e9d461c3a2314b677a98d033`. Activated
+with `deploy/install-release.py`; rollback configuration
+`/var/www/sage-website/backup-20261001T045059Z`; prior release
+`20260930-5b87beb1aba8` stays under `releases/`. Verified live through
+Cloudflare: all five hostnames return 200 and serve the primary canonical on
+all four pages, and `robots.txt` and `sitemap.xml` on the secondary domains
+point at the primary.

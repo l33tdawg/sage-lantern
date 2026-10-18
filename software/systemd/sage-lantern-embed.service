@@ -1,0 +1,18 @@
+[Unit]
+Description=SAGE Lantern local embeddings (nomic-embed-text-v1.5, CPU)
+After=local-fs.target
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+Environment=LD_LIBRARY_PATH=/opt/sage-lantern/llama.cpp
+ExecStart=/opt/sage-lantern/llama.cpp/llama-server --model /opt/sage-lantern/models/nomic-embed-text-v1.5.Q8_0.gguf --embedding --pooling mean --host 127.0.0.1 --port 8083 --ctx-size 512 --threads 2
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

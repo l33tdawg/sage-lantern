@@ -1,14 +1,17 @@
 [Unit]
 # Swapped 2026-09-19: the NPU RKLLM 2B now owns the runtime's chat port (8081) because it
 # answers the production prompt shape in ~2.4 s p50 versus ~10.3 s for the CPU 4B, and
-# scores higher on the frozen acceptance set (49/60 vs 46/60). The CPU 4B stays resident
-# as sage-lantern-llm-cpu.service on 8082 for photo questions only, because the 2B has no
-# vision projector; this unit proxies image requests to it via --fallback-url.
+# scores higher on the frozen acceptance set (49/60 vs 46/60). The 2B has no vision
+# projector, so image requests are proxied via --fallback-url to whichever 8082 server the
+# unit's profile activates: sage-lantern-vlm.service on the NPU vision lane (D-016), or the
+# retired CPU 4B sage-lantern-llm-cpu.service for bench comparison only. This unit pulls in
+# neither on purpose: both draft port 8082, so the reviewed activation lane owns which one
+# runs, and leaving the retired unit merely disabled would not stop a dependency from
+# starting it anyway.
 # Rollback: stop this unit, put the CPU unit back on 8081, restart, and re-run the runtime
 # client check. Evidence: work/npu-llm-20260919/.
 Description=SAGE Lantern local RKLLM (NPU) chat server
-After=local-fs.target sage-lantern-llm-cpu.service
-Wants=sage-lantern-llm-cpu.service
+After=local-fs.target
 ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
 ConditionPathExists=!/run/sage-lantern-sleep.fenced
 

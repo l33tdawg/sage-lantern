@@ -1,5 +1,7 @@
 # Unit B provisioning gates
 
+**Historical endpoint plan, superseded 2026-09-27:** A/B now serve single-LoRa Lamplighter/admin/knowledge/repeater roles. Their native personal SAGE stores are deleted and old endpoint services inhibited. Endpoint acceptance now belongs on C–F. Use [device roles](DEVICE_ROLES.md) and [the current task map](SAGE_TASKS_20260927.md); do not resume the A-before-B gate below.
+
 Updated read-only critical-path audit, 2026-09-07. Scope: finish Unit A locally,
 freeze a deliberately matched release, provision B independently, then measure
 two-radio delivery. No live device operation, secret inspection, key read,
@@ -251,6 +253,12 @@ latency or reboot failures:
 | `scripts/lantern/install-vision-local.sh` generated model override | `--parallel 1` | Source template; not proof the override is installed/loaded |
 | `scripts/lantern/plan-fresh-vision.py` model candidate | `--parallel 1` | Source candidate; does not change the active unit |
 | September 5 baseline versus current A fresh launch | Explicit single slot versus reported automatic four slots | Parent-reported runtime comparison; not independently probed by this audit |
+
+Note 2026-09-29 (D-016): the planner now targets the NPU vision lane
+(`npu-text-8081-npu-vision-8082`) and no longer emits a llama.cpp CPU model
+candidate, so the `--parallel 1` rows above describe the retired CPU fallback
+source rather than the current vision path. A/B analysis using those rows remains
+historical.
 
 The base unit retains `--ctx-size 4096 --threads 6`, but its omitted parallel
 argument delegates slot selection to the installed server. Do not infer that all

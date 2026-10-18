@@ -65,8 +65,14 @@ def publish(path, value, *, mode=0o600, owner_uid=0):
         temporary.unlink(missing_ok=True)
 
 
+# Reviewed loopback read-only endpoints: the lock/power service on 3196 and one
+# idle-slot view per resident model server (8081 text, 8082 vision, D-016).
+PUBLIC_ENDPOINTS = frozenset({(3196, "/state"), (3196, "/power-policy"), (3196, "/sleep-ready"),
+                              (8081, "/slots"), (8082, "/slots")})
+
+
 def public_json(port, path, *, timeout=1.0, limit=32768):
-    if (port, path) not in {(3196, "/state"), (3196, "/power-policy"), (3196, "/sleep-ready"), (8081, "/slots")}:
+    if (port, path) not in PUBLIC_ENDPOINTS:
         raise ValueError("unsupported_public_endpoint")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     deadline = time.monotonic() + timeout

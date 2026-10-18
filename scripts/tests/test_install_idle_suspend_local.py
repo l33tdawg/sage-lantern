@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -28,6 +29,8 @@ class InstallerTests(unittest.TestCase):
         self.source = self.root / "source"
         self.source.mkdir()
         self.stage = self.root / "bundle"
+        self.binding = self.root / "appliance-bindings.json"
+        self.binding.write_text(json.dumps({"audio": {"alsa_device": "hw:CARD=UnitA,DEV=0"}}) + "\n")
         for module in installer.MODULES:
             self.put(f"software/runtime/src/sage_lantern/{module}.py", b"pass\n")
         for helper in installer.HELPERS:
@@ -46,7 +49,7 @@ class InstallerTests(unittest.TestCase):
         target.chmod(0o644)
 
     def build(self):
-        return installer.build_plan(self.source)
+        return installer.build_plan(self.source, bindings=self.binding)
 
     def stage_plan(self):
         plan, payloads = self.build()
@@ -58,12 +61,14 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(self.stage.exists())
         self.assertFalse(plan["activation"])
         self.assertEqual(plan["missing"], [])
-        self.assertEqual(len(plan["files"]), 36)
+        self.assertEqual(len(plan["files"]), 39)
         for service in installer.SERVICES:
             data = payloads[f"/etc/systemd/system/sage-lantern-{service}.service.d/90-sage-lantern-sleep.conf"]
             self.assertTrue(data.startswith(installer.FENCE.encode()))
         voice = payloads["/etc/systemd/system/sage-lantern-voice-loop.service.d/90-sage-lantern-sleep.conf"]
-        self.assertIn(b"--photo-ready --drain-request /run/sage-lantern-voice-drain-request.json", voice)
+        self.assertIn(b"--config /etc/sage-lantern/lantern.toml --alsa-device hw:CARD=UnitA,DEV=0"
+                      b" --photo-ready --drain-request /run/sage-lantern-voice-drain-request.json", voice)
+        self.assertNotIn(b"hw:CARD=Audio,DEV=0", voice)
         self.assertIn(b"RuntimeDirectoryPreserve=yes\nTimeoutStopSec=30\n", voice)
         self.assertIn(b"Environment=SAGE_LANTERN_INFERENCE_GUARD=/var/lib/sage-lantern/inference\n", voice)
         self.assertIn(b"ReadWritePaths=/var/lib/sage-lantern/inference\n", voice)
@@ -80,12 +85,18 @@ class InstallerTests(unittest.TestCase):
         plan, payloads = self.build()
         self.assertEqual(payloads["/etc/systemd/system/sage-lantern-llm.service.d/90-sage-lantern-sleep.conf"],
                          b"[Unit]\nConditionPathExists=!/run/sage-lantern-sleep.fenced\n")
+        self.assertEqual(payloads["/etc/systemd/system/sage-lantern-vlm.service.d/90-sage-lantern-sleep.conf"],
+                         b"[Unit]\nConditionPathExists=!/run/sage-lantern-sleep.fenced\n")
         self.assertEqual(payloads["/etc/tmpfiles.d/sage-lantern-suspend.conf"],
                          b"d /run/sage-lantern-model 0700 root root -\n")
         self.assertEqual(payloads["/etc/systemd/system/sage-lantern-llm.service.d/90-sleep-baseline.conf"],
                          b"[Service]\nReadWritePaths=/run/sage-lantern-model\n"
                          b"ExecStartPost=+/opt/sage-lantern/venv/bin/python "
-                         b"/usr/local/libexec/sage-lantern-idle-suspend --model-started\n")
+                         b"/usr/local/libexec/sage-lantern-idle-suspend --model-started sage-lantern-llm.service\n")
+        self.assertEqual(payloads["/etc/systemd/system/sage-lantern-vlm.service.d/90-sleep-baseline.conf"],
+                         b"[Service]\nReadWritePaths=/run/sage-lantern-model\n"
+                         b"ExecStartPost=+/opt/sage-lantern/venv/bin/python "
+                         b"/usr/local/libexec/sage-lantern-idle-suspend --model-started sage-lantern-vlm.service\n")
         self.assertEqual(plan["model_directory"], dict(path="/run/sage-lantern-model", owner="root:root", mode=0o700))
         self.assertFalse(plan["activation"])
         self.assertFalse(self.stage.exists())

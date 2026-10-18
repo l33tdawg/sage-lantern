@@ -111,7 +111,7 @@ def _transport(method: str, path: str, body: bytes | None) -> tuple[int, bytes]:
         })
         socket.settimeout(max(0.001, deadline - time.monotonic()))
         response = connection.getresponse()
-        if path == "/access-epoch":
+        if path in {"/access-epoch", "/session-context"}:
             if (response.headers.get_all("Content-Type") != ["application/json"]
                     or response.headers.get_all("Content-Encoding")
                     or response.headers.get_all("Cache-Control") != ["no-store"]):
@@ -207,6 +207,24 @@ def access_epoch(*, marker: Path = MARKER, transport: Transport = _transport) ->
                 or _marker_state(marker) is not True):
             return None
         return value["epoch"]
+    except Exception:
+        return None
+
+
+def session_context(token: str, *, marker: Path = MARKER,
+                    transport: Transport = _transport):
+    """Current token-bound noncredential context, with no legacy-mode grant."""
+    from .session_context import SessionContext
+    try:
+        if (_marker_state(marker) is not True or type(token) is not str
+                or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None):
+            return None
+        body = json.dumps({"token": token}, separators=(",", ":")).encode("ascii")
+        status, raw = transport("POST", "/session-context", body)
+        if type(status) is not int or status != 200 or type(raw) is not bytes or len(raw) > MAX_RESPONSE_BYTES:
+            return None
+        value = SessionContext.parse(json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object))
+        return value if _marker_state(marker) is True else None
     except Exception:
         return None
 

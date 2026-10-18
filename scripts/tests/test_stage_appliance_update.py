@@ -62,6 +62,19 @@ class UpdateStageTests(unittest.TestCase):
         self.assertEqual(len(list((stage / 'journal').iterdir())), 3)
         self.assertFalse(list(stage.rglob('*.key')))
 
+    def test_fleet_staging_retains_unit_binding_without_granting_activation(self):
+        for unit in ('unit-c', 'unit-d', 'unit-e', 'unit-f'):
+            with self.subTest(unit=unit):
+                self.args.unit_id = unit
+                stage = self.stage()
+                status = MODULE.inspect_stage(stage)
+                self.assertTrue(status['complete'])
+                self.assertFalse(status['activation_authorized'])
+                self.assertEqual(json.loads((stage / 'stage.json').read_bytes())['binding']['unit_id'], unit)
+        self.args.unit_id = 'unit-g'
+        with self.assertRaises(ValueError):
+            MODULE.stage_update(self.args)
+
     def test_selected_rollback_artifacts_not_installed_state(self):
         self.args.rollback_output = str(self.rollback[0])
         self.args.rollback_manifest_sha256 = hashlib.sha256(self.rollback[2]).hexdigest()

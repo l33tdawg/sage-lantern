@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -35,6 +37,8 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 
 from sage_lantern.device_lock import DeviceLock, DeviceLockError
+from sage_lantern.desktop_grant import DesktopGrant, DesktopGrantError
+from sage_lantern.desktop_control import DesktopControlServer
 from sage_lantern.power_settings import PowerSettingsStore, PowerSettingsError, PowerRevisionConflict, validate_policy
 from sage_lantern.power_settings import LockSettingsStore, validate_lock_policy
 from sage_lantern.device_profile import (
@@ -51,6 +55,7 @@ ORIGINS = frozenset({"http://127.0.0.1:3100", "http://localhost:3100"})
 ROUTES = {"/state": "GET", "/unlock": "POST", "/lock": "POST", "/authorize": "POST", "/activity": "POST"}
 ROUTES["/access-epoch"] = "GET"
 ROUTES["/owner-contact-snapshot"] = "POST"
+ROUTES["/session-context"] = "POST"
 ROUTES.update({path: "POST" for path in ("/activate", "/presence", "/cancel")})
 PROFILE_ROUTES = frozenset({"/profile/get", "/profile/setup", "/profile/rename"})
 ROUTES.update({path: "POST" for path in PROFILE_ROUTES})
@@ -176,7 +181,8 @@ def unique_object(pairs):
 class AuthBroker:
     """Serialize lock decisions, never hold this gate over PIN verification."""
 
-    def __init__(self, device, profile=None, vault=None, power=None, capability=None):
+    def __init__(self, device, profile=None, vault=None, power=None, capability=None,
+                 *, desktop_clock=time.monotonic):
         self.device = device
         self.profile = profile
         self.vault = vault
@@ -191,7 +197,54 @@ class AuthBroker:
         self.upstream_active = 0
         self._device_epoch = None
         self._observed_epoch = os.urandom(16).hex()
+        self._session_context_key = os.urandom(32)
+        self._revocation_listeners = []
+        self._dependent_drain_probes = []
         self.contacts = OwnerContactForwarder(self)
+        self.desktop = DesktopGrant(clock=desktop_clock)
+        self._browser_locked = True
+
+    def subscribe_revocation(self, listener, *, drained=None):
+        """Trusted in-process lifecycle hook; never exposed as an HTTP route.
+
+        Callbacks run under the auth gate and must be bounded/nonblocking. An
+        action coordinator shares this gate so a lock cannot race its sends or
+        local publication. Registration alone never enables private actions.
+        """
+        if not callable(listener) or (drained is not None and not callable(drained)):
+            raise ValueError('invalid_revocation_listener')
+        with self.gate:
+            self.admit()
+            if len(self._revocation_listeners) >= 8:
+                raise ValueError('revocation_listener_capacity')
+            self._revocation_listeners.append(listener)
+            if drained is not None:
+                self._dependent_drain_probes.append(drained)
+
+    def _dependents_drained(self):
+        try:
+            return all(probe() is True for probe in self._dependent_drain_probes)
+        except Exception:
+            return False
+
+    def _revoke_dependents(self):
+        failed = False
+        for listener in self._revocation_listeners:
+            try:
+                listener()
+            except Exception:
+                failed = True
+        if failed:
+            # A listener failure cannot leave dispatch and auth admission open.
+            self.closing = True
+            self.cleanup_unknown = True
+            self.device.lock()
+            raise DeviceLockError('unavailable')
+
+    def _lock_device(self):
+        with self.gate:
+            self._revoke_dependents()
+            return self.device.lock()
 
     def admit(self):
         with self.gate:
@@ -221,7 +274,8 @@ class AuthBroker:
 
     def drain_state(self, workers_drained):
         with self.gate:
-            drained = workers_drained is True and self.upstream_active == 0
+            drained = (workers_drained is True and self.upstream_active == 0
+                       and self._dependents_drained())
             if not drained:
                 self.cleanup_unknown = True
             return dict(closing=self.closing, drained=drained, local_revoked=self.local_revoked,
@@ -236,16 +290,106 @@ class AuthBroker:
                     ready = self.device.upstream_cleanup_confirmed() is True
                     if self.vault is not None:
                         ready = ready and self.vault.cleanup_confirmed is True
+                    ready = ready and self._dependents_drained()
+                    if ready and self.desktop.guard is not None:
+                        self._desktop_sync()
+                        ready = self.desktop.active is None and self.desktop.pending is None
                 except Exception:
                     ready = False
             return {"ready": ready}
 
     def state(self):
+        with self.gate:
+            self.admit()
+            try:
+                state = self.device.status()
+            except Exception:
+                self.desktop.close()
+                raise
+            if not isinstance(state, dict) or set(state) != {"locked"} or type(state["locked"]) is not bool:
+                self.desktop.close()
+                raise DeviceLockError("unavailable")
+            if state['locked'] and not self._browser_locked:
+                self.desktop.revoke()
+                self._revoke_dependents()
+            self._browser_locked = state['locked']
+            if self._revocation_listeners:
+                self.access_epoch()
+            return state
+
+    def _desktop_sync(self):
         self.admit()
-        state = self.device.status()
-        if not isinstance(state, dict) or set(state) != {"locked"} or type(state["locked"]) is not bool:
-            raise DeviceLockError("unavailable")
-        return state
+        if self.cleanup_unknown:
+            self.desktop.close()
+            self._lock_device()
+            raise DeviceLockError('unavailable')
+        idle = self.device.session_seconds()
+        self.state()
+        try:
+            if self.desktop.synchronize(idle_seconds=idle):
+                self.generation += 1
+                self._lock_device()
+                self._browser_locked = True
+        except DesktopGrantError:
+            self.generation += 1
+            self._lock_device()
+            self._browser_locked = True
+            raise
+        return idle
+
+    def desktop_open(self, binding, mode):
+        """Privileged adapter only; never wire this to the public HTTP handler."""
+        with self.gate:
+            idle = self._desktop_sync()
+            result = self.desktop.open(binding, mode, idle_seconds=idle)
+            self.generation += 1
+            self._lock_device()
+            self._browser_locked = True
+            return result
+
+    def desktop_unlock(self, guard, pin):
+        with self.gate:
+            idle = self._desktop_sync()
+            stamp = self.desktop.verification_stamp(guard, idle_seconds=idle)
+            generation = self.generation
+        if not self._begin_upstream():
+            self.device.reserve_attempt()
+            raise DeviceLockError('verification_busy')
+        try:
+            if self.vault is not None:
+                status = self._setup_status(self.vault.status())
+                if not status['enabled'] or not status['recovery_backup_confirmed']:
+                    raise RequestError(409, 'setup_required')
+            with self.gate:
+                self.admit()
+                if generation != self.generation or stamp != self.desktop.verification_stamp(
+                        guard, idle_seconds=self.device.session_seconds()):
+                    raise DeviceLockError('unlock_cancelled')
+            if self.device.verify_pin(pin) is not True:
+                raise DeviceLockError('verification_failed')
+        finally:
+            self._end_upstream()
+        with self.gate:
+            idle = self._desktop_sync()
+            if generation != self.generation:
+                raise DeviceLockError('unlock_cancelled')
+            return self.desktop.issue(stamp, idle_seconds=idle)
+
+    def desktop_access(self, guard, token, action):
+        if action not in ('activate', 'check', 'presence', 'activity'):
+            raise DesktopGrantError('invalid_request')
+        with self.gate:
+            idle = self._desktop_sync()
+            return self.desktop.access(guard, token, action=action, idle_seconds=idle)
+
+    def desktop_lock(self, guard):
+        with self.gate:
+            idle = self._desktop_sync()
+            result = self.desktop.lock(guard, idle_seconds=idle)
+            self.generation += 1
+            self._lock_device()
+            self._browser_locked = True
+            return result
 
     def access_epoch(self):
         with self.gate:
@@ -254,9 +398,11 @@ class AuthBroker:
             if (type(value) is not dict or set(value) != {"schema", "locked", "epoch"}
                     or value["schema"] != "sage.lantern.access-epoch.v1" or type(value["locked"]) is not bool
                     or type(value["epoch"]) is not str or re.fullmatch(r"[0-9a-f]{32}", value["epoch"]) is None):
-                self.device.lock()
+                self.desktop.close()
+                self._lock_device()
                 raise DeviceLockError("unavailable")
             if value["epoch"] != self._device_epoch:
+                self._revoke_dependents()
                 self._observed_epoch = os.urandom(16).hex()
                 self._device_epoch = value["epoch"]
             return {**value, "epoch": self._observed_epoch}
@@ -266,6 +412,25 @@ class AuthBroker:
         if self.power is None:
             raise RequestError(503, "power_settings_unavailable")
         return self._power_capability(self.power.load())
+
+    def session_context(self, token):
+        """Live token-bound context, distinct from every voice publication.
+
+        This is not a human-name/SAGE-identity assertion or private-action
+        consent. Token and secret never leave the broker. All reads and lock
+        decisions share the existing gate; no presence/idle lease is renewed.
+        """
+        with self.gate:
+            self.require_token(token)
+            before = self.access_epoch()
+            if before["locked"] is not False:
+                raise RequestError(401, "unauthorized")
+            ref = hmac.new(self._session_context_key,
+                (before["epoch"] + ":" + token).encode("ascii"), hashlib.sha256).hexdigest()
+            self.require_token(token)
+            if self.access_epoch() != before:
+                raise RequestError(401, "unauthorized")
+            return dict(schema="sage.lantern.session-context.v1", epoch=before["epoch"], session_ref=ref)
 
     def owner_contact_snapshot(self, token):
         with self.gate:
@@ -296,7 +461,8 @@ class AuthBroker:
                 except PowerRevisionConflict:
                     raise
                 except Exception:
-                    self.device.lock()
+                    self.desktop.close()
+                    self._lock_device()
                     self.closing = True
                     raise
             else:
@@ -333,6 +499,8 @@ class AuthBroker:
         with self.gate:
             self.admit()
             authorized = self.device.authorized(token)
+            if self._revocation_listeners:
+                self.access_epoch()
             if type(authorized) is not bool:
                 raise DeviceLockError("unavailable")
             return {"authorized": authorized}
@@ -341,6 +509,8 @@ class AuthBroker:
         with self.gate:
             self.admit()
             authorized = self.device.touch(token)
+            if self._revocation_listeners:
+                self.access_epoch()
             if type(authorized) is not bool:
                 raise DeviceLockError("unavailable")
             return {"authorized": authorized}
@@ -349,6 +519,8 @@ class AuthBroker:
         with self.gate:
             self.admit()
             authorized = self.device.presence(token)
+            if self._revocation_listeners:
+                self.access_epoch()
             if type(authorized) is not bool:
                 raise DeviceLockError("unavailable")
             return {"authorized": authorized}
@@ -360,11 +532,14 @@ class AuthBroker:
             was_active = self.device.authorized(token)
             activated = self.device.activate(token)
             if type(activated) is not bool or type(was_active) is not bool:
-                self.device.lock()
+                self.desktop.close()
+                self._lock_device()
                 self.generation += 1
                 raise DeviceLockError("unavailable")
             if activated and not was_active:
+                self._revoke_dependents()
                 self.generation += 1
+                self._browser_locked = False
             return {"authorized": activated}
 
     def cancel(self, token):
@@ -373,15 +548,24 @@ class AuthBroker:
                 raise DeviceLockError("unavailable")
             was_active = self.device.authorized(token)
             cancelled = self.device.revoke(token)
+            if self._revocation_listeners:
+                self.access_epoch()
             if type(cancelled) is not bool or type(was_active) is not bool:
                 raise DeviceLockError("unavailable")
             if was_active and cancelled:
+                self._revoke_dependents()
                 self.generation += 1
+                self.desktop.revoke()
+                self._browser_locked = True
             return {"cancelled": cancelled}
 
     def require_token(self, token):
         self.admit()
         authorized = self.device.authorized(token)
+        # Observe lazy presence/idle expiry even when the caller was refused.
+        # An invalid token does not revoke another live epoch.
+        if self._revocation_listeners:
+            self.access_epoch()
         if type(authorized) is not bool:
             raise DeviceLockError("unavailable")
         if not authorized:
@@ -466,7 +650,8 @@ class AuthBroker:
                 self.device.revoke(token)
                 raise DeviceLockError("unlock_cancelled")
             if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None:
-                self.device.lock()
+                self.desktop.close()
+                self._lock_device()
                 self.generation += 1
                 raise DeviceLockError("unavailable")
             if self.device.pending(token) is not True:
@@ -543,17 +728,19 @@ class AuthBroker:
                     return {"locked": True}
                 raise RequestError(401, "unauthorized")
             self.generation += 1
-            self.device.lock()
+            self.desktop.revoke()
+            self._lock_device()
             return self.state()
 
     def shutdown(self):
         with self.gate:
+            self.desktop.close()
             if self.closing:
                 return
             self.closing = True
             self.generation += 1
             try:
-                result = self.device.lock()
+                result = self._lock_device()
                 self.local_revoked = type(result) is dict and set(result) == {"locked"} and result["locked"] is True
             except Exception:
                 self.local_revoked = False
@@ -626,7 +813,7 @@ class AuthHandler(BaseHTTPRequestHandler):
             if origin not in ORIGINS:
                 raise RequestError(403, "forbidden")
             self.cors_origin = origin
-        elif self.path not in {"/state", "/authorize", "/power-policy", "/sleep-ready", "/access-epoch", "/owner-contact-snapshot"} or self.command == "OPTIONS":
+        elif self.path not in {"/state", "/authorize", "/power-policy", "/sleep-ready", "/access-epoch", "/owner-contact-snapshot", "/session-context"} or self.command == "OPTIONS":
             raise RequestError(403, "forbidden")
         if self.command not in {ROUTES[self.path], "OPTIONS"}:
             raise RequestError(405, "method_not_allowed")
@@ -721,7 +908,9 @@ class AuthHandler(BaseHTTPRequestHandler):
                     result = self.server.broker.power_policy() if self.path == "/power-policy" else self.server.broker.state()
             else:
                 value = self._payload(length)
-                if self.path == "/owner-contact-snapshot":
+                if self.path == "/session-context":
+                    result = self.server.broker.session_context(value)
+                elif self.path == "/owner-contact-snapshot":
                     result = self.server.broker.owner_contact_snapshot(value)
                 elif self.path in CONTACT_ROUTES:
                     self.server.broker.require_token(value["token"])
@@ -883,6 +1072,8 @@ def main(argv=None):
     parser.add_argument("--operator-key", type=Path)
     parser.add_argument("--setup-marker", type=Path)
     parser.add_argument("--drain-report-dir", type=Path)
+    parser.add_argument("--desktop-socket", type=Path,
+                        help="Opt-in root-peer-only native control socket in a private runtime directory")
     args = parser.parse_args(argv)
     if not args.state_dir.is_absolute():
         parser.error("--state-dir must be an absolute private directory")
@@ -900,6 +1091,7 @@ def main(argv=None):
     stopped = threading.Event()
     previous = {}
     report = None
+    desktop_server = None
     try:
         device = DeviceLock(args.state_dir, session_seconds=300)
         lock_policy = LockSettingsStore(args.state_dir / "power").load()
@@ -910,6 +1102,9 @@ def main(argv=None):
                         enable_allowed=lambda: initialization_allowed(args.setup_marker))
         server = DeviceAuthServer(device, profile=DeviceProfileStore(profile_dir), vault=vault,
                                  power=PowerSettingsStore(args.state_dir / "power"), capability=suspend_available)
+        if args.desktop_socket is not None:
+            desktop_server = DesktopControlServer(args.desktop_socket, server.broker)
+            desktop_server.start()
         for signum in (signal.SIGTERM, signal.SIGINT):
             previous[signum] = signal.signal(signum, lambda received, frame: stopped.set())
         while not stopped.is_set():
@@ -919,6 +1114,11 @@ def main(argv=None):
     finally:
         try:
             if server is not None:
+                server.broker.shutdown()
+                if desktop_server is not None:
+                    if not desktop_server.server_close():
+                        with server.broker.gate:
+                            server.broker.cleanup_unknown = True
                 drained = server.server_close()
                 if report is not None:
                     report.finish(drained)

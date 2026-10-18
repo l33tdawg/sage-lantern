@@ -24,6 +24,30 @@ class VoiceProgressTests(unittest.TestCase):
 
 
 class StatusCollectionTests(unittest.TestCase):
+    def test_touch_detection_accepts_direct_input_and_legacy_panel_names(self):
+        devices = ['/sys/class/input/event3/device', '/sys/class/input/event4/device']
+        values = {
+            '/sys/class/input/event3/device/name': 'Waveshare  Waveshare -079-HD',
+            '/sys/class/input/event3/device/properties': '2',
+            '/sys/class/input/event4/device/name': 'Logitech USB Keyboard',
+            '/sys/class/input/event4/device/properties': '0',
+        }
+        with patch.object(MODULE, '_read', side_effect=lambda path: values.get(path, '')), \
+                patch('glob.glob', return_value=devices):
+            value = MODULE._touch()
+        self.assertTrue(value['present'])
+        self.assertEqual(value['detail'], 'Waveshare  Waveshare -079-HD')
+        with patch.object(MODULE, '_read', side_effect=lambda path: {
+                '/sys/class/input/event4/device/name': 'Logitech USB Keyboard',
+                '/sys/class/input/event4/device/properties': '0'}.get(path, '')), \
+                patch('glob.glob', return_value=['/sys/class/input/event4/device']):
+            self.assertFalse(MODULE._touch()['present'])
+        legacy = {'/sys/class/input/event7/device/name': 'WS170120 touch',
+                  '/sys/class/input/event7/device/properties': ''}
+        with patch.object(MODULE, '_read', side_effect=lambda path: legacy.get(path, '')), \
+                patch('glob.glob', return_value=['/sys/class/input/event7/device']):
+            self.assertTrue(MODULE._touch()['present'])
+
     def test_audio_presence_does_not_claim_live_readiness_or_capture(self):
         binding = {'audio': {'stable_path': '/dev/snd/by-id/test-audio', 'usb_serial': 'test-unit'}}
         for present, operational in ((False, True), (True, False), (True, True)):
@@ -198,6 +222,11 @@ class TransportTests(unittest.TestCase):
 
 
 class StatusSessionTests(unittest.TestCase):
+    def setUp(self):
+        legacy = patch.object(MODULE, "_context_required", return_value=False)
+        legacy.start()
+        self.addCleanup(legacy.stop)
+
     def handler(self, path="/status", method="GET", headers=()):
         handler = MODULE.StatusHandler.__new__(MODULE.StatusHandler)
         handler.path = path
@@ -211,6 +240,39 @@ class StatusSessionTests(unittest.TestCase):
         handler.wfile = io.BytesIO()
         handler.log_message = lambda *args: None
         return handler
+
+    def test_protected_status_fences_prior_or_unstamped_voice_content(self):
+        from sage_lantern.session_context import SessionContext
+        current = SessionContext("a" * 32, "b" * 64)
+        old = SessionContext("c" * 32, "d" * 64)
+        for stamp in (None, old.to_dict(), current.to_dict()):
+            handler = self.handler(headers=(("X-Lantern-Session", "synthetic"),))
+            value = {"audio": {"present": False, "ready": False},
+                     "voice": {"phase": "complete", "transcript": "private-canary", "response": "answer",
+                               "session_context": stamp}}
+            with patch.object(MODULE, "_context_required", return_value=True), \
+                    patch.object(MODULE, "_session_authorized", return_value=True), \
+                    patch.object(MODULE, "_session_context", return_value=current), \
+                    patch.object(MODULE, "collect_status", return_value=value), patch("builtins.print"):
+                handler.do_GET()
+            body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+            self.assertEqual(b"private-canary" in body, stamp == current.to_dict())
+            self.assertEqual(json.loads(body)["session_context"], current.to_dict())
+
+    def test_protected_status_context_failure_or_rotation_denies(self):
+        from sage_lantern.session_context import SessionContext
+        current = SessionContext("a" * 32, "b" * 64)
+        replacement = SessionContext("c" * 32, "d" * 64)
+        for contexts in ([None], [current, replacement], [current, current, replacement]):
+            handler = self.handler(headers=(("X-Lantern-Session", "synthetic"),))
+            with patch.object(MODULE, "_context_required", return_value=True), \
+                    patch.object(MODULE, "_session_authorized", return_value=True), \
+                    patch.object(MODULE, "_session_context", side_effect=contexts), \
+                    patch.object(MODULE, "collect_status", return_value={"voice": {"session_context": current.to_dict(),
+                         "response": "private-canary"}}) as collect:
+                handler.do_GET()
+            self.assertNotIn(b"private-canary", handler.wfile.getvalue())
+            self.assertEqual(collect.call_count, 0 if contexts == [None] else 1)
 
     def test_denied_before_collect_and_after_collect(self):
         for decisions in ([False], [True, False], [True, True, False]):
@@ -316,10 +378,64 @@ class UnitBindingTests(unittest.TestCase):
         self.assertNotIn('16 kHz', audio['detail'])
         self.assertNotIn('ready', audio['detail'])
 
+    def test_fleet_status_uses_explicit_unit_and_rejects_a_audio(self):
+        for unit in ('unit-c', 'unit-d', 'unit-e', 'unit-f'):
+            with self.subTest(unit=unit):
+                binding = {**self.binding, 'unit_id': unit}
+                self.path.write_text(json.dumps(binding))
+                self.assertEqual(self.load()['unit_id'], unit)
+                binding['audio'] = dict(stable_path='/dev/snd/by-id/usb-SAGE-LANTERN-A-AUDIO',
+                    usb_serial='SAGE-LANTERN-A-AUDIO')
+                self.path.write_text(json.dumps(binding))
+                with self.assertRaises(ValueError):
+                    self.load()
+        for unit in ('unit-g', 'unit-C', 'unit-cc'):
+            self.path.write_text(json.dumps({**self.binding, 'unit_id': unit}))
+            with self.assertRaises(ValueError):
+                self.load()
+
     def test_missing_binding_never_defaults_to_a(self):
         self.assertFalse(MODULE._audio()['present'])
         self.assertFalse(MODULE._radio(self.path)['present'])
         self.assertIsNone(MODULE._audio()['serial'])
+
+    def test_absent_radio_and_platform_audio_are_explicit_not_fabricated(self):
+        self.binding['radio'] = {'present': False, 'reason': 'operator-declared-absent'}
+        self.binding['audio'] = {'present': True, 'source': 'platform',
+                                 'stable_path': '/dev/snd/by-path/platform-es8388-sound',
+                                 'id_path': 'platform-es8388-sound', 'platform_device': 'es8388-sound'}
+        self.path.write_text(json.dumps(self.binding))
+        binding = self.load()
+        self.assertIs(binding['radio']['present'], False)
+        radio = MODULE._radio(self.path, binding)
+        self.assertFalse(radio['present'])
+        self.assertFalse(radio['link_verified'])
+        self.assertEqual(radio['detail'], 'Radio not fitted (explicitly declared absent)')
+        self.assertEqual(radio['name'], 'unit-b radio')
+        with patch.object(Path, 'exists', return_value=True), \
+                patch.object(MODULE, '_audio_operational', return_value=False):
+            audio = MODULE._audio(binding)
+        self.assertTrue(audio['present'])
+        self.assertFalse(audio['ready'])
+        self.assertIsNone(audio['serial'])
+        self.assertIn('platform capture device', audio['detail'])
+
+    def test_platform_audio_binding_mismatches_are_refused(self):
+        for audio in (
+            {'present': True, 'source': 'platform', 'stable_path': '/dev/snd/by-path/platform-wrong',
+             'id_path': 'platform-es8388-sound', 'platform_device': 'es8388-sound'},
+            {'present': True, 'source': 'platform', 'stable_path': '/dev/snd/by-path/platform-es8388-sound',
+             'id_path': 'platform-es8388-sound', 'platform_device': 'hdmi0-sound'},
+            {'present': True, 'source': 'platform', 'stable_path': '/dev/snd/by-id/platform-es8388-sound',
+             'id_path': 'platform-es8388-sound', 'platform_device': 'es8388-sound'},
+            {'present': True, 'source': 'platform', 'stable_path': '/dev/snd/by-path/platform-es8388-sound',
+             'id_path': 'usb-es8388-sound', 'platform_device': 'es8388-sound'},
+        ):
+            with self.subTest(audio=audio):
+                self.binding['audio'] = audio
+                self.path.write_text(json.dumps(self.binding))
+                with self.assertRaises(ValueError):
+                    self.load()
 
     def test_wrong_owner_duplicate_and_a_audio_rejected(self):
         with self.assertRaises(ValueError):
@@ -344,3 +460,39 @@ class UnitBindingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+def test_local_unit_reports_audio_from_admission_not_the_absent_broker(tmp_path, monkeypatch):
+    """No mesh runtime means no broker to ask; the durable admission answers."""
+    import sys, types
+
+    calls = {'admission': 0, 'broker': 0}
+
+    def admission_verified():
+        calls['admission'] += 1
+        return True
+
+    def operational_ready():
+        calls['broker'] += 1
+        return False
+
+    module = types.ModuleType('sage_lantern.audio_readiness')
+    module.admission_verified = admission_verified
+    module.operational_ready = operational_ready
+    monkeypatch.setitem(sys.modules, 'sage_lantern.audio_readiness', module)
+    monkeypatch.setattr(MODULE, 'MESH_RUNTIME', tmp_path / 'mesh-runtime.json')
+    assert MODULE._audio_operational() is True
+    assert calls == {'admission': 1, 'broker': 0}
+    # A mesh-managed unit keeps the broker as the authority.
+    (tmp_path / 'mesh-runtime.json').write_text('{}\n')
+    assert MODULE._audio_operational() is False
+    assert calls == {'admission': 1, 'broker': 1}
+
+
+def test_audio_readiness_failure_is_not_reported_as_ready(tmp_path, monkeypatch):
+    import sys, types
+
+    module = types.ModuleType('sage_lantern.audio_readiness')
+    module.admission_verified = lambda: False
+    module.operational_ready = lambda: False
+    monkeypatch.setitem(sys.modules, 'sage_lantern.audio_readiness', module)
+    monkeypatch.setattr(MODULE, 'MESH_RUNTIME', tmp_path / 'absent.json')
+    assert MODULE._audio_operational() is False

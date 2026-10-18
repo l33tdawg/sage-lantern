@@ -8,8 +8,8 @@ readonly unit=/etc/systemd/system/sage-lantern-display-power.service
 readonly service=sage-lantern-display-power.service
 
 [[ ${EUID} -eq 0 && $(uname -m) == aarch64 ]] || { echo 'Expected root on Unit A aarch64.' >&2; exit 1; }
-[[ $# -ge 2 && $1 == --unit-id && ( $2 == unit-a || $2 == unit-b ) ]] || {
-  echo 'Usage: install-display-power-local.sh --unit-id unit-a|unit-b [--legacy]. Install only; never activates.' >&2; exit 1;
+[[ $# -ge 2 && $1 == --unit-id && $2 =~ ^unit-[a-f]$ ]] || {
+  echo 'Usage: install-display-power-local.sh --unit-id unit-a|unit-b|unit-c|unit-d|unit-e|unit-f [--legacy]. Install only; never activates.' >&2; exit 1;
 }
 readonly unit_id=$2
 shift 2
@@ -44,6 +44,6 @@ systemctl daemon-reload
 echo "Display helper and session supervisor installed, NOT started; backups: $backup"
 echo 'Boot enablement is unchanged. Do not activate before owner PIN/recovery onboarding is complete.'
 echo 'Separate root approval policy: /etc/sage-lantern-display-power.enabled, regular single-link root-owned 0644.'
-echo 'Policy bytes: fresh unit-a + newline, fresh unit-b + newline, or explicitly legacy unit-a + newline.'
+echo 'Policy bytes: fresh unit-a through fresh unit-f + newline, or explicitly legacy unit-a + newline.'
 echo 'After reviewed activation, verify physical screen-off/touch-wake/PIN before separate boot enablement.'
 echo 'File rollback is separate: restore saved helper/unit from the backup, then systemctl daemon-reload.'

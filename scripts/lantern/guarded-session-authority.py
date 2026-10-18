@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Disabled candidate: root launches/enrolls one Shell; failure holds apps."""
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import resource
+import select
+import signal
+import socket
+import socketserver
+import stat
+import struct
+import threading
+import time
+
+from sage_lantern.desktop_launch import (ROOT_CGROUP, CONTROL, NOTIFY, LaunchOnce,
+    active_session, bridge_peer, existing_compositor, ready_datagram)
+from sage_lantern.desktop_native import (BrokerClient, NativeError, PeerAnchor,
+    decode, kernel_peer, pidfd_alive, trusted_file)
+from sage_lantern.desktop_control import unique_object
+from sage_lantern.desktop_seat import SeatAnchor
+
+REQUIRED = {'/usr/local/libexec/sage-lantern-guarded-session-authority',
+    '/usr/local/libexec/desktop-native-adapter.py',
+    '/usr/local/libexec/sage-lantern-guarded-session-bridge',
+    *('/opt/sage-lantern/venv/lib/python3.11/site-packages/sage_lantern/' + name + '.py'
+      for name in ('__init__', 'desktop_launch', 'desktop_native', 'desktop_control', 'desktop_seat'))}
+
+
+def adapter_module():
+    path = Path(__file__).with_name('desktop-native-adapter.py')
+    spec = importlib.util.spec_from_file_location('guarded_native_adapter', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_launch_policy(path, adapter):
+    body = trusted_file(path)
+    value = json.loads(body, object_pairs_hook=unique_object)
+    fields = {'schema', 'uid', 'gid', 'account', 'home', 'native_policy',
+              'native_policy_sha256', 'files', 'activation_file'}
+    if (type(value) is not dict or set(value) != fields
+            or value['schema'] != 'sage.lantern.guarded-launch-policy.v1'
+            or value['uid'] != 1000 or type(value['gid']) is not int or value['gid'] <= 0
+            or value['account'] != 'sage' or value['home'] != '/home/sage'
+            or value['activation_file'] != '/etc/sage-lantern/desktop-pin-activation.json'
+            or value['native_policy'] != '/etc/sage-lantern/desktop-native-policy.json'
+            or type(value['files']) is not dict or not REQUIRED <= set(value['files'])
+            or any(type(digest) is not str or re.fullmatch('[0-9a-f]{64}', digest) is None
+                   for digest in (value['native_policy_sha256'], *value['files'].values()))):
+        raise NativeError()
+    payloads = {str(path): hashlib.sha256(body).hexdigest(),
+        value['native_policy']: value['native_policy_sha256'], **value['files']}
+    paths = {Path(filename) for filename in payloads}
+    for filename in tuple(paths):
+        paths.update(filename.parents)
+    def metadata():
+        records = {}
+        for filename in paths:
+            info = filename.lstat()
+            if info.st_uid != 0 or info.st_mode & 0o022 or stat.S_ISLNK(info.st_mode):
+                raise NativeError()
+            identity = (info.st_dev, info.st_ino, info.st_uid, info.st_mode)
+            if stat.S_ISREG(info.st_mode):
+                identity += (info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+            elif not stat.S_ISDIR(info.st_mode):
+                raise NativeError()
+            records[str(filename)] = identity
+        return records
+    baseline = metadata()
+    for filename, digest in payloads.items():
+        trusted_file(filename, digest)
+    native, native_check = adapter.load_policy(Path(value['native_policy']))
+    if native['uid'] != value['uid'] or metadata() != baseline:
+        raise NativeError()
+    def check():
+        return metadata() == baseline and native_check() is True
+    return {**value, **native}, check, hashlib.sha256(body).hexdigest()
+
+
+def activation_check(policy, digest):
+    value = json.loads(trusted_file(policy['activation_file']))
+    return value == dict(schema='sage.lantern.desktop-pin-activation.v1',
+        qualified_power=True, fresh_session_authorized=True, launch_policy_sha256=digest)
+
+
+def bound_socket(path, uid, kind):
+    path = Path(path)
+    for parent in (path.parent, *path.parents):
+        info = parent.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise NativeError()
+    if os.path.lexists(path):
+        raise NativeError()  # No auto-adoption or removal of a predecessor socket.
+    channel = socket.socket(socket.AF_UNIX, kind)
+    try:
+        channel.bind(str(path))
+        os.chown(path, 0, pwd.getpwuid(uid).pw_gid)
+        os.chmod(path, 0o660)
+        return channel, (path.lstat().st_dev, path.lstat().st_ino)
+    except Exception:
+        channel.close()
+        raise
+
+
+def remove_own_socket(path, identity):
+    try:
+        info = Path(path).lstat()
+        if stat.S_ISSOCK(info.st_mode) and (info.st_dev, info.st_ino) == identity:
+            Path(path).unlink()
+    except FileNotFoundError:
+        pass
+
+
+class Authority:
+    def __init__(self, policy, check, digest, adapter, ready):
+        self.policy, self.check, self.digest = policy, check, digest
+        self.adapter, self.ready = adapter, ready
+        self.launch = LaunchOnce(self.prepare)
+        self.anchor = self.fd = self.native = self.worker = None
+        self.seat = None
+        self.gate = threading.Lock()
+        self.publication = threading.Lock()
+        self.held = threading.Event()
+
+    def prepare(self):
+        if (self.held.is_set() or not self.check() or not activation_check(self.policy, self.digest)
+                or existing_compositor(self.policy['uid'])):
+            raise NativeError()
+        return self.policy, active_session(self.policy['uid'])
+
+    def valid(self):
+        try:
+            return (not self.held.is_set() and self.check() and self.fd is not None
+                and pidfd_alive(self.fd) and self.anchor.matches(self.anchor.pid, self.anchor.uid)
+                and (self.seat is None or self.seat.matches()))
+        except Exception:
+            return False
+
+    def publish_native(self, policy):
+        with self.publication:
+            if self.held.is_set() or self.seat is None or not self.valid():
+                raise NativeError()
+            broker = BrokerClient(policy['broker_socket'], policy['broker_uid'])
+            self.native = self.adapter.NativeServer(policy['native_socket'], self.anchor,
+                broker, self.fd, policy_check=self.valid)
+            # Cancellation can arrive during bind/construction. Do not start
+            # a server after hold has already fenced this launch attempt.
+            if self.held.is_set() or not self.valid():
+                self.native.server_close()
+                raise NativeError()
+            self.worker = threading.Thread(target=self.native.serve_forever,
+                kwargs={'poll_interval': 0.1}, daemon=True)
+            self.worker.start()
+            if self.held.is_set() or not self.valid():
+                self.native.server_close()
+                raise NativeError()
+
+    def start(self, connection):
+        with self.gate:
+            policy, session, child = self.launch.start()
+            self.fd = os.pidfd_open(child.pid)
+            self.anchor = PeerAnchor.enroll(child.pid, policy['uid'], session['Id'],
+                policy['overlay'], policy['executable_sha256'], parent=os.getpid(), notify=NOTIFY)
+            if not self.valid():
+                raise NativeError()
+            deadline = time.monotonic() + 35
+            while time.monotonic() < deadline and self.valid():
+                if select.select([connection], [], [], 0)[0]:
+                    # EOF or unexpected additional frame cancels startup.
+                    raise NativeError()
+                if not select.select([self.ready], [], [], 0.1)[0]:
+                    continue
+                body, ancillary, flags, _ = self.ready.recvmsg(1025,
+                    socket.CMSG_SPACE(struct.calcsize('3i')))
+                if ready_datagram(body, ancillary, flags, child.pid, policy['uid']) and self.valid():
+                    # READY is a process notification, not proof of seat access.
+                    # Never publish native PIN authority before the exact child
+                    # controls this logind session and holds its DRM/evdev fds.
+                    self.seat = SeatAnchor.enroll(child.pid, policy['uid'],
+                        session['Id'], self.anchor.leader)
+                    if not self.valid():
+                        raise NativeError()
+                    self.publish_native(policy)
+                    return
+            raise NativeError()
+
+    def hold(self):
+        self.held.set()
+        with self.publication:
+            if self.native is not None:
+                self.native.server_close()  # Revokes RAM authority; never kill/terminate child.
+
+    def close(self):
+        self.hold()
+        if self.native is not None and self.worker is not None and self.worker.is_alive():
+            self.native.shutdown()
+        if self.worker is not None:
+            self.worker.join(timeout=2)
+        if self.fd is not None:
+            os.close(self.fd)
+
+
+class Handler(socketserver.StreamRequestHandler):
+    rbufsize = 0
+
+    def handle(self):
+        authority = self.server.authority
+        if not self.server.slot.acquire(blocking=False):
+            return
+        admitted = False
+        try:
+            pid, uid = kernel_peer(self.request)
+            if not bridge_peer(pid, uid, authority.policy['uid']):
+                return
+            self.request.settimeout(3)
+            if decode(self.rfile.readline(514)) != {'action': 'start'}:
+                return
+            admitted = True
+            authority.start(self.request)
+            self.wfile.write(b'{"ready":true}\n')
+            self.wfile.flush()
+            self.request.settimeout(None)
+            while authority.valid() and bridge_peer(pid, uid, authority.policy['uid']):
+                if select.select([self.request], [], [], 0.25)[0]:
+                    break
+        except Exception:
+            pass  # No secrets/exception strings in journal output.
+        finally:
+            if admitted:
+                authority.hold()
+            self.server.slot.release()
+
+
+class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    block_on_close = False
+    def __init__(self, channel, authority):
+        super().__init__(CONTROL, Handler, bind_and_activate=False)
+        self.socket.close()
+        self.socket = channel
+        self.authority, self.slot = authority, threading.Lock()
+        self.server_activate()
+    def handle_error(self, *_):
+        pass
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--policy', type=Path, required=True)
+    args = parser.parse_args(argv)
+    status = Path('/proc/self/status').read_text()
+    if (os.geteuid() != 0 or not hasattr(os, 'pidfd_open') or 'NoNewPrivs:\t1\n' not in status
+            or resource.getrlimit(resource.RLIMIT_CORE) != (0, 0)
+            or Path('/proc/self/cgroup').read_text().strip() != ROOT_CGROUP):
+        raise NativeError()
+    adapter = adapter_module()
+    policy, check, digest = load_launch_policy(args.policy, adapter)
+    ready, ready_identity = bound_socket(NOTIFY, policy['uid'], socket.SOCK_DGRAM)
+    authority = None
+    try:
+        ready.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+        control, control_identity = bound_socket(CONTROL, policy['uid'], socket.SOCK_STREAM)
+        authority = Authority(policy, check, digest, adapter, ready)
+        stop = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: stop.set())
+        signal.signal(signal.SIGINT, lambda *_: stop.set())
+        try:
+            with Server(control, authority) as server:
+                server.timeout = 0.25
+                while not stop.is_set():
+                    server.handle_request()
+                    if authority.anchor is not None and not authority.valid():
+                        authority.hold()
+        finally:
+            remove_own_socket(CONTROL, control_identity)
+    finally:
+        if authority is not None:
+            authority.close()
+        ready.close()
+        remove_own_socket(NOTIFY, ready_identity)
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        raise SystemExit(main())
+    except Exception:
+        raise SystemExit('guarded_session_held') from None

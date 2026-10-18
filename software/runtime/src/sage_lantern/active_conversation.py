@@ -11,6 +11,8 @@ import time
 import uuid
 from datetime import datetime, UTC
 
+from .conversation_branch import effective_thread_items
+
 MAX_TURNS = 4
 MAX_VISIBLE_TURNS = 40
 MAX_VISIBLE_BYTES = 65536
@@ -146,11 +148,9 @@ class ActiveConversation:
         self.clear()
         self.owner = hashlib.sha256(token.encode('utf-8')).hexdigest()
         self.thread_id = thread_id
-        superseded = {row['supersedes'] for row in items if row.get('supersedes')}
         turns = tuple(Exchange(row['session_id'], row['transcript'], row['response'], row['created_at'],
                                row.get('has_photo', False), row.get('supersedes'))
-                      for row in sorted(items, key=lambda row: row['created_at'])
-                      if row['session_id'] not in superseded)[-MAX_VISIBLE_TURNS:]
+                      for row in effective_thread_items(items, thread_id))[-MAX_VISIBLE_TURNS:]
         while sum(len((row.question + row.answer).encode('utf-8')) for row in turns) > MAX_VISIBLE_BYTES:
             turns = turns[1:]
         self.turns = turns

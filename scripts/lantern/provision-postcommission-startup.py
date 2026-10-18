@@ -82,7 +82,7 @@ class Phase:
         deps = self.dependencies
         require(set(deps) == {'schema', 'unit_id', 'handoff', 'tools', 'installer', 'service'}
             and deps['schema'] == 'sage.lantern.postcommission-dependencies.v1'
-            and deps['unit_id'] in ('unit-a', 'unit-b') and deps['handoff'] == handoff_pin)
+            and deps['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f') and deps['handoff'] == handoff_pin)
         require(deps['installer']['sha256'] == INSTALLER_SHA)
         self.installer = load(deps['installer'])
         self.tools_raw = self.handoff.pinned(deps['tools'])

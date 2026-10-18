@@ -443,6 +443,30 @@ camera and voice lane (no CSI camera on C; the model-busy proof is the bench
 substitute); and an unclean power loss still leaves automatic sleep refused
 until auth drain receipts are reconciled.
 
+**Amendment 2026-10-09 — D-018 × D-022 integration: a blank is skipped, and a
+shield this cycle did not create is preserved.** The sleep lane and the D-022
+desktop lock meet at one rule: `lock-enabled=true` means this lane never
+activates a shield, so the cycle owns no blank and `on()` must not dismiss one.
+(a) The skip stays explicit and reported (`display_off=skipped_lock_enabled`)
+and is **not** evidence that blank/unblank continues to work — the panel is dark
+because the unit is in S3, and no panel-off path is verified on a single-panel
+C–F unit. (b) `on()` removes only a shield the same cycle confirmed
+(`restored`) and takes `shield_unblank_unconfirmed` into recovery when an owned
+blank cannot be verified removed; failed owned restoration stays fail-closed.
+(c) An active shield the cycle did not create — an operator blank, a login lock,
+or a blank whose activation was never confirmed — is left untouched and reported
+`preserved_unowned`, in the wake journal as `display_on=preserved_unowned`.
+(d) That state completes the cycle without claiming a restored console and is
+never treated as the operator having authenticated at the panel. A mode-only
+blank decision or a temporary lock-policy downgrade stays rejected. **Not
+verified on a unit:** no managed sleep/abort/wake, concealment or pixel-privacy
+acceptance follows from this ruling.
+**Evidence:** `software/runtime/tests/test_suspend_session.py` (off/on ownership
+cases), the author settings-to-shield-to-cycle control in
+`work/ember-d022-repair-20261009/controls/`, and the D-022 review's
+`integration-review/INERT_INTEGRATION.py`, retained as the pre-repair
+counterexample.
+
 **Affects:** [AUTOMATIC_DEEP_SLEEP.md](AUTOMATIC_DEEP_SLEEP.md) (C–F status),
 `software/runtime/src/sage_lantern/suspend_session.py`,
 `software/runtime/src/sage_lantern/suspend_system.py` (profile stop set),
@@ -599,6 +623,154 @@ rotation and touch acceptance under the internal-ribbon rule.
 **Affects:** `scripts/lantern/cf-mode-supervisor.py`, `cf-output-mode.py`,
 `cf-desktop-mode.sh`, `docs/lantern/CF_DISPLAY_LAYOUT.md`, and the public
 hardware page's desktop section.
+
+## D-021 — The product camera is the Radxa Camera 4K (IMX415), G/H and future
+
+**Decision (owner, 2026-10-01):** the **Radxa Camera 4K (IMX415)** is the
+product-line camera — G/H **and future units** — **conditional on it proving
+out on the ROCK 5B+**: overlay, internal CSI ribbon and capture verified on a
+physical board. C–F keep the four ordered **IMX519** modules as their camera
+kit. This answers the question the camera-island re-cut was held on.
+
+**Reason:** the IMX415 driver family is present in the Rockchip kernel and
+Radxa publishes a rock-5b-plus cam0/cam1 pattern for the camera; the IMX519
+has no in-kernel driver, so its port work stays a later upgrade path. The
+owner's direction closes "G/H-only or product camera" in favour of product.
+
+**Consequence:** the camera-island re-cut targets the IMX415, not the IMX519;
+barrel, board and FPC dimensions still come from connector confirmation
+against the delivered board revision — never from vendor CAD. IMX519 remains
+the C–F kit. If the IMX415 does not bring up on the 5B+, this decision
+re-opens before any enclosure cut.
+
+**Affects:** [CF_INTERNAL_PANEL_CAMERA_RESEARCH.md](CF_INTERNAL_PANEL_CAMERA_RESEARCH.md),
+[HARDWARE_BOM.md](HARDWARE_BOM.md), the G/H hardware task, and the hardware
+workstream via Flint.
+
+## D-022 — Docked desktop requires a login
+
+**Decision (owner, 2026-10-01):** entering the landscape desk mode **requires
+a login** (the SAGE/Lantern account) — the operator is not carried into the
+desktop without authenticating. Public documentation of this ("on the site
+etc") is deliberately deferred to its own pass.
+
+**Reason:** the desktop is the wide-work posture (browser, terminal, files)
+and should sit behind the device's own authentication. The unlock token living
+only in browser memory, so a mode switch re-locks the UI, is therefore the
+intended behaviour rather than a defect to bridge.
+
+**Consequence:** the RAM-only session property stays; running conversation
+state should survive the portrait↔docked switch without the switch itself
+unlocking the UI. PIN recovery flows (locked-out recovery, etc.) are
+owner-scoped to the later **UAT/UI/UX pass** and are recorded as deferred, not
+built into the current lanes.
+
+**Affects:** `docs/lantern/CF_DISPLAY_LAYOUT.md`, the mode-switch continuity
+item in the C–F device-UX task, the public hardware page's desktop section
+(later, when documentation catches up), and the UAT/UI/UX scope.
+
+## D-023 — The runtime wheel is the unit of deployment
+
+**Decision (owner, 2026-10-11):** a deployment ships the **runtime wheel**, and
+that wheel is built from the whole of `software/runtime`. Whatever the package
+tree holds at build time is what a unit receives, including uncommitted work
+from lanes unrelated to the change being deployed. This is **accepted**: the
+wheel is the unit of deployment, and no per-file filtering is applied when
+building or installing it.
+
+**Reason:** the coupling is real rather than accidental. The measured case is
+the 10 October voice deployment, whose wheel carried eleven files of other
+lanes' work in progress. A clean replacement wheel was built and validated
+against the installed wheel (169 tests) but never applied, and two later wheels
+shipped the same way. Filtering the tree at build time would have to keep
+feature dependencies that look stray but are not — the audio lane's
+`active_conversation` import reaches an untracked conversation-lane file — so a
+filter is a per-release judgement, not a rule the build can apply.
+
+**Consequence:** the commission gate does **not** cover the wheel, and a runtime
+byte change owes no fresh capture. The admission contract is four files —
+`/etc/sage-lantern/appliance-bindings.json`,
+`/etc/sage-lantern/audio-capture-alsa.conf`, `/etc/sage-lantern/lantern.toml` and
+`/usr/bin/arecord` — and reviewed code churn in the installed package or the voice
+loop is deliberately excluded from it (D-018/D-019: optional capability churn
+never fails closed). An earlier revision of this note claimed the gate hashes
+every `sage_lantern/*.py` and owes one capture; that was wrong. Measured on unit C
+on 11 October 2026 by installing a changed `adapters.py`: `admission_verified()`
+was true before and after, and diffing the commissioned receipt against the live
+snapshot showed `audio`, `boot_id`, `hardware`, `inputs`, `services` and `unit_id`
+all identical, with exactly one moved subkey — the package's `adapters.py` under
+the audit-only `code` map. Because no gate sits behind the wheel, the review duty
+is the whole control: reviewing what a deployment changes means reading the wheel
+contents, not trusting the commit range that motivated it.
+
+*A caution for the next reader:* `capture_verified()` **does** move with code
+churn — it requires the entire snapshot to match the receipt — but it also carries
+a 600-second TTL, which makes it false for most of any day. On unit C it was
+already false from expiry (10,425 s past) when the wheel above was installed, so
+its `false` is not evidence that a deploy invalidated anything. Check
+`admission_verified()`, and check the expiry, before blaming a change.
+
+**Affects:** [REAL_UNIT_PROVISIONING.md](REAL_UNIT_PROVISIONING.md) step 3,
+[COLD_RUNTIME_UPDATE.md](COLD_RUNTIME_UPDATE.md), and the deployment runbook at
+`work/ember-voice-playback-20261010/REDEPLOY-RUNBOOK.md`.
+
+## D-024 — Unit C production chat runs the V79.6 3B token engine with response guards
+
+**Decision (owner, 2026-10-18):** Unit C's production chat port 8081 runs the
+V79.6 3B RKLLM model on the token engine with deterministic interval and status
+response guards. The 2B prompt-string service remains the rollback. The
+client-facing model id stays `lantern-native5-2b`, the vision fallback stays
+8082, and action dispatch remains with SAGE/OpenClaw.
+
+**Reason:** V79.6 fixes the three measured English failures and keeps 28/28
+action formatting. The prompt-string engine cannot initialize the 3B model: the
+RKNPU driver refuses the 3,085,697,024-byte IOVA mapping even with the 2B
+stopped. The token engine loads the same artifact and measured 625.1 ms median
+TTFT and 7.82 tok/s decode. The token bridge supplies tokenizer-encoded
+`input_ids`; the guards correct the raw model's E13 interval drift and S03_B
+absence clause.
+
+**Consequence:** only one 3B lane is resident; the 2B and vision services are
+stopped while the 3B is resident. The device artifact is 16k context (RKLLM
+toolkit cap); the host model is 32k. The live service is configured at
+`--context 2048 --max-new-tokens 256`, so those are the current served caps;
+longer-context activation is a later measured change. The guards are
+response-side checks, not an authorization boundary. Rollback removes the
+drop-in and restarts the 2B unit; the 2B model file is untouched. Raw-model
+caveats and the served caps must travel with any release note.
+
+The production guard revision is final-reviewed at `response_guards.py`
+`64609722…` and `rkllm_server.py` `e80bd651…`. It binds write receipts to the
+preceding action and tool identity, refuses another owner's private memory
+without a grant, and buffers only the first assistant turn after a recall
+receipt; later ordinary chat remains token-streamed. The SAGE/OpenClaw
+dispatcher still owns action authorization and canonicalization.
+
+**Affects:** [software/npu/README.md](../../software/npu/README.md),
+[3B_MODEL_PRODUCTION.md](3B_MODEL_PRODUCTION.md),
+`/etc/systemd/system/sage-lantern-llm.service.d/50-v79.6-token.conf`, and the
+RK3588 performance notes.
+
+## D-025 — Meshticulum 1.0.0-alpha is public; Lantern acceptance remains separate
+
+**Decision (owner, 2026-10-17):** Meshticulum 1.0.0-alpha is published at
+<https://github.com/l33tdawg/meshticulum/releases/tag/v1.0.0-alpha> from source
+`673eb60d24dc60f67371e24bc5c9caeec3a68508`, package `1.0.0a1`. Publication does
+not qualify Lantern private/native production, field range, end-to-end
+messaging or upstream superiority.
+
+**Reason:** Meshticulum is the public protocol/transport project; Lantern is
+the product deployment. The published results are near-bench application
+goodput (GFSK250 about 2.0 kB/s; one LoRa SF7/BW500 run at 1.07 kB/s) and do not
+transfer to field or modulation-equivalence claims.
+
+**Consequence:** docs and marketing link to the public release and keep
+kB/s/kbit/s, GFSK versus LoRa and near-bench scope explicit. Lantern delivery
+and read receipts, private/native qualification and any Lantern alpha
+publication remain separate gates.
+
+**Affects:** root `README.md`, the Meshticulum release notes and Lantern public
+communications.
 
 ## Open decisions
 

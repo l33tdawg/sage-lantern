@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import stat
 import tempfile
@@ -24,7 +25,7 @@ import tempfile
 PACKAGE = "/opt/sage-lantern/venv/lib/python3.11/site-packages/sage_lantern"
 MODULES = ("device_access", "device_lock", "power_settings", "vault_setup", "idle_suspend",
            "suspend_capability", "suspend_io", "suspend_journal", "suspend_runtime",
-           "suspend_system", "suspend_kiosk", "suspend_transition", "inference_guard", "adapters",
+           "suspend_system", "suspend_kiosk", "suspend_session", "suspend_transition", "inference_guard", "adapters",
            "community_service", "community_messaging", "community_public", "canonical_messaging", "message_storage",
            "message_contacts", "message_drafts", "message_dictation")
 HELPERS = {
@@ -33,10 +34,18 @@ HELPERS = {
     "lantern-display-power.py": "sage-lantern-display-power",
     "lantern-idle-suspend.py": "sage-lantern-idle-suspend",
 }
-SERVICES = ("device-auth", "voice-loop", "camera", "display-power", "fleet-admin", "llm")
+SERVICES = ("device-auth", "voice-loop", "camera", "display-power", "fleet-admin", "llm", "vlm")
+FENCE = "[Unit]\nConditionPathExists=!/run/sage-lantern-sleep.fenced\n"
+MODEL_BASELINE_DIRECTORY = "/run/sage-lantern-model"
 MAX_FILE = 2 * 1024 * 1024
 MAX_BUNDLE = 16 * 1024 * 1024
-FENCE = "[Unit]\nConditionPathExists=!/run/sage-lantern-sleep.fenced\n"
+
+
+def baseline_dropin(service):
+    """Reviewed start-baseline drop-in for one resident model unit (D-016)."""
+    return ("[Service]\nReadWritePaths=" + MODEL_BASELINE_DIRECTORY + "\n"
+            "ExecStartPost=+/opt/sage-lantern/venv/bin/python "
+            "/usr/local/libexec/sage-lantern-idle-suspend --model-started " + service + "\n")
 
 
 def read_safe(path, *, owner=None):
@@ -76,11 +85,35 @@ def encoded(value):
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
 
 
-def build_plan(source):
+BINDINGS = Path("/etc/sage-lantern/appliance-bindings.json")
+ALSA_PATTERN = re.compile(r"hw:CARD=[A-Za-z0-9_]{1,32},DEV=[0-9]{1,2}")
+
+
+def alsa_binding(path):
+    """The unit's own capture binding: the sleep ExecStart must keep it.
+
+    The A/B sleep drop-in replaces the voice ExecStart, and the runtime's
+    `--alsa-device` default is a placeholder (`hw:CARD=Audio,DEV=0`). Dropping
+    the unit's binding would silently point capture at a device that does not
+    exist here, so the plan refuses without a reviewed binding.
+    """
+    try:
+        value = strict_json(Path(path).read_bytes())
+    except Exception:
+        raise ValueError("appliance_bindings_unavailable") from None
+    audio = value.get("audio") if isinstance(value, dict) else None
+    device = audio.get("alsa_device") if isinstance(audio, dict) else None
+    if type(device) is not str or ALSA_PATTERN.fullmatch(device) is None:
+        raise ValueError("appliance_bindings_invalid")
+    return device
+
+
+def build_plan(source, *, bindings=BINDINGS):
     source = Path(source).absolute()
     payloads = {}
     origins = {}
     missing = []
+    alsa = alsa_binding(bindings)
 
     def add(relative, destination, mode=0o644):
         try:
@@ -97,11 +130,11 @@ def build_plan(source):
         "/etc/systemd/system/sage-lantern-idle-suspend.service")
     generated = {
         "/etc/tmpfiles.d/sage-lantern-suspend.conf":
-            "d /run/sage-lantern-model 0700 root root -\n",
+            "d " + MODEL_BASELINE_DIRECTORY + " 0700 root root -\n",
         "/etc/systemd/system/sage-lantern-llm.service.d/90-sleep-baseline.conf":
-            "[Service]\nReadWritePaths=/run/sage-lantern-model\n"
-            "ExecStartPost=+/opt/sage-lantern/venv/bin/python "
-            "/usr/local/libexec/sage-lantern-idle-suspend --model-started\n",
+            baseline_dropin("sage-lantern-llm.service"),
+        "/etc/systemd/system/sage-lantern-vlm.service.d/90-sleep-baseline.conf":
+            baseline_dropin("sage-lantern-vlm.service"),
     }
     for destination, text in generated.items():
         payloads[destination] = text.encode()
@@ -118,8 +151,9 @@ def build_plan(source):
             text += ("[Service]\nExecStart=\nExecStart=" + starts[0]
                      + " --drain-report-dir /var/lib/sage-lantern/device-lock/drain\n")
         if service == "voice-loop":
-            text += ("[Service]\nExecStart=\nExecStart=/usr/local/libexec/sage-lantern-voice-loop --photo-ready"
-                     " --drain-request /run/sage-lantern-voice-drain-request.json\n"
+            text += ("[Service]\nExecStart=\nExecStart=/usr/local/libexec/sage-lantern-voice-loop"
+                     " --config /etc/sage-lantern/lantern.toml --alsa-device " + alsa +
+                     " --photo-ready --drain-request /run/sage-lantern-voice-drain-request.json\n"
                      "RuntimeDirectoryPreserve=yes\nTimeoutStopSec=30\n"
                      "Environment=SAGE_LANTERN_INFERENCE_GUARD=/var/lib/sage-lantern/inference\n"
                      "ReadWritePaths=/var/lib/sage-lantern/inference\n")
@@ -156,10 +190,10 @@ def build_plan(source):
                     "Containment and durable writes before guarded services are released",
                     "Create drain directory service-owned 0700 without exposing private keys",
                     "Create inference directory service-owned 0700; directory existence does not prove readiness",
-                    "Parent separately stops ALL model consumers before one controlled LLM restart to establish root model-instance baseline",
+                    "Parent separately stops ALL model consumers before one controlled restart of each resident model unit to establish its root model-instance baseline",
                     "Inference guard configuration is opt-in only, not a readiness declaration",
                     "Create model directory root-owned 0700 during installation; install tmpfiles rule for subsequent boots",
-                    "Validate root --model-started hook and ExecStartPost activation semantics before coordinated LLM restart; start voice only after fresh baseline proof",
+                    "Validate root --model-started hook and ExecStartPost activation semantics per model unit before coordinated restart; start voice only after fresh baseline proof",
                     "Never automatically purge pending markers; unknown inference stays pending and deep sleep must remain disabled before fencing",
                     "Do not enable/start idle unit or create idle-suspend enabled marker",
                     "Parent separate native guard/drain/health checks before any activation"])
@@ -242,6 +276,8 @@ def check_bundle(stage, frozen, *, owner=0):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--bindings", type=Path, default=BINDINGS,
+                        help="installed appliance bindings holding the reviewed capture device")
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--stage", type=Path)
     mode = parser.add_mutually_exclusive_group()
@@ -256,12 +292,12 @@ def main():
                 raise ValueError("manifest_and_stage_required")
             frozen = strict_json(read_safe(args.manifest))
             if args.apply:
-                plan, payloads = build_plan(args.source)
+                plan, payloads = build_plan(args.source, bindings=args.bindings)
                 stage_bundle(args.stage, plan, payloads, frozen)
             check_bundle(args.stage, frozen)
             print(json.dumps({"checked": True, "deployed": False, "activated": False}))
         else:
-            plan, _ = build_plan(args.source)
+            plan, _ = build_plan(args.source, bindings=args.bindings)
             print(encoded(plan).decode(), end="")
         return 0
     except Exception:

@@ -33,6 +33,8 @@ FIELDS = {
     'vendored_agent_bootstrap': {'agent_key_file', 'home_domain', 'clearance'},
 }
 CREDENTIAL = re.compile(r'(?:password|passphrase|secret|token|cookie|credential|private_key|secret_key|seed|api_key)', re.I)
+LOCAL_EMBEDDING = dict(provider='ollama', dimension=768,
+    model='nomic-embed-text-v1.5', base_url='http://127.0.0.1:8084')
 
 
 def require(condition):
@@ -123,6 +125,10 @@ def public_policy(value):
             continue
         section = result[name]
         require(type(section) is dict and set(section) <= fields)
+        # Only this complete public, loopback profile may disclose nonempty
+        # model/URL strings. Unknown profiles remain redacted in schema mode.
+        local_embedding = name == 'embedding' and all(
+            section.get(key) == child for key, child in LOCAL_EMBEDDING.items())
         for key, child in section.items():
             if key in {'enabled', 'p2p_enabled', 'p2p_force_private', 'required'}:
                 require(type(child) is bool)
@@ -131,7 +137,8 @@ def public_policy(value):
             elif (name, key) == ('embedding', 'provider'):
                 require(child in ('hash', 'ollama', 'openai-compatible'))
             elif key in {'model', 'base_url', 'api_key'}:
-                require(child is None or child == '')
+                require(child is None or child == '' or
+                    (local_embedding and key in {'model', 'base_url'} and child == LOCAL_EMBEDDING[key]))
             elif key == 'agent_key_file':
                 require(child == '/var/lib/sage-lantern/identity/lantern-agent.key')
             elif key == 'home_domain':

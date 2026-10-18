@@ -70,7 +70,7 @@ def write_dependencies(args, deps):
     args.startup_dependencies_sha256 = handoff.sha(raw)
 
 
-@pytest.mark.parametrize('unit', ['unit-a', 'unit-b'])
+@pytest.mark.parametrize('unit', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
 @pytest.mark.parametrize('selection', ['postcommission-handoff', 'postcommission-startup'])
 def test_explicit_independent_phase_readonly_default(inputs, monkeypatch, unit, selection):
     args, payload, deps, tools = inputs

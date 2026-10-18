@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# A/B support-unit display. The existing desktop session invokes this via role marker.
+set -uo pipefail
+[[ -f /etc/sage-lamplighter-lab/enabled ]] || exit 2
+readonly profile_dir="${HOME:?}/.config/sage-lamplighter/chromium"
+readonly entry=file:///var/lib/sage-lamplighter-dashboard/kiosk.html
+mkdir -p "$profile_dir"
+chmod 700 "$HOME/.config/sage-lamplighter" "$profile_dir"
+if command -v xset >/dev/null 2>&1; then
+  xset s off || true
+  xset -dpms || true
+  xset s noblank || true
+fi
+while true; do
+  # Wait for the controller before the private local bootstrap navigates to it.
+  until curl --fail --silent --max-time 3 http://192.168.50.103:18791/ready.js >/dev/null; do
+    sleep 2
+  done
+  /usr/bin/chromium --kiosk --window-position=0,0 --no-first-run \
+    --no-default-browser-check --noerrdialogs --disable-session-crashed-bubble \
+    --disable-extensions --disable-features=Translate,MediaRouter,PrintPreview \
+    --overscroll-history-navigation=0 --password-store=basic \
+    --user-data-dir="$profile_dir" "$entry" || true
+  sleep 3
+done

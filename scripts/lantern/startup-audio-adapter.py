@@ -31,7 +31,7 @@ HELPER_SHA = '34c0cf9301d1ddaba4c4d2a90302d49549509f0c5207d3565b86ff1cea6528c2'
 # rebuilt to match the deployed bytes (previously faked by cf963bd8...).
 # Repinned again the same day: it also gained the RELEASE_RUNTIME slot that
 # build-release.py fills with each unit's own wheel digest.
-COLLECTOR_SHA = 'e37d91cd115aa1ac62cbe40d3aee367a0d9547c358ceae47d70b5d200ebcce72'
+COLLECTOR_SHA = 'a6f1216ad672fe8d7accfeb86e28eaa04df6fe415d898d2ac3ee51a72033bff9'
 ALLOWANCE_FIELDS = {'schema', 'boot_id', 'prior', 'fence', 'inventory_delta',
                     'historical_outcomes', 'authorized_by'}
 # The phases the lifecycle itself accepts. A broker that was running when the

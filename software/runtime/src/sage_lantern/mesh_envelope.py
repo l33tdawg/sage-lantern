@@ -22,6 +22,9 @@ from .mesh_contacts import MAX_WINDOW_SECONDS
 SCHEMA = "sage.lantern.mesh-peer.v1"
 SIGN_DOMAIN = b"sage.lantern.mesh-peer.v1/signature\x00"
 WIRE_PREFIX = "LME1."
+ATTEMPT_SCHEMA = "sage.lantern.mesh-peer.v2"
+ATTEMPT_SIGN_DOMAIN = b"sage.lantern.mesh-peer.v2/signature\x00"
+ATTEMPT_WIRE_PREFIX = "LME2."
 MAX_CONTENT_BYTES = 512
 MAX_INNER_BYTES = 2048
 MAX_WIRE_BYTES = 4096
@@ -70,11 +73,22 @@ class OpenedEnvelope:
     original_id: str | None
     original_digest: str | None
     digest: str
+    attempt_id: str | None = None
+    logical_issued_at: int | None = None
+    logical_expires_at: int | None = None
     _signature: bytes = field(default=b"", init=False, repr=False, compare=False)
 
     @property
     def replay_identity(self):
         return self.sender.chain_id, self.sender.public_key.hex(), self.message_id
+
+    @property
+    def logical_digest(self):
+        """Original v1 body commitment, including its immutable approval window."""
+        if self.attempt_id is None:
+            return self.digest
+        return message_digest(sender=self.sender, recipient=self.recipient, message_id=self.message_id,
+            content=self.content, issued_at=self.logical_issued_at, expires_at=self.logical_expires_at)
 
 
 @dataclass(frozen=True, repr=False)
@@ -115,7 +129,17 @@ def _identity(key, peer):
 def _validate(body, sender, recipient, now):
     fields = {"schema", "sender", "recipient", "message_id", "kind", "issued_at", "expires_at",
               "content", "original_id", "original_digest"}
-    if (type(body) is not dict or set(body) != fields or body["schema"] != SCHEMA
+    if type(body) is dict and body.get("schema") == ATTEMPT_SCHEMA:
+        fields |= {"attempt_id", "logical_issued_at", "logical_expires_at"}
+        _uuid(body.get("attempt_id"))
+        if (body.get("kind") != "message" or body["attempt_id"] == body.get("message_id")
+                or type(body.get("logical_issued_at")) is not int
+                or type(body.get("logical_expires_at")) is not int
+                or type(body.get("issued_at")) is not int
+                or not 0 <= body["logical_issued_at"] < body["logical_expires_at"] <= body["issued_at"]
+                or body["logical_expires_at"] - body["logical_issued_at"] > MAX_LIFETIME_SECONDS):
+            _fail()
+    if (type(body) is not dict or set(body) != fields or body["schema"] not in (SCHEMA, ATTEMPT_SCHEMA)
             or body["sender"] != sender.to_dict() or body["recipient"] != recipient.to_dict()
             or type(now) is not int or not 0 <= now <= 2 ** 53 - 1
             or type(body["issued_at"]) is not int or type(body["expires_at"]) is not int
@@ -141,23 +165,46 @@ def _validate(body, sender, recipient, now):
         _fail()
 
 
+def _body(*, sender, recipient, message_id, issued_at, expires_at, kind="message",
+          content=None, original_id=None, original_digest=None, attempt_id=None,
+          logical_issued_at=None, logical_expires_at=None):
+    body = dict(schema=SCHEMA, sender=sender.to_dict(), recipient=recipient.to_dict(),
+                message_id=message_id, kind=kind, issued_at=issued_at, expires_at=expires_at,
+                content=content, original_id=original_id, original_digest=original_digest)
+    if any(value is not None for value in (attempt_id, logical_issued_at, logical_expires_at)):
+        body.update(schema=ATTEMPT_SCHEMA, attempt_id=attempt_id, logical_issued_at=logical_issued_at,
+                    logical_expires_at=logical_expires_at)
+    _validate(body, sender, recipient, issued_at)
+    return body
+
+
+def message_digest(**fields):
+    """Reconstruct a message commitment from trusted history; grants no authority."""
+    try:
+        return hashlib.sha256(_canonical(_body(**fields))).hexdigest()
+    except Exception:
+        raise MeshEnvelopeError() from None
+
+
 def _seal(signing_key, *, sender, recipient, message_id, issued_at, expires_at,
-          kind, content=None, original_id=None, original_digest=None):
+          kind, content=None, original_id=None, original_digest=None, attempt_id=None,
+          logical_issued_at=None, logical_expires_at=None):
     try:
         _identity(signing_key, sender)
         if type(recipient) is not Peer:
             _fail()
-        body = dict(schema=SCHEMA, sender=sender.to_dict(), recipient=recipient.to_dict(),
-                    message_id=message_id, kind=kind, issued_at=issued_at, expires_at=expires_at,
-                    content=content, original_id=original_id, original_digest=original_digest)
-        _validate(body, sender, recipient, issued_at)
+        body = _body(sender=sender, recipient=recipient, message_id=message_id, kind=kind,
+            issued_at=issued_at, expires_at=expires_at, content=content, original_id=original_id,
+            original_digest=original_digest, attempt_id=attempt_id, logical_issued_at=logical_issued_at,
+            logical_expires_at=logical_expires_at)
         canonical = _canonical(body)
-        signature = signing_key.sign(SIGN_DOMAIN + canonical).signature
+        domain, prefix = (SIGN_DOMAIN, WIRE_PREFIX) if body["schema"] == SCHEMA else (ATTEMPT_SIGN_DOMAIN, ATTEMPT_WIRE_PREFIX)
+        signature = signing_key.sign(domain + canonical).signature
         inner = _canonical({"body": body, "signature": base64.b64encode(signature).decode("ascii")})
         if len(inner) > MAX_INNER_BYTES:
             _fail()
         ciphertext = SealedBox(VerifyKey(recipient.public_key).to_curve25519_public_key()).encrypt(inner)
-        wire = WIRE_PREFIX + base64.b64encode(ciphertext).decode("ascii")
+        wire = prefix + base64.b64encode(ciphertext).decode("ascii")
         if len(wire) > MAX_WIRE_BYTES:
             _fail()
         return SealedEnvelope(wire, message_id, hashlib.sha256(canonical).hexdigest())
@@ -165,9 +212,11 @@ def _seal(signing_key, *, sender, recipient, message_id, issued_at, expires_at,
         raise MeshEnvelopeError() from None
 
 
-def seal_message(signing_key, *, sender, recipient, message_id, content, issued_at, expires_at):
+def seal_message(signing_key, *, sender, recipient, message_id, content, issued_at, expires_at,
+                 attempt_id=None, logical_issued_at=None, logical_expires_at=None):
     return _seal(signing_key, sender=sender, recipient=recipient, message_id=message_id,
-                 content=content, issued_at=issued_at, expires_at=expires_at, kind="message")
+                 content=content, issued_at=issued_at, expires_at=expires_at, kind="message",
+                 attempt_id=attempt_id, logical_issued_at=logical_issued_at, logical_expires_at=logical_expires_at)
 
 
 def seal_delivery_receipt(signing_key, *, sender, recipient, message_id, original_id,
@@ -192,9 +241,12 @@ def open_envelope(wire, recipient_signing_key, *, expected_sender, expected_reci
     """Decrypt/verify only. Does not accept replay, send receipts, or execute text."""
     try:
         _identity(recipient_signing_key, expected_recipient)
+        prefix = wire[:5] if type(wire) is str else None
+        formats = {WIRE_PREFIX: (SCHEMA, SIGN_DOMAIN), ATTEMPT_WIRE_PREFIX: (ATTEMPT_SCHEMA, ATTEMPT_SIGN_DOMAIN)}
         if (type(expected_sender) is not Peer or type(wire) is not str
-                or not len(WIRE_PREFIX) < len(wire) <= MAX_WIRE_BYTES or not wire.startswith(WIRE_PREFIX)):
+                or not len(WIRE_PREFIX) < len(wire) <= MAX_WIRE_BYTES or prefix not in formats):
             _fail()
+        schema, domain = formats[prefix]
         encoded = wire[len(WIRE_PREFIX):].encode("ascii")
         ciphertext = base64.b64decode(encoded, validate=True)
         if base64.b64encode(ciphertext) != encoded or len(ciphertext) > MAX_INNER_BYTES + 48:
@@ -207,6 +259,8 @@ def open_envelope(wire, recipient_signing_key, *, expected_sender, expected_reci
             _fail()
         body = value["body"]
         _validate(body, expected_sender, expected_recipient, now)
+        if body["schema"] != schema:
+            _fail()
         signature_text = value["signature"]
         if type(signature_text) is not str or len(signature_text) != 88:
             _fail()
@@ -214,10 +268,11 @@ def open_envelope(wire, recipient_signing_key, *, expected_sender, expected_reci
         if len(signature) != 64 or base64.b64encode(signature).decode("ascii") != signature_text:
             _fail()
         canonical = _canonical(body)
-        VerifyKey(expected_sender.public_key).verify(SIGN_DOMAIN + canonical, signature)
+        VerifyKey(expected_sender.public_key).verify(domain + canonical, signature)
         result = OpenedEnvelope(expected_sender, expected_recipient, body["message_id"], body["kind"],
                                 body["issued_at"], body["expires_at"], body["content"], body["original_id"],
-                                body["original_digest"], hashlib.sha256(canonical).hexdigest())
+                                body["original_digest"], hashlib.sha256(canonical).hexdigest(),
+                                body.get("attempt_id"), body.get("logical_issued_at"), body.get("logical_expires_at"))
         object.__setattr__(result, "_signature", signature)
         return result
     except Exception:
@@ -243,6 +298,8 @@ def correlate_receipt(receipt: OpenedEnvelope, *, original_sender: Peer,
                 or type(receipt.sender) is not Peer or type(receipt.recipient) is not Peer
                 or receipt.sender != original_recipient or receipt.recipient != original_sender
                 or receipt.kind not in ("delivery", "read")
+                or receipt.attempt_id is not None or receipt.logical_issued_at is not None
+                or receipt.logical_expires_at is not None
                 or receipt.original_id != original_id or receipt.original_digest != original_digest
                 or type(receipt.issued_at) is not int or receipt.issued_at < original_issued_at):
             _fail()

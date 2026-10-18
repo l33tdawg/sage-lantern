@@ -13,6 +13,12 @@ This repository is the private development home of that work — device runtime,
 touchscreen interface, firmware, provisioning tools, public website and the
 engineering documentation behind them.
 
+Current device allocation: **A/B are single-LoRa Lamplighter, admin, knowledge
+delivery and repeater support units with dashboard screens. C/D/E/F are the real user Lanterns: Orange
+Pi 5 Plus, dual LoRa, GPS and WiFi via the Pi.** See the [device-role map](docs/lantern/DEVICE_ROLES.md)
+for verified readiness and remaining integration work. Unit C is the first unit
+running the 3B chat model in production; the 2B remains its rollback.
+
 ## What we're building
 
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
@@ -85,9 +91,24 @@ that way.
   are under active integration and validation. The fleet build in flight is
   C–F, and no part has been printed yet: first-article prints and a measured
   tolerance report come before locked hardware choices or any fleet date.
-- **Radio messaging is not yet a verified end-to-end service.** Transport,
-  storage, contacts and discovery exist; real message exchange, delivery and
-  read receipts still have open acceptance gates.
+- **Unit C runs the 3B chat model in production.** V79.6 is live on Unit C's
+  loopback chat port through the RKLLM token engine and response guards. It
+  measures 625 ms median TTFT and 7.82 tok/s decode against 670 ms and 8.03
+  tok/s for stock, with 28/28 wrapped action prompts and the measured English
+  failures fixed. The device export is 16k context (RKLLM toolkit cap); the
+  host model remains 32k. The live service currently serves 2048 context /
+  256 output tokens; longer-context activation awaits memory/latency
+  qualification. The 2B service remains the rollback. See
+  [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md).
+- **Meshticulum 1.0.0-alpha is public; Lantern messaging is not yet a verified
+  end-to-end service.** The protocol/transport project is released at
+  [`l33tdawg/meshticulum` v1.0.0-alpha](https://github.com/l33tdawg/meshticulum/releases/tag/v1.0.0-alpha)
+  from source `673eb60…`, package `1.0.0a1`. Its published results are
+  near-bench application goodput (GFSK250 about 2.0 kB/s; one LoRa SF7/BW500
+  run at 1.07 kB/s), not field-range, modulation-equivalence or
+  upstream-superiority claims. Lantern's transport, storage, contacts and
+  discovery exist; real message exchange, delivery and read receipts still
+  have open acceptance gates.
 - **Hardware imagery is an AI-generated concept**, not a photograph of a
   product. Final dimensions, screen resolution, battery runtime and pricing
   will be published after validation.
@@ -104,6 +125,7 @@ as the current source of truth for what is proven and what is still open.
 | Path | What lives there |
 | --- | --- |
 | [`software/runtime/`](software/runtime/) | Device runtime: local voice loop, mesh/LoRa broker and transport, SAGE vault integration, storage-supervisor lifecycle, audio readiness, device lock and community services |
+| [`software/npu/`](software/npu/) | RKLLM text and vision engines, HTTP servers, response guards and the Unit C 3B deployment notes |
 | [`apps/lantern-fleet-admin/`](apps/lantern-fleet-admin/) | Device touchscreen UI and local fleet-admin console (Next.js/React): ask-and-answer flow, history, messages, camera, sharing, settings and read-only operator views |
 | [`apps/sage-website/`](apps/sage-website/) | Public [sage.ngo](https://sage.ngo/) site — mission, hardware and programme copy, exported as static files |
 | [`firmware/`](firmware/) | Espressif audio-bridge project and the MeshCore companion-radio patch series used by the units |
@@ -170,6 +192,7 @@ Start with these, then follow the links inside them:
 
 - [`docs/lantern/PRD.md`](docs/lantern/PRD.md) — product intent, scope and acceptance criteria.
 - [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md) — current device gate, verified state and open work.
+- [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md) — V79.6 3B production deployment, device timings, guards, rollback and known limits.
 - [`docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — the hardware/software ownership boundary.
 - [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) — the A/B test-unit parts list and order history as of 11 September 2026. Superseded for the C–F fleet build, which the hardware workstream records in its own bill of materials and build status; kept here as the bring-up record.
 - [`docs/lantern/BRINGUP_AND_VALIDATION.md`](docs/lantern/BRINGUP_AND_VALIDATION.md) — staged assembly, test procedure and evidence checklist.

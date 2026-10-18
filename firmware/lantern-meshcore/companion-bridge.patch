@@ -1,0 +1,348 @@
+diff --git a/examples/companion_radio/MyMesh.cpp b/examples/companion_radio/MyMesh.cpp
+index 4e6f9832..b9b3e443 100644
+--- a/examples/companion_radio/MyMesh.cpp
++++ b/examples/companion_radio/MyMesh.cpp
+@@ -305,6 +305,24 @@ void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
+   }
+ }
+ 
++#if defined(WITH_BRIDGE)
++// The companion never overrode these hooks, so a companion could not mirror mesh
++// traffic onto a second transport the way a repeater can. Which direction is
++// mirrored is the same setting the repeater uses: bridge_pkt_src 0 = what this
++// node transmits, 1 = what it receives.
++void MyMesh::logRx(mesh::Packet* packet, int len, float score) {
++  if (_prefs.bridge_pkt_src == 1) {
++    bridge.sendPacket(packet);
++  }
++}
++
++void MyMesh::logTx(mesh::Packet* packet, int len) {
++  if (_prefs.bridge_pkt_src == 0) {
++    bridge.sendPacket(packet);
++  }
++}
++#endif
++
+ bool MyMesh::isAutoAddEnabled() const {
+   return (_prefs.manual_add_contacts & 1) == 0;
+ }
+@@ -932,7 +950,11 @@ void MyMesh::onSendTimeout() {}
+ 
+ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui)
+     : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
+-      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui), _iter(0) {
++      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui), _iter(0)
++#if defined(WITH_BRIDGE)
++      , bridge(&_prefs, _mgr, &rtc)
++#endif
++      {
+   _iter_started = false;
+   _cli_rescue = false;
+   cli_command[0] = 0;
+@@ -2444,6 +2466,10 @@ void MyMesh::checkSerialInterface() {
+ }
+ 
+ void MyMesh::loop() {
++#if defined(WITH_BRIDGE)
++  bridge.loop();
++#endif
++
+   BaseChatMesh::loop();
+ 
+   if (_cli_rescue) {
+@@ -2485,5 +2511,10 @@ bool MyMesh::advert() {
+ 
+ // To check if there is pending work
+ bool MyMesh::hasPendingWork() const {
++#if defined(WITH_BRIDGE)
++  // The bridge holds the 2.4 GHz radio and its queue, so a node running one
++  // cannot be considered idle. Same rule the repeater applies.
++  if (bridge.isRunning()) return true;
++#endif
+   return _mgr->getOutboundTotal() > 0 || dirty_contacts_expiry != 0;
+ }
+diff --git a/examples/companion_radio/MyMesh.h b/examples/companion_radio/MyMesh.h
+index 3b98a4f6..3d56711e 100644
+--- a/examples/companion_radio/MyMesh.h
++++ b/examples/companion_radio/MyMesh.h
+@@ -34,6 +34,20 @@
+ #include <helpers/StaticPoolPacketManager.h>
+ #include <target.h>
+ 
++// A companion can be a bridge too. The repeater has always been able to mirror
++// mesh packets onto a second transport (RS232, or ESP-NOW for a fast local
++// lane); a companion could not, so a host-connected node could never be the
++// cheap end of a high-speed link. The hooks below are the same ones the repeater
++// uses - logRx/logTx are virtual on Dispatcher, the companion simply never
++// overrode them.
++#if defined(WITH_RS232_BRIDGE)
++  #include "helpers/bridges/RS232Bridge.h"
++  #define WITH_BRIDGE
++#elif defined(WITH_ESPNOW_BRIDGE)
++  #include "helpers/bridges/ESPNowBridge.h"
++  #define WITH_BRIDGE
++#endif
++
+ /* ---------------------------------- CONFIGURATION ------------------------------------- */
+ 
+ #ifndef LORA_FREQ
+@@ -136,6 +150,10 @@ protected:
+   void sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis=0) override;
+ 
+   void logRxRaw(float snr, float rssi, const uint8_t raw[], int len) override;
++#if defined(WITH_BRIDGE)
++  void logRx(mesh::Packet* packet, int len, float score) override;
++  void logTx(mesh::Packet* packet, int len) override;
++#endif
+   bool isAutoAddEnabled() const override;
+   bool shouldAutoAddContactType(uint8_t type) const override;
+   bool shouldOverwriteWhenFull() const override;
+@@ -232,6 +250,11 @@ private:
+ 
+   DataStore* _store;
+   NodePrefs _prefs;
++#if defined(WITH_RS232_BRIDGE)
++  RS232Bridge bridge;
++#elif defined(WITH_ESPNOW_BRIDGE)
++  ESPNowBridge bridge;
++#endif
+   uint32_t pending_login;
+   uint32_t pending_status;
+   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
+diff --git a/examples/companion_radio/NodePrefs.h b/examples/companion_radio/NodePrefs.h
+index 4b169d73..853bdddf 100644
+--- a/examples/companion_radio/NodePrefs.h
++++ b/examples/companion_radio/NodePrefs.h
+@@ -3,6 +3,7 @@
+ #include <helpers/ConfigSerializer.h>
+ #include <helpers/CommonRadioPrefs.h>
+ #include <helpers/DynamicConfigSerializer.h>
++#include <helpers/bridges/BridgePrefs.h>
+ 
+ #define TELEM_MODE_DENY            0
+ #define TELEM_MODE_ALLOW_FLAGS     1     // use contact.flags
+@@ -11,7 +12,7 @@
+ #define ADVERT_LOC_NONE       0
+ #define ADVERT_LOC_SHARE      1
+ 
+-class NodePrefs : public ConfigSerializer {  // persisted to file
++class NodePrefs : public ConfigSerializer, public BridgePrefs {  // persisted to file
+ public:
+   float airtime_factor = 0;
+   char node_name[32];
+@@ -166,6 +167,15 @@ private:
+       def("tel_loc", _parent->telemetry_mode_loc);
+       def("tel_env", _parent->telemetry_mode_env);
+       def("tz_offset", _parent->tz_offset);
++      // Bridge settings, so a companion can be a bridge (see WITH_BRIDGE). The
++      // defaults come from BridgePrefs; these keys only persist what the user
++      // changes, so an existing config file keeps working untouched.
++      def("br_en", _parent->bridge_enabled);
++      def("br_delay", _parent->bridge_delay);
++      def("br_src", _parent->bridge_pkt_src);
++      def("br_baud", _parent->bridge_baud);
++      def("br_ch", _parent->bridge_channel);
++      def("br_secret", _parent->bridge_secret, sizeof(_parent->bridge_secret));
+     }
+   public:
+     CompanionPrefs(NodePrefs* parent) : _parent(parent) { }
+diff --git a/src/helpers/CommonCLI.h b/src/helpers/CommonCLI.h
+index 8591cdc1..7ee63baf 100644
+--- a/src/helpers/CommonCLI.h
++++ b/src/helpers/CommonCLI.h
+@@ -8,6 +8,7 @@
+ #include <helpers/ConfigSerializer.h>
+ #include <helpers/CommonRadioPrefs.h>
+ #include <helpers/DynamicConfigSerializer.h>
++#include <helpers/bridges/BridgePrefs.h>
+ 
+ #if defined(WITH_RS232_BRIDGE) || defined(WITH_ESPNOW_BRIDGE)
+ #define WITH_BRIDGE
+@@ -22,7 +23,7 @@
+ #define LOOP_DETECT_MODERATE  2
+ #define LOOP_DETECT_STRICT    3
+ 
+-class NodePrefs : public ConfigSerializer {
++class NodePrefs : public ConfigSerializer, public BridgePrefs {
+ public:
+   // in-memory backing data
+   float airtime_factor = 0;
+@@ -49,13 +50,9 @@ public:
+   uint8_t flood_max_advert = 0;
+   uint8_t interference_threshold = 0;
+   uint8_t agc_reset_interval = 0; // secs / 4
+-  // Bridge settings
+-  uint8_t bridge_enabled = 0; // boolean
+-  uint16_t bridge_delay = 0;  // milliseconds (default 500 ms)
+-  uint8_t bridge_pkt_src = 0; // 0 = logTx, 1 = logRx (default logTx)
+-  uint32_t bridge_baud = 0;   // 9600, 19200, 38400, 57600, 115200 (default 115200)
+-  uint8_t bridge_channel = 0; // 1-14 (ESP-NOW only)
+-  char bridge_secret[16]; // for XOR encryption of bridge packets (ESP-NOW only)
++  // Bridge settings (bridge_enabled, bridge_delay, bridge_pkt_src,
++  // bridge_baud, bridge_channel, bridge_secret) come from BridgePrefs, so the
++  // bridge implementations do not have to know which NodePrefs this is.
+   // Power setting
+   uint8_t powersaving_enabled = 0; // boolean
+   // Gps settings
+diff --git a/src/helpers/bridges/BridgeBase.h b/src/helpers/bridges/BridgeBase.h
+index 8bbe6466..68cd296b 100644
+--- a/src/helpers/bridges/BridgeBase.h
++++ b/src/helpers/bridges/BridgeBase.h
+@@ -1,7 +1,7 @@
+ #pragma once
+ 
+ #include "helpers/AbstractBridge.h"
+-#include "helpers/CommonCLI.h"
++#include "helpers/bridges/BridgePrefs.h"
+ #include "helpers/SimpleMeshTables.h"
+ 
+ #include <RTClib.h>
+@@ -53,26 +53,26 @@ protected:
+   /** Tracks bridge state */
+   bool _initialized = false;
+ 
++  /** Bridge settings, from whichever NodePrefs this build actually has. */
++  BridgePrefs *_prefs;
++
+   /** Packet manager for allocating and queuing mesh packets */
+   mesh::PacketManager *_mgr;
+ 
+   /** RTC clock for timestamping debug messages */
+   mesh::RTCClock *_rtc;
+ 
+-  /** Node preferences for configuration settings */
+-  NodePrefs *_prefs;
+-
+   /** Tracks seen packets to prevent loops in broadcast communications */
+   SimpleMeshTables _seen_packets;
+ 
+   /**
+    * @brief Constructs a BridgeBase instance
+    *
+-   * @param prefs Node preferences for configuration settings
++   * @param prefs Bridge settings
+    * @param mgr PacketManager for allocating and queuing packets
+    * @param rtc RTCClock for timestamping debug messages
+    */
+-  BridgeBase(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
++  BridgeBase(BridgePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
+       : _prefs(prefs), _mgr(mgr), _rtc(rtc) {}
+ 
+   /**
+diff --git a/src/helpers/bridges/BridgePrefs.h b/src/helpers/bridges/BridgePrefs.h
+new file mode 100644
+index 00000000..516bfc01
+--- /dev/null
++++ b/src/helpers/bridges/BridgePrefs.h
+@@ -0,0 +1,23 @@
++#pragma once
++
++#include <stdint.h>
++
++/**
++ * @brief The settings a bridge implementation needs, kept in their own type.
++ *
++ * A bridge must not depend on *which* NodePrefs it is handed. MeshCore has two
++ * unrelated ones - the CLI class the repeater examples build against, and the
++ * companion's - so a bridge that takes `NodePrefs*` can only ever be compiled
++ * into the first: including it from a companion redefines the class outright.
++ *
++ * Both NodePrefs classes inherit this, so `_prefs.bridge_enabled` and the other
++ * existing call sites keep working with no change.
++ */
++struct BridgePrefs {
++  uint8_t bridge_enabled = 0;    // boolean
++  uint16_t bridge_delay = 0;     // milliseconds (default 500 ms)
++  uint8_t bridge_pkt_src = 0;    // 0 = logTx, 1 = logRx (default logTx)
++  uint32_t bridge_baud = 0;      // 9600, 19200, 38400, 57600, 115200 (default 115200)
++  uint8_t bridge_channel = 0;    // 1-14 (ESP-NOW only)
++  char bridge_secret[16] = {0};  // XOR key for bridge packets (ESP-NOW only)
++};
+diff --git a/src/helpers/bridges/ESPNowBridge.cpp b/src/helpers/bridges/ESPNowBridge.cpp
+index 3c094e7c..34368ecb 100644
+--- a/src/helpers/bridges/ESPNowBridge.cpp
++++ b/src/helpers/bridges/ESPNowBridge.cpp
+@@ -21,7 +21,7 @@ void ESPNowBridge::send_cb(const uint8_t *mac, esp_now_send_status_t status) {
+   }
+ }
+ 
+-ESPNowBridge::ESPNowBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
++ESPNowBridge::ESPNowBridge(BridgePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
+     : BridgeBase(prefs, mgr, rtc), _rx_buffer_pos(0) {
+   _instance = this;
+ }
+diff --git a/src/helpers/bridges/ESPNowBridge.h b/src/helpers/bridges/ESPNowBridge.h
+index 431a036b..26179f62 100644
+--- a/src/helpers/bridges/ESPNowBridge.h
++++ b/src/helpers/bridges/ESPNowBridge.h
+@@ -109,7 +109,7 @@ public:
+    * @param mgr PacketManager for allocating and queuing packets
+    * @param rtc RTCClock for timestamping debug messages
+    */
+-  ESPNowBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc);
++  ESPNowBridge(BridgePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc);
+ 
+   /**
+    * Initializes the ESP-NOW bridge
+diff --git a/src/helpers/bridges/RS232Bridge.cpp b/src/helpers/bridges/RS232Bridge.cpp
+index f719d342..1371c1af 100644
+--- a/src/helpers/bridges/RS232Bridge.cpp
++++ b/src/helpers/bridges/RS232Bridge.cpp
+@@ -4,7 +4,7 @@
+ 
+ #ifdef WITH_RS232_BRIDGE
+ 
+-RS232Bridge::RS232Bridge(NodePrefs *prefs, Stream &serial, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
++RS232Bridge::RS232Bridge(BridgePrefs *prefs, Stream &serial, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
+     : BridgeBase(prefs, mgr, rtc), _serial(&serial) {}
+ 
+ void RS232Bridge::begin() {
+diff --git a/src/helpers/bridges/RS232Bridge.h b/src/helpers/bridges/RS232Bridge.h
+index 8fc1c22c..cfb230bc 100644
+--- a/src/helpers/bridges/RS232Bridge.h
++++ b/src/helpers/bridges/RS232Bridge.h
+@@ -54,7 +54,7 @@ public:
+    * @param mgr PacketManager for allocating and queuing packets
+    * @param rtc RTCClock for timestamping debug messages
+    */
+-  RS232Bridge(NodePrefs *prefs, Stream &serial, mesh::PacketManager *mgr, mesh::RTCClock *rtc);
++  RS232Bridge(BridgePrefs *prefs, Stream &serial, mesh::PacketManager *mgr, mesh::RTCClock *rtc);
+ 
+   /**
+    * Initializes the RS232 bridge
+diff --git a/variants/heltec_v4/platformio.ini b/variants/heltec_v4/platformio.ini
+index 96b3eec0..b2a4c4bf 100644
+--- a/variants/heltec_v4/platformio.ini
++++ b/variants/heltec_v4/platformio.ini
+@@ -199,6 +199,30 @@ lib_deps =
+   ${heltec_v4_oled.lib_deps}
+   densaugeo/base64 @ ~1.4.0
+ 
++; A companion that also bridges mesh packets onto ESP-NOW: the same host-facing
++; radio as above, plus a 2.4 GHz local lane for nearby nodes. Not the same thing
++; as running ESP-NOW *as* the mesh radio - here LoRa stays the long-range
++; transport and ESP-NOW carries the same mesh packets locally.
++[env:heltec_v4_companion_radio_usb_espnowbridge]
++extends = heltec_v4_oled
++build_flags =
++  ${heltec_v4_oled.build_flags}
++  -I examples/companion_radio/ui-new
++  -D MAX_CONTACTS=350
++  -D MAX_GROUP_CHANNELS=40
++  -D DISPLAY_CLASS=SSD1306Display
++  -D ENABLE_USB_INTERFACE
++  -D WITH_ESPNOW_BRIDGE=1
++build_src_filter = ${heltec_v4_oled.build_src_filter}
++  +<helpers/bridges/ESPNowBridge.cpp>
++  +<helpers/ui/SSD1306Display.cpp>
++  +<helpers/ui/MomentaryButton.cpp>
++  +<../examples/companion_radio/*.cpp>
++  +<../examples/companion_radio/ui-new/*.cpp>
++lib_deps =
++  ${heltec_v4_oled.lib_deps}
++  densaugeo/base64 @ ~1.4.0
++
+ [env:heltec_v4_companion_radio_ble]
+ extends = heltec_v4_oled
+ build_flags =

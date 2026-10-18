@@ -153,7 +153,7 @@ def validate(config, initialized, commissioned, app, bindings, radio, *, radio_f
     from sage_lantern.mesh_serial_owner import RadioBinding
     validate_config(config)
     require("public_mesh" not in config and "public_gateway" not in config)
-    require(config["unit_id"] in {"unit-a", "unit-b"} and config["voice_uid"] == service_uid
+    require(config["unit_id"] in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"} and config["voice_uid"] == service_uid
         and type(service_uid) is int and service_uid > 0)
     unit = config["unit_id"]
     fields = {"schema", "unit_id", "chain_id", "root_id", "private_agent_id", "public_agent_id",

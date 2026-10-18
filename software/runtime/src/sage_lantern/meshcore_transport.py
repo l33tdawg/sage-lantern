@@ -47,13 +47,15 @@ FIRMWARE = "v1.17.1-d929643"
 # for the firmware that serves it.
 SUPPORTED_FIRMWARE = (FIRMWARE, "v1.17.1-d929643-r1", "v1.17.1-d929643-r2",
                       "v1.17.1-d929643-r3", "v1.17.1-d929643-r4",
-                      "v1.17.1-d929643-r5", "v1.17.1-d929643-r6")
+                      "v1.17.1-d929643-r5", "v1.17.1-d929643-r6",
+                      "v1.17.1-d929643-r7")
 # Bridge counters are a sub-type of their own (STATS_TYPE_BRIDGE in the
 # companion), not more fields on the frames above: a host that does not know it
 # never asks, and a firmware without a bridge answers with an error frame. Only
 # these builds serve it, so the read is gated on the exact version the way the
 # rest of the transport gates capability.
-BRIDGE_STATS_FIRMWARE = ("v1.17.1-d929643-r6",)
+# r7 retains r6's bridge protocol and backports the USB HWCDC transmit fix.
+BRIDGE_STATS_FIRMWARE = ("v1.17.1-d929643-r6", "v1.17.1-d929643-r7")
 STATS_TYPE_BRIDGE = 3
 BRIDGE_STATS_LAYOUT = "<22I4B"
 BRIDGE_STATS_NAMES = (

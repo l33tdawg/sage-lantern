@@ -5,7 +5,7 @@
 --check-x11 performs only the installed helper's non-blanking idle query.
 --serve requires an explicit root-owned activation policy written AFTER owner
 PIN/recovery setup: /etc/sage-lantern-display-power.enabled, containing exactly
-"fresh unit-a\n", "fresh unit-b\n" or explicitly "legacy unit-a\n".
+"fresh unit-a\n" through "fresh unit-f\n", or explicitly "legacy unit-a\n".
 This policy is operator authorization, not measured encryption/readiness evidence.
 Xauthority is copied only into a sealed anonymous descriptor, never logged or
 persisted; no private application state or arbitrary inherited environment is used.
@@ -462,7 +462,7 @@ def binding_for(mode, unit):
 
 def approved_binding():
     raw = _read_binding_file(POLICY)
-    require(raw in ('fresh unit-a\n', 'fresh unit-b\n', 'legacy unit-a\n'), 'display activation not approved')
+    require(raw in tuple(f'fresh unit-{letter}\n' for letter in 'abcdef') + ('legacy unit-a\n',), 'display activation not approved')
     mode, unit = raw.strip().split(' ')
     return binding_for(mode, unit)
 
@@ -558,7 +558,7 @@ def main(argv=None):
     mode.add_argument('--check', action='store_true')
     mode.add_argument('--check-x11', action='store_true')
     mode.add_argument('--serve', action='store_true')
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'))
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
     parser.add_argument('--legacy', action='store_true')
     args = parser.parse_args(argv)
     try:

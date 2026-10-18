@@ -66,6 +66,52 @@ class PhaseRunnerTests(unittest.TestCase):
         self.assertNotIn('systemctl', str(steps))
         self.assertNotIn('LOCAL_VOICE_READY', str(steps))
 
+    def test_cf_platform_is_explicit_and_rejects_wrong_unit_or_phase(self):
+        self.args.unit_id = 'unit-c'
+        self.args.platform_profile = 'orangepi5plus-ubuntu26.04'
+        steps = MODULE.commands(self.args, self.payload)
+        self.assertEqual(steps[0][-3:], ['--profile', 'orangepi5plus-ubuntu26.04', '--check'])
+        self.args.unit_id = 'unit-a'
+        with self.assertRaisesRegex(ValueError, 'base-only on C–F'):
+            MODULE.commands(self.args, self.payload)
+        self.args.unit_id, self.args.phase = 'unit-c', 'app'
+        with self.assertRaisesRegex(ValueError, 'base-only on C–F'):
+            MODULE.commands(self.args, self.payload)
+
+    def test_app_phase_accepts_explicit_absent_radio_and_platform_audio_options(self):
+        self.args.unit_id, self.args.phase = 'unit-a', 'app'
+        self.args.allow_native_build = False
+        self.args.app_options = ['--account', 'sage', '--radio-absent',
+                                 '--audio-platform-id-path', 'platform-es8388-sound',
+                                 '--audio-stable-path', '/dev/snd/by-path/platform-es8388-sound',
+                                 '--alsa-device', 'hw:CARD=rockchipes8388,DEV=0',
+                                 '--commissioned-manifest-sha256', 'a' * 64,
+                                 '--predecessor-release-root', '/var/lib/lantern-release-20260928-r5']
+        steps = MODULE.commands(self.args, self.payload)
+        self.assertEqual(len(steps), 2)
+        self.assertIn('--radio-absent', steps[0])
+        self.assertIn('--commissioned-manifest-sha256', steps[0])
+        self.assertIn('/var/lib/lantern-release-20260928-r5', steps[0])
+        self.assertNotIn('--install', steps[0])
+        self.assertIn('--install', steps[1])
+        self.args.app_options = ['--radio-absent', '--radio-stable-path']
+        with self.assertRaisesRegex(ValueError, 'missing app option value'):
+            MODULE.commands(self.args, self.payload)
+
+    def test_cf_runtime_path_is_fixed_and_bootstrap_failure_stops_install(self):
+        self.args.unit_id = 'unit-c'
+        self.args.platform_profile = 'orangepi5plus-ubuntu26.04'
+        self.args.execute = True
+        run = Mock(side_effect=subprocess.CalledProcessError(2, 'bootstrap'))
+        with patch.object(MODULE, 'node_preflight'), patch.object(MODULE, 'verify_release', return_value=self.payload), \
+             patch.object(MODULE.os, 'geteuid', return_value=0), patch.object(MODULE.sys, 'platform', 'linux'), \
+             patch.object(MODULE.platform, 'machine', return_value='aarch64'), patch.object(MODULE.os.path, 'lexists', return_value=False):
+            with self.assertRaises(subprocess.CalledProcessError):
+                MODULE.execute(self.args, run=run)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.kwargs['env']['PATH'],
+                         '/opt/lantern-python/3.11.16/bin:/usr/sbin:/usr/bin:/sbin:/bin')
+
     def test_no_execution_by_default(self):
         run = Mock()
         with patch.object(MODULE, 'verify_release', return_value=self.payload):

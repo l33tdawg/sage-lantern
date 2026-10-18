@@ -1,6 +1,7 @@
 import importlib.util
+import io
 import json
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 import stat
 from types import SimpleNamespace
@@ -30,6 +31,8 @@ class MockedPlatform(unittest.TestCase):
         self.display = self.replace(MODULE, "display_power")
         self.public = self.replace(MODULE, "public_json")
         self.read = self.replace(MODULE, "read_json")
+        self.models = self.replace(MODULE, "resident_models", return_value=(MODULE.MODEL,))
+        self.voice_lane = self.replace(MODULE, "voice_lane", return_value=(MODULE.VOICE,))
         self.prior_auth = self.replace(MODULE, "prior_auth_drained", return_value=True)
         self.replace(MODULE.subprocess, "run", side_effect=AssertionError("real subprocess forbidden"))
         self.replace(MODULE.os, "open", side_effect=AssertionError("real file open forbidden"))
@@ -85,7 +88,9 @@ class MockedPlatform(unittest.TestCase):
         appliance.stopped_auth = True
         appliance.drained = False
         appliance.stopped = set()
+        appliance.voice = True
         appliance.cancelled = lambda: False
+        appliance.auxiliary = (MODULE.CAMERA, MODULE.UI, MODULE.DISPLAY)
         return appliance
 
     def receipts(self, appliance):
@@ -110,7 +115,7 @@ class ApplianceFlowTests(MockedPlatform):
         self.replace(MODULE, "model_idle", side_effect=lambda value: (self.events.append("model"), True)[1])
         self.assertTrue(appliance.quiesce())
         self.assertEqual(self.events, [MODULE.VOICE, MODULE.CAMERA, MODULE.UI, MODULE.DISPLAY,
-                                      "kiosk", "display-off", "inference", "model"])
+                                      "kiosk", "inference", "model"])
         self.assertTrue(appliance.drained)
         self.publish.assert_called_once_with(MODULE.VOICE_REQUEST, {
             **appliance.voice_identity, "schema": "sage.lantern.voice-drain-request.v1",
@@ -206,6 +211,43 @@ class ApplianceFlowTests(MockedPlatform):
         self.assertEqual(self.events, [(MODULE.AUTH,), "locked",
                                       (MODULE.VOICE, MODULE.CAMERA, MODULE.UI, MODULE.DISPLAY),
                                       "kiosk-resumed", "display-on"])
+
+    def test_wake_records_the_display_outcome_it_actually_got(self):
+        """A preserved login shield is reported as such, not as an unblanked console."""
+        appliance = self.appliance()
+        outcome = SimpleNamespace(display_outcome="preserved_unowned")
+        with patch.object(MODULE, "session", return_value=outcome):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                self.assertTrue(appliance.start_locked())
+        self.assertIn("display_on=preserved_unowned", buffer.getvalue())
+
+    def test_absent_voice_lane_stops_only_the_workers_the_unit_runs(self):
+        appliance = self.appliance()
+        appliance.voice = False
+        self.receipts(appliance)
+        self.system.stop_verified.side_effect = lambda service: (self.events.append(service), SimpleNamespace(confirmed=True))[1]
+        self.kiosk.quiesce.side_effect = lambda: (self.events.append("kiosk"), True)[1]
+        self.display.side_effect = lambda action: self.events.append("display-" + action)
+        self.inference.side_effect = lambda: (self.events.append("inference"), True)[1]
+        self.replace(MODULE, "model_idle", side_effect=lambda value: (self.events.append("model"), True)[1])
+        self.assertTrue(appliance.quiesce())
+        self.assertEqual(self.events, [MODULE.CAMERA, MODULE.UI, MODULE.DISPLAY,
+                                       "kiosk", "inference", "model"])
+        self.publish.assert_not_called()
+        self.assertTrue(appliance.drained)
+
+    def test_absent_voice_lane_starts_only_the_workers_the_unit_runs(self):
+        appliance = self.appliance()
+        appliance.voice = False
+        self.command.side_effect = lambda arguments, **kwargs: self.events.append(tuple(arguments[2:]))
+        self.locked.side_effect = lambda: (self.events.append("locked"), True)[1]
+        self.kiosk.resume.side_effect = lambda: (self.events.append("kiosk-resumed"), True)[1]
+        self.display.side_effect = lambda action: self.events.append("display-" + action)
+        self.assertTrue(appliance.start_locked())
+        self.assertEqual(self.events, [(MODULE.AUTH,), "locked",
+                                       (MODULE.CAMERA, MODULE.UI, MODULE.DISPLAY),
+                                       "kiosk-resumed", "display-on"])
 
     def test_kiosk_quiesce_failure_does_not_blank_display(self):
         appliance = self.appliance()
@@ -385,6 +427,37 @@ class MainFlowTests(MockedPlatform):
         self.capability.assert_called_with(False)
 
 
+class ResidentModelTests(MockedPlatform):
+    def test_models_idle_covers_every_resident_model_server(self):
+        self.replace(MODULE, "model_idle",
+                     side_effect=lambda value: all(slot["is_processing"] is False for slot in value))
+        self.public.side_effect = lambda port, path, **kwargs: [dict(id=0, is_processing=port == 8082)]
+        self.assertTrue(MODULE.models_idle())
+        self.assertEqual([call.args for call in self.public.call_args_list], [(8081, "/slots")])
+        self.public.reset_mock()
+        self.models.return_value = (MODULE.MODEL, MODULE.VLM)
+        self.assertFalse(MODULE.models_idle())
+        self.assertEqual([call.args for call in self.public.call_args_list],
+                         [(8081, "/slots"), (8082, "/slots")])
+
+    def test_unconfirmed_profile_never_reports_idle_or_baseline_ready(self):
+        self.models.return_value = ()
+        self.assertFalse(MODULE.models_idle())
+        self.assertFalse(MODULE.model_baseline_ready())
+        self.public.assert_not_called()
+
+    def test_vision_start_baseline_is_required_when_the_unit_participates(self):
+        baseline = dict(version=1, pid=44, invocation_id="c" * 32, start_ticks="456", boot_id="test-boot")
+        self.read.side_effect = lambda path, **kwargs: (
+            baseline if path == MODULE.model_baseline_path(MODULE.MODEL) else None)
+        self.identity.side_effect = None
+        self.identity.return_value = (44, "c" * 32)
+        self.replace(Path, "read_text", return_value="44 (model) " + " ".join(["S"] + ["0"] * 18 + ["456"]))
+        self.assertTrue(MODULE.model_baseline_ready())
+        self.models.return_value = (MODULE.MODEL, MODULE.VLM)
+        self.assertFalse(MODULE.model_baseline_ready())
+
+
 class ReadinessGateTests(MockedPlatform):
     def model_baseline(self):
         baseline = dict(version=1, pid=44, invocation_id="c" * 32, start_ticks="456", boot_id="test-boot")
@@ -398,7 +471,7 @@ class ReadinessGateTests(MockedPlatform):
     def test_inference_requires_same_model_identity_and_zero_pending(self):
         self.model_baseline()
         self.assertTrue(INFERENCE_READY())
-        self.read.assert_called_with(MODULE.MODEL_BASELINE, owner_uid=0)
+        self.read.assert_called_with(MODULE.model_baseline_path(MODULE.MODEL), owner_uid=0)
         self.identity.assert_called_with(MODULE.MODEL)
         self.pending.assert_called_once_with(MODULE.INFERENCE_DIRECTORY, owner_uid=123)
         self.command.assert_called_once_with(["/usr/bin/systemctl", "show", MODULE.VOICE,
@@ -451,6 +524,12 @@ class ReadinessGateTests(MockedPlatform):
         self.prior_auth.assert_called_once_with("a" * 32, 123)
         self.publish.assert_not_called()
         self.command.assert_not_called()
+
+    def test_missing_current_instance_receipt_refuses_instead_of_raising(self):
+        """A crash between service start and the first publish is a refusal."""
+        self.public.return_value = {"ready": True}
+        self.read.side_effect = FileNotFoundError
+        self.assertFalse(MODULE.drain_hooks_ready())
 
 
 class HeartbeatFlowTests(MockedPlatform):

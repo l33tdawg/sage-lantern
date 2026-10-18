@@ -1,0 +1,20 @@
+# Fresh-node input only. Never replace an existing node configuration with this
+# template: the initializer creates each unit's own chain and identity keys.
+data_dir: /var/lib/sage-lantern/sage-personal/data
+agent_key_file: /var/lib/sage-lantern/sage-personal/agent.key
+rest_addr: 127.0.0.1:8080
+embedding:
+  provider: ollama
+  dimension: 768
+  model: nomic-embed-text-v1.5
+  base_url: http://127.0.0.1:8084
+federation:
+  enabled: false
+quorum:
+  enabled: false
+voter:
+  enabled: true
+vendored_agent_bootstrap:
+  agent_key_file: /var/lib/sage-lantern/identity/lantern-agent.key
+  home_domain: local-field-knowledge
+  clearance: 1

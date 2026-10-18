@@ -86,7 +86,7 @@ def verify_target_binary(root=ROOT):
     result = subprocess.run([str(binary), "version"], cwd="/", capture_output=True, text=True, timeout=5,
                             env={"PATH": os.defpath, "HOME": "/nonexistent", "SAGE_HOME": "/nonexistent", "LANG": "C"})
     require(result.returncode == 0 and len(result.stdout) <= 1024 and result.stderr == "", "SAGE version command failed")
-    match = re.fullmatch(r"sage-gui ([A-Za-z0-9][A-Za-z0-9._+-]{0,127}) \(commit [^,\r\n]+, built [^,\r\n)]+(?:, max-app-v[0-9]+)?\)\n?", result.stdout)
+    match = re.fullmatch(r"sage-gui ([A-Za-z0-9][A-Za-z0-9._+-]{0,127}) \(commit [^,\r\n]+, built [^,\r\n)]+(?:, max-app-v[0-9]+(?:, auto-vote-v[0-9]+)?)?\)\n?", result.stdout)
     require(match is not None and match[1] == expected, "SAGE binary reviewed version mismatch")
     require(_regular_bytes(binary, 256 * 1024 * 1024) == data and _regular_bytes(lock_path, 2 * 1024 * 1024) == lock_bytes,
             "release changed during binary preflight")

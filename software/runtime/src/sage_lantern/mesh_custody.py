@@ -8,7 +8,7 @@ peers that are not currently reachable, and to hand them over when the peer is
 next seen.
 
 The custodian never opens a deposit. ``wrap_custody`` encloses an existing
-``LME1.`` sealed envelope (see ``mesh_envelope``) in a small clear header that
+``LME1.`` or ``LME2.`` sealed envelope (see ``mesh_envelope``) in a small clear header that
 carries only what a courier needs to route and deduplicate it:
 
   * the recipient's six-byte radio key prefix (the same prefix the transport
@@ -37,6 +37,7 @@ import struct
 
 PREFIX = "SLC1."
 ENVELOPE_PREFIX = "LME1."
+ENVELOPE_PREFIXES = (ENVELOPE_PREFIX, "LME2.")
 VERSION = 1
 #: version, recipient radio-key prefix, message-id digest, expiry, wire length
 HEADER = struct.Struct("<B6s16sIH")
@@ -44,10 +45,10 @@ MAX_ENVELOPE_BYTES = 4096
 MAX_DEPOSIT_BYTES = HEADER.size + MAX_ENVELOPE_BYTES
 # A custody copy must never outlive the sealed envelope it carries: the
 # recipient re-checks the envelope's own lifetime on receipt, and today the
-# envelope ceiling is mesh_envelope.MAX_LIFETIME_SECONDS (24 h). Per-attempt
-# re-sealing is what would let custody outlive a day; until that exists this
-# ceiling is the hard bound, and wrap_custody additionally takes the specific
-# envelope expiry so an earlier one wins.
+# attempt envelope ceiling is mesh_envelope.MAX_LIFETIME_SECONDS (24 h).
+# Reapproval requires a fresh authenticated attempt and does not refresh a
+# stored custody copy. wrap_custody additionally takes the specific attempt
+# expiry so an earlier one wins.
 MAX_TTL_SECONDS = 24 * 60 * 60
 MIN_TTL_SECONDS = 60
 
@@ -98,7 +99,7 @@ def wrap_custody(*, recipient_prefix, message_id, envelope_wire, expires_at,
     try:
         _prefix(recipient_prefix)
         digest = message_digest(message_id)
-        if (type(envelope_wire) is not str or not envelope_wire.startswith(ENVELOPE_PREFIX)
+        if (type(envelope_wire) is not str or not envelope_wire.startswith(ENVELOPE_PREFIXES)
                 or len(envelope_wire) > MAX_ENVELOPE_BYTES):
             _fail()
         wire = envelope_wire.encode("ascii")
@@ -130,7 +131,7 @@ def parse_custody(wire):
         if version != VERSION or size != len(raw) - HEADER.size or not 0 < size <= MAX_ENVELOPE_BYTES:
             _fail()
         envelope_wire = raw[HEADER.size:].decode("ascii")
-        if not envelope_wire.startswith(ENVELOPE_PREFIX):
+        if not envelope_wire.startswith(ENVELOPE_PREFIXES):
             _fail()
         return CustodyDeposit(_prefix(recipient_prefix), digest, expires_at, envelope_wire)
     except CustodyError:

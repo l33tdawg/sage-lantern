@@ -2,6 +2,8 @@
 .codex/
 .agents/
 .pytest_cache/
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/

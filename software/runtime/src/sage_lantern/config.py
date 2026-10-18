@@ -31,6 +31,22 @@ class RuntimeConfig:
     verifier_base_url: str = "http://127.0.0.1:8082"
     verifier_model: str = "qwen3.5-4b-q4_k_m"
     verifier_timeout_seconds: float = 60.0
+    # Spoken responses, operator layer. `tts_enabled` above decides whether the
+    # synthesis engine exists; these decide whether its output has somewhere to
+    # go. Both default off so an installation that has not been given an output
+    # device behaves exactly as it did before playback existed — a WAV on disk.
+    audio_enabled: bool = False
+    audio_device: str | None = None
+    # The rate the output device actually accepts, when the operator states it.
+    # Measured on unit C, ``hw:4,0`` accepts 16000 Hz and *refuses* 22050 — Piper's
+    # own rate — so without this the answer is synthesized and then never played.
+    # Left None by default: it is a hardware fact, and inventing one would convert
+    # a device we have not measured. Stating it is what authorizes the conversion.
+    audio_target_rate: int | None = None
+    # Where the user's spoken-responses preference lives. Optional: with no
+    # directory there is no user setting to read and the operator keys above are
+    # the only authority, which is exactly the behaviour before this existed.
+    spoken_dir: Path | None = None
 
     @classmethod
     def load(cls, path: Path) -> "RuntimeConfig":
@@ -80,6 +96,31 @@ class RuntimeConfig:
                         or ".." in Path(value).parts or str(Path(value)) != value):
                     raise ValueError("protected storage requires an explicit canonical sage." + field)
         tts_enabled = bool(tts.get("enabled", True))
+        audio = raw.get("audio", {})
+        audio_enabled = audio.get("enabled", False)
+        if type(audio_enabled) is not bool:
+            raise ValueError("audio.enabled must be a boolean")
+        audio_device = audio.get("device")
+        if audio_device is not None and (type(audio_device) is not str or not audio_device.strip()
+                                         or len(audio_device) > 256):
+            raise ValueError("audio.device must be a short non-empty ALSA device string")
+        # Enabled without a device is a configuration mistake, not a silent
+        # fallback: it would start a player with nowhere to send sound, and the
+        # failure would surface as a per-turn playback error instead of at start-up.
+        if audio_enabled and audio_device is None:
+            raise ValueError("audio.device is required when audio.enabled is true")
+        audio_target_rate = audio.get("target_rate")
+        if audio_target_rate is not None and (type(audio_target_rate) is not int
+                                              or not 8000 <= audio_target_rate <= 192000):
+            raise ValueError("audio.target_rate must be an integer between 8000 and 192000")
+        # The user's preference directory is trusted operator configuration, never
+        # request input, so it must be an explicit canonical absolute path.
+        spoken_dir = audio.get("spoken_dir")
+        if spoken_dir is not None:
+            if (type(spoken_dir) is not str or not spoken_dir or not Path(spoken_dir).is_absolute()
+                    or ".." in Path(spoken_dir).parts or str(Path(spoken_dir)) != spoken_dir
+                    or len(spoken_dir) > 4096):
+                raise ValueError("audio.spoken_dir must be an explicit canonical absolute path")
         required = {
             "runtime.state_log": runtime.get("state_log"),
             "runtime.output_dir": runtime.get("output_dir"),
@@ -110,6 +151,10 @@ class RuntimeConfig:
             verifier_model=verifier_model,
             verifier_timeout_seconds=float(verifier_timeout),
             tts_enabled=tts_enabled,
+            audio_enabled=audio_enabled,
+            audio_device=audio_device,
+            audio_target_rate=audio_target_rate,
+            spoken_dir=Path(spoken_dir) if spoken_dir is not None else None,
             piper_python=resolve(tts.get("python")),
             piper_model=resolve(tts.get("model")),
             piper_config=resolve(tts.get("config")),

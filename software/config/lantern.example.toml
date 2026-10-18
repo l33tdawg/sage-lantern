@@ -4,18 +4,54 @@ output_dir = "/var/lib/sage-lantern/audio"
 
 [stt]
 binary = "/opt/sage-lantern/bin/whisper-cli"
+# Install the ENGLISH-ONLY weights at this path on an English appliance, not the
+# multilingual default. They are the same size and speed, and on unit C they
+# measured better through its own microphone on realistic sentence lengths (mean
+# WER 0.019 against 0.068 over 16 samples of 12-16 words, 14/16 exact against
+# 11/16). The distinction is not in the filename: read it from the loader, which
+# prints n_vocab 51865 for multilingual and 51864 for English-only.
+#
+# Do not reach for a bigger model instead. small.en scored identically to base on
+# the same sentence set (both 16/16 on the file, 0.000 WER) at 3.4x the time per
+# question, and on short two-word phrases it was worse through the microphone than
+# base was. Quantising to q5_1 and raising the thread count were both measured
+# slower; --beam-size 1 --best-of 2 is within noise of beam search.
 model = "/opt/sage-lantern/models/ggml-base.bin"
 threads = 6
 
 [llm]
 base_url = "http://127.0.0.1:8081"
-model = "qwen3.5-4b-q4_k_m"
+model = "lantern-native5-2b"
 
 [tts]
 enabled = false
 python = "/opt/sage-lantern/venv/bin/python"
 model = "/opt/sage-lantern/models/en_US-lessac-medium.onnx"
 config = "/opt/sage-lantern/models/en_US-lessac-medium.onnx.json"
+
+# Spoken responses, operator layer. `tts.enabled` above decides whether the
+# synthesis engine exists; this decides whether its output has somewhere to go.
+# Off by default, so leaving this section out ends the turn at a WAV exactly as
+# before. The device string is deliberately explicit and never defaulted: only an
+# operator who has read the card's own controls can name it. On C the onboard
+# codec is expected at "hw:CARD=rockchipes8388,DEV=0", and the device's playback
+# controls are NOT yet qualified — do not enable this on a unit whose output path
+# has not been measured.
+#
+# Note the engine/path rate: Piper's en_US-lessac-medium is 22050 Hz, and the
+# measured board path is 16 kHz. Playback refuses a mismatch rather than
+# resampling silently, so a wrong rate surfaces as a stated playback_error
+# instead of audio that sounds wrong.
+[audio]
+enabled = false
+device = "hw:CARD=rockchipes8388,DEV=0"
+# The rate the output device actually accepts. Set it only to a rate you have
+# measured on the unit: it is the value the synthesized answer is converted to.
+# Measured on unit C (10 Oct 2026), the board at hw:4,0 accepts 16000 Hz and
+# refuses 22050 Hz, which is the rate Piper's en_US-lessac-medium voice emits.
+# Leaving this unset means a mismatch is refused rather than converted, so an
+# answer is still shown on screen but nothing is played.
+# target_rate = 16000
 
 [sage]
 base_url = "http://127.0.0.1:8080"

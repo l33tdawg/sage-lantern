@@ -17,7 +17,7 @@ def load_helper(name, filename):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--unit-id", choices=("unit-a", "unit-b"), required=True)
+    parser.add_argument("--unit-id", choices=("unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"), required=True)
     parser.add_argument("--metadata", required=True)
     parser.add_argument("--radio-evidence", required=True)
     args = parser.parse_args(argv)

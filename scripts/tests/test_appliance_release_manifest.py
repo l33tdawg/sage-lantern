@@ -227,7 +227,7 @@ class ApplianceManifestTests(unittest.TestCase):
             if role:
                 selected["files"].append(dict(path=name, role=role))
             return path
-        dependencies = ["PyNaCl==1.6.2", "cryptography==46.0.3", "sage-agent-sdk==" + sdk.VERSION]
+        dependencies = ["PyNaCl==1.6.2", "cryptography==46.0.3", "sage-agent-sdk==" + sdk.VERSION, "PyYAML==6.0.2"]
         sources = {"pyproject.toml": b"synthetic pyproject bytes"}
         for module in runtime.REQUIRED | {"__init__"}:
             sources[f"src/sage_lantern/{module}.py"] = b"pass\n"

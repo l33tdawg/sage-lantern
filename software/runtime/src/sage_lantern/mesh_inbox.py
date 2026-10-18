@@ -7,8 +7,10 @@ Persisted epoch seconds require a trusted wall clock; rollback fails closed.
 
 resolve_peer(IncomingMessage) must return an independently verified full Peer
 from the contact registry, or None. A radio prefix alone is not authentication.
-Only plain contact-text fragment frames are supported. Signature verification
-authenticates the reconstructed envelope, not individual radio fragments.
+Legacy ingress accepts plain contact-text fragment frames. ingest_binary is
+separate, opt-in complete private ingress under a caller-held service lease and
+independent peer/consent guard. Both use the same create-only replay admission.
+Signature verification authenticates the envelope, not individual radio frames.
 
 ingest returns metadata only; __call__ is the literal-True MeshReceiver handler.
 Neither sends receipts nor interprets receipt assertions as delivery/read facts.
@@ -284,7 +286,7 @@ class MeshInbox:
         if not self._mutex.acquire(blocking=False):
             raise InboxError()
         try:
-            if self._access() is not True or self._storage() is not True:
+            if self._uncertain or self._access() is not True or self._storage() is not True:
                 raise InboxError()
             epoch = self._store.storage.snapshot().epoch
             _uuid(operation_id)
@@ -298,6 +300,95 @@ class MeshInbox:
                     result = self._disposition(operation_id, message, rejected.reason)
             if (self._storage() is not True or self._store.storage.snapshot().epoch != epoch
                     or self._access() is not True):
+                raise InboxError()
+            return result
+        except Exception:
+            raise InboxError() from None
+        finally:
+            self._mutex.release()
+
+    def ingest_binary(self, operation_id, packet, *, sender, peer_check):
+        """Admit a complete private record from a separately admitted carrier.
+
+        The caller holds the private service lease and an original capture UUID.
+        peer_check(full Peer) must revalidate independent pinning and consent,
+        including the carrier's current application authority, or raise when
+        unavailable. A link identity or a successful codec is insufficient.
+        No fragment, custody, public cache or text fallback is involved here.
+        Invalid content returns metadata only; it does not settle a captured
+        slot or generate a receipt. Uncertain writes require reconciliation by
+        a fresh handler using the original operation UUID and sealed record.
+        """
+        if not self._mutex.acquire(blocking=False):
+            raise InboxError()
+        try:
+            # Keep the binary codec an opt-in dependency. Existing fragment
+            # deployments do not need it until this separate API is invoked.
+            from .mesh_binary_envelope import BinaryEnvelopeError, to_text
+            if (self._uncertain or type(sender) is not Peer or not callable(peer_check)
+                    or self._access() is not True or self._storage() is not True):
+                raise InboxError()
+            _uuid(operation_id)
+            epoch = self._store.storage.snapshot().epoch
+            if peer_check(sender) is not True:
+                raise InboxError()
+            try:
+                wire = to_text(packet).encode('ascii')
+                result = self._admit_envelope(wire, sender, operation_id,
+                                              lambda: peer_check(sender) is True)
+            except BinaryEnvelopeError:
+                result = IngestResult('rejected', reason='invalid_envelope')
+            except _Reject as rejected:
+                result = IngestResult('rejected', reason=rejected.reason)
+            if (self._storage() is not True or self._store.storage.snapshot().epoch != epoch
+                    or self._access() is not True or peer_check(sender) is not True):
+                raise InboxError()
+            return result
+        except Exception:
+            raise InboxError() from None
+        finally:
+            self._mutex.release()
+
+    def reconcile_binary(self, packet, *, sender, observed_at, peer_check):
+        """Read-only probe for a possibly committed complete-envelope admission.
+
+        A trusted capture owner supplies its authenticated observation time.
+        This only compares against an existing recipient-signed inbox row; it
+        creates nothing and cannot renew an expired application or envelope.
+        Return None when absent, duplicate for matching logical content, or a
+        fixed rejection for invalid/equivocating content. Current private read,
+        storage and independently pinned peer permission remain mandatory.
+        """
+        if not self._mutex.acquire(blocking=False):
+            raise InboxError()
+        try:
+            from .mesh_binary_envelope import BinaryEnvelopeError, to_text
+            if (self._uncertain or type(sender) is not Peer or not callable(peer_check)
+                    or self._access() is not True or self._storage() is not True
+                    or peer_check(sender) is not True):
+                raise InboxError()
+            epoch = self._store.storage.snapshot().epoch
+            now = self._now()
+            if type(observed_at) is not int or not 0 <= observed_at <= now:
+                raise InboxError()
+            try:
+                opened = open_envelope(to_text(packet), self._key, expected_sender=sender,
+                    expected_recipient=self._recipient, now=observed_at)
+            except (BinaryEnvelopeError, MeshEnvelopeError):
+                result = IngestResult('rejected', reason='invalid_envelope')
+            else:
+                identifier = inbox_id(sender, opened.message_id)
+                record = self._get(identifier)
+                result = None
+                if record is not None:
+                    prior = self._historical(identifier, record)
+                    if record['payload']['attestation']['body']['admitted_at'] > now:
+                        raise InboxError()
+                    result = (IngestResult('duplicate', identifier, opened.message_id, opened.kind)
+                        if prior.kind == opened.kind and prior.logical_digest == opened.logical_digest
+                        else IngestResult('rejected', reason='equivocation'))
+            if (self._access() is not True or self._storage() is not True
+                    or self._store.storage.snapshot().epoch != epoch or peer_check(sender) is not True):
                 raise InboxError()
             return result
         except Exception:
@@ -391,16 +482,30 @@ class MeshInbox:
             if self._resolve(message) != sender or self._access() is not True:
                 raise InboxError()
             return IngestResult("custodied", identifier)
+        result = self._admit_envelope(wire, sender, value['operation_id'],
+                                      lambda: self._resolve(message) == sender)
+        if value["state"] != "complete":
+            self._put(identifier, record["revision"], {**value, "state": "complete"})
+        if self._resolve(message) != sender or self._access() is not True:
+            raise InboxError()
+        return result
+
+    def _admit_envelope(self, wire, sender, operation_id, peer_check):
+        """Shared create-only replay/admission path for both carrier encodings."""
+        if (self._uncertain or peer_check() is not True
+                or self._access() is not True or self._storage() is not True):
+            raise InboxError()
+        text = wire.decode('ascii')
         try:
             opened = open_envelope(text, self._key, expected_sender=sender,
-                                   expected_recipient=self._recipient, now=now)
+                                   expected_recipient=self._recipient, now=self._now())
         except MeshEnvelopeError:
             raise _Reject("invalid_envelope") from None
         local_id = inbox_id(sender, opened.message_id)
         existing = self._get(local_id)
         if existing:
             prior = self._historical(local_id, existing)
-            if prior.digest != opened.digest:
+            if prior.kind != opened.kind or prior.logical_digest != opened.logical_digest:
                 raise _Reject("equivocation")
             status = "duplicate"
         else:
@@ -410,20 +515,18 @@ class MeshInbox:
                               expected_recipient=self._recipient, now=admitted_at)
             except MeshEnvelopeError:
                 raise _Reject("invalid_envelope") from None
-            if self._resolve(message) != sender or self._access() is not True or self._storage() is not True:
+            if peer_check() is not True or self._access() is not True or self._storage() is not True:
                 raise InboxError()
             body = dict(schema=ADMISSION_SCHEMA, local_id=local_id, remote_id=opened.message_id,
                         sender=sender.to_dict(), recipient=self._recipient.to_dict(),
                         wire_sha256=hashlib.sha256(wire).hexdigest(), envelope_digest=opened.digest,
-                        envelope_kind=opened.kind, admitted_at=admitted_at, operation_id=value["operation_id"])
+                        envelope_kind=opened.kind, admitted_at=admitted_at, operation_id=operation_id)
             signature = self._key.sign(ADMISSION_DOMAIN + _canonical(body)).signature
             self._put(local_id, 0, dict(schema=INBOX_SCHEMA, sender=sender.to_dict(),
                 recipient=self._recipient.to_dict(), remote_id=opened.message_id, digest=opened.digest,
-                wire=wire.decode("ascii"), operation_id=value["operation_id"],
+                wire=wire.decode("ascii"), operation_id=operation_id,
                 attestation=dict(body=body, signature=base64.b64encode(signature).decode("ascii"))))
             status = "admitted"
-        if value["state"] != "complete":
-            self._put(identifier, record["revision"], {**value, "state": "complete"})
-        if self._resolve(message) != sender or self._access() is not True:
+        if peer_check() is not True or self._access() is not True or self._storage() is not True:
             raise InboxError()
         return IngestResult(status, local_id, opened.message_id, opened.kind)

@@ -83,7 +83,7 @@ def validate(value):
     from sage_lantern.deployment_bringup import REQUIRED
     require(type(value) is dict and set(value) == {'schema', 'unit_id', 'boot_id', 'chain_id', 'agent_id',
         'bootstrap_path', 'bootstrap_sha256', 'fence_sha256', 'files', 'runtime_sha256', 'services'})
-    require(value['schema'] == 'sage.lantern.stale-audio-inspection.v1' and value['unit_id'] in ('unit-a', 'unit-b'))
+    require(value['schema'] == 'sage.lantern.stale-audio-inspection.v1' and value['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
     require(str(uuid.UUID(value['boot_id'])) == value['boot_id'])
     require(type(value['chain_id']) is str and re.fullmatch(r'sage-personal-[A-Za-z0-9._-]{1,110}', value['chain_id']))
     require(hexadecimal(value['agent_id']) and absolute(value['bootstrap_path'])

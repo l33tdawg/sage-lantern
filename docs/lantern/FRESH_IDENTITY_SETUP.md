@@ -34,6 +34,13 @@ public IDs plus actual genesis chain ID, with `local_enrollment_committed`,
 ## Operator phase between base and app
 
 Prepare service-owned 0600 `sage-personal/config.yaml` in its 0700 directory.
+For a new C–F node using the canonical NPU/CPU bundle, review
+[`sage-personal.example.yaml`](../../software/config/sage-personal.example.yaml).
+It selects the bundled 768-dimensional Nomic embedding model through the local
+Ollama-compatible shim on port 8084. This is a fresh-node input template, not a
+migration for A/B or any existing indexed database. It contains no chain ID or
+identity keys; the initializer creates those independently on each unit.
+
 Its initial policy must include these fields; preserve separately reviewed
 embedding/media settings rather than replacing them with this excerpt:
 

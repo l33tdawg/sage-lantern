@@ -19,14 +19,18 @@ ACTIVE = dict(broker_id='a' * 32, vault_epoch='b' * 64 + ':2', broker_pid=123, v
 def observed(monkeypatch):
     monkeypatch.setattr(Path, 'read_text', lambda self: BOOT)
     def service(name):
-        return dict.fromkeys(MODULE.FIELDS, '') | dict(LoadState='loaded', ActiveState='active',
+        value = dict.fromkeys(MODULE.FIELDS, '') | dict(LoadState='loaded', ActiveState='active',
             MainPID=str(123 if 'mesh-runtime' in name else 456), NeedDaemonReload='no')
+        if name == 'sage-lantern-llm-cpu.service':
+            value |= dict(ActiveState='inactive', SubState='dead', MainPID='0')
+        return value
     monkeypatch.setattr(MODULE, 'service', service)
     monkeypatch.setattr(MODULE, 'broker_active', lambda: dict(ACTIVE))
     monkeypatch.setattr(MODULE, 'public_file', lambda name, **kwargs: (
         dict(path=name, sha256='c' * 64, metadata={}), b''))
-    candidate = dict(evidence_requirements={name: dict(path='/public/' + name, sha256='c' * 64)
-                                           for name in ('model', 'projector', 'binary')})
+    candidate = dict(serving_profile='npu-text-8081-npu-vision-8082',
+                     evidence_requirements={name: dict(path='/public/' + name, sha256='c' * 64)
+                                            for name in ('npu_model', 'vision_encoder', 'vision_llm', 'engine')})
     planner = SimpleNamespace(plan=lambda unit, fresh_audio: candidate)
     return lambda **kwargs: MODULE.observe(planner, {'sha256': 'd' * 64}, 'unit-a', 'c' * 64, **kwargs)
 
@@ -39,6 +43,52 @@ def test_good_observations_are_never_apply_authority(observed):
     assert result['capture_performed'] is False
     assert result['pins']['broker'] == ACTIVE
     assert len(result['blockers']) == 5
+
+
+def test_vision_lane_is_observed_twice_and_npu_artifacts_are_pinned(observed, monkeypatch):
+    original = MODULE.service
+    calls = []
+    def record(name):
+        calls.append(name)
+        return original(name)
+    monkeypatch.setattr(MODULE, 'service', record)
+    result = observed()
+    assert calls.count('sage-lantern-llm.service') == 2
+    assert calls.count('sage-lantern-vlm.service') == 2
+    assert calls.count('sage-lantern-llm-cpu.service') == 2
+    assert result['pins']['npu_model']['path'] == '/public/npu_model'
+    assert result['pins']['vision_encoder']['path'] == '/public/vision_encoder'
+    assert result['pins']['engine']['path'] == '/public/engine'
+
+
+def test_active_retired_cpu_fallback_is_a_blocker(observed, monkeypatch):
+    original = MODULE.service
+    monkeypatch.setattr(MODULE, 'service', lambda name: original(name) |
+        ({'ActiveState': 'active', 'SubState': 'running'} if name == 'sage-lantern-llm-cpu.service' else {}))
+    assert 'retired_cpu_vision_active:sage-lantern-llm-cpu.service' in observed()['blockers']
+
+
+def test_inactive_vision_lane_is_a_blocker(observed, monkeypatch):
+    original = MODULE.service
+    monkeypatch.setattr(MODULE, 'service', lambda name: original(name) |
+        ({'ActiveState': 'inactive'} if name == 'sage-lantern-vlm.service' else {}))
+    assert 'model_service_unavailable:sage-lantern-vlm.service' in observed()['blockers']
+
+
+def test_unsupported_serving_profile_is_a_blocker(monkeypatch):
+    monkeypatch.setattr(Path, 'read_text', lambda self: BOOT)
+    def service(name):
+        value = dict.fromkeys(MODULE.FIELDS, '') | dict(LoadState='loaded', ActiveState='active',
+            MainPID=str(123 if 'mesh-runtime' in name else 456), NeedDaemonReload='no')
+        if name == 'sage-lantern-llm-cpu.service':
+            value |= dict(ActiveState='inactive', SubState='dead', MainPID='0')
+        return value
+    monkeypatch.setattr(MODULE, 'service', service)
+    monkeypatch.setattr(MODULE, 'broker_active', lambda: dict(ACTIVE))
+    planner = SimpleNamespace(plan=lambda unit, fresh_audio: dict(
+        serving_profile='old-cpu-profile', evidence_requirements={}))
+    result = MODULE.observe(planner, {'sha256': 'd' * 64}, 'unit-a', 'c' * 64)
+    assert 'unsupported_serving_profile' in result['blockers']
 
 
 def test_consent_does_not_capture_or_clear_other_gates(observed):

@@ -97,7 +97,8 @@ def client(incoming, chunk=1):
 
 
 @pytest.mark.parametrize("version", ["v1.17.1-d929643-r1", "v1.17.1-d929643-r2", "v1.17.1-d929643-r3",
-                                     "v1.17.1-d929643-r4", "v1.17.1-d929643-r5", "v1.17.1-d929643-r6"])
+                                     "v1.17.1-d929643-r4", "v1.17.1-d929643-r5", "v1.17.1-d929643-r6",
+                                     "v1.17.1-d929643-r7"])
 def test_packet_rssi_candidate_reports_its_actual_version(version):
     device, stream = client(handshake_bytes(version=version))
     assert device.handshake().firmware == version
@@ -140,8 +141,9 @@ def bridge_frame(**overrides):
                                               *(values[name] for name in BRIDGE_STATS_NAMES)))
 
 
-def test_health_reads_bridge_counters_from_the_firmware_that_serves_them():
-    incoming = (handshake_bytes(version="v1.17.1-d929643-r6") + stats_frames(-75, 25)
+@pytest.mark.parametrize("version", ["v1.17.1-d929643-r6", "v1.17.1-d929643-r7"])
+def test_health_reads_bridge_counters_from_the_firmware_that_serves_them(version):
+    incoming = (handshake_bytes(version=version) + stats_frames(-75, 25)
                 + bridge_frame())
     device, stream = client(incoming)
     device.handshake()

@@ -62,6 +62,8 @@ def rig(tmp_path):
             return True
         def record(self, ticket, item):
             fixture.calls.append("text_record")
+        def correction_operation(self, *args, **kwargs):
+            raise AssertionError("media fixture does not execute corrections")
 
     class Media:
         def put(self, identifier, original, *, access_check):
@@ -261,6 +263,7 @@ def test_injected_protected_service_selects_tracked_media(rig):
                             history_memory=rig.memory)
     assert loop.history.media_mode == "protected" and loop.history.media_store is rig.memory.media_store
     assert loop.control.history_media_check == loop.history.require_media
+    assert loop.control.correction_journal == rig.memory.correction_operation
     assert not rig.history.media_directory.exists()
 
 

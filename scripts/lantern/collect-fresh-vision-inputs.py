@@ -176,6 +176,10 @@ def collect(spec):
         env={'PATH':'/usr/bin:/bin','HOME':'/nonexistent','LANG':'C','PYTHONDONTWRITEBYTECODE':'1'})
     snapshot=json.loads(inspection.stdout,object_pairs_hook=unique)['snapshot']
     paths.update(snapshot['inputs'])
+    # Reviewed code (the question loop and the installed package) is recorded
+    # by the audio evidence rather than bound by it; the vision inventory still
+    # hashes it, so its pins stay complete.
+    paths.update(snapshot['code'])
     inventory={path:helper.file_hash(path) for path in REQUIRED}
     for service in (base.VOICE,base.BROKER):
         for path in services[service]['unit']['DropInPaths'].split():

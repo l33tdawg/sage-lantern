@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
-import { pageMetadata } from '@/lib/metadata';
+import { pageMetadata, PRIMARY_ORIGIN } from '@/lib/metadata';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://sage.ngo'),
+  metadataBase: new URL(PRIMARY_ORIGIN),
   ...pageMetadata(
     'SAGE Foundation — Intelligence. For all of us.',
     'A curious mind shouldn’t need a better postcode. We’re building local AI and community networks so more people can learn, create and stay connected.',

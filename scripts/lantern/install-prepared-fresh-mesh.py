@@ -397,7 +397,7 @@ class Installer:
             'artifact_sha256', 'preparer_dir', 'preparer_sha256', 'preparation_args', 'service_files'}
             | ({'containment'} if self.fresh_b else set()))
         require(expected['schema'] == 'sage.lantern.install-prepared-mesh.v1'
-            and expected['unit_id'] in ('unit-a', 'unit-b') and set(expected['artifact_sha256']) == set(DESTINATIONS)
+            and expected['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f') and set(expected['artifact_sha256']) == set(DESTINATIONS)
             and set(expected['preparation_args']) == ARGUMENTS)
         self.expected = expected
         self.preparer = load_preparer(expected)

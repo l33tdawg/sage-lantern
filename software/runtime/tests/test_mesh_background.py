@@ -24,11 +24,12 @@ from sage_lantern.mesh_inbox import MeshInbox
 from sage_lantern.mesh_contacts import sign_contact_card, verify_contact_card
 from sage_lantern.mesh_receipt_sender import MeshReceiptSender, ReceiptPermit
 from sage_lantern.mesh_outbox import OutboxProgress
-from sage_lantern.mesh_runtime import CAPTURE_RESERVE_SECONDS, DISPATCH_BURST
+from sage_lantern.mesh_runtime import (CAPTURE_RESERVE_SECONDS, DISPATCH_BURST,
+    DISPATCH_RESERVE_SECONDS, _StorageRefusalBackoff)
 from sage_lantern.meshcore_transport import MeshCoreClient, decode_incoming
 from sage_lantern.message_contacts import RecipientID
 from sage_lantern.message_storage import MessageStorageProbe
-from sage_lantern.workflow_store import WorkflowStore
+from sage_lantern.workflow_store import WorkflowStore, WorkflowUnavailable
 from sage_lantern.mesh_serial_owner import SerialScheduler
 from sage_lantern.storage_supervisor_socket import CaptureLease
 from test_community_mesh_runtime import integrated, factory
@@ -170,6 +171,48 @@ def test_locked_receive_persists_without_disclosure_or_receipt(background):
     state.authorized = True
     assert state.call("messages/list", {"box": "inbox"})["items"][0]["text"] == "Synthetic private inbox"
     assert state.service.close(timeout=5) is True
+
+
+def test_background_dispatch_has_bounded_signed_request_load(background):
+    state = background
+    state.call("messages/send", state.body)
+    state.stop_after = lambda: True
+    _, grant = state.provider._background_admission(lambda: state.consent,
+        state.lease_factory, lambda: state.authorized)
+    state.requests.clear()
+    state.runtime.start_receiving(grant, lambda: ("background_dispatch",), interval=0.2)
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert len(state.transmits) == DISPATCH_BURST
+    assert len(state.requests) <= 80 * DISPATCH_BURST
+
+
+def test_background_contact_revision_change_after_cas_stops_rf(background, monkeypatch):
+    state = background
+    state.call("messages/send", state.body)
+    original = state.runtime.store.put
+    changed = []
+    def put(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if result["payload"].get("body", {}).get("state") == "dispatching" and not changed:
+            changed.append(True)
+            now = int(time.time())
+            card = sign_contact_card(state.remote, chain_id="remote", radio_public_key=state.radio.hex(),
+                display_name="Remote", revision=2, issued_at=now-1, expires_at=now+1000, now=now,
+                findable=True, messaging_allowed=True)
+            state.runtime.registry.put(card, known_actor=RecipientID("remote", state.remote.agent_id),
+                                       access_check=state.runtime._access)
+        return result
+    monkeypatch.setattr(state.runtime.store, "put", put)
+    state.stop_after = lambda: True
+    _, grant = state.provider._background_admission(lambda: state.consent,
+        state.lease_factory, lambda: state.authorized)
+    state.runtime.start_receiving(grant, lambda: ("background_dispatch",), interval=0.2)
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert changed == [True] and not state.transmits
+    body = state.rows[state.body["request_id"]]["payload"]["body"]
+    assert body["state"] == "dispatching" and body["next_fragment"] == 0
 
 
 def test_simulated_background_roundtrip_reconstructs_bytes_and_receipt_after_restart(background, recipient):
@@ -332,7 +375,7 @@ def test_timed_out_dispatch_inside_the_window_recovers_without_restart(backgroun
     state = background
     # Long enough that the dispatch reaches the wire write, short enough that the
     # stalled acknowledgement cannot outlast the job budget.
-    shorten_job_budget(state, 1.5)
+    shorten_job_budget(state, 1.5, monkeypatch)
     state.call("messages/send", state.body)
     identifier = state.body["request_id"]
     attempted = []
@@ -612,20 +655,124 @@ def test_background_storage_refusal_before_capture_keeps_messaging_usable(backgr
     calls = []
 
     def refused(consent):
-        calls.append(consent)
+        calls.append(time.monotonic())
         raise MessagingUnavailable()
 
     state.provider.start_receiving(consent_reader=lambda: state.consent,
         lease_factory=refused, unlocked_check=lambda: state.authorized, interval=0.2)
     wait_until(lambda: len(calls) >= 2)
+    assert calls[1] - calls[0] >= 4.9
     assert state.runtime._uncertain is False
     assert state.runtime.admission_safe() is True
     assert state.provider.pause_receiving(timeout=5) is True
     assert state.call("messages/list", {"box": "inbox"})["items"] == []
 
 
-def shorten_job_budget(state, seconds):
+def test_masked_storage_refusal_cooldown_survives_worker_restart(background, monkeypatch):
+    """A receiver read mask must not turn supervisor restarts into a probe storm."""
+    state = background
+    now = [100.0]
+    state.runtime._storage_refusals = _StorageRefusalBackoff(clock=lambda: now[0])
+    original = state.runtime.receiver._read
+
+    def unavailable():
+        try:
+            raise MessagingUnavailable()
+        except MessagingUnavailable:
+            raise WorkflowUnavailable() from None
+
+    monkeypatch.setattr(state.runtime.receiver, "_read", unavailable)
+    state.start()
+    retired = state.runtime._poller
+    wait_until(lambda: not retired.is_alive())
+    assert state.runtime._uncertain is False and state.runtime.admission_safe() is True
+    assert not state.held and not state.transmits
+    finished = state.finished
+
+    def restart():
+        return state.provider.restart_receiving(consent_reader=lambda: state.consent,
+            lease_factory=state.lease_factory, unlocked_check=lambda: state.authorized, interval=0.2)
+
+    # Repeated supervisor attempts cannot acquire a grant or touch the receiver.
+    for _ in range(20):
+        assert restart() is False
+    assert state.finished == finished and state.runtime._poller is retired
+    now[0] += 5
+    assert restart() is True
+    wait_until(lambda: not state.runtime._poller.is_alive())
+    assert state.finished == finished + 1
+    assert state.runtime._storage_refusals.remaining() == 10
+    monkeypatch.setattr(state.runtime.receiver, "_read", original)
+    now[0] += 10
+    state.stop_after = lambda: True
+    assert restart() is True
+    wait_until(lambda: not state.runtime._poller.is_alive())
+    assert state.finished == finished + 2
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert state.call("messages/list", {"box": "inbox"})["items"] == []
+
+
+def test_storage_refusal_recovery_does_not_reset_on_intermittent_success():
+    """Bound a five-minute replay-window outage even if some reads succeed."""
+    now = [0.0]
+    cooldown = _StorageRefusalBackoff(clock=lambda: now[0])
+    attempts = 0
+    while now[0] < 300:
+        cooldown.failed(MessagingUnavailable())
+        attempts += 1
+        # The immediate next wake may succeed; it is not sustained recovery.
+        now[0] += 0.1
+        cooldown.succeeded()
+        now[0] += cooldown.remaining()
+    assert attempts <= 8  # old 5-second ceiling repaid at least 60 wakes
+    cooldown.succeeded()
+    cooldown.failed(MessagingUnavailable())
+    assert cooldown.remaining() == 5
+
+
+def test_unrelated_refusal_does_not_start_storage_cooldown():
+    cooldown = _StorageRefusalBackoff(clock=lambda: 100)
+    cooldown.failed(RuntimeError("producer_admission_fenced"))
+    assert cooldown.remaining() == 0
+
+
+def test_storage_cooldown_expiry_cannot_clear_unknown_lease(background):
+    state = background
+    now = [100.0]
+    state.runtime._storage_refusals = _StorageRefusalBackoff(clock=lambda: now[0])
+
+    def lost_ack(consent):
+        try:
+            raise MessagingUnavailable()
+        except MessagingUnavailable:
+            raise TimeoutError("unknown acquire acknowledgement") from None
+
+    state.provider.start_receiving(consent_reader=lambda: state.consent,
+        lease_factory=lost_ack, unlocked_check=lambda: state.authorized, interval=0.2)
+    wait_until(lambda: not state.runtime._poller.is_alive())
+    assert state.runtime._storage_refusals.remaining() == 5
+    now[0] += 60
+    assert state.runtime._storage_refusals.remaining() == 0
+    assert state.runtime._uncertain is True
+    assert state.provider.restart_receiving(consent_reader=lambda: state.consent,
+        lease_factory=state.lease_factory, unlocked_check=lambda: state.authorized) is False
+    assert state.provider.pause_receiving(timeout=5) is False
+
+
+def shorten_job_budget(state, seconds, monkeypatch):
+    """Shrink the wake budget for a scenario that needs a job to expire.
+
+    The background wake budget is a policy floor (BACKGROUND_JOB_SECONDS), not
+    just the configured request timeout, so the scenario has to patch the policy
+    the runtime reads as well as the config value.
+    """
     state.runtime.config = replace(state.runtime.config, operation_timeout=seconds)
+    monkeypatch.setattr("sage_lantern.mesh_runtime.BACKGROUND_JOB_SECONDS", seconds)
+    # The production reserve is one measured fragment (12 s). A scenario with a
+    # sub-second budget has to shrink it too, or the burst starts nothing at all
+    # and the failure it means to model (a fragment cut off mid-flight) cannot
+    # be constructed.
+    monkeypatch.setattr("sage_lantern.mesh_runtime.DISPATCH_RESERVE_SECONDS", min(0.2, seconds / 4))
 
 
 def test_background_timeout_before_destructive_step_keeps_messaging_usable(background, monkeypatch):
@@ -636,7 +783,11 @@ def test_background_timeout_before_destructive_step_keeps_messaging_usable(backg
     request restarts the reviewed worker in the same process.
     """
     state = background
-    shorten_job_budget(state, 0.4)
+    shorten_job_budget(state, 0.4, monkeypatch)
+    # The shared fixture already imported a contact and populated the wake
+    # inventory cache. Expire that observation so this scenario reaches the
+    # stalled read it is meant to exercise, before any destructive capture.
+    monkeypatch.setattr(state.runtime, "_last_inventory_at", None)
     stalled = threading.Event()
     original = state.device.get_contacts
 
@@ -657,15 +808,16 @@ def test_background_timeout_before_destructive_step_keeps_messaging_usable(backg
     assert state.provider.pause_receiving(timeout=5) is True
     assert state.call("messages/list", {"box": "inbox"})["items"] == []
     monkeypatch.setattr(state.device, "get_contacts", original)
+    finished = state.finished
     state.start()
-    wait_until(lambda: state.finished >= 1)
+    wait_until(lambda: state.finished > finished)
     assert state.runtime._uncertain is False and state.provider.pause_receiving(timeout=5) is True
 
 
 def test_background_timeout_after_destructive_step_stays_fail_closed(background, monkeypatch):
     """Reaching the dequeue keeps the previous behaviour, even without a reply."""
     state = background
-    shorten_job_budget(state, 0.6)
+    shorten_job_budget(state, 0.6, monkeypatch)
     entered = threading.Event()
 
     def stalled_receive(*, authorize, persist):
@@ -695,7 +847,7 @@ def test_dispatch_path_does_not_mark_the_destructive_step_up_front(background, m
     process restart - which is exactly what happened on unit A on 2026-09-13.
     """
     state = background
-    shorten_job_budget(state, 0.4)
+    shorten_job_budget(state, 0.4, monkeypatch)
     state.call("messages/send", state.body)
     seen = {}
 
@@ -790,6 +942,30 @@ def test_capture_deadline_only_restricts_background_jobs(background):
     assert runtime._capture_deadline_open() is False
     runtime._local.background_deadline = time.monotonic() + 5
     assert runtime._capture_deadline_open() is True
+
+
+def test_background_job_budget_can_hold_one_fragment(background, monkeypatch):
+    """The wake budget must cover the fragment the reserve protects.
+
+    The 2026-09-22 defect was a reserve smaller than a fragment *and* a budget
+    that could not hold one; this pins the relationship the fix depends on for
+    the configured request timeout (10 s on the units): a background job's
+    observed deadline reaches past one fragment's cost.
+    """
+    state = background
+    seen = []
+
+    def receive(*, authorize, persist):
+        seen.append(state.runtime._local.background_deadline - time.monotonic())
+        return None
+
+    monkeypatch.setattr(state.device, "get_contacts", lambda *, authorize: ())
+    monkeypatch.setattr(state.device, "receive_next", receive)
+    state.stop_after = lambda: bool(seen)
+    state.start()
+    wait_until(lambda: state.runtime._receive_stop.is_set())
+    assert state.provider.pause_receiving(timeout=5) is True
+    assert seen and seen[0] > DISPATCH_RESERVE_SECONDS
 
 
 def test_rotated_capture_grant_retires_clean_and_restarts_under_the_new_epoch(background, monkeypatch):

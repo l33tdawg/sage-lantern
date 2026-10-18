@@ -233,9 +233,17 @@ def test_one_fragment_costs_one_contact_read(factory, monkeypatch):
         reads.append(authorize)
         return original(authorize=authorize)
     monkeypatch.setattr(state.device,"get_contacts",counted)
+    state.requests.clear()
     result=state.runtime.dispatch_one(state.context,identifier,radio_timestamp=now)
     assert result.next_fragment==1 and len(state.transmits)==1
     assert len(reads)==1
+    # Real registry + journal + SDK: nested journal guards previously caused
+    # hundreds of signed HTTP calls per fragment, filling the native replay
+    # cache before delivery. Every workflow call still has two fresh probes.
+    assert len(state.requests) <= 80
+    storage = sum(path == "/v1/messages/storage" for _, path in state.requests)
+    workflows = sum(path.startswith("/v1/workflows/") for _, path in state.requests)
+    assert storage == 2 * workflows
 
 
 def test_real_receive_and_explicit_read_receipt(factory):

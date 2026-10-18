@@ -1,6 +1,12 @@
 # Consolidated SAGE tasks — 11 September 2026
 
+Historical checkpoint. The current roles and task map are in
+[SAGE_TASKS_20260927.md](SAGE_TASKS_20260927.md): C–F are the user devices and A/B
+are Lamplighter test boxes. The task IDs and acceptance targets below are dated.
+
 Verified against the assigned SAGE backlog: **12 open tasks — eight in progress and four planned.** An in-progress program does not imply a running training, benchmark or deployment process.
+
+**12 September update:** the current execution task is `e24e895c-3210-4725-b563-d1e7b416ef97` (Lantern A↔B messaging resume), which supersedes session record `a3ecb114-e1df-447c-a7a7-7872662894d6`. B's interrupted receive slot is reconciled and B reports messaging ready; A still fails reading the firmware contact list, so the reviewed cold-broker restart is the next step. Evidence: [messages resume](../../work/messages-ab-20260912/README.md), [persistent header](../../work/device-header-20260912/README.md), [meter x](../../work/radio-signal-x-20260912/README.md) and `DELIVERY_BACKLOG.md`.
 
 This consolidation replaces two stale task descriptions, records the completed A UI deployment as a separate done milestone, and links the latest evidence to the existing responsiveness, factual-grounding and hardware programs. No unmet requirement was marked complete. This was a backlog/documentation update; no device changes or new experiments were run.
 

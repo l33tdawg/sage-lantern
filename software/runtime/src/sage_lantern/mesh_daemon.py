@@ -33,7 +33,7 @@ from .community_service import CommunityMeshProvider
 from .device_access import access_epoch, device_locked, MARKER, _marker_state
 from .mesh_community import MeshReceiveConsent, MeshRequestAccess
 from .mesh_envelope import Peer
-from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
+from .mesh_outbox import MeshOutbox, SCHEMAS as OUTBOX_SCHEMAS
 from .mesh_inbox import MeshInbox
 from .mesh_custodian import STATUS_SCHEMA as CUSTODY_STATUS_SCHEMA, MeshCustodian, valid_source
 from .mesh_receipt_sender import MeshReceiptSender, SCHEMA as RECEIPT_SCHEMA
@@ -336,7 +336,7 @@ class HardwareRuntime:
         for row in store.scan(limit=50, max_records=4096, access_check=guard):
             if row["kind"] == "mesh_outbound":
                 schema = row["payload"].get("body", {}).get("schema")
-                if schema == OUTBOX_SCHEMA:
+                if schema in OUTBOX_SCHEMAS:
                     body = outbox._verified(row)
                     if body["state"] == "dispatching":
                         # An unknown dispatch outcome inside the row's own signed

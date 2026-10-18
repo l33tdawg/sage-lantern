@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from sage_lantern.suspend_io import model_idle, publish, read_json
+from sage_lantern.suspend_io import PUBLIC_ENDPOINTS, model_idle, publish, read_json, public_json
 
 
 class IOTests(unittest.TestCase):
@@ -13,6 +13,13 @@ class IOTests(unittest.TestCase):
                       [dict(id=0, is_processing=True)], [dict(id=0)],
                       [dict(id=0, is_processing=False)] * 2]:
             self.assertFalse(model_idle(value))
+
+    def test_public_read_allowlist_covers_both_model_servers_only(self):
+        self.assertEqual(PUBLIC_ENDPOINTS, {(3196, "/state"), (3196, "/power-policy"),
+                                            (3196, "/sleep-ready"), (8081, "/slots"), (8082, "/slots")})
+        for port, path in ((8082, "/health"), (8081, "/props"), (8080, "/slots"), (3196, "/slots")):
+            with self.subTest(port=port, path=path), self.assertRaises(ValueError):
+                public_json(port, path)
 
     def test_atomic_private_metadata_and_links(self):
         with tempfile.TemporaryDirectory() as directory:

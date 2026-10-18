@@ -14,7 +14,7 @@ from .mesh_contact_reconciliation import (
 )
 from .mesh_contacts import verify_contact_card_signature
 from .mesh_envelope import Peer
-from .mesh_outbox import MeshOutbox, REPLAY_NAMESPACE, SCHEMA as OUTBOX_SCHEMA, _canonical
+from .mesh_outbox import MeshOutbox, REPLAY_NAMESPACE, SCHEMAS as OUTBOX_SCHEMAS, _canonical
 from .message_contacts import RecipientID
 from .public_workflow_store import PublicWorkflowStore, SCHEMA as PUBLIC_SCHEMA
 from .workflow_store import WorkflowUnavailable
@@ -119,7 +119,7 @@ class OwnerLedgerInspection:
             scope = dict(sender=receipt.sender.to_dict(), receipt_id=receipt.message_id)
             expected = dict(schema='sage.lantern.mesh-receipt-replay.v1', receiver=outbox.sender.to_dict(),
                 scope=scope, receipt_digest=receipt.digest, original_id=body['message_id'],
-                original_digest=body['approved']['content_digest'])
+                original_digest=receipt.original_digest)
             slot_scope = dict(schema='sage.lantern.mesh-receipt-slot.v1', receiver=outbox.sender.to_dict(),
                 original_id=body['message_id'], kind=receipt.kind)
             for binding, key_scope, method in (
@@ -193,7 +193,7 @@ class OwnerLedgerInspection:
                 guard=lambda action: False, verify_contact=lambda action: False)
             body = row['payload'].get('body', {})
             schema = body.get('schema')
-            if schema == OUTBOX_SCHEMA:
+            if schema in OUTBOX_SCHEMAS:
                 self.terminal_outbox(outbox, row)
             else:
                 methods = {'sage.lantern.mesh-receipt-replay.v1': 'LANTERN-OUTBOX-RECEIPT-REPLAY',
@@ -202,12 +202,12 @@ class OwnerLedgerInspection:
                 outbox._verify_proof(row['payload'], method=methods[schema])
                 require(body['original_id'] in self.rows)
                 original = self.terminal_outbox(outbox, self.rows[body['original_id']])
-                require(body['original_digest'] == original['approved']['content_digest'])
                 found = False
                 for item in original['receipts']:
                     receipt = outbox._receipt(original, item['wire'], item['verified_at'])
                     scope = dict(sender=receipt.sender.to_dict(), receipt_id=receipt.message_id)
                     if body.get('scope') == scope and body.get('receipt_digest') == receipt.digest:
+                        require(body['original_digest'] == receipt.original_digest)
                         key_scope = scope if schema.endswith('replay.v1') else dict(schema=schema,
                             receiver=outbox.sender.to_dict(), original_id=original['message_id'], kind=receipt.kind)
                         require(row['record_id'] == str(uuid.uuid5(REPLAY_NAMESPACE, _canonical(key_scope).decode('ascii'))))

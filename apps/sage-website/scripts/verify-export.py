@@ -30,7 +30,18 @@ assert 'sharing a notebook' not in home
 assert '/images/hardware-20260930.jpg' in home and '/images/hardware-20260930.jpg' in hardware
 assert 'dhillon@sage.ngo' in home and 'dhillon@sage.ngo' in hardware
 assert '6.5' in hardware
-assert 'https://sage.ngo/hardware/' in hardware
+assert 'https://sage-foundation.net/hardware/' in hardware
+# 2026-10-01 owner direction: sage-foundation.net is the primary domain and
+# sage.ngo and sage-commons.org are secondary, so every page must consolidate
+# to the primary canonical host. The only allowed sage.ngo reference in page
+# HTML is the public contact address.
+for name in pages:
+    html=(root/name).read_text()
+    assert f'<link rel="canonical" href="https://sage-foundation.net' in html, name
+    assert 'sage.ngo' not in html.replace('dhillon@sage.ngo',''), name
+assert 'https://sage-foundation.net/sitemap.xml' in (root/'robots.txt').read_text()
+sitemap=(root/'sitemap.xml').read_text()
+assert sitemap.count('https://sage-foundation.net/')==4 and 'sage.ngo' not in sitemap
 assert 'Untitled site' not in home+hardware
 assert 'dhillon@sage.ngo' in foundation
 # Owner instruction 2026-09-21: the per-part licence set is withdrawn until it

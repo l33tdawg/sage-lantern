@@ -1,6 +1,7 @@
 [Unit]
 Description=SAGE Lantern sovereign personal SAGE node
-After=local-fs.target network.target
+After=local-fs.target network.target sage-lantern-embed-shim.service
+Wants=sage-lantern-embed-shim.service
 ConditionPathExists=/etc/sage-lantern-device-lock.enabled
 ConditionPathExists=/etc/sage-lantern/appliance-installed.json
 ConditionFileNotEmpty=/var/lib/sage-lantern/sage-personal/config.yaml

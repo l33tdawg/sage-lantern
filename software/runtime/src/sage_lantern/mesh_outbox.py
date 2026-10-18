@@ -20,7 +20,7 @@ import uuid
 from nacl.signing import SigningKey, VerifyKey
 
 from .mesh_contacts import MAX_WINDOW_SECONDS, VerifiedMeshContact
-from .mesh_envelope import Peer, seal_message, open_envelope, correlate_receipt
+from .mesh_envelope import Peer, seal_message, open_envelope, correlate_receipt, message_digest
 from .mesh_fragments import split_envelope
 from .meshcore_transport import MeshCoreClient, SendReceipt
 from .message_contacts import RecipientID
@@ -28,6 +28,9 @@ from .workflow_store import MAX_REVISION, WorkflowNotFound, WorkflowStore, Workf
 
 
 SCHEMA = 'sage.lantern.mesh-outbound.v1'
+ATTEMPT_SCHEMA = 'sage.lantern.mesh-outbound.v2'
+SCHEMAS = (SCHEMA, ATTEMPT_SCHEMA)
+MAX_APPROVALS = 8  # Never evict a digest while a delayed receipt can reference it.
 METHOD = 'LANTERN-OUTBOX'
 PATH = '/sage-lantern/mesh-outbound/v1'
 MAX_ATTEMPTS = 256
@@ -239,17 +242,24 @@ class MeshOutbox:
         return self._check(action)
 
     def _validate(self, body, message_id, revision):
-        if (type(body) is not dict or set(body) != {'schema', 'message_id', 'revision', 'approved',
+        fields = {'schema', 'message_id', 'revision', 'approved',
                 'state', 'next_fragment', 'dispatch_timestamp', 'attempts', 'retry_binding',
                 'approval_proof', 'receipts'}
-                or body['schema'] != SCHEMA or body['message_id'] != message_id or body['revision'] != revision):
+        v2 = type(body) is dict and body.get('schema') == ATTEMPT_SCHEMA
+        if v2:
+            fields.add('attempt_history')
+        if (type(body) is not dict or set(body) != fields
+                or body['schema'] not in SCHEMAS or body['message_id'] != message_id or body['revision'] != revision):
             raise MeshOutboxError()
         _uuid(message_id)
         _integer(body['revision'], 1, MAX_REVISION)
         approved = body['approved']
-        if (type(approved) is not dict or set(approved) != {'sender', 'recipient', 'radio_public_key',
+        approved_fields = {'sender', 'recipient', 'radio_public_key',
                 'wire', 'wire_hash', 'content_digest', 'approval_binding', 'consent_binding',
-                'issued_at', 'expires_at', 'content'} or approved['sender'] != self.sender.to_dict()):
+                'issued_at', 'expires_at', 'content'}
+        if v2:
+            approved_fields |= {'attempt_id', 'logical_issued_at', 'logical_expires_at'}
+        if (type(approved) is not dict or set(approved) != approved_fields or approved['sender'] != self.sender.to_dict()):
             raise MeshOutboxError()
         for peer in (approved['sender'], approved['recipient']):
             if type(peer) is not dict or set(peer) != {'chain_id', 'public_key'}:
@@ -266,16 +276,43 @@ class MeshOutbox:
         if (type(content) is not str or not content.strip() or not 1 <= len(content.encode('utf-8')) <= 512
                 or any(ord(char) < 32 and char not in '\n\t' for char in content)):
             raise MeshOutboxError()
-        original = dict(schema='sage.lantern.mesh-peer.v1', sender=approved['sender'], recipient=approved['recipient'],
-                        message_id=message_id, kind='message', issued_at=approved['issued_at'],
-                        expires_at=approved['expires_at'], content=content, original_id=None, original_digest=None)
-        digest = hashlib.sha256(json.dumps(original, sort_keys=True, ensure_ascii=False,
-                                          separators=(',', ':')).encode('utf-8')).hexdigest()
+        peer = Peer(approved['recipient']['chain_id'], bytes.fromhex(approved['recipient']['public_key']))
+        def digest_for(attempt):
+            fields = dict(sender=self.sender, recipient=peer, message_id=message_id, content=content,
+                          issued_at=attempt['issued_at'], expires_at=attempt['expires_at'])
+            if attempt.get('attempt_id') is not None:
+                fields.update(attempt_id=attempt['attempt_id'], logical_issued_at=approved['logical_issued_at'],
+                              logical_expires_at=approved['logical_expires_at'])
+            return message_digest(**fields)
+        digest = digest_for(approved)
         if digest != approved['content_digest']:
             raise MeshOutboxError()
+        if v2:
+            history = body['attempt_history']
+            if type(history) is not list or not 2 <= len(history) <= MAX_APPROVALS:
+                raise MeshOutboxError()
+            seen_attempts = {message_id}
+            previous = None
+            for index, attempt in enumerate(history):
+                if (type(attempt) is not dict or set(attempt) != {'attempt_id', 'content_digest', 'issued_at', 'expires_at'}
+                        or type(attempt['content_digest']) is not str or attempt['content_digest'] != digest_for(attempt)):
+                    raise MeshOutboxError()
+                if index == 0:
+                    if (attempt['attempt_id'] is not None or attempt['issued_at'] != approved['logical_issued_at']
+                            or attempt['expires_at'] != approved['logical_expires_at']):
+                        raise MeshOutboxError()
+                else:
+                    _uuid(attempt['attempt_id'])
+                    if attempt['attempt_id'] in seen_attempts or attempt['issued_at'] < previous['expires_at']:
+                        raise MeshOutboxError()
+                    seen_attempts.add(attempt['attempt_id'])
+                previous = attempt
+            if history[-1] != self._attempt(approved):
+                raise MeshOutboxError()
         self._verify_proof(body['approval_proof'], method='LANTERN-OUTBOX-APPROVAL',
                            expected=dict(message_id=message_id, approved=approved))
-        if type(approved['wire']) is not str or not approved['wire'].startswith('LME1.'):
+        prefix = 'LME2.' if v2 else 'LME1.'
+        if type(approved['wire']) is not str or not approved['wire'].startswith(prefix):
             raise MeshOutboxError()
         wire = approved['wire'].encode('ascii')
         fragments = split_envelope(wire)
@@ -321,6 +358,11 @@ class MeshOutbox:
                 or (expected_state is None and body['state'] in ('delivered', 'read'))):
             raise MeshOutboxError()
         return fragments
+
+    @staticmethod
+    def _attempt(approved):
+        return dict(attempt_id=approved.get('attempt_id'), content_digest=approved['content_digest'],
+                    issued_at=approved['issued_at'], expires_at=approved['expires_at'])
 
     def _proof(self, body, method=METHOD):
         headers = self.identity.sign_request(method, PATH, _canonical(body), timestamp=self._now())
@@ -508,8 +550,8 @@ class MeshOutbox:
         """Renew the signed approval of a row whose own window has lapsed.
 
         Owner decision 2026-09-13: a message the owner approved is a durable local
-        artifact, and what expires is the approval - not the message. So a row
-        that never left the unit can be approved again: same message id, same
+        artifact, and what expires is the approval - not the message. A row
+        can be approved again: same logical message id, same
         recipient, same radio key and same content, carrying a fresh window.
 
         Two things cannot be reused. The wire is signed over its own
@@ -520,6 +562,12 @@ class MeshOutbox:
         changed, the fragment cursor restarts at zero: any fragment already on
         the wire belongs to the lapsed envelope and cannot be mixed with the new
         one.
+
+        The renewed v2 envelope has a distinct attempt UUID and retains the
+        original content/recipient/window commitment. A single CAS upgrades the
+        v1 row and retains bounded attempt digests for delayed receipts. Refuse
+        when that history is full; never forget a prior attempt to make room.
+        Both endpoints must support LME2; there is no v1 renewal fallback.
 
         Only a lapsed row that has not been confirmed is eligible: queued,
         mid-wire, or waiting for a receipt it never got. A delivered/read row is
@@ -546,14 +594,23 @@ class MeshOutbox:
             if not now < expires_at:
                 raise MeshOutboxError()
             recipient = Peer(approved['recipient']['chain_id'], bytes.fromhex(approved['recipient']['public_key']))
+            history = body.get('attempt_history', [self._attempt(approved)])
+            if len(history) >= MAX_APPROVALS:
+                raise MeshOutboxError()
+            logical_issued_at = approved.get('logical_issued_at', approved['issued_at'])
+            logical_expires_at = approved.get('logical_expires_at', approved['expires_at'])
+            attempt_id = str(uuid.uuid4())
             sealed = seal_message(self.identity._signing_key, sender=self.sender, recipient=recipient,
                                   message_id=message_id, content=approved['content'],
-                                  issued_at=now, expires_at=expires_at)
+                                  issued_at=now, expires_at=expires_at, attempt_id=attempt_id,
+                                  logical_issued_at=logical_issued_at, logical_expires_at=logical_expires_at)
             renewed = {**approved, 'wire': sealed.wire,
                        'wire_hash': hashlib.sha256(sealed.wire.encode('ascii')).hexdigest(),
                        'content_digest': sealed.digest, 'approval_binding': approval_binding,
-                       'consent_binding': consent_binding, 'issued_at': now, 'expires_at': expires_at}
-            body = {**body, 'approved': renewed, 'state': 'queued', 'next_fragment': 0,
+                       'consent_binding': consent_binding, 'issued_at': now, 'expires_at': expires_at,
+                       'attempt_id': attempt_id, 'logical_issued_at': logical_issued_at, 'logical_expires_at': logical_expires_at}
+            body = {**body, 'schema': ATTEMPT_SCHEMA, 'approved': renewed, 'state': 'queued', 'next_fragment': 0,
+                    'attempt_history': history + [self._attempt(renewed)],
                     'dispatch_timestamp': None, 'attempts': 0, 'retry_binding': ''}
             action = self._action(body, 'reapprove', approval_binding)
             self._contact(action)
@@ -594,10 +651,17 @@ class MeshOutbox:
                 raise MeshOutboxError()
             window_end = body['approved']['expires_at']
             action = self._action(body, 'dispatch')
-            def check():
+            # The journal adapter calls its access guard around every storage
+            # read and CAS. Resolving the signed contact inside that guard
+            # recursively pays for another index/card scan each time. Keep
+            # those guards live, but bracket each journal write with contact
+            # resolution at this layer; RF admission still resolves it afresh.
+            def journal_check():
                 return (access_check() is True
                         and body['approved']['issued_at'] <= self._now() < body['approved']['expires_at']
-                        and self._contact(action))
+                        and self._check(action))
+            def check():
+                return journal_check() and self._contact(action)
             if check() is not True:
                 raise MeshOutboxError()
             # One fragment, one contact read. The runtime already refreshed the
@@ -614,7 +678,7 @@ class MeshOutbox:
             prefix = inventory.unique_prefix(action.radio_public_key)
             stamp = body['dispatch_timestamp'] or radio_timestamp
             body = self._put({**body, 'state': 'dispatching', 'dispatch_timestamp': stamp,
-                              'attempts': body['attempts'] + 1}, body['revision'], check)
+                              'attempts': body['attempts'] + 1}, body['revision'], journal_check)
             cas_done = True
             if check() is not True:
                 raise MeshOutboxError()
@@ -628,7 +692,9 @@ class MeshOutbox:
             index = body['next_fragment'] + 1
             body = self._put({**body, 'next_fragment': index, 'dispatch_timestamp': None,
                               'state': 'awaiting_receipt' if index == len(fragments) else 'queued',
-                              'retry_binding': ''}, body['revision'], check)
+                              'retry_binding': ''}, body['revision'], journal_check)
+            if check() is not True:
+                raise MeshOutboxError()
             return self._progress(body)
         except Exception:
             if rf_started or cas_done:
@@ -746,9 +812,13 @@ class MeshOutbox:
         peer = Peer(approved['recipient']['chain_id'], bytes.fromhex(approved['recipient']['public_key']))
         receipt = open_envelope(wire, self.identity._signing_key, expected_sender=peer,
                                 expected_recipient=self.sender, now=now)
+        history = body.get('attempt_history', [self._attempt(approved)])
+        matches = [attempt for attempt in history if attempt['content_digest'] == receipt.original_digest]
+        if len(matches) != 1:
+            raise MeshOutboxError()
         correlate_receipt(receipt, original_sender=self.sender, original_recipient=peer,
-                          original_id=body['message_id'], original_digest=approved['content_digest'],
-                          original_issued_at=approved['issued_at'])
+                          original_id=body['message_id'], original_digest=matches[0]['content_digest'],
+                          original_issued_at=matches[0]['issued_at'])
         return receipt
 
     def _receipt_binding(self, record_id, expected, method, access_check, *, create):
@@ -772,7 +842,7 @@ class MeshOutbox:
         record_id = str(uuid.uuid5(REPLAY_NAMESPACE, _canonical(scope).decode('ascii')))
         expected = dict(schema='sage.lantern.mesh-receipt-replay.v1', receiver=self.sender.to_dict(),
                         scope=scope, receipt_digest=receipt.digest, original_id=body['message_id'],
-                        original_digest=body['approved']['content_digest'])
+                        original_digest=receipt.original_digest)
         method = 'LANTERN-OUTBOX-RECEIPT-REPLAY'
         if create:
             slot_scope = dict(schema='sage.lantern.mesh-receipt-slot.v1', receiver=self.sender.to_dict(),
@@ -826,4 +896,4 @@ class MeshOutbox:
         if access_check() is not True or self._check(action) is not True:
             raise MeshOutboxError()
         return SentMessage(self._progress(body), action.recipient, body['approved']['content'],
-                           body['approved']['issued_at'])
+                           body['approved'].get('logical_issued_at', body['approved']['issued_at']))

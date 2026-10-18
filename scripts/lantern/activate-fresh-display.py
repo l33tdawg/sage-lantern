@@ -159,7 +159,7 @@ class Native:
         require(set(expected) == {'schema', 'attempt_id', 'unit_id', 'boot_id', 'files',
             'session', 'policy', 'auth_process', 'auth_dropins'})
         require(expected['schema'] == 'sage.lantern.fresh-display.v1'
-            and expected['unit_id'] in ('unit-a', 'unit-b'))
+            and expected['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
         require(str(uuid.UUID(expected['attempt_id'])) == expected['attempt_id']
             and uuid.UUID(expected['attempt_id']).int > 0)
         require(str(uuid.UUID(expected['boot_id'])) == expected['boot_id']

@@ -46,6 +46,67 @@ class ControlTests(unittest.TestCase):
             self.control.start(request_id)
         self.assertEqual(caught.exception.code, "stale_request")
 
+    def test_confirmation_is_repeatable_and_never_extends_the_capture_lease(self):
+        request_id, response = self.start()
+        before = dict(self.control.owner)
+        self.now = 3
+        expected = {"session_id": response["session_id"], "request_id": request_id, "status": "current"}
+        for _ in range(2):
+            self.assertEqual(self.control.confirm_start(request_id, response["session_id"], response["token"]), expected)
+            self.assertEqual(self.control.owner, before)
+        self.control.take(False)
+        self.assertEqual(self.control.confirm_start(request_id, response["session_id"], response["token"]), expected)
+        self.now = 4
+        with self.assertRaises(MODULE.ControlError):
+            self.control.confirm_start(request_id, response["session_id"], response["token"])
+
+    def test_confirmation_rejects_wrong_request_or_credentials_without_mutating_owner(self):
+        request_id, response = self.start()
+        before = dict(self.control.owner)
+        for request, session, token in [(str(uuid.uuid4()), response["session_id"], response["token"]),
+                                        (request_id, str(uuid.uuid4()), response["token"]),
+                                        (request_id, response["session_id"], "wrong-secret")]:
+            with self.assertRaises(MODULE.ControlError) as caught:
+                self.control.confirm_start(request, session, token)
+            self.assertEqual(caught.exception.code, "session_mismatch")
+            self.assertEqual(self.control.owner, before)
+
+    def test_takeover_before_confirmation_preserves_the_physical_owner(self):
+        request_id, delayed_reply = self.start()
+        self.control.finish(delayed_reply["session_id"])
+        physical = self.control.take(True)
+        before = dict(self.control.owner)
+        with self.assertRaises(MODULE.ControlError) as caught:
+            self.control.confirm_start(request_id, delayed_reply["session_id"], delayed_reply["token"])
+        self.assertEqual(caught.exception.code, "session_mismatch")
+        self.assertEqual(self.control.owner, before)
+        self.assertEqual(self.control.owner["session_id"], physical["session_id"])
+
+    def test_old_confirmation_cannot_touch_a_new_touch_owner(self):
+        request_id, delayed_reply = self.start()
+        self.control.finish(delayed_reply["session_id"])
+        self.start()
+        before = dict(self.control.owner)
+        with self.assertRaises(MODULE.ControlError):
+            self.control.confirm_start(request_id, delayed_reply["session_id"], delayed_reply["token"])
+        self.assertEqual(self.control.owner, before)
+
+    def test_stopped_cancelled_processing_and_quiescing_captures_are_not_admitted(self):
+        for action in ("stop", "cancel", "processing", "quiesce"):
+            with self.subTest(action=action):
+                control = MODULE.VoiceControl(30)
+                request_id = str(uuid.uuid4())
+                _, response = control.start(request_id)
+                control.take(False)
+                if action == "quiesce":
+                    control.quiesce()
+                else:
+                    control.command("stop" if action == "processing" else action, response["session_id"], response["token"])
+                    if action == "processing":
+                        self.assertTrue(control.begin_processing(response["session_id"]))
+                with self.assertRaises(MODULE.ControlError):
+                    control.confirm_start(request_id, response["session_id"], response["token"])
+
     def test_expired_disconnected_touch_cannot_stop_or_process(self):
         _, response = self.start()
         self.now = 4
@@ -276,6 +337,29 @@ class HttpTests(unittest.TestCase):
         for path in ("/keepalive", "/stop", "/cancel"):
             self.assertEqual(self.request(path, credentials)[0], 200)
 
+    def test_confirmation_http_correlates_the_request_and_fails_after_takeover(self):
+        request_id = str(uuid.uuid4())
+        _, response, _ = self.request(payload={"request_id": request_id})
+        confirmation = {"request_id": request_id, "session_id": response["session_id"], "token": response["token"]}
+        self.assertEqual(self.request("/start/confirm", confirmation)[:2],
+                         (200, {"session_id": response["session_id"], "request_id": request_id, "status": "current"}))
+        self.control.finish(response["session_id"])
+        self.control.take(True)
+        before = dict(self.control.owner)
+        self.assertEqual(self.request("/start/confirm", confirmation)[:2], (409, {"error": "session_mismatch"}))
+        self.assertEqual(self.control.owner, before)
+
+    def test_confirmation_rejects_malformed_or_duplicated_payloads(self):
+        request_id = str(uuid.uuid4())
+        _, response, _ = self.request(payload={"request_id": request_id})
+        value = {"request_id": request_id, "session_id": response["session_id"], "token": response["token"]}
+        for bad in [{}, {**value, "extra": True}, {**value, "request_id": "invalid"},
+                    {**value, "session_id": 42}, {**value, "token": "\u2603"}]:
+            self.assertEqual(self.request("/start/confirm", bad)[0], 400)
+        raw = ('{"request_id":"%s","request_id":"%s","session_id":"%s","token":"%s"}'
+               % (request_id, request_id, response["session_id"], response["token"])).encode()
+        self.assertEqual(self.request("/start/confirm", raw=raw)[0], 400)
+
     def test_origin_host_headers_and_lengths_fail_closed(self):
         cases = [
             ("Origin", None), ("Origin", "null"), ("Origin", "https://evil.example"),
@@ -321,7 +405,8 @@ class HttpTests(unittest.TestCase):
     def test_health_is_metadata_only_and_get_never_starts(self):
         changes = {"Content-Length": "0", "Origin": None}
         status, response, _ = self.request("/health", method="GET", changes=changes)
-        self.assertEqual((status, response), (200, {"touch_ready": True, "busy": False, "photo_ready": False, "correction_ready": False, "review_ready": False}))
+        self.assertEqual((status, response), (200, {"touch_ready": True, "busy": False, "photo_ready": False,
+                                                   "correction_ready": False, "review_ready": False, "typed_ready": False}))
         self.assertEqual(self.request("/start", method="GET", changes=changes)[0], 404)
         self.assertFalse(self.control.busy())
 
@@ -330,7 +415,7 @@ class HttpTests(unittest.TestCase):
             "Content-Length": "0", "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "content-type, x-lantern-voice",
         }
-        for path in ("/start", "/stop", "/cancel", "/keepalive"):
+        for path in ("/start", "/start/confirm", "/stop", "/cancel", "/keepalive"):
             status, _, response = self.request(path, method="OPTIONS", changes=headers)
             self.assertEqual(status, 200)
             self.assertEqual(response["Access-Control-Allow-Headers"], "Content-Type, X-Lantern-Voice")

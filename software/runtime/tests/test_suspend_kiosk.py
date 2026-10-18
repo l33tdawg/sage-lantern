@@ -397,7 +397,7 @@ class InstalledBindingTests(unittest.TestCase):
             return load_kiosk_binding()
 
     def test_installed_a_and_b_bind_exact_profile_account_and_uid(self):
-        for unit, account, uid in (("unit-a", "radxa", 1000), ("unit-b", "operator", 1001)):
+        for unit, account, uid in (("unit-a", "radxa", 1000), *(("unit-" + letter, "operator", 1001) for letter in "bcdef")):
             with self.subTest(unit=unit):
                 binding = self.load(self.records(unit, account), account, uid)
                 profile = f"/home/{account}/.config/sage-lantern/{unit}/chromium"
@@ -471,7 +471,7 @@ class FreshKioskTests(unittest.TestCase):
         return binding, backend, kiosk
 
     def test_fresh_a_b_discover_preflight_quiesce_and_resume(self):
-        for unit, account, uid in (("unit-a", "radxa", 1000), ("unit-b", "operator", 1001)):
+        for unit, account, uid in (("unit-a", "radxa", 1000), *(("unit-" + letter, "operator", 1001) for letter in "bcdef")):
             with self.subTest(unit=unit):
                 binding, backend, kiosk = self.fixture(unit, account, uid)
                 self.assertEqual(discover_launcher(binding=binding, launcher_pid=1735, backend=backend).start_ticks, 12345)

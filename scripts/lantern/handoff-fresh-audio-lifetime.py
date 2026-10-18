@@ -86,7 +86,7 @@ def load(pin):
 
 
 def validate_unit(metadata, config, unit_id):
-    require(unit_id in ('unit-a', 'unit-b'))
+    require(unit_id in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
     pairs = [line.split('=', 1) for line in metadata.decode().splitlines()]
     require(all(len(pair) == 2 for pair in pairs))
     require(unique(pairs) == {'UNIT_ID': unit_id, 'PROVISIONING_SCHEMA': 'sage-lantern-unit-v1'}
@@ -95,7 +95,7 @@ def validate_unit(metadata, config, unit_id):
 
 def identity_boundary(tools, config, plan, receipt, account, unit_id, plan_sha, receipt_sha):
     expected = tools['identity']
-    require(tools['unit_id'] in ('unit-a', 'unit-b') and unit_id == tools['unit_id'])
+    require(tools['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f') and unit_id == tools['unit_id'])
     require(plan['schema'] == 'sage.lantern.unit-plan.v1' and plan['unit_id'] == unit_id
         and receipt['schema'] == 'sage.lantern.fresh-app-install.v1' and receipt['unit_id'] == unit_id
         and receipt['installed'] is True and receipt['lock_required'] is True)
@@ -106,7 +106,7 @@ def identity_boundary(tools, config, plan, receipt, account, unit_id, plan_sha, 
 
 
 def documents(plan, tools, record):
-    require(plan['unit_id'] in ('unit-a', 'unit-b') and plan['unit_id'] == tools['unit_id']
+    require(plan['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f') and plan['unit_id'] == tools['unit_id']
         and sha(record) == plan['bootstrap_sha256'])
     boot = plan['boot_id']
     require(str(uuid.UUID(boot)) == boot)
@@ -127,7 +127,7 @@ def documents(plan, tools, record):
 class Native:
     def __init__(self, tools, tools_raw):
         require(type(tools) is dict and set(tools) == {'schema', 'unit_id', 'coordinator', 'adapter', 'helper', 'collector', 'runtime_wheel', 'identity', 'setup'}
-                and tools['schema'] == 'sage.lantern.fresh-audio-tools.v1' and tools['unit_id'] in ('unit-a', 'unit-b'))
+                and tools['schema'] == 'sage.lantern.fresh-audio-tools.v1' and tools['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
         self.tools, self.tools_raw = tools, tools_raw
         require(canonical(tools) == tools_raw)
         require(type(tools['identity']) is dict and set(tools['identity']) == {'unit_id', 'operator_account', 'chain_id', 'agent_id'}
@@ -153,7 +153,7 @@ class Native:
         from sage_lantern.suspend_kiosk import LinuxProcesses
         setup = self.tools['setup']
         require(type(setup) is dict and set(setup) == {'observer', 'auth_process', 'auth_dropins', 'auth_source'})
-        require(setup['observer']['sha256'] == '81142b2354e07c61962d291bd79e3d81571451d8749fd41e8d1fb4d71c3aa542'
+        require(setup['observer']['sha256'] == '513920f768bdbbea07a201d144784afb1530154e116c1e0a375af44690d081d5'
             and setup['auth_source']['path'] == '/usr/local/libexec/sage-lantern-device-auth')
         pinned(setup['auth_source'])
         observer = load(setup['observer'])

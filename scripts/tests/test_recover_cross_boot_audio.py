@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
 import pytest
 
@@ -628,3 +628,85 @@ def test_retain_requires_effective_guard_not_only_file_write(current_backend, fa
     else:
         backend.retain()
         assert checked == [MODULE.BROKER, MODULE.VOICE]
+
+
+def receive_audit(**overrides):
+    """Exactly the record sage_lantern.mesh_receive_recovery writes for this slot."""
+    operation = str(uuid4())
+    payload = dict(schema=MODULE.RECEIVE_AUDIT_SCHEMA, slot_id=SLOT, operation_id=operation,
+                   original_revision=1, original_sha256='b' * 64, recovered_at=1700000000,
+                   reason='synthetic interrupted capture', outcome=MODULE.RECEIVE_AUDIT_OUTCOME,
+                   replayed=False, delivery_claim=False)
+    payload.update(overrides)
+    identifier = str(uuid5(MODULE.RECEIVE_AUDIT_NAMESPACE,
+                           'receive-recovery:' + SLOT + ':' + payload['operation_id']))
+    return row('mesh_inbound', payload, identifier)
+
+
+def test_retained_receive_audit_is_admitted_as_unknown_without_replay_claim():
+    rows = [control(), receive_audit()]
+    before = copy.deepcopy(rows)
+    result = inventory(rows)
+    assert result == dict(sha256=MODULE.sha(MODULE.canonical(rows)), records=2,
+                          historical_outcomes='unknown')
+    assert rows == before
+
+
+@pytest.mark.parametrize('fault', ['record_id', 'slot', 'outcome', 'replayed', 'delivery_claim',
+                                   'revision', 'digest', 'reason', 'operation', 'extra_field'])
+def test_receive_audit_must_be_exactly_the_reviewed_record(fault):
+    audit = receive_audit()
+    if fault == 'record_id':
+        audit['record_id'] = str(uuid4())
+    elif fault == 'slot':
+        audit['payload']['slot_id'] = str(uuid4())
+    elif fault == 'outcome':
+        audit['payload']['outcome'] = 'drained'
+    elif fault == 'replayed':
+        audit['payload']['replayed'] = True
+    elif fault == 'delivery_claim':
+        audit['payload']['delivery_claim'] = True
+    elif fault == 'revision':
+        audit['payload']['original_revision'] = 0
+    elif fault == 'digest':
+        audit['payload']['original_sha256'] = 'not-a-digest'
+    elif fault == 'reason':
+        audit['payload']['reason'] = '   '
+    elif fault == 'operation':
+        audit['payload']['operation_id'] = 'not-a-uuid'
+    else:
+        audit['payload']['extra'] = 'field'
+    with pytest.raises(ValueError):
+        inventory([control(), audit])
+
+
+def pending_outbox_row(state='queued'):
+    body = dict(schema='sage.lantern.mesh-outbound.v1', state=state, receipts=[])
+    payload = dict(body=body, nonce='synthetic-nonce', signature='synthetic-signature', timestamp=1)
+    return row('mesh_outbound', payload, str(uuid4()))
+
+
+@pytest.mark.parametrize('state', sorted(MODULE.PENDING_OUTBOX_STATES))
+def test_pending_outbox_goes_through_the_verified_reader_not_the_terminal_path(state):
+    seen = []
+
+    def validate_outbox(entry):
+        seen.append(entry)
+        return 'retained_unknown'
+
+    rows = [control(), pending_outbox_row(state)]
+    result = MODULE.settled_inventory(rows, ACTOR, records, SLOT, validate_receiver,
+                                      owner_ledgers=object(), validate_outbox=validate_outbox)
+    assert result['records'] == 2
+    assert seen == [rows[1]]
+
+
+@pytest.mark.parametrize('state', ['delivered', 'read', 'invented'])
+def test_non_pending_outbox_never_takes_the_pending_branch(state):
+    def validate_outbox(entry):
+        pytest.fail('pending branch must not claim this row')
+
+    rows = [control(), pending_outbox_row(state)]
+    with pytest.raises((ValueError, AttributeError)):
+        MODULE.settled_inventory(rows, ACTOR, records, SLOT, validate_receiver,
+                                 owner_ledgers=object(), validate_outbox=validate_outbox)

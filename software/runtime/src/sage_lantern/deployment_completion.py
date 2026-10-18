@@ -12,7 +12,6 @@ import time
 from .deployment_drain import require, resume_root_broker, verify_root_broker_active
 from .mesh_voice_ipc import managed
 from .suspend_io import publish, read_json
-from .suspend_system import LLM
 from .suspend_transition import Phase, Snapshot
 
 
@@ -52,11 +51,11 @@ class DeploymentCompletion:
             checkpoint(name, "done")
 
         def model():
-            runner.command(["/usr/bin/systemctl", "start", LLM], timeout=30)
+            runner.command(["/usr/bin/systemctl", "start", *runner.resident_models()], timeout=30)
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 try:
-                    if runner.model_baseline_ready() is True and runner.model_idle(runner.public_json(8081, "/slots")) is True:
+                    if runner.model_baseline_ready() is True and runner.models_idle() is True:
                         return True
                 except Exception:
                     pass

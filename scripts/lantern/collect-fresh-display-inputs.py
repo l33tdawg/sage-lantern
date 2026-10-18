@@ -12,7 +12,7 @@ import types
 import uuid
 
 
-ACTIVATOR_SHA256 = '81142b2354e07c61962d291bd79e3d81571451d8749fd41e8d1fb4d71c3aa542'
+ACTIVATOR_SHA256 = '513920f768bdbbea07a201d144784afb1530154e116c1e0a375af44690d081d5'
 
 
 def require(value):
@@ -56,7 +56,7 @@ def load_activator(path):
 def collect(helper, inventory, attempt_id):
     require(type(inventory) is dict and set(inventory) == {'schema', 'unit_id', 'files', 'auth_dropins'}
         and inventory['schema'] == 'sage.lantern.display-reviewed-inventory.v1')
-    require(inventory['unit_id'] in ('unit-a', 'unit-b'))
+    require(inventory['unit_id'] in ('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'))
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
     policy = {'state': 'absent'}
     helper.parents(helper.POLICY)

@@ -1,5 +1,7 @@
 import io
 import json
+import struct
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,7 +10,7 @@ import pytest
 from sage_lantern.adapters import TEXT_MAX_TOKENS, LlamaCppHTTP, NoSpeechDetected, WhisperCppSTT
 
 
-@pytest.mark.parametrize("transcript", ["", "[music]", "( MUSIC )", "[BLANK_AUDIO]", "[noise] [applause]", "♪♫", "[silence]..."])
+@pytest.mark.parametrize("transcript", ["", "[music]", "( MUSIC )", "[BLANK_AUDIO]", "[noise] [applause]", "♪♫", "[silence]...", "(chanting)", "(chanting)\n(chanting)", "[wind blowing]", "[birds chirping]", "[spoken words]"])
 def test_whisper_rejects_annotation_only(tmp_path, transcript):
     def transcribe(command, **options):
         Path(command[command.index("-of") + 1]).with_suffix(".txt").write_text(transcript)
@@ -16,7 +18,9 @@ def test_whisper_rejects_annotation_only(tmp_path, transcript):
         WhisperCppSTT(tmp_path / "whisper", tmp_path / "model").transcribe(tmp_path / "input.wav")
 
 
-@pytest.mark.parametrize("transcript", ["music", "What song is this?", "[music] What is this?", "[spoken words]", "ما هذا؟"])
+# "[spoken words]" moved to the rejected set: it is the same shape as the
+# measured "[wind blowing]", and no rule can reject one and spare the other.
+@pytest.mark.parametrize("transcript", ["music", "What song is this?", "[music] What is this?", "ما هذا؟"])
 def test_whisper_preserves_spoken_questions(tmp_path, transcript):
     def transcribe(command, **options):
         Path(command[command.index("-of") + 1]).with_suffix(".txt").write_text(transcript)
@@ -39,8 +43,109 @@ def test_whisper_uses_measured_decoding_bounds_without_noise_suppression(tmp_pat
     assert captured[captured.index("--beam-size") + 1] == "1"
     assert captured[captured.index("--best-of") + 1] == "2"
     assert "--no-timestamps" in captured
+    # Both measured against unit C's known-silence captures
+    # (work/ember-stt-hallucination-20261011): --suppress-nst made the
+    # false-question rate worse, 6/6 against 3/6, because suppressing non-speech
+    # tokens forces the decoder to emit real words instead, and --no-speech-thold
+    # at 0.8 and 0.9 moved no clip at all.
     assert "--suppress-nst" not in captured
     assert "--no-speech-thold" not in captured
+
+
+def write_pcm_wav(path, frames, channels=1, non_zero_sample=None):
+    with wave.open(str(path), "wb") as stream:
+        stream.setnchannels(channels)
+        stream.setsampwidth(2)
+        stream.setframerate(16000)
+        samples = bytearray(frames * channels * 2)
+        if non_zero_sample is not None:
+            samples[non_zero_sample * 2] = 1
+        stream.writeframes(bytes(samples))
+    return path
+
+
+# A capture of literal zeros is answered by whisper with a word ("you" at 20 s,
+# "you\nyou\nyou" at 70 s). Neither is an annotation, so the shape test cannot
+# reject it, and the word-count rule that would has been measured to throw away
+# 112 of 168 real terse utterances. Verified digital silence is refused before
+# the decoder runs, and nothing the preflight cannot verify is inferred silent.
+def test_whisper_rejects_verified_digital_silence_without_decoding(tmp_path):
+    calls = []
+
+    def transcribe(*args, **options):
+        calls.append(args)
+
+    with patch("subprocess.run", side_effect=transcribe), pytest.raises(NoSpeechDetected, match="verified digital silence"):
+        WhisperCppSTT(tmp_path / "whisper", tmp_path / "model").transcribe(write_pcm_wav(tmp_path / "silence.wav", 16000))
+    assert calls == []
+
+
+def test_whisper_rejects_verified_digital_silence_in_a_stereo_capture(tmp_path):
+    calls = []
+
+    def transcribe(*args, **options):
+        calls.append(args)
+
+    silence = write_pcm_wav(tmp_path / "silence.wav", 16000, channels=2)
+    with patch("subprocess.run", side_effect=transcribe), pytest.raises(NoSpeechDetected, match="verified digital silence"):
+        WhisperCppSTT(tmp_path / "whisper", tmp_path / "model").transcribe(silence)
+    assert calls == []
+
+
+# The two stereo kinds are the cases a mono one cannot reach. A mono capture is
+# handed straight back by the channel check, so its incompleteness survives to the
+# preflight and is refused there; a stereo capture is downmixed first, and
+# downmixing an incomplete file used to produce a clean, self-consistent mono file
+# of zeros that the preflight then certified as verified silence. An unverifiable
+# input must not be laundered into verified evidence by the step that normalises it.
+@pytest.mark.parametrize("kind", ["one-non-zero-sample", "missing", "not-a-wav", "empty",
+                                  "truncated", "truncated-stereo", "partial-stereo-frame"])
+def test_whisper_does_not_infer_silence_from_unverified_audio(tmp_path, kind):
+    path = tmp_path / "input.wav"
+    if kind == "one-non-zero-sample":
+        write_pcm_wav(path, 16000, non_zero_sample=9000)
+    elif kind == "not-a-wav":
+        path.write_text("not audio at all")
+    elif kind == "empty":
+        write_pcm_wav(path, 0)
+    elif kind == "truncated":
+        write_pcm_wav(path, 16000)
+        path.write_bytes(path.read_bytes()[:-32])
+    elif kind == "truncated-stereo":
+        write_pcm_wav(path, 16000, channels=2)
+        path.write_bytes(path.read_bytes()[:-32])
+    elif kind == "partial-stereo-frame":
+        write_pcm_wav(path, 16000, channels=2)
+        raw = bytearray(path.read_bytes()) + b"\0"
+        raw[4:8] = struct.pack("<I", len(raw) - 8)
+        raw[40:44] = struct.pack("<I", len(raw) - 44)
+        path.write_bytes(raw)
+    # "missing" leaves the path absent: unknown audio must reach whisper rather
+    # than be reported as silence by a preflight that could not read it.
+
+    def transcribe(command, **options):
+        Path(command[command.index("-of") + 1]).with_suffix(".txt").write_text("What time is it?")
+
+    with patch("subprocess.run", side_effect=transcribe):
+        assert WhisperCppSTT(tmp_path / "whisper", tmp_path / "model").transcribe(path) == "What time is it?"
+
+
+# The preflight judges the single channel whisper is actually given, which is the
+# deployed rule's choice: a stereo pair keeps its first channel unless the two are
+# strongly anti-correlated. A dead first channel therefore reaches whisper as
+# zeros, and refusing that capture is the point - whisper would otherwise answer
+# it with a word. Nothing here picks a different channel; that rule is unchanged.
+def test_whisper_refuses_a_stereo_capture_whose_selected_channel_is_all_zeros(tmp_path):
+    path = tmp_path / "stereo.wav"
+    with wave.open(str(path), "wb") as stream:
+        stream.setnchannels(2)
+        stream.setsampwidth(2)
+        stream.setframerate(16000)
+        stream.writeframes(bytes(16000 * 2 * 2 - 2) + b"\x01\x00")
+
+    with patch("subprocess.run") as run, pytest.raises(NoSpeechDetected, match="verified digital silence"):
+        WhisperCppSTT(tmp_path / "whisper", tmp_path / "model").transcribe(path)
+    assert not run.called
 
 
 class FakeResponse:

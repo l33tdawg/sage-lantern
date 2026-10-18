@@ -11,6 +11,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 import uuid
+import hashlib
+from sage_lantern.session_context import SessionContext
 
 
 SPEC = importlib.util.spec_from_file_location("voice_lock", Path(__file__).resolve().parents[1] / "lantern/unit-a-voice-loop.py")
@@ -23,11 +25,15 @@ class VoiceLockTests(unittest.TestCase):
         self.live_token = "synthetic-device-token"
         self.original_token = self.live_token
         self.enabled = True
+        self.epoch = "a" * 32
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(MODULE.device_access, "lock_enabled", side_effect=lambda: self.enabled))
         self.authorize = self.stack.enter_context(patch.object(MODULE.device_access, "authorized", side_effect=lambda token: token == self.live_token))
         self.stack.enter_context(patch.object(MODULE.device_access, "device_unlocked", side_effect=lambda: self.live_token is not None))
+        self.context = self.stack.enter_context(patch.object(MODULE.device_access, "session_context", side_effect=
+            lambda token: SessionContext(self.epoch, hashlib.sha256(token.encode()).hexdigest())
+            if token == self.live_token and token is not None else None))
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
@@ -61,7 +67,13 @@ class VoiceLockTests(unittest.TestCase):
         headers, content = handler.wfile.getvalue().split(b"\r\n\r\n", 1)
         self.assertIn(b"Cache-Control: no-store", headers)
         self.assertNotIn(self.original_token.encode(), content)
-        return int(headers.split()[1]), json.loads(content)
+        result = json.loads(content)
+        context = result.pop("session_context", None)
+        if self.enabled and method == "POST" and int(headers.split()[1]) < 400:
+            self.assertIsNotNone(context)
+        if context is not None:
+            self.assertEqual(context, SessionContext(self.epoch, hashlib.sha256(token.encode()).hexdigest()).to_dict())
+        return int(headers.split()[1]), result
 
     def loop(self):
         loop = MODULE.VoiceLoop(argparse.Namespace(max_seconds=30, min_seconds=0.1, alsa_device="mock",
@@ -80,7 +92,7 @@ class VoiceLockTests(unittest.TestCase):
         return session
 
     def test_every_post_denies_missing_bad_and_duplicate_token(self):
-        paths = MODULE.HISTORY_PATHS | {"/start", "/clear", "/stop", "/cancel", "/keepalive", "/session/link"}
+        paths = MODULE.HISTORY_PATHS | MODULE.QUESTION_PATHS | {"/start", "/start/confirm", "/clear", "/stop", "/cancel", "/keepalive", "/session/link"}
         for path in paths:
             for token in (None, "old-token"):
                 self.assertEqual(self.request(path, token=token), (403, {"error": "device_locked"}))
@@ -90,12 +102,73 @@ class VoiceLockTests(unittest.TestCase):
         self.assertFalse(self.control.busy())
 
     def test_link_start_and_minimal_health(self):
-        self.assertEqual(self.request("/health", method="GET"), (200, {"ok": True, "correction_ready": False, "review_ready": False}))
+        self.assertEqual(self.request("/health", method="GET"), (200, {"ok": True, "correction_ready": False,
+                                                                       "review_ready": False, "typed_ready": False}))
         self.assertEqual(self.request("/session/link", token=self.live_token), (200, {"linked": True}))
         self.assertEqual(self.control.device_token, self.live_token)
         self.assertEqual(self.request("/session/link", {"extra": True}, token=self.live_token)[0], 400)
         self.assertEqual(self.request("/start", {"request_id": str(uuid.uuid4())}, token=self.live_token)[0], 201)
         self.assertEqual(self.control.owner["device_token"], self.live_token)
+
+    def test_missing_context_denies_admission_even_when_token_is_authorized(self):
+        self.context.side_effect = None
+        self.context.return_value = None
+        self.assertEqual(self.request("/start", {"request_id": str(uuid.uuid4())}, token=self.live_token),
+                         (403, {"error": "device_locked"}))
+        self.assertFalse(self.control.busy())
+
+    def test_same_token_epoch_rotation_cannot_confirm_or_command_old_work(self):
+        request_id = str(uuid.uuid4())
+        _, session = self.request("/start", {"request_id": request_id}, token=self.live_token)
+        self.epoch = "c" * 32
+        payload = {"request_id": request_id, "session_id": session["session_id"], "token": session["token"]}
+        self.assertEqual(self.request("/start/confirm", payload, token=self.live_token),
+                         (403, {"error": "device_locked"}))
+        self.assertEqual(self.request("/stop", {"session_id": session["session_id"], "token": session["token"]}, token=self.live_token),
+                         (403, {"error": "device_locked"}))
+
+    def test_publication_keeps_admission_context_and_redacts_after_rotation(self):
+        loop = self.loop()
+        session = self.admit(loop)
+        expected = self.control.session_context_for(session["session_id"]).to_dict()
+        loop.write_state = MODULE.VoiceLoop.write_state.__get__(loop)
+        loop.write_state("processing", session_id=session["session_id"], transcript="private question", response="")
+        self.assertEqual(json.loads(loop.args.state.read_text())["session_context"], expected)
+        self.epoch = "c" * 32
+        loop.write_state("complete", session_id=session["session_id"], transcript="late question", response="late answer")
+        state = json.loads(loop.args.state.read_text())
+        self.assertEqual(state["phase"], "idle")
+        self.assertNotIn("session_context", state)
+        self.assertNotIn("late", json.dumps(state))
+
+    def test_rotation_after_handler_mutation_suppresses_reply(self):
+        def query(*args):
+            self.epoch = "c" * 32
+            return {"items": ["private-canary"]}
+        self.history.request.side_effect = query
+        self.assertEqual(self.request("/history/list", token=self.live_token), (403, {"error": "device_locked"}))
+
+    def test_same_token_rotation_clears_cached_conversation_on_relink(self):
+        self.control.link_device(self.live_token)
+        self.control.completed_source = {"source_id": "old", "question": "private-canary"}
+        self.control.source_session_id = hashlib.sha256(self.live_token.encode()).hexdigest()
+        old_revision = self.control.conversation.revision
+        self.epoch = "c" * 32
+        self.control.link_device(self.live_token)
+        self.assertIsNone(self.control.completed_source)
+        self.assertIsNone(self.control.source_session_id)
+        self.assertGreater(self.control.conversation.revision, old_revision)
+
+    def test_confirmation_is_bound_to_the_starting_device_session(self):
+        request_id = str(uuid.uuid4())
+        _, session = self.request("/start", {"request_id": request_id}, token=self.original_token)
+        payload = {"request_id": request_id, "session_id": session["session_id"], "token": session["token"]}
+        self.assertEqual(self.request("/start/confirm", payload, token=self.original_token)[0], 200)
+        self.live_token = "replacement-authorized-device-token"
+        self.assertEqual(self.request("/start/confirm", payload, token=self.live_token),
+                         (403, {"error": "device_locked"}))
+        self.assertEqual(self.request("/start/confirm", payload, token=self.original_token),
+                         (403, {"error": "device_locked"}))
 
     def test_options_allow_only_legacy_or_session_header_set(self):
         for requested in ("content-type,x-lantern-voice", "content-type,x-lantern-voice,x-lantern-session"):
