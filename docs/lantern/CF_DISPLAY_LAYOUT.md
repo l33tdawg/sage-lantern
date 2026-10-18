@@ -216,7 +216,10 @@ The current `/device` UI was rechecked through the synthetic preview at the real
 landscape panel size **1560 × 720**: the answer screen retained the 220px
 conversation sidebar, a centered readable answer column, the composer, Share
 and camera controls without clipping; the lock screen retained its two-column
-unlock layout. The portrait control at **720 × 1560** still rendered correctly.
+unlock layout. The menu, Settings and Messages screens also fit without
+clipping; Messages' left column and Settings' long forms remain candidates for
+a wider landscape polish later. The portrait control at **720 × 1560** still
+rendered correctly.
 The preview now serves the current `sage.lantern.voice-status.v1` `/voice`
 endpoint rather than the older full-status-only fixture. See
 [Desktop mode](DESKTOP_MODE.md) for the browser, skin and CEREBRUM work.
