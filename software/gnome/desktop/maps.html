@@ -24,6 +24,15 @@
     .dot { width:12px; height:12px; margin-top:5px; border-radius:50%; background:#f0a36a; box-shadow:0 0 16px #f0a36a88; flex:0 0 auto; }
     .status strong { display:block; font-size:18px; margin-bottom:3px; }
     .status small { color:var(--muted); font-size:13px; line-height:1.4; }
+    .gnss-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+    .gnss-item { padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:#0b1820; }
+    .gnss-item span { display:block; color:var(--muted); font-size:10px; letter-spacing:.12em; text-transform:uppercase; }
+    .gnss-item b { display:block; margin-top:2px; font-size:17px; }
+    .dot.bad { background:#f0a36a; box-shadow:0 0 16px #f0a36a88; }
+    .dot.ok { background:var(--good); box-shadow:0 0 16px #75e1b588; }
+    .privacy { display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--muted); font-size:13px; }
+    .privacy input { width:18px; height:18px; accent-color:var(--amber); }
+    .gnss-position { margin:10px 0 0; color:var(--ink); font-size:13px; }
     .actions { display:flex; flex-wrap:wrap; gap:9px; }
     a.button { display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:9px 13px; border:1px solid var(--line); border-radius:10px; background:#0d202b; color:var(--ink); text-decoration:none; font-size:14px; font-weight:650; }
     a.button.primary { border-color:var(--amber); background:var(--amber); color:#0b1820; }
@@ -58,12 +67,26 @@
         <text x="468" y="352" text-anchor="middle" fill="#f6fafc" font-family="system-ui,sans-serif" font-size="24" font-weight="700">Kuala Lumpur</text>
         <text x="468" y="380" text-anchor="middle" fill="#b9cbd4" font-family="system-ui,sans-serif" font-size="13" letter-spacing="2">3.1390° N · 101.6869° E</text>
         <text x="468" y="440" text-anchor="middle" fill="#b9cbd4" font-family="system-ui,sans-serif" font-size="12" letter-spacing="1.4">ILLUSTRATIVE LOCATION PANEL · LIVE TILES OPEN ONLINE</text>
+        <g id="gnss-marker" hidden transform="translate(468 245)">
+          <circle r="24" fill="none" stroke="#75e1b5" stroke-width="1.5" opacity=".35"/>
+          <circle r="9" fill="#75e1b5" stroke="#061018" stroke-width="3"/>
+        </g>
       </svg>
       <div class="map-status">Illustrative location panel · live maps open online; offline OSM pack pending.</div>
     </section>
     <aside>
       <section class="card">
-        <div class="status"><span class="dot" aria-hidden="true"></span><div><strong>GNSS receiver live · antenna open</strong><small>L76K on <code>/dev/ttyS6</code> (UART6_M1, 9600 baud) feeds <code>gpsd 3.27.5</code>. The receiver reports <code>ANTENNA OPEN</code> and TPV mode 1 with 0 satellites. Connect the GNSS antenna, then move to open sky. Use GNSS Sky View (app grid) for live satellites.</small></div></div>
+        <div class="status"><span class="dot bad" id="gnss-dot" aria-hidden="true"></span><div><strong id="gnss-state">Checking GNSS…</strong><small id="gnss-detail">Reading the loopback gpsd bridge.</small></div></div>
+        <div class="gnss-grid" aria-live="polite">
+          <div class="gnss-item"><span>Mode</span><b id="gnss-mode">—</b></div>
+          <div class="gnss-item"><span>Satellites</span><b id="gnss-sats">—</b></div>
+          <div class="gnss-item"><span>HDOP</span><b id="gnss-hdop">—</b></div>
+          <div class="gnss-item"><span>Accuracy</span><b id="gnss-accuracy">—</b></div>
+          <div class="gnss-item"><span>Update age</span><b id="gnss-age">—</b></div>
+          <div class="gnss-item"><span>Bridge</span><b id="gnss-bridge">—</b></div>
+        </div>
+        <label class="privacy"><input type="checkbox" id="gnss-position"> Show precise position</label>
+        <p class="gnss-position" id="gnss-position-text" hidden></p>
       </section>
       <section class="card">
         <h2>Online maps</h2>
@@ -84,6 +107,70 @@
       </section>
     </aside>
   </main>
+  <script>
+    (function () {
+      "use strict";
+      const statusUrl = "http://127.0.0.1:8090/status";
+      const toggle = document.getElementById("gnss-position");
+      const dot = document.getElementById("gnss-dot");
+      const state = document.getElementById("gnss-state");
+      const detail = document.getElementById("gnss-detail");
+      const marker = document.getElementById("gnss-marker");
+      const positionText = document.getElementById("gnss-position-text");
+      const set = (id, value) => { document.getElementById(id).textContent = value; };
+
+      function render(data) {
+        const fix = data && data.has_fix === true;
+        dot.className = "dot " + (fix ? "ok" : "bad");
+        state.textContent = fix ? "GNSS fix" : "No GNSS fix";
+        detail.textContent = fix
+          ? "Fresh position from the L76K receiver. The map panel is illustrative; only the fields below are live."
+          : "Showing the illustrative map. Connect the antenna and move to open sky, then use GNSS Sky View.";
+        set("gnss-mode", data && data.mode != null ? String(data.mode) : "—");
+        set("gnss-sats", data && data.satellites_used != null
+          ? data.satellites_used + " / " + data.satellites_visible : "—");
+        set("gnss-hdop", data && data.hdop != null ? Number(data.hdop).toFixed(1) : "—");
+        set("gnss-accuracy", data && data.accuracy_m != null
+          ? Number(data.accuracy_m).toFixed(1) + " m" : "—");
+        set("gnss-age", data && data.age_seconds != null
+          ? Number(data.age_seconds).toFixed(1) + " s" : "—");
+        set("gnss-bridge", data && data.ok ? "Live" : "Unavailable");
+        marker.hidden = !(fix && toggle.checked);
+        if (fix && toggle.checked && data.latitude != null && data.longitude != null) {
+          positionText.hidden = false;
+          positionText.textContent = "Live position: " + Number(data.latitude).toFixed(5) +
+            "°, " + Number(data.longitude).toFixed(5) + "°";
+        } else {
+          positionText.hidden = true;
+          positionText.textContent = "";
+        }
+      }
+
+      async function poll() {
+        const url = toggle.checked ? statusUrl + "?position=1" : statusUrl;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 1600);
+        try {
+          const response = await fetch(url, {cache: "no-store", signal: controller.signal});
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          render(await response.json());
+        } catch (error) {
+          dot.className = "dot bad";
+          state.textContent = "GNSS bridge unavailable";
+          detail.textContent = "The local status bridge at 127.0.0.1:8090 is not responding.";
+          set("gnss-mode", "—"); set("gnss-sats", "—"); set("gnss-hdop", "—");
+          set("gnss-accuracy", "—"); set("gnss-age", "—"); set("gnss-bridge", "Offline");
+          marker.hidden = true; positionText.hidden = true;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      toggle.addEventListener("change", poll);
+      poll();
+      setInterval(poll, 2000);
+    }());
+  </script>
   <footer>SAGE Lantern desktop · maps require network until the offline pack is installed · location publishing is off by default.</footer>
 </body>
 </html>

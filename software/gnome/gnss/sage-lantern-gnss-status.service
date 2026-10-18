@@ -1,0 +1,22 @@
+[Unit]
+Description=SAGE Lantern loopback GNSS status bridge
+After=network.target gpsd.service
+Wants=gpsd.service
+
+[Service]
+Type=simple
+User=sage
+Group=sage
+ExecStart=/usr/bin/python3 /opt/sage-lantern/gnss/status_bridge.py --host 127.0.0.1 --port 8090
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_INET AF_UNIX
+MemoryMax=64M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

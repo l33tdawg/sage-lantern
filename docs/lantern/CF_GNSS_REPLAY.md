@@ -78,6 +78,35 @@ location or navigation result. Connect the GNSS antenna and move to open sky,
 then re-read `gpspipe -w`/`xgps` before making any fix, accuracy or map-position
 claim.
 
+## Loopback bridge and Maps UI — 19 October 2026
+
+Unit C now runs `sage-lantern-gnss-status.service` on
+`127.0.0.1:8090`. It queries gpsd with a JSON `WATCH`, returns bounded TPV/SKY
+status, and exposes coordinates only for a fresh mode 2/3 fix when
+`/status?position=1` is explicitly requested. Mode 1, missing time, stale data,
+malformed gpsd output and a gpsd outage all fail closed. The service is
+loopback-only and sends CORS headers for the `file://` Maps page.
+
+- Bridge: `software/gnome/gnss/status_bridge.py` (`e414bdf6…`)
+- Unit: `software/gnome/gnss/sage-lantern-gnss-status.service` (`b38df316…`)
+- Maps UI: `software/gnome/desktop/maps.html` (`3efcb6f1…`)
+
+Live readback with the antenna still open:
+
+```text
+{"ok":true,"has_fix":false,"mode":1,"satellites_used":0,
+ "satellites_visible":0,"hdop":25.5,"stale":true}
+```
+
+Headless Chromium on C rendered the Maps page with **No GNSS fix**, mode **1**,
+satellites **0 / 0**, HDOP **25.5** and bridge **Live**. The privacy toggle is
+off by default; `?position=1` returns no coordinates while there is no fix.
+
+The offline pack planner is
+`software/gnome/maps-pack/build_pack.py` (`49e2ae68…`). A Penang test plan
+(bbox `100.20,5.20,100.50,5.50`, zoom `10-13`) estimated 80 tiles / 960,000
+bytes. No pack has been downloaded or installed yet.
+
 ## Verification
 
 ```sh
