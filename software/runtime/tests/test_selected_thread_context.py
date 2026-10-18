@@ -117,7 +117,7 @@ def test_short_followup_and_fresh_request_keep_current_roles_and_policy(harness)
     fresh = harness.body("Start a fresh topic.", [], [])
     assert len(fresh["messages"]) == 2
     assert rows[0]["question"] not in serialized(fresh)
-    assert body["max_tokens"] == fresh["max_tokens"] == TEXT_MAX_TOKENS == 512
+    assert body["max_tokens"] == fresh["max_tokens"] == TEXT_MAX_TOKENS == 8192
 
 
 def test_reopened_thread_recovers_earlier_constraint_under_existing_budget(harness):
@@ -246,7 +246,7 @@ def test_selected_context_byte_budget_omissions_and_exact_attribution(harness):
             assert value["omitted_count"] > 0
             assert all(row["text"] in {item["question"] for item in rows} | {item["answer"] for item in rows}
                        for row in value["entries"] if row["kind"] == "turn")
-    assert body["max_tokens"] == 512 and body["model"] == "inert-request-fixture"
+    assert body["max_tokens"] == TEXT_MAX_TOKENS and body["model"] == "inert-request-fixture"
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
 
 

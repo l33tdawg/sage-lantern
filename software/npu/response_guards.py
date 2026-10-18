@@ -51,6 +51,19 @@ PARAGRAPH_REQUEST = re.compile(
     r"[\s-]+paragraphs?\b",
     re.I,
 )
+BULLET_REQUEST = re.compile(
+    r"\b(?:exactly\s+)?(one|two|three|four|five|six|seven|eight|nine|ten|\d+)"
+    r"[\s-]+bullet(?:s|[- ]points?)?\b",
+    re.I,
+)
+BULLET_LINE = re.compile(
+    r"(?m)^\s*(?P<marker>[•◦▪‣·]|[-*+]|\d+[.)])\s+(?P<body>\S.*?)\s*$")
+BULLET_BLOCK = re.compile(
+    r"(?m)(?:^[ \t]*(?:[•◦▪‣·]|[-*+]|\d+[.)])\s+.*(?:\n|$))+")
+RETIRED_MENTION_REQUEST = re.compile(
+    r"\b(?:do\s+not|don't|never)\s+mention\b[^\n]{0,80}\bretired\b",
+    re.I,
+)
 WORD_NUMBERS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -176,6 +189,20 @@ def requested_paragraphs(messages):
     return count if 2 <= count <= 10 else None
 
 
+def requested_bullets(messages):
+    match = BULLET_REQUEST.search(_last_user_text(messages))
+    if match is None:
+        return None
+    value = match.group(1).lower()
+    count = WORD_NUMBERS.get(value)
+    if count is None:
+        try:
+            count = int(value)
+        except ValueError:
+            return None
+    return count if 1 <= count <= 10 else None
+
+
 def normalize_paragraphs(text, count):
     """Return exactly ``count`` prose paragraphs without inventing content."""
     if not isinstance(text, str) or not isinstance(count, int) or count < 2:
@@ -210,15 +237,189 @@ def normalize_paragraphs(text, count):
     return "\n\n".join(blocks[:count]) if len(blocks) >= count else "\n\n".join(blocks)
 
 
+def _bullet_key(body):
+    plain = re.sub(r"[*_`]+", "", body or "")
+    plain = re.sub(r"\s+", " ", plain).strip().lower()
+    return plain.rstrip(" .;:,!?")
+
+
+def normalize_bullets(text, count):
+    """Keep exactly ``count`` distinct bullet lines without inventing content.
+
+    A repeated bullet is removed rather than silently published twice. If the
+    model supplied fewer distinct bullets than requested, the available bullets
+    are preserved and the count remains short; this guard never manufactures a
+    replacement point.
+    """
+    if not isinstance(text, str) or not isinstance(count, int) or count < 1:
+        return text
+    matches = list(BULLET_LINE.finditer(text))
+    if len(matches) < count:
+        return text
+    unique = []
+    seen = set()
+    for match in matches:
+        body = match.group("body").strip()
+        key = _bullet_key(body)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(f"- {body}")
+        if len(unique) == count:
+            break
+    if not unique:
+        return text
+    first = matches[0]
+    last = matches[-1]
+    before = text[:first.start()].rstrip()
+    after = text[last.end():].lstrip()
+    pieces = []
+    if before:
+        pieces.append(before)
+    pieces.append("\n".join(unique))
+    if after:
+        pieces.append(after)
+    return "\n\n".join(pieces)
+
+
+def flatten_bullets_for_prose(text):
+    """Turn stray bullet blocks into prose when the user asked for paragraphs."""
+    if not isinstance(text, str):
+        return text
+
+    def flatten(match):
+        bodies = []
+        for line in match.group(0).splitlines():
+            body = BULLET_LINE.match(line)
+            if body is None:
+                continue
+            value = re.sub(r"[*_`]+", "", body.group("body")).strip()
+            if value and value[-1] not in ".!?":
+                value += "."
+            if value:
+                bodies.append(value)
+        return " ".join(bodies)
+
+    return BULLET_BLOCK.sub(flatten, text).strip()
+
+
+def _retired_pairs(messages):
+    """Extract old values from corrections in the user's conversation."""
+    pairs = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        for pattern in (
+            r"\b(?:now\s+)?(?:happens?|occurs?|scheduled)\s+(?:every\s+)?"
+            r"([A-Za-z]+)\s*,?\s+not\s+([A-Za-z]+)\b",
+            r"\b(?:now|is|are|happens?|occurs?|scheduled)\s+(?:every\s+)?"
+            r"([A-Za-z]+)\s*,?\s+not\s+([A-Za-z]+)\b",
+            r"\b([A-Za-z]+)\s+instead\s+of\s+([A-Za-z]+)\b",
+            r"\bfrom\s+([A-Za-z]+)\s+to\s+([A-Za-z]+)\b",
+        ):
+            for match in re.finditer(pattern, content, re.I):
+                if pattern.startswith(r"\bfrom"):
+                    old, new = match.group(1), match.group(2)
+                else:
+                    new, old = match.group(1), match.group(2)
+                pairs.append((old, new))
+    return pairs
+
+
+def suppress_retired_mentions(messages):
+    return bool(RETIRED_MENTION_REQUEST.search(_last_user_text(messages)))
+
+
+def strip_retired_mentions(messages, text):
+    """Remove retired values when the latest request explicitly excludes them."""
+    if not isinstance(text, str) or not suppress_retired_mentions(messages):
+        return text
+    pairs = _retired_pairs(messages)
+    if not pairs:
+        return text
+    result = text
+    for old, new in pairs:
+        old_re = re.escape(old)
+        new_re = re.escape(new)
+        result = re.sub(
+            rf",?\s+not\s+{old_re}\b", "", result, flags=re.I)
+        result = re.sub(
+            rf"\s+instead\s+of\s+{old_re}\b", "", result, flags=re.I)
+        result = re.sub(
+            rf"\bfrom\s+{old_re}\s+to\s+({new_re})\b", r"to \1", result, flags=re.I)
+    old_values = {old.lower() for old, _ in pairs}
+    blocks = []
+    for block in re.split(r"\n\s*\n", result):
+        sentences = re.split(r"(?<=[.!?])\s+", block)
+        kept = [
+            sentence for sentence in sentences
+            if not any(re.search(rf"\b{re.escape(old)}\b", sentence, re.I)
+                       for old in old_values)
+        ]
+        if kept:
+            blocks.append(" ".join(kept).strip())
+    if blocks:
+        result = "\n\n".join(blocks)
+    return re.sub(r"\s+([,.;:!?])", r"\1", result).strip()
+
+
+def correct_current_retired_claims(messages, text):
+    """Replace a retired value only when it is stated as the current value.
+
+    Historical or contrastive statements ("was amber", "changed from amber to
+    teal") are left intact; a guard must not erase the correction history.
+    """
+    if not isinstance(text, str):
+        return text
+    pairs = _retired_pairs(messages)
+    if not pairs:
+        return text
+    result = text
+    for old, new in pairs:
+        old_re, new_re = re.escape(old), re.escape(new)
+        result = re.sub(
+            rf"(?i)\b((?:the\s+)?(?:intake\s+)?label(?:\s+for\s+tools)?\s+"
+            rf"(?:is|remains|stays)\s+){old_re}\b",
+            rf"\g<1>{new}",
+            result,
+        )
+        result = re.sub(
+            rf"(?i)\b((?:safety\s+)?reviews?\s+(?:are|is|happen|happens|occur|occurs)\s+"
+            rf"(?:on\s+|every\s+)?){old_re}\b",
+            rf"\g<1>{new}",
+            result,
+        )
+        result = re.sub(
+            rf"(?i)\b{old_re}(\s+(?:intake\s+)?label)\b",
+            rf"{new}\1",
+            result,
+        )
+    return result
+
+
 def longform_text(messages, model_text):
+    text = correct_current_retired_claims(messages, model_text)
+    text = strip_retired_mentions(messages, text)
     count = requested_paragraphs(messages)
-    if count is None or TOOL_CALL.fullmatch(model_text or ""):
-        return model_text
-    return normalize_paragraphs(model_text, count)
+    bullets = requested_bullets(messages)
+    if count is not None and bullets is None:
+        text = flatten_bullets_for_prose(text)
+    if count is not None and not TOOL_CALL.fullmatch(text or ""):
+        text = normalize_paragraphs(text, count)
+    if bullets is not None and not TOOL_CALL.fullmatch(text or ""):
+        text = normalize_bullets(text, bullets)
+    return text
 
 
 def needs_longform_post_guard(messages):
-    return requested_paragraphs(messages) is not None
+    return (
+        requested_paragraphs(messages) is not None
+        or requested_bullets(messages) is not None
+        or suppress_retired_mentions(messages)
+    )
 
 
 def _private_owner_target(text):

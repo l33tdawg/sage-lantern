@@ -1,0 +1,205 @@
+{
+  "profile": "extended",
+  "max_tokens": 8192,
+  "completed_turns": 7,
+  "requested_turns": 7,
+  "checks": {
+    "turn1_four_paragraphs": true,
+    "turn1_long_form": true,
+    "turn1_not_truncated_by_cap": true,
+    "correction_turn": true,
+    "four_bullets": true,
+    "four_unique_bullets": true,
+    "final_three_paragraphs": true,
+    "final_uses_friday": true,
+    "final_uses_teal": true,
+    "final_uses_two_people": true,
+    "final_retired_values_absent": true,
+    "turn7_nonempty": true
+  },
+  "all_checks_pass": true,
+  "turns": [
+    {
+      "turn": 1,
+      "ok": true,
+      "text": "The access workflow for Harborlight Tool Library is designed to ensure that tools are securely managed and available to those who need them. Each tool is assigned a unique identifier and stored in a centralized database. When a tool is requested, the system checks the database to confirm its availability and location. Tools are returned to the library after use, and the system updates the database accordingly. To enhance security, the intake process uses the amber label to identify high-risk tools. Tools with this label require additional verification and may be reserved for specific users or groups. The volunteer handover process at Harborlight Tool Library is crucial for maintaining a smooth workflow and ensuring that tools are always available when needed.\n\nVolunteers are trained to follow a standardized procedure for checking in and out of tools. When a volunteer checks in a tool, they scan the tool with a barcode scanner to update the database. Similarly, when a volunteer checks out a tool, they enter the tool's identifier into the system and confirm the user's identity. To ensure accuracy, the system requires two people to test high-risk tools, as specified in the facts. This dual-person test helps prevent errors and ensures that only authorized users have access to these tools. The maintenance of Harborlight Tool Library is essential to ensure that tools are always in good working condition and ready for use. Regular inspections are conducted to identify any tools that may need repair or replacement.\n\nTools are tagged with a green label to indicate that they are in good condition and ready for use. Tools that require repair are tagged with a red label and are placed in a designated repair area. The maintenance process is automated to minimize downtime and ensure that tools are always available when needed. To maintain the integrity of the system, safety reviews are conducted every Wednesday. These reviews ensure that all tools are functioning properly and that the maintenance process is efficient and effective. Safety is a top priority at Harborlight Tool Library. The intake process uses the amber label to identify high-risk tools, which require additional testing and verification.\n\nThis ensures that only authorized users have access to these tools and that they are used safely. Safety reviews are conducted every Wednesday to ensure that all tools are functioning properly and that the maintenance process is efficient and effective. To further enhance safety, the system requires two people to test high-risk tools, as specified in the facts. This dual-person test helps prevent errors and ensures that only authorized users have access to these tools. Regular inspections are conducted to identify any tools that may need repair or replacement, and tools are tagged with a green label to indicate that they are in good condition and ready for use. Tools that require repair are tagged with a red label and are placed in a designated repair area. The maintenance process is automated to minimize downtime and ensure that tools are always available when needed.",
+      "ttft_ms": 81621.27883313224,
+      "total_ms": 81621.38116615824,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 501,
+        "total_tokens": 501
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 501,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 4,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 509,
+      "at_cap": false
+    },
+    {
+      "turn": 2,
+      "ok": true,
+      "text": "The maintenance calendar for Harborlight Tool Library is designed to ensure that all tools are in good working condition and that the system is always available when needed. Tools are inspected monthly to identify any issues that may require repair or replacement. Tools are tagged with a green label to indicate that they are in good condition and ready for use. Tools that require repair are tagged with a red label and are placed in a designated repair area.\n\nThe maintenance process is automated to minimize downtime and ensure that tools are always available when needed. Safety reviews are conducted every Wednesday to ensure that all tools are functioning properly and that the maintenance process is efficient and effective. Tools are tagged with a green label to indicate that they are in good condition and ready for use. Tools that require repair are tagged with a red label and are placed in a designated repair area.\n\nThe maintenance process is automated to minimize downtime and ensure that tools are always available when needed. For example, let's say a volunteer checks out a high-risk tool from the Harborlight Tool Library. The tool is tagged with the amber label, indicating that it requires additional testing. The volunteer then calls the system to initiate the two-person test.\n\nOne person enters the tool's identifier into the system and confirms the user's identity. The second person then tests the tool, ensuring that it is functioning properly and that no errors are detected. This two-person test is required for high-risk tools to prevent errors and ensure that only authorized users have access to these tools.",
+      "ttft_ms": 48778.21020921692,
+      "total_ms": 48778.2842090819,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 269,
+        "total_tokens": 269
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 269,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 4,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 276,
+      "at_cap": false
+    },
+    {
+      "turn": 3,
+      "ok": true,
+      "text": "The safety reviews for Harborlight Tool Library are now scheduled for Fridays instead of Wednesdays. This change ensures that safety checks are conducted on a more frequent basis, which is crucial for maintaining the integrity of the system. The intake label for high-risk tools has been corrected to teal, not amber.\n\nThis change aligns with the updated facts provided, ensuring consistency in the labeling system. The rest of the maintenance calendar and the two-person test for high-risk tools remain unchanged.",
+      "ttft_ms": 24560.170040931553,
+      "total_ms": 24560.195832978934,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 80,
+        "total_tokens": 80
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 80,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 2,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 83,
+      "at_cap": false
+    },
+    {
+      "turn": 4,
+      "ok": true,
+      "text": "- Safety reviews for Harborlight Tool Library are now conducted every Friday, ensuring that all tools are safe and functional.\n- High-risk tools are tagged with teal labels to indicate that they require additional testing and verification.\n- The intake process uses teal labels for high-risk tools, requiring two people to test them for safety.\n- The maintenance calendar remains unchanged, with monthly inspections and automated processes to keep tools available.",
+      "ttft_ms": 31113.696958869696,
+      "total_ms": 31113.76079195179,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 71,
+        "total_tokens": 71
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 71,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 1,
+      "bullets": 4,
+      "unique_bullets": 4,
+      "words": 69,
+      "at_cap": false
+    },
+    {
+      "turn": 5,
+      "ok": true,
+      "text": "42",
+      "ttft_ms": 16468.826374970376,
+      "total_ms": 16891.798291821033,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 1380,
+        "completion_tokens": 2,
+        "total_tokens": 1382
+      },
+      "timings": {
+        "prompt_n": 1380,
+        "prompt_ms": 16408.4,
+        "prompt_per_token_ms": 11.890144927536232,
+        "predicted_n": 2,
+        "predicted_ms": 424.42,
+        "predicted_per_token_ms": 212.21
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 1,
+      "at_cap": false
+    },
+    {
+      "turn": 6,
+      "ok": true,
+      "text": "Volunteers are welcome to join Harborlight Tool Library. High-risk tools are tagged with teal labels for additional testing.\n\nSafety reviews happen every Friday. Two people perform the high-risk test.\n\nMonthly inspections ensure all tools are in good condition.",
+      "ttft_ms": 26573.300707852468,
+      "total_ms": 26573.32779094577,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 38,
+        "total_tokens": 38
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 38,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 3,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 40,
+      "at_cap": false
+    },
+    {
+      "turn": 7,
+      "ok": true,
+      "text": "Safety reviews are now every Friday, high-risk tools are teal, and the intake label is amber; everything else remains unchanged.",
+      "ttft_ms": 18091.509707970545,
+      "total_ms": 23480.586040997878,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 1519,
+        "completion_tokens": 25,
+        "total_tokens": 1544
+      },
+      "timings": {
+        "prompt_n": 1519,
+        "prompt_ms": 17995.1,
+        "prompt_per_token_ms": 11.846675444371296,
+        "predicted_n": 25,
+        "predicted_ms": 5419.64,
+        "predicted_per_token_ms": 216.78560000000002
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 21,
+      "at_cap": false
+    }
+  ]
+}

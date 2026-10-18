@@ -269,6 +269,127 @@ class LongFormGuardTests(unittest.TestCase):
         self.assertEqual(engine.run_calls, 1)
         self.assertEqual(engine.stream_calls, 0)
 
+    def test_detects_explicit_bullet_count(self):
+        self.assertEqual(GUARDS.requested_bullets(
+            [{"role": "user", "content": "Write a four-bullet volunteer update."}]), 4)
+        self.assertEqual(GUARDS.requested_bullets(
+            [{"role": "user", "content": "Write exactly four bullets."}]), 4)
+        self.assertEqual(GUARDS.requested_bullets(
+            [{"role": "user", "content": "Give me three bullet points."}]), 3)
+        self.assertIsNone(GUARDS.requested_bullets(
+            [{"role": "user", "content": "Write one paragraph."}]))
+
+    def test_repeated_bullet_is_not_published_twice(self):
+        text = (
+            "• Safety reviews are scheduled for Friday.\n"
+            "• The intake label for tools is teal.\n"
+            "• High-risk tests require two people.\n"
+            "• Safety reviews are scheduled for Friday."
+        )
+        result = GUARDS.normalize_bullets(text, 4)
+        self.assertEqual(result.count("Safety reviews are scheduled for Friday."), 1)
+        self.assertEqual(result.count("\n") + 1, 3)
+        self.assertIn("intake label for tools is teal", result)
+
+    def test_distinct_bullet_beyond_a_duplicate_is_kept(self):
+        text = (
+            "- Friday reviews.\n"
+            "- Teal intake label.\n"
+            "- Two-person test.\n"
+            "- Friday reviews.\n"
+            "- Monthly maintenance."
+        )
+        result = GUARDS.normalize_bullets(text, 4)
+        self.assertEqual(result.count("\n") + 1, 4)
+        self.assertIn("Monthly maintenance.", result)
+        self.assertEqual(result.count("Friday reviews."), 1)
+
+    def test_retired_contrast_is_removed_when_excluded(self):
+        messages = [
+            {"role": "user", "content": (
+                "Correction: safety reviews now happen every Friday, not Wednesday, "
+                "and the intake label is teal, not amber.")},
+            {"role": "user", "content": (
+                "Write the kickoff note. Do not mention the retired label or retired day.")},
+        ]
+        text = (
+            "The intake label is teal, not amber. Safety reviews now happen every "
+            "Friday, not Wednesday. The two-person rule remains."
+        )
+        result = GUARDS.longform_text(messages, text)
+        self.assertNotIn("amber", result.lower())
+        self.assertNotIn("Wednesday", result)
+        self.assertIn("teal", result)
+        self.assertIn("Friday", result)
+        self.assertIn("two-person", result)
+
+    def test_retired_value_survives_when_user_asks_what_changed(self):
+        messages = [
+            {"role": "user", "content": (
+                "Correction: safety reviews now happen every Friday, not Wednesday, "
+                "and the intake label is teal, not amber.")},
+            {"role": "user", "content": "In one sentence, state what changed."},
+        ]
+        text = "The intake label changed from amber to teal."
+        self.assertEqual(GUARDS.longform_text(messages, text), text)
+
+    def test_retired_from_to_contrast_is_shortened(self):
+        messages = [
+            {"role": "user", "content": (
+                "Correction: the safety day is now Friday, not Wednesday, and the "
+                "intake label is teal, not amber.")},
+            {"role": "user", "content": "Do not mention the retired values."},
+        ]
+        result = GUARDS.strip_retired_mentions(
+            messages, "The intake label changed from amber to teal.")
+        self.assertNotIn("amber", result.lower())
+        self.assertIn("changed to teal", result)
+
+    def test_current_retired_label_claim_is_corrected(self):
+        messages = [
+            {"role": "user", "content": (
+                "Correction: safety reviews now happen every Friday, not Wednesday, "
+                "and the intake label is teal, not amber.")},
+            {"role": "user", "content": "In one sentence, state what changed."},
+        ]
+        result = GUARDS.longform_text(
+            messages, "The intake label is amber and safety reviews are Friday.")
+        self.assertIn("The intake label is teal", result)
+        self.assertNotIn("label is amber", result.lower())
+
+    def test_historical_retired_claim_is_not_rewritten(self):
+        messages = [
+            {"role": "user", "content": (
+                "Correction: safety reviews now happen every Friday, not Wednesday, "
+                "and the intake label is teal, not amber.")},
+            {"role": "user", "content": "In one sentence, state what changed."},
+        ]
+        text = "The intake label was amber before the correction."
+        self.assertEqual(GUARDS.longform_text(messages, text), text)
+
+    def test_explicit_bullet_request_is_buffered(self):
+        messages = [{"role": "user", "content": "Write exactly four bullets."}]
+        self.assertTrue(GUARDS.needs_post_guard(messages))
+
+    def test_paragraph_request_flattens_stray_bullets(self):
+        messages = [{"role": "user", "content": "Write exactly two paragraphs."}]
+        text = (
+            "Operations note:\n\n"
+            "- The intake label is amber.\n"
+            "- High-risk tests need two people.\n"
+            "- Safety reviews are Wednesday."
+        )
+        result = GUARDS.longform_text(messages, text)
+        self.assertNotRegex(result, r"(?m)^\s*[-*•]\s+")
+        self.assertEqual(len(result.split("\n\n")), 2)
+        self.assertIn("High-risk tests need two people.", result)
+
+    def test_bullet_request_keeps_bullet_lines(self):
+        messages = [{"role": "user", "content": "Write exactly three bullets."}]
+        text = "- First point.\n- Second point.\n- Third point."
+        result = GUARDS.longform_text(messages, text)
+        self.assertEqual(result, text)
+
 
 class ServerWiringTests(unittest.TestCase):
     def test_render_chat_accepts_tool_receipt(self):

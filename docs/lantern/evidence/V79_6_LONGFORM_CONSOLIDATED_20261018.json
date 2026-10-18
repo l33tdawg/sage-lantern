@@ -1,0 +1,83 @@
+{
+  "schema": "lantern.longform.consolidated.v1",
+  "generated_at": "2026-10-18T14:10:00+08:00",
+  "device": "Unit C",
+  "service": {
+    "model": "V79.6",
+    "model_id": "lantern-native5-2b",
+    "model_sha256": "41172d782a6a401549ab2000f2ef44debb890d69c6a72e228c4548ccc3de78c6",
+    "engine_sha256": "c4cf4fda5b28556421271b03ee3b12ada35f3758babf730165377b239885e2f5",
+    "server_sha256": "b568af7d92ace4e0e363597987501da4956da5a67762de89b8dc73a7a4424c76",
+    "guard_sha256": "54cd4829510d3bd694f4a618ad409fb84bbd4bc9559af368c3e791b1929d3b30",
+    "context": 16384,
+    "max_new_tokens": 8192,
+    "health": "ok"
+  },
+  "capacity": {
+    "ram_total_mb": 15959,
+    "ram_used_mb": 7248,
+    "ram_available_mb": 8711,
+    "buff_cache_mb": 11039,
+    "engine_rss_kb": 3991568,
+    "llm_service_cgroup_bytes": 4160528384,
+    "vision_lane_rss_kb": 1479036,
+    "nvme_total_gb": 234,
+    "nvme_available_gb": 16,
+    "finding": "RAM is not the blocker; the 3B engine is about 4 GB RSS. The earlier failure was the deployed engine's 1024-output cap plus a direct test process lacking the service's render,video groups. The NPU IOVA window still admits one 3B lane at a time."
+  },
+  "results": {
+    "extended_strict": {
+      "profile": "extended",
+      "turns_completed": 7,
+      "turns_requested": 7,
+      "all_checks_pass": true,
+      "guard_sha256": "04727ec5a8a377e2ca05cc529553606c6213b33566c7a9c63ff88a92a8b653ed",
+      "evidence": "V79_6_LONGFORM_EXTENDED_8192_20261018_STRICT.json",
+      "scope": "4 paragraphs / 495 words on turn 1; 4 complete distinct bullets; 3-paragraph handover; retired values absent; turn 7 made no current-retired claim"
+    },
+    "sustained_final_guard": {
+      "profile": "sustained",
+      "turns_completed": 7,
+      "turns_requested": 7,
+      "all_checks_pass": true,
+      "guard_sha256": "54cd4829510d3bd694f4a618ad409fb84bbd4bc9559af368c3e791b1929d3b30",
+      "evidence": "V79_6_LONGFORM_SUSTAINED_8192_20261018_FINAL2_GUARD.json",
+      "scope": "2 paragraphs; 4 complete distinct bullets; 3-paragraph handover; no bullet fragments in paragraph turns; retired values absent; turn 7 made no current-retired claim"
+    }
+  },
+  "guard_behavior": [
+    "Normalize explicit paragraph counts without inventing content.",
+    "Flatten a stray bullet block when the user asked for paragraphs.",
+    "Require explicit bullet requests to be separate sentence lines; remove exact repeats; never manufacture a missing bullet.",
+    "Strip a retired value when the user explicitly excludes it.",
+    "Correct present-tense claims that call a retired label or day current.",
+    "Buffer explicit paragraph, bullet and retired-value turns before streaming."
+  ],
+  "residual_model_defects": [
+    "The model invents a meaning for the teal label: 'teal, signaling pending processing' in the extended transcript and 'teal intake label for low-risk tools' in the sustained transcript. The user supplied only the label value.",
+    "The model invents cadence or quantities, such as 'every other week'.",
+    "The model can restate the same fact in different words; exact deduplication does not catch semantic repetition.",
+    "The deterministic retired-value repair corrects text but does not establish that the model learned the correction."
+  ],
+  "qualification": {
+    "mechanical_longform": "supported at 16k/8192 on Unit C under the listed guard",
+    "factual_longform": "not qualified",
+    "owner_decision": "Choose between funding a broader verified English curriculum before promotion, or shipping V79.6 with a runtime notice/status guard that discloses the limitation.",
+    "pending": [
+      "Full 48-request benchmark at the 16k/8192 profile; the existing 48-request table is historical 2048-context evidence.",
+      "Deploy the updated runtime TEXT_POLICY to Unit C's production venv; the guard file is deployed, but the runtime wheel has not been rebuilt for the new prompt wording.",
+      "Owner acceptance of the remaining long-form limitations."
+    ]
+  },
+  "inbox": {
+    "unclaimed_count": 0,
+    "claimed_elsewhere_count": 3,
+    "claimed_elsewhere_session": "mcp-dc55b14e10438c77ef02d3ccc29dde65",
+    "message_ids": [
+      "msg-faaf3963-9343-446b-83b3-46f6e4a27cec",
+      "msg-5db08fa0-7896-4f89-9af1-f59d4a95aec2",
+      "msg-89e9c15c-ecd3-4ec4-90e1-0c2e6b1cb6f8"
+    ],
+    "action": "Do not steal these claims or touch Meshticulum work."
+  }
+}

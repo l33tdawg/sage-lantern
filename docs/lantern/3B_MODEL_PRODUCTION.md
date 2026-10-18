@@ -47,6 +47,21 @@ Only one 3B lane fits in the NPU IOVA window. The 2B and vision services are
 stopped while the 3B class model is resident; the 2B is the rollback, not a
 simultaneous chat lane.
 
+### Unit headroom (18 October 2026)
+
+Unit C has 15,959 MB of visible RAM. At the live 16k/8192 profile, the
+`rkllm_engine_token` process measured 3,991,568 KB RSS (about 3.99 GB) and the
+`sage-lantern-llm.service` cgroup measured 4,160,528,384 bytes (about 4.16 GB).
+The vision lane was also resident at 1,479,036 KB. Linux reported 8,711 MB
+available with 11,039 MB in buff/cache.
+
+The NVMe is 234 GB total with 16 GiB available (94% used), enough for the
+current artifacts but not "ample" free space. The earlier "the unit cannot hold
+it" conclusion was incorrect: the failure came from the previously deployed
+engine's 1024-output cap and a direct test process that lacked the service's
+`render,video` supplementary groups. RAM was not the blocker. The remaining
+capacity constraint is the RKLLM IOVA window, which admits one 3B lane at a time.
+
 ## Measured device performance
 
 Unit C, RK3588 SDK 1.3.1, W8A8, 48 requests (36 quality + 12 latency), greedy
@@ -95,23 +110,56 @@ counter.
 
 ### Long-form and continuation probe
 
-A dedicated seven-turn Harborlight writing test was run on Unit C in two
-profiles. This is separate from the earlier short-reply continuation test.
+The seven-turn Harborlight writing test now runs at the live 16k/8192 profile
+with a buffering response guard. The guard:
 
-- **8192-token profile:** turn 1 produced 534 words and four paragraphs; the
-  correction and four-bullet instruction were retained; the final handover was
-  normalized to three paragraphs. The final note still contrasted the retired
-  label (“teal, not amber”), so the “do not mention retired values” instruction
-  is not fully satisfied.
-- **8192-token bounded profile:** all seven turns returned; paragraph counts
-  and final continuity state were normalized correctly. The four-bullet update
-  repeated the Friday bullet, so bullet uniqueness remains a model-quality
-  limitation.
+- normalizes an explicit paragraph count without inventing content;
+- flattens a stray bullet block when the user asked for paragraphs;
+- requires explicit bullet requests to be separate sentence lines, removes
+  exact repeated bullets, and never manufactures a missing bullet;
+- strips a retired value when the user explicitly excludes it, and corrects a
+  present-tense claim that calls a retired label or day current;
+- buffers explicit paragraph, bullet and retired-value turns before streaming.
 
-The 8192 cap is active and fixes the previous mid-sentence truncation. Short
-answer continuation, correction retention, and paragraph-count normalization
-are supported; exact bullet uniqueness and strict retired-value exclusion are
-not yet qualified.
+Device results with guard `04727ec5…` (the strict checker, before the final
+paragraph-flatten addition):
+
+- **Extended profile:** 7/7 turns returned. Turn 1 produced 495 words and four
+  paragraphs; the four-bullet update produced four distinct complete sentences;
+  the final handover normalized to three paragraphs; no retired value appeared
+  in the handover; turn 7 stated no retired value as current.
+- **Sustained profile:** 7/7 turns returned. Turn 1 produced two paragraphs;
+  the four-bullet update produced four distinct complete sentences; the final
+  handover normalized to three paragraphs; no retired value appeared in the
+  handover; turn 7 stated no retired value as current.
+
+The 8192 cap fixes the previous mid-sentence truncation. Short answer
+continuation, correction retention, paragraph-count normalization and
+mechanical bullet formatting are supported.
+
+Structural checks passing does **not** mean the long-form answer is factually
+qualified. The same device transcripts still show:
+
+- invented label meanings: “teal, signaling pending processing” and “teal
+  intake label for low-risk tools”, although the correction supplied only the
+  label value;
+- invented cadence or quantities, such as “every other week”;
+- the same fact restated in different words, which exact bullet deduplication
+  does not catch;
+- deterministic repairs masking, rather than teaching, correction continuity.
+
+The 3B model is therefore not qualified for accurate long-form factual writing
+without either a broader verified English curriculum or a runtime notice/status
+guard that discloses the limitation. That is the owner decision; the structural
+guard is not evidence of model-quality completion.
+
+The final paragraph-flatten guard is `54cd4829…`. The sustained device run
+against that guard passed all 15 checks
+(`evidence/V79_6_LONGFORM_SUSTAINED_8192_20261018_FINAL2_GUARD.json`), but its
+transcript still calls teal “low-risk”, which the user never supplied. The
+extended profile's latest complete device capture is the `04727ec5…` strict run;
+the final 54cd4829 change was exercised on the sustained profile and in the
+local guard suite.
 
 ## Quality evidence
 
@@ -155,13 +203,15 @@ Known limits:
   (`bc2ce87b…`; `action_guard.py` `f844e2ed…`) and the staged package
   verification passes. The product UI/HTTP route that will invoke this service
   method is still separate work.
-- Memory was measured as process RSS on a one-request probe, not as the RKLLM
-  SDK allocator under a longer soak; the reading showed no guard-attributable
-  increase.
+- Memory is measured as process RSS and service-cgroup current usage, not as
+  the RKLLM SDK allocator under a long soak. At 16k/8192 the engine was 3.99 GB
+  RSS and the service cgroup 4.16 GB; this is not a thermal or multi-hour soak.
 - The model remains a 3B near-bench build; broader arithmetic, field-range and
-  multi-user claims need their own qualification. The 8192 cap is active; the
-  remaining long-form defects are repeated bullets and occasional mentions of a
-  retired value when contrasting the correction.
+  multi-user claims need their own qualification. The 8192 cap is active and
+  the structural long-form guards work, but invented label meanings/cadence and
+  semantic restatement remain model-quality defects. The full 48-request
+  benchmark at the 16k/8192 profile is still pending; the table above is the
+  historical 2048-context measurement.
 
 ## Deployment and rollback
 
