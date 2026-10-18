@@ -168,8 +168,11 @@ local guard suite.
   45-minute drafting / 5-minute buffer plan, and the `max(0, 161−170)` fee clamp
   with no positive charge.
 - 28/28 wrapped action prompts pass with `sage_remember`/`sage_recall` calls.
-- The 16k/8192 production build also passes the 28/28 action smoke, E12_A/B,
-  E13_A/B and S03_B.
+- The final guard `54cd4829…` was re-run on Unit C: 28/28 wrapped action
+  prompts, E12_A/B, E13_A/B, S03_B and all seven streaming guard cases pass.
+  Evidence: `evidence/V79_6_ACTION28_FINAL_GUARD_20261018.json`,
+  `evidence/V79_6_GUARD_CHECK_FINAL_GUARD_20261018.json` and
+  `evidence/V79_6_STREAM_GUARD_FINAL_GUARD_20261018.json`.
 - The frozen screen's key cases pass; `V58_E03_B` remains critical on both
   V79.6 and stock.
 - Fresh64: raw 15/16 tool calls, guarded 16/16. The remaining raw miss also

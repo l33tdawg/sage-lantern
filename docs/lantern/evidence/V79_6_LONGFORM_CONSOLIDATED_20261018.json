@@ -15,11 +15,11 @@
   },
   "capacity": {
     "ram_total_mb": 15959,
-    "ram_used_mb": 7248,
-    "ram_available_mb": 8711,
-    "buff_cache_mb": 11039,
-    "engine_rss_kb": 3991568,
-    "llm_service_cgroup_bytes": 4160528384,
+    "ram_used_mb": 7213,
+    "ram_available_mb": 8746,
+    "buff_cache_mb": 11429,
+    "engine_rss_kb": 3991164,
+    "llm_service_cgroup_bytes": 4176273408,
     "vision_lane_rss_kb": 1479036,
     "nvme_total_gb": 234,
     "nvme_available_gb": 16,
@@ -43,6 +43,18 @@
       "guard_sha256": "54cd4829510d3bd694f4a618ad409fb84bbd4bc9559af368c3e791b1929d3b30",
       "evidence": "V79_6_LONGFORM_SUSTAINED_8192_20261018_FINAL2_GUARD.json",
       "scope": "2 paragraphs; 4 complete distinct bullets; 3-paragraph handover; no bullet fragments in paragraph turns; retired values absent; turn 7 made no current-retired claim"
+    },
+    "regression_final_guard": {
+      "wrapped_actions": "28/28",
+      "e12": "V58_E12_A and V58_E12_B pass",
+      "response_guards": "E13_A/E13_B/S03_B all pass",
+      "streaming_guards": "7/7 cases pass",
+      "evidence": [
+        "V79_6_ACTION28_FINAL_GUARD_20261018.json",
+        "V79_6_GUARD_CHECK_FINAL_GUARD_20261018.json",
+        "V79_6_STREAM_GUARD_FINAL_GUARD_20261018.json"
+      ],
+      "note": "A separate 10-row mixed action/refusal set scored 7/10 because the checker expects every row to be a tool call; those rows are intentionally prose refusals/schema refusals, not the 28-case wrapped-action gate."
     }
   },
   "guard_behavior": [
