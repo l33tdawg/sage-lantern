@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="SAGE Lantern">
+  <rect width="64" height="64" rx="15" fill="#0b1820"/>
+  <g transform="translate(9 8) scale(.96)" stroke="#ffbe62" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 10V8a6 6 0 0 1 12 0v2M15 13h18l5 24-14 7-14-7 5-24ZM15 13l9 6 9-6M24 19v25M10 37l14-7 14 7"/>
+    <path d="m18 22-3 11 6-3V24l-3-2ZM30 22l3 11-6-3V24l3-2Z" fill="#ffbe62" stroke="none"/>
+  </g>
+</svg>

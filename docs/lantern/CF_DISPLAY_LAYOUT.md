@@ -210,5 +210,16 @@ main-screen/footer bounds; scaled question review, keyboard editing and answer
 display; 1024 × 600 landscape retains the 220px chat sidebar and four-column
 footer. TypeScript and the changed TSX file's ESLint check pass.
 
+### Landscape companion verification — 18 October 2026
+
+The current `/device` UI was rechecked through the synthetic preview at the real
+landscape panel size **1560 × 720**: the answer screen retained the 220px
+conversation sidebar, a centered readable answer column, the composer, Share
+and camera controls without clipping; the lock screen retained its two-column
+unlock layout. The portrait control at **720 × 1560** still rendered correctly.
+The preview now serves the current `sage.lantern.voice-status.v1` `/voice`
+endpoint rather than the older full-status-only fixture. See
+[Desktop mode](DESKTOP_MODE.md) for the browser, skin and CEREBRUM work.
+
 Outstanding: physical scale/rotation/touch qualification and actual photo view,
 camera capture, Messages and onboarding checks on the panel.

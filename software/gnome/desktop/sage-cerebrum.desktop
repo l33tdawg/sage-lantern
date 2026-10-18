@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SAGE CEREBRUM
+Comment=Open the local encrypted SAGE CEREBRUM dashboard
+Exec=/usr/bin/chromium --ozone-platform=wayland --app=http://127.0.0.1:8080/ui/
+Icon=/usr/share/icons/hicolor/scalable/apps/sage-cerebrum.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=true

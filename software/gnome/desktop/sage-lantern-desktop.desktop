@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SAGE Lantern Desktop
+Comment=Open the local Lantern desktop start page
+Exec=/usr/bin/chromium --ozone-platform=wayland --app=file:///usr/share/sage-lantern/desktop/start.html
+Icon=/usr/share/icons/hicolor/scalable/apps/sage-lantern-desktop.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=true
