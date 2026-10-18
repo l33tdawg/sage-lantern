@@ -55,7 +55,7 @@
         "V58_E12_A": true,
         "V58_E12_B": true
       },
-      "evidence": "work/lantern-3b-focused-finetune-20261012/device_v79_6_production_smoke_final2.json",
+      "evidence": "docs/lantern/evidence/V79_6_PRODUCTION_SMOKE_20261018.json",
       "sha256": "1e6100b9c7ad01bce68cfd8927c33a22051d7b999eaee161bb602d1a7d966775"
     },
     "guard_check": {
@@ -65,7 +65,7 @@
         "E13_B": true,
         "S03_B": true
       },
-      "evidence": "work/lantern-3b-focused-finetune-20261012/device_v79_6_production_guard_check_final2.json",
+      "evidence": "docs/lantern/evidence/V79_6_GUARD_CHECK_20261018.json",
       "sha256": "c309a3e7f80ad010ad6755072c8da83ada63d7f57b92553ba4d7c45d466e9dc1"
     },
     "stream_guard_check": {
@@ -79,7 +79,7 @@
         "receipt_status_stream_failed": true,
         "new_save_question_reached_engine": true
       },
-      "evidence": "work/lantern-3b-focused-finetune-20261012/device_v79_6_stream_guard_final4.json",
+      "evidence": "docs/lantern/evidence/V79_6_STREAM_GUARD_20261018.json",
       "sha256": "20e3dd67bf767929b6ebac6da3c57e15078f96cb35a1e3f4777484737e0683e2"
     },
     "long_conversation_and_tools": {
@@ -96,7 +96,7 @@
         "recall": true,
         "unauthorized_private": true
       },
-      "evidence": "work/lantern-3b-focused-finetune-20261012/device_long_tests_final2.json",
+      "evidence": "docs/lantern/evidence/V79_6_LONG_TESTS_20261018.json",
       "sha256": "7a5b9e05ad5d994415cff8fde143090f24847e820b953f1876f5ae53801cd9bf"
     }
   },

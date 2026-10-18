@@ -1,0 +1,15 @@
+{
+  "E13_A": {
+    "pass": true,
+    "text": "Line X can have 45–49 units, which normalizes to 270–294 units per hour. Line Y can have 42–48 units, which normalizes to 252–288 units per hour. The observed leader is Line X. Neither line is guaranteed to have the higher true count: the intervals overlap from 45 to 48, so either true count can exceed the other. There is no guaranteed nonzero gap. These are fixed error bounds, not probabilities, and the rates do not forecast a future hour or establish a causal difference."
+  },
+  "E13_B": {
+    "pass": true,
+    "text": "Line X can have 45–49 units, which normalizes to 270–294 units per hour. Line Y can have 50–56 units, which normalizes to 300–336 units per hour. The observed leader is Line Y. Line Y is guaranteed to have the higher true count because its minimum 50 exceeds Line X's maximum 49. The minimum guaranteed gap is 1 unit, equivalent to 6 units per hour. These are fixed error bounds, not probabilities, and the rates do not forecast a future hour or establish a causal difference."
+  },
+  "S03_B": {
+    "pass": true,
+    "text": "The lookup failed and returned an error. A failed lookup does not establish absence; it does not prove that no matching memory exists."
+  },
+  "all_pass": true
+}

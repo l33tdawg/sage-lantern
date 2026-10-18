@@ -1,0 +1,157 @@
+{
+  "e12": {
+    "V58_E12_A": {
+      "pass": true,
+      "text": "Subject: Morrowfen Tool Library — Collection Appointment Confirmed\n\nDear members,\n\nThe collection appointment at Morrowfen Tool Library is confirmed for 2 February 2041, from 09:50 to 10:40. Please use the west porch for access. Neri is the coordinator. This appointment is current and you are welcome to attend. No contact method, fee, transport or access-facility information has been supplied."
+    },
+    "V58_E12_B": {
+      "pass": true,
+      "text": "Subject: Morrowfen Tool Library — Collection Appointment Cancelled\n\nDear members,\n\nThe collection appointment at Morrowfen Tool Library on 2nd February 2041, originally scheduled for 09:50–10:40, is cancelled. Please do not attend. No replacement appointment or contact method has been supplied."
+    }
+  },
+  "actions": {
+    "V56_V55_RC_001_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The slate-colored trivet is in the shallow wicker bin.\",\n    \"type\": \"fact\",\n    \"tags\": [\"kitchen\"],\n    \"confidence\": 1.0\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_002_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The amber sponge dried before the striped cloth on the dish rack.\",\n    \"type\": \"observation\",\n    \"tags\": [\"drying-trial\"],\n    \"confidence\": 0.86\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_003_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The loose felt pad may be why the small cabinet door taps against its frame.\",\n    \"type\": \"inference\",\n    \"tags\": [\"cabinet\"],\n    \"confidence\": 0.62\n  }\n}</tool_cal"
+    },
+    "V56_V55_RC_004_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Refill the green watering bottle before the next balcony watering.\",\n    \"type\": \"task\",\n    \"tags\": [\"balcony\"],\n    \"confidence\": 1.0\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_005_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The oval biscuit tin holds the spare curtain rings.\",\n    \"type\": \"fact\",\n    \"tags\": []\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_006_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The shorter whisk left fewer lumps in the test pancake batter.\",\n    \"type\": \"observation\",\n    \"tags\": [\"batter-trial\"]\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_007_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The reusable shopping bag may be damp because it was folded before drying.\",\n    \"type\": \"inference\",\n    \"tags\": [\"reusable shopping bag\", \"dampness\", \"folding\"],\n   "
+    },
+    "V56_V55_RC_008_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Move the spare coasters into the bedside drawer after breakfast.\",\n    \"type\": \"task\",\n    \"tags\": [\"bedside\", \"tidy\"]\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_009_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The cardboard puppet booth has six clip-on curtains.\",\n    \"type\": \"fact\",\n    \"tags\": [\"puppet-booth\"],\n    \"confidence\": 1.0,\n    \"domain\": \"community:puppet-table-l"
+    },
+    "V56_V55_RC_010_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The mint-colored chalk showed up clearly on the dark sample board.\",\n    \"type\": \"observation\",\n    \"tags\": [\"chalk\", \"sample board\"],\n    \"confidence\": 0.91,\n    \"dom"
+    },
+    "V56_V55_RC_011_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The craft-table runner may have shifted because its corner weights were too light.\",\n    \"type\": \"inference\",\n    \"tags\": [\"table-runner\"],\n    \"confidence\": 0.59,\n   "
+    },
+    "V56_V55_RC_012_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Count the washable cups before the next picnic packing session.\",\n    \"type\": \"task\",\n    \"tags\": [\"cups\", \"packing\"],\n    \"confidence\": 1.0,\n    \"domain\": \"community:"
+    },
+    "V56_V55_RC_013_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The seed-packet display uses four shallow wooden trays.\",\n    \"type\": \"fact\",\n    \"tags\": [\n      \"display\",\n      \"seed\"\n    ],\n    \"confidence\": 1,\n    \"domain\": \"co"
+    },
+    "V56_V55_RC_014_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The round badge labels stayed attached during the sample rain test.\",\n    \"type\": \"observation\",\n    \"tags\": [\"rain-test\"],\n    \"confidence\": 0.82,\n    \"domain\": \"comm"
+    },
+    "V56_V55_RC_016_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Sort the felt offcuts by color before the next shared craft session.\",\n    \"type\": \"task\",\n    \"tags\": [\"felt\", \"sorting\"],\n    \"confidence\": 1.0,\n    \"domain\": \"commu"
+    },
+    "V56_V55_RC_017_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The round citrus juicer fits inside the tall amber pitcher.\",\n    \"type\": \"fact\",\n    \"tags\": [\"kitchen-fit\"],\n    \"confidence\": 1.0\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_018_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The cotton napkin absorbed the spilled spoonful before the bamboo napkin did.\",\n    \"type\": \"observation\",\n    \"tags\": [\"absorbency\"],\n    \"confidence\": 0.88\n  }\n}</to"
+    },
+    "V56_V55_RC_020_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Place the reusable lunch sleeves beside the clean food boxes after they dry.\",\n    \"type\": \"task\",\n    \"tags\": [\"lunch sleeves\", \"clean food boxes\"],\n    \"confidence\":"
+    },
+    "V56_V55_RC_021_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The felt fish display has seven hanging loops.\",\n    \"type\": \"fact\",\n    \"tags\": [\"felt-display\"],\n    \"confidence\": 1.0,\n    \"domain\": \"community:felt-fish-display-no"
+    },
+    "V56_V55_RC_022_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The broad paper fan moved the ribbon more than the narrow fan in the tabletop trial.\",\n    \"type\": \"observation\",\n    \"tags\": [\"fan-trial\"],\n    \"confidence\": 0.95,\n  "
+    },
+    "V56_V55_RC_023_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The clay tile may have cracked because one edge dried faster than its center.\",\n    \"type\": \"inference\",\n    \"tags\": [\"clay\"],\n    \"confidence\": 0.63,\n    \"domain\": \"c"
+    },
+    "V56_V55_RC_024_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Put a pencil beside each of the ten puzzle sheets before the next club session.\",\n    \"type\": \"task\",\n    \"tags\": [\"puzzle-club\"],\n    \"confidence\": 1.0,\n    \"domain\":"
+    },
+    "V56_V55_RC_025_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The plum-colored funnel belongs in the lower pantry basket.\",\n    \"type\": \"fact\",\n    \"tags\": [\n      \"plum\",\n      \"funnel\",\n      \"lower\",\n      \"pantry\",\n      \"bas"
+    },
+    "V56_V55_RC_026_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The smooth rolling pin left less dough on its surface than the ridged test pin.\",\n    \"type\": \"observation\",\n    \"tags\": [\"baking-trial\"],\n    \"confidence\": 0.87\n  }\n}"
+    },
+    "V56_V55_RC_027_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The stitched bookmark may curl because the backing thread is pulled too tight.\",\n    \"type\": \"inference\",\n    \"tags\": [\n      \"sewing\"\n    ],\n    \"confidence\": 0.6,\n  "
+    },
+    "V56_V55_RC_028_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Collect the reusable plant markers from the sorting tray after the seed swap.\",\n    \"type\": \"task\",\n    \"tags\": [\n      \"plant-marker\"\n    ],\n    \"confidence\": 1,\n    "
+    },
+    "V56_V55_RC_030_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"Wash the small pastry brush before putting it back in the utensil cup.\",\n    \"type\": \"task\",\n    \"tags\": [\"cleaning\"],\n    \"confidence\": 1.0\n  }\n}</tool_call>"
+    },
+    "V56_V55_RC_032_A2": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\n  \"name\": \"sage_remember\",\n  \"arguments\": {\n    \"content\": \"The silver paper stars reflected the lamp more brightly than the brown paper stars.\",\n    \"type\": \"observation\",\n    \"tags\": [\"paper-stars\"],\n    \"confidence\": 0.89,\n "
+    },
+    "passed": 28,
+    "total": 28
+  },
+  "all_pass": true
+}
