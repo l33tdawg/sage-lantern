@@ -162,9 +162,9 @@
     "url": "https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview",
     "tag": "v81-research-preview",
     "commit": "27944a4be946093f6a83cc92574a46303ac4630b",
-    "docs_commit": "026565d",
-    "asset_sha256": "25734c54f44e02416d3c5143722a650a5708e3bd603eba23ecccb562e5c0f4bc",
-    "asset_bytes": 773579444,
+    "docs_commit": "f717ee3",
+    "asset_sha256": "c58c70ed13588d2eaa17c46616e9b9f3c21eea1e2e362455d8b5f6b93476ff16",
+    "asset_bytes": 773583555,
     "model_card": "https://github.com/l33tdawg/lantern-3b/blob/main/MODEL_CARD.md",
     "model_card_sha256": "93f705c874ae3ca41878d50e966b035c26acd7e45ea70eb332799c11ed7fef7c",
     "device_artifact_parts": {

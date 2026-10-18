@@ -404,8 +404,8 @@ The non-commercial research preview is published in the public model-only repo
 [`l33tdawg/lantern-3b`](https://github.com/l33tdawg/lantern-3b) at
 [`v81-research-preview`](https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview),
 as a GitHub prerelease. The tag resolves to commit `27944a4`; the documentation
-update is `026565d`. The release ships the refreshed 773,579,444-byte adapter
-bundle (SHA-256 `25734c54…`, 45 files, including the merged-model receipt and
+update is `f717ee3`. The release ships the refreshed 773,583,555-byte adapter
+bundle (SHA-256 `c58c70ed…`, 46 files, including the grounded composer, the merged-model receipt and
 reassembly instructions), the exact RK3588 artifact split into
 `v81-rkllm.part-00` through `part-02`, the part checksums and the full model
 card. Reassembled device SHA-256 is `ac7021b6…`. Do not publish bare weights,
