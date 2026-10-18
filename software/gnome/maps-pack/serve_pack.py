@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 MAX_RANGE = 8 * 1024 * 1024
+MANIFEST_SCHEMA = "sage.lantern.offline-map-pack.v1"
 
 
 def parse_range(header, size):
@@ -48,6 +49,38 @@ def resolve_file(root, path):
     return candidate
 
 
+def pack_index(root):
+    """Return the installed-pack index used by the Maps page.
+
+    The index is metadata only: it checks that each manifest is readable and
+    that the file size matches.  Full SHA-256 verification stays in
+    ``pack_manager.py verify`` so the local server stays cheap.
+    """
+    root = Path(root).resolve()
+    packs = []
+    for pmtiles in sorted(root.glob("*.pmtiles")):
+        entry = {"file": pmtiles.name, "bytes": pmtiles.stat().st_size}
+        manifest_path = pmtiles.with_name(pmtiles.name + ".manifest.json")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("schema") != MANIFEST_SCHEMA:
+                raise ValueError("unsupported schema")
+            if manifest.get("bytes") != entry["bytes"]:
+                raise ValueError("size does not match manifest")
+            entry.update(
+                status="ok",
+                name=manifest.get("name") or pmtiles.stem,
+                bbox=manifest.get("bbox"),
+                zoom=manifest.get("zoom"),
+                tiles=manifest.get("tiles"),
+                attribution=manifest.get("attribution"),
+            )
+        except (OSError, ValueError, AttributeError) as error:
+            entry.update(status="invalid", error=str(error))
+        packs.append(entry)
+    return {"count": len(packs), "packs": packs}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "LanternMapPack/1.0"
 
@@ -72,11 +105,18 @@ class Handler(BaseHTTPRequestHandler):
         self._serve(True)
 
     def _serve(self, body):
-        if urlsplit(self.path).path == "/health":
+        path = urlsplit(self.path).path
+        if path == "/health":
             raw = b'{"status":"ok"}'
+        elif path == "/packs.json":
+            raw = json.dumps(pack_index(self.server.root)).encode("utf-8")
+        else:
+            raw = None
+        if raw is not None:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
             self._cors()
             self.end_headers()
             if body:

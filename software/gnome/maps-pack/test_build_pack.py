@@ -96,5 +96,25 @@ class RangeTests(unittest.TestCase):
                 serve_pack.resolve_file(tmp, "/../secret")
 
 
+class PackIndexTests(unittest.TestCase):
+    def test_index_reports_valid_and_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            good = Path(tmp) / "penang.pmtiles"
+            good.write_bytes(b"PMTiles" + b"x" * 32)
+            good.with_name(good.name + ".manifest.json").write_text(json.dumps({
+                "schema": serve_pack.MANIFEST_SCHEMA,
+                "name": "Penang", "bbox": [100.2, 5.2, 100.5, 5.5],
+                "zoom": [0, 13], "tiles": 90,
+                "bytes": good.stat().st_size,
+            }), encoding="utf-8")
+            bad = Path(tmp) / "broken.pmtiles"
+            bad.write_bytes(b"PMTiles" + b"y" * 8)
+            index = serve_pack.pack_index(tmp)
+            statuses = {entry["file"]: entry["status"]
+                        for entry in index["packs"]}
+            self.assertEqual(statuses["penang.pmtiles"], "ok")
+            self.assertEqual(statuses["broken.pmtiles"], "invalid")
+
+
 if __name__ == "__main__":
     unittest.main()

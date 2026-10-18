@@ -11,13 +11,23 @@ here for detail; it does not replace the individual task records.
 | `sage-lantern-voice-loop.service` | active |
 | `gpsd` | active on the L76K `/dev/ttyS6` |
 | `sage-lantern-gnss-status.service` | active, loopback 8090 |
-| `sage-lantern-maps.service` | active, loopback 8091 |
+| `sage-lantern-maps.service` | active, loopback 8091, `/packs.json` |
 
 GNSS bridge `status_bridge.py` `e414bdf6…`; map server `serve_pack.py`
-`beb359a5…`; Maps page `maps.html` `c8fbad00…`. The local Penang pack is
+`de2f1e56…`; Maps page `maps.html` `2c5ad4d8…`. The local Penang pack is
 `/opt/sage-lantern/maps/penang.pmtiles` — 90 tiles, 2,766,338 bytes,
 SHA-256 `15d9a3ec…`, with a manifest. MapLibre GL 4.7.1 and PMTiles JS 3.2.1
 are vendored locally; no Google tiles.
+
+The Maps page now opens on a **Natural Earth 1:110m world base** (land,
+countries, lakes, rivers; 424 KB of script-wrapped data under
+`/usr/share/sage-lantern/desktop/world/`) and overlays the installed regional
+pack from zoom 7. The base is script-wrapped because the unit launches Maps as
+a `file://` app, where Chromium refuses `fetch()` of local GeoJSON. The page
+reads `/packs.json` for the pack name, size and zoom range, so installing a
+pack needs no page or service restart. `pack_manager.py` `2670501c…` is
+installed at `/opt/sage-lantern/maps-pack/` for verified list/install/remove
+with timestamped backups.
 
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
@@ -32,17 +42,17 @@ Measured with Planetiler:
 | Penang | `100.20,5.20,100.50,5.50`, z0–13 | 2.6 MB / 90 tiles |
 | Malaysia | `99.6,0.85,119.3,7.4`, z0–12 | 44,260,241 bytes / 21,023 tiles |
 
-The shipped strategy should be tiered, not global street-level:
+The decision is recorded in `docs/lantern/MAP_COVERAGE.md`: tiered packs, not
+global street-level.
 
 1. Global low-zoom basemap (z0–6/7), whole world.
 2. Country packs at z0–11/12; Malaysia is only 42 MB.
 3. Regional/metro detail at z13–15 for home regions.
-4. SD/USB/companion sideload packs with manifest, SHA-256, free-space check and
-   atomic install.
+4. SD/USB/companion sideload packs through `pack_manager.py`, with manifest,
+   SHA-256, free-space check, atomic install and backup-first replace/remove.
 
-Reserve a fixed map budget in the image (e.g. 32 GB), ship the base plus
-priority countries, and let the rest be installed. ODbL/OpenMapTiles
-attribution must remain visible.
+Reserve 32 GB in the image, ship the world base plus priority countries, and
+let the rest be installed. ODbL/OpenMapTiles attribution must remain visible.
 
 ## Disk and cleanup
 
@@ -100,8 +110,8 @@ labels or a different base, not more self-generated pairs.
 1. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait.
-2. Decide the initial map coverage list and build the global low-zoom base;
-   add the pack manager and one country/region update path.
+2. Build and verify the Malaysia country pack and a Klang Valley metro pack
+   through the installed pack manager; then time a sideload install on C.
 3. Continue C-native and conversation-product acceptance.
 4. Resume weights only with independent preference labels or a different base.
 

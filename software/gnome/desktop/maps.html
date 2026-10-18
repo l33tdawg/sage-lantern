@@ -12,7 +12,7 @@
     header svg { width:54px; height:54px; flex:0 0 auto; }
     h1 { margin:0 0 4px; font-size:30px; letter-spacing:.04em; }
     header p { margin:0; color:var(--muted); font-size:13px; letter-spacing:.14em; text-transform:uppercase; }
-    main { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr); gap:18px; padding:18px 34px 30px; }
+    main { display:grid; align-items:start; grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr); gap:18px; padding:18px 34px 30px; }
     .map { position:relative; min-height:480px; overflow:hidden; border:1px solid var(--line); border-radius:20px; background:#0b1820; box-shadow:0 18px 44px #0005; }
     .map svg { display:block; width:100%; height:100%; min-height:480px; }
     #live-map { position:absolute; inset:0; min-height:480px; }
@@ -67,14 +67,14 @@
         </g>
         <text x="468" y="352" text-anchor="middle" fill="#f6fafc" font-family="system-ui,sans-serif" font-size="24" font-weight="700">Kuala Lumpur</text>
         <text x="468" y="380" text-anchor="middle" fill="#b9cbd4" font-family="system-ui,sans-serif" font-size="13" letter-spacing="2">3.1390° N · 101.6869° E</text>
-        <text x="468" y="440" text-anchor="middle" fill="#b9cbd4" font-family="system-ui,sans-serif" font-size="12" letter-spacing="1.4">ILLUSTRATIVE LOCATION PANEL · LIVE TILES OPEN ONLINE</text>
+        <text x="468" y="440" text-anchor="middle" fill="#b9cbd4" font-family="system-ui,sans-serif" font-size="12" letter-spacing="1.4">ILLUSTRATIVE LOCATION PANEL · MAP LIBRARY UNAVAILABLE</text>
         <g id="gnss-marker" hidden transform="translate(468 245)">
           <circle r="24" fill="none" stroke="#75e1b5" stroke-width="1.5" opacity=".35"/>
           <circle r="9" fill="#75e1b5" stroke="#061018" stroke-width="3"/>
         </g>
       </svg>
       <div id="live-map" hidden aria-label="Local OpenStreetMap panel"></div>
-      <div class="map-status">Illustrative location panel · live maps open online; offline OSM pack pending.</div>
+      <div class="map-status">Offline world base · loading installed packs…</div>
     </section>
     <aside>
       <section class="card">
@@ -100,8 +100,8 @@
       </section>
       <section class="card">
         <h2>Offline maps</h2>
-        <p>Penang OpenStreetMap pack installed locally: 90 tiles, 2.6 MB, zoom 0–13. It is served only on <code>127.0.0.1:8091</code> with range requests and attribution. Other regions need their own bounded pack.</p>
-        <span class="tag">OSM / ODbL</span><span class="tag">Penang</span><span class="tag">2.6 MB</span><span class="tag">no Google cache</span>
+        <p id="pack-summary">World base from Natural Earth covers the whole globe. Installed regional packs are served only on <code>127.0.0.1:8091</code> with range requests and attribution.</p>
+        <span class="tag">Natural Earth</span><span class="tag" id="pack-tag">Regional pack</span><span class="tag">OSM / ODbL</span><span class="tag">no Google cache</span>
       </section>
       <section class="card">
         <h2>Desktop</h2>
@@ -112,11 +112,16 @@
   <link rel="stylesheet" href="vendor/maplibre-gl.css">
   <script src="vendor/maplibre-gl.js"></script>
   <script src="vendor/pmtiles.js"></script>
+  <script src="world/land.js"></script>
+  <script src="world/countries.js"></script>
+  <script src="world/lakes.js"></script>
+  <script src="world/rivers.js"></script>
   <script>
     (function () {
       "use strict";
       const statusUrl = "http://127.0.0.1:8090/status";
-      const packUrl = "http://127.0.0.1:8091/penang.pmtiles";
+      const packsUrl = "http://127.0.0.1:8091/packs.json";
+      const mapServer = "http://127.0.0.1:8091/";
       const toggle = document.getElementById("gnss-position");
       const dot = document.getElementById("gnss-dot");
       const state = document.getElementById("gnss-state");
@@ -128,14 +133,15 @@
       const set = (id, value) => { document.getElementById(id).textContent = value; };
       let liveMap = null;
       let fixMarker = null;
+      let packInfo = null;
 
       function render(data) {
         const fix = data && data.has_fix === true;
         dot.className = "dot " + (fix ? "ok" : "bad");
         state.textContent = fix ? "GNSS fix" : "No GNSS fix";
         detail.textContent = fix
-          ? "Fresh position from the L76K receiver. The map panel is illustrative; only the fields below are live."
-          : "Showing the illustrative map. Connect the antenna and move to open sky, then use GNSS Sky View.";
+          ? "Fresh position from the L76K receiver. Enable the checkbox to show precise coordinates and center the map."
+          : "No fix. Showing the offline world base and any installed regional pack; connect the antenna and move to open sky.";
         set("gnss-mode", data && data.mode != null ? String(data.mode) : "—");
         set("gnss-sats", data && data.satellites_used != null
           ? data.satellites_used + " / " + data.satellites_visible : "—");
@@ -187,51 +193,129 @@
       }
 
       toggle.addEventListener("change", poll);
-      async function initMap() {
-        if (!window.maplibregl || !window.pmtiles) return;
+
+      function pickPack(packs, lon, lat) {
+        const inside = packs.filter((pack) => Array.isArray(pack.bbox) &&
+          lon >= pack.bbox[0] && lon <= pack.bbox[2] &&
+          lat >= pack.bbox[1] && lat <= pack.bbox[3]);
+        const pool = inside.length ? inside : packs;
+        return pool.slice().sort((a, b) => (a.bytes || 0) - (b.bytes || 0))[0];
+      }
+
+      async function loadPacks() {
         try {
-          const response = await fetch(packUrl, {method: "HEAD", cache: "no-store"});
-          if (!response.ok) return;
+          const response = await fetch(packsUrl, {cache: "no-store"});
+          if (!response.ok) return [];
+          const data = await response.json();
+          return (data.packs || []).filter((pack) => pack.status === "ok");
+        } catch (error) {
+          return [];
+        }
+      }
+
+      async function initMap() {
+        if (!window.maplibregl || !window.pmtiles || !window.SAGE_WORLD) {
+          document.querySelector(".map-status").textContent =
+            "Offline map unavailable: local map library did not load.";
+          return;
+        }
+        try {
           const protocol = new pmtiles.Protocol();
           maplibregl.addProtocol("pmtiles", protocol.tile);
+          const packs = await loadPacks();
+          packInfo = pickPack(packs, 100.35, 5.35) || null;
+          const sources = {
+            world_land: {type: "geojson", data: window.SAGE_WORLD.land,
+                         attribution: "Natural Earth (public domain)"},
+            world_lakes: {type: "geojson", data: window.SAGE_WORLD.lakes},
+            world_rivers: {type: "geojson", data: window.SAGE_WORLD.rivers},
+            world_countries: {type: "geojson", data: window.SAGE_WORLD.countries}
+          };
+          const layers = [
+            {id: "background", type: "background", paint: {"background-color": "#0b1820"}},
+            {id: "world-land", type: "fill", source: "world_land",
+             paint: {"fill-color": "#162a34"}},
+            {id: "world-coast", type: "line", source: "world_land",
+             paint: {"line-color": "#2f5361", "line-width": 0.5}},
+            {id: "world-lakes", type: "fill", source: "world_lakes",
+             paint: {"fill-color": "#1b3d4d"}},
+            {id: "world-rivers", type: "line", source: "world_rivers",
+             paint: {"line-color": "#2f5361", "line-width": 0.6}},
+            {id: "world-countries", type: "line", source: "world_countries",
+             paint: {"line-color": "#2a4552", "line-width": 0.7}}
+          ];
+          if (packInfo) {
+            sources.osm = {
+              type: "vector",
+              url: "pmtiles://" + mapServer + encodeURIComponent(packInfo.file),
+              attribution: packInfo.attribution ||
+                "© OpenMapTiles © OpenStreetMap contributors"
+            };
+            layers.push(
+              {id: "pack-landuse", type: "fill", source: "osm",
+               "source-layer": "landuse", minzoom: 7,
+               paint: {"fill-color": "#10212b"}},
+              {id: "pack-water", type: "fill", source: "osm",
+               "source-layer": "water", minzoom: 7,
+               paint: {"fill-color": "#173746"}},
+              {id: "pack-roads", type: "line", source: "osm",
+               "source-layer": "transportation", minzoom: 7,
+               paint: {"line-color": "#b9cbd4", "line-width": ["interpolate",
+                 ["linear"], ["zoom"], 8, 0.5, 13, 2]}},
+              {id: "pack-buildings", type: "fill", source: "osm",
+               "source-layer": "building", minzoom: 12,
+               paint: {"fill-color": "#173746"}}
+            );
+          }
           liveMapNode.hidden = false;
           liveMap = new maplibregl.Map({
             container: liveMapNode,
             style: {
               version: 8,
-              sources: {
-                osm: {
-                  type: "vector",
-                  url: "pmtiles://" + packUrl,
-                  attribution: "© OpenMapTiles © OpenStreetMap contributors"
-                }
-              },
-              layers: [
-                {id: "background", type: "background", paint: {"background-color": "#0b1820"}},
-                {id: "water", type: "fill", source: "osm", "source-layer": "water",
-                 paint: {"fill-color": "#173746"}},
-                {id: "landuse", type: "fill", source: "osm", "source-layer": "landuse",
-                 paint: {"fill-color": "#10212b"}},
-                {id: "roads", type: "line", source: "osm", "source-layer": "transportation",
-                 paint: {"line-color": "#b9cbd4", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 13, 2]}},
-                {id: "buildings", type: "fill", source: "osm", "source-layer": "building",
-                 minzoom: 12, paint: {"fill-color": "#173746"}}
-              ]
+              sources: sources,
+              layers: layers
             },
             center: [100.35, 5.35],
             zoom: 11,
+            maxZoom: 16,
             attributionControl: true
+          });
+          liveMap.on("error", (event) => {
+            const message = event && event.error && event.error.message
+              ? event.error.message : "unknown map error";
+            console.error("map error", message);
+            document.querySelector(".map-status").textContent =
+              "Offline map error: " + message;
           });
           liveMap.on("load", () => {
             liveMapNode.hidden = false;
             fallbackNode.hidden = true;
             document.querySelector(".map-status").textContent =
-              "Local OpenStreetMap pack · © OpenMapTiles © OpenStreetMap contributors";
+              "Offline maps · Natural Earth world base" +
+              (packInfo ? " · " + packInfo.name : " · no regional pack");
+            if (packInfo) {
+              const size = (packInfo.bytes / 1048576).toFixed(1) + " MB";
+              document.getElementById("pack-summary").textContent =
+                packInfo.name + " OpenStreetMap pack installed locally: " +
+                packInfo.tiles + " tiles, " + size + ", zoom " +
+                packInfo.zoom[0] + "–" + packInfo.zoom[1] +
+                ". Served only on 127.0.0.1:8091 with range requests and attribution.";
+              document.getElementById("pack-tag").textContent =
+                packInfo.name + " · " + size;
+            } else {
+              document.getElementById("pack-summary").textContent =
+                "World base from Natural Earth covers the whole globe. " +
+                "No regional pack is installed yet; add one with the local pack manager.";
+              document.getElementById("pack-tag").textContent = "No regional pack";
+            }
           });
         } catch (error) {
+          console.error("offline map failed", error);
           liveMap = null;
           liveMapNode.hidden = true;
           fallbackNode.hidden = false;
+          document.querySelector(".map-status").textContent =
+            "Offline map unavailable: " + error.message;
         }
       }
       poll();
@@ -239,6 +323,6 @@
       setInterval(poll, 2000);
     }());
   </script>
-  <footer>SAGE Lantern desktop · Penang local pack installed; other regions require a reviewed pack · location publishing is off by default.</footer>
+  <footer>SAGE Lantern desktop · offline Natural Earth world base plus installed regional packs · location publishing is off by default.</footer>
 </body>
 </html>

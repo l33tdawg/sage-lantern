@@ -42,14 +42,29 @@ versions, attribution and ODbL licence.
 ## Install
 
 ```sh
-sudo install -D -m 0644 /var/tmp/klang-valley.pmtiles \
-  /opt/sage-lantern/maps/klang-valley.pmtiles
-sudo install -D -m 0644 /var/tmp/klang-valley.pmtiles.manifest.json \
-  /opt/sage-lantern/maps/klang-valley.pmtiles.manifest.json
+python3 pack_manager.py install /var/tmp/klang-valley.pmtiles \
+  --manifest /var/tmp/klang-valley.pmtiles.manifest.json \
+  --root /opt/sage-lantern/maps
 ```
 
-Keep the pack and manifest together. Do not overwrite a verified pack without a
-reviewed backup.
+`install` verifies the PMTiles magic, byte count and SHA-256 before and after
+the copy, enforces the free-space floor and renames the pair into place. It
+refuses to overwrite an existing pack; `--replace` first moves the old pair to
+`<root>/.backups/<UTC timestamp>/`. No service restart is needed.
+
+Inventory, verify and retire:
+
+```sh
+python3 pack_manager.py list --root /opt/sage-lantern/maps
+python3 pack_manager.py verify /opt/sage-lantern/maps/penang.pmtiles
+python3 pack_manager.py remove penang.pmtiles --root /opt/sage-lantern/maps --yes
+```
+
+The loopback server exposes `GET /packs.json`, which the Maps page uses to pick
+an installed pack and show its name, size and zoom range.
+
+Keep the pack and manifest together. Do not overwrite or delete a verified pack
+outside the manager's backup path.
 
 ## Guardrails
 
