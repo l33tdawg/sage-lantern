@@ -11,12 +11,14 @@
     "unit": "sage-lantern-llm.service",
     "port": 8081,
     "model_name": "lantern-native5-2b",
-    "server_sha256": "e80bd651df6caa0ccbe19daa26886a639c53284111f5b9ff9d34764f1264eb2a",
-    "response_guards_sha256": "6460972225c6bbe581806fb9665a525bf4b60a2f48726d5820439ff1203d7e9d",
-    "drop_in_sha256": "298b5b50",
+    "server_sha256": "b568af7d92ace4e0e363597987501da4956da5a67762de89b8dc73a7a4424c76",
+    "response_guards_sha256": "07d642380a33476e6bc34a707cbb8b33fb136679d162db1319d05496c0c88226",
+    "engine_sha256": "c4cf4fda5b28556421271b03ee3b12ada35f3758babf730165377b239885e2f5",
+    "engine_source_sha256": "adad98ce40b23a41ad828bd717368f559c43434a8f0283023866d6eac94831ac",
+    "drop_in_sha256": "826ca695566634ea9fe8b0e63226175dfad98a3ab1c7138c7771efffc110d4ab",
     "rollback_backup_sha256": "1c5888ae",
-    "served_context": 2048,
-    "served_max_new_tokens": 256,
+    "served_context": 16384,
+    "served_max_new_tokens": 8192,
     "health": {
       "active": true,
       "n_restarts": 0,
@@ -24,7 +26,7 @@
     }
   },
   "benchmark": {
-    "scope": "Unit C, 48 requests, W8A8, response guards disabled",
+    "scope": "Unit C, 48 requests, W8A8, response guards disabled, historical 2048-context serving profile",
     "stock": {
       "ttft_median_ms": 669.7,
       "ttft_p90_ms": 1327.0,
@@ -128,7 +130,7 @@
   },
   "action_runtime": {
     "wheel": "sage_lantern_runtime-0.2.0-py3-none-any.whl",
-    "wheel_sha256": "1e4b8184b704652f486170db07423ecb48dbb762ea4debc960e552910975270e",
+    "wheel_sha256": "bc2ce87bdf1ddc5540ee7ed83f76aeee61d4f6141dee670ec1156035b48fbe08",
     "action_guard_sha256": "f844e2ed88d91ff4a02f6ff3e8730c5188012bd9fd265c6dab626ead62dca612",
     "conversation_service_sha256": "2b11cfd78dd3fbc8c26fcaa213743f8da7775a07d38c57499a318dbc3b5b79e8",
     "conversation_sage_sha256": "495190a838429a707e28482cbe632c9ed1207ffc28d6af60c9bac39f3b8be87d",
@@ -181,6 +183,49 @@
     "note": "Ordinary chat guard overhead is within run-to-run noise; stock is a direct-engine reference, not the same HTTP transport."
   },
   "longform_conversation_20261018": {
+    "extended_8192": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 529,
+        "words": 534,
+        "paragraphs": 4,
+        "at_cap": false
+      },
+      "correction_retained": true,
+      "four_bullets": true,
+      "final_handover": {
+        "paragraphs": 3,
+        "corrected_label_and_day": true,
+        "retired_values_absent": false,
+        "note": "The final note said 'teal, not amber', explicitly contrasting the retired label."
+      },
+      "final_turn_nonempty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_EXTENDED_8192_20261018.json",
+      "sha256": "ce91b5a1260a9e275ae808d413f726a3c27898dae19bd85ced7a1b4f6e49c793"
+    },
+    "sustained_8192": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 59,
+        "words": 61,
+        "paragraphs": 2,
+        "at_cap": false
+      },
+      "correction_retained": true,
+      "bullet_instruction": {
+        "requested": 4,
+        "observed_bullets": 4,
+        "duplicate_friday_bullet": true
+      },
+      "final_handover": {
+        "paragraphs": 3
+      },
+      "final_turn_nonempty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_SUSTAINED_8192_20261018.json",
+      "sha256": "47d3902e1b40180fba4cee473d99fe9e8ced067540d0133b5e34e316b79ceeb7"
+    },
     "extended_512": {
       "completed_turns": 7,
       "all_checks_pass": false,
@@ -227,13 +272,13 @@
       "evidence": "docs/lantern/evidence/V79_6_LONGFORM_SUSTAINED_20261018.json",
       "sha256": "12311fc1cb154dd619be392b8c2bc85e777f822ac4bc6c43f330985d7b8b166a"
     },
-    "conclusion": "Short-answer continuation and correction retention pass; long-form/multi-paragraph instruction following is not qualified. The 512-token profile truncates the first answer at the cap, and the 224-token profile misses requested length and format."
+    "conclusion": "The 8192 profile removes the previous output-cap truncation and the paragraph guard produces four paragraphs initially and three in the final handover. Exact bullet uniqueness and strict retired-value exclusion remain model-quality limitations."
   },
   "known_limits": [
-    "The 48-request performance comparison was measured with guards off; a separate 12-case guard-on/off latency probe and process-RSS memory reading were run.",
-    "The live service serves 2048 context and 256 output tokens, not the 16k artifact or 32k host context.",
+    "The 48-request performance comparison was measured with guards off at the 2048-context profile; a separate 12-case guard-on/off latency probe and process-RSS memory reading were run.",
+    "The live service now serves 16k context and 8192 output tokens; the 48-request benchmark has not been repeated at that profile.",
     "The first assistant turn after a named recall receipt is buffered for the absence guard; later ordinary chat remains streamed.",
-    "Long-form/multi-paragraph answers are not qualified: the 512-token profile truncates, and the 224-token profile misses requested length and format.",
+    "Long-form paragraph structure is normalized, but exact bullet uniqueness and strict retired-value exclusion are not qualified.",
     "The action runtime is installed on Unit C, but its product HTTP/UI route is not yet wired; cross-owner grants also need an owner-bound executor.",
     "The raw model still has E13 interval drift and the S03_B absence clause when guards are disabled."
   ]

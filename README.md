@@ -96,9 +96,10 @@ that way.
   measures 625 ms median TTFT and 7.82 tok/s decode against 670 ms and 8.03
   tok/s for stock, with 28/28 wrapped action prompts and the measured English
   failures fixed. The device export is 16k context (RKLLM toolkit cap); the
-  host model remains 32k. The live service currently serves 2048 context /
-  256 output tokens; longer-context activation awaits memory/latency
-  qualification. The 2B service remains the rollback. See
+  host model remains 32k. The live service currently serves 16k context /
+  8192 output; long-form requests are buffered and paragraph counts are
+  normalized, while exact bullet and retired-value handling remain open. The
+  2B service remains the rollback. See
   [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md).
 - **Meshticulum 1.0.0-alpha is public; Lantern messaging is not yet a verified
   end-to-end service.** The protocol/transport project is released at

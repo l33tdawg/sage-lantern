@@ -242,7 +242,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.response_guards:
             return text
         text = response_guards().status_text(messages, text)
-        return response_guards().action_policy(messages, text)
+        text = response_guards().action_policy(messages, text)
+        return response_guards().longform_text(messages, text)
 
     def do_GET(self):
         if self.path in ("/health", "/health/"):

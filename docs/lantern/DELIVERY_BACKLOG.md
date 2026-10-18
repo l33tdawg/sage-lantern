@@ -14,9 +14,11 @@ Authority, radio bring-up, and later Commons federation work.
 **Current model lane (2026-10-18):** Unit C production chat is the V79.6 3B
 token engine with the final-reviewed response guards; see
 [3B_MODEL_PRODUCTION.md](3B_MODEL_PRODUCTION.md). The live server is
-`e80bd651…` and the guards are `64609722…`. The 48-request device comparison
-was run with guards off; guard-on streaming and receipt/policy checks are
-separate evidence. This does not close the broader model-quality,
+`b568af7d…` and the guards are `07d64238…`; the token engine is `c4cf4fda…`
+at 16k context / 8192 default output. The 48-request device comparison was
+run with guards off at 2048 context. A separate 8192 long-form suite now
+normalizes requested paragraph counts; repeated bullets and a negated retired
+label remain open. This does not close the broader model-quality,
 long-conversation, field, power or multi-unit acceptance items below.
 
 The runtime action boundary is now tracked in

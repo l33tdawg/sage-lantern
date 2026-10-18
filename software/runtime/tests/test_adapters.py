@@ -182,7 +182,7 @@ def test_text_requests_carry_an_explicit_completion_budget(stream) -> None:
     assert json.loads(tuned.data)["max_tokens"] == 384
 
 
-@pytest.mark.parametrize("value", [0, -1, 4097, True, "512"])
+@pytest.mark.parametrize("value", [0, -1, 8193, True, "512"])
 def test_invalid_completion_budget_is_rejected(value) -> None:
     with pytest.raises(ValueError):
         LlamaCppHTTP("http://localhost", "qwen", max_tokens=value)

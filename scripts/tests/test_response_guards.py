@@ -198,6 +198,78 @@ class StatusGuardTests(unittest.TestCase):
         self.assertFalse(GUARDS.needs_post_guard(messages))
 
 
+class LongFormGuardTests(unittest.TestCase):
+    def test_detects_explicit_paragraph_count(self):
+        messages = [{"role": "user", "content": "Write exactly four paragraphs about this."}]
+        self.assertEqual(GUARDS.requested_paragraphs(messages), 4)
+        self.assertIsNone(GUARDS.requested_paragraphs(
+            [{"role": "user", "content": "Write one paragraph."}]))
+
+    def test_normalizes_more_blocks_to_requested_count(self):
+        text = "\n\n".join(
+            ["First block.", "Second block.", "Third block.", "Fourth block.",
+             "Fifth block.", "Sixth block."])
+        result = GUARDS.normalize_paragraphs(text, 4)
+        self.assertEqual(len(result.split("\n\n")), 4)
+        self.assertIn("First block.", result)
+        self.assertIn("Sixth block.", result)
+
+    def test_normalizes_fewer_blocks_without_inventing_content(self):
+        text = (
+            "First sentence. Second sentence. Third sentence. "
+            "Fourth sentence. Fifth sentence."
+        )
+        result = GUARDS.normalize_paragraphs(text, 3)
+        self.assertEqual(len(result.split("\n\n")), 3)
+        self.assertEqual(result.replace("\n\n", " "), text)
+
+    def test_headings_are_removed(self):
+        text = "### Heading\n\nOne paragraph.\n\n### Another\n\nTwo."
+        result = GUARDS.normalize_paragraphs(text, 2)
+        self.assertNotIn("###", result)
+        self.assertIn("One paragraph.", result)
+        self.assertIn("Two.", result)
+
+    def test_longform_stream_is_buffered_and_normalized(self):
+        class FakeEngine:
+            run_calls = 0
+            stream_calls = 0
+            def run(self, prompt, max_new_tokens):
+                self.run_calls += 1
+                return {"ok": True,
+                        "text": "One sentence. Two sentence. Three sentence.",
+                        "prefill_tokens": 4, "generate_tokens": 3}
+            def stream(self, *args):
+                self.stream_calls += 1
+                raise AssertionError("long-form turns must be normalized before streaming")
+
+        raw = json.dumps({
+            "messages": [{"role": "user", "content": "Write exactly three paragraphs."}],
+            "max_tokens": 8192,
+            "stream": True,
+        }).encode()
+        handler = SERVER.Handler.__new__(SERVER.Handler)
+        handler.path = "/v1/chat/completions"
+        handler.headers = {"Content-Length": str(len(raw))}
+        handler.rfile = io.BytesIO(raw)
+        handler.wfile = io.BytesIO()
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+        handler.close_connection = False
+        handler.model_name = "test-model"
+        handler.fallback_url = None
+        handler.response_guards = True
+        engine = FakeEngine()
+        handler.engine = engine
+        handler.do_POST()
+        body = handler.wfile.getvalue().decode("utf-8")
+        self.assertIn("One sentence.", body)
+        self.assertIn("Three sentence.", body)
+        self.assertEqual(engine.run_calls, 1)
+        self.assertEqual(engine.stream_calls, 0)
+
+
 class ServerWiringTests(unittest.TestCase):
     def test_render_chat_accepts_tool_receipt(self):
         rendered = SERVER.render_chat([

@@ -32,9 +32,10 @@ TEXT_POLICY = (
 )
 
 # The NPU server (rkllm_server.py) caps generation at the request's max_tokens,
-# or 128 tokens when the field is absent. Complete answers need roughly 150–250
-# tokens; streaming still returns the first text within about two seconds.
-TEXT_MAX_TOKENS = 512
+# or 128 tokens when the field is absent. Long-form mode must be able to use the
+# full compiled 16k context; ordinary replies still stop naturally.
+TEXT_MAX_TOKENS = 8192
+TEXT_TIMEOUT_SECONDS = 1200.0
 
 # The fallback suggestion request is metadata, not an answer, so it is capped in
 # tokens and in wall time: the worst case this model showed was 95 tokens of
@@ -236,10 +237,10 @@ class LlamaCppHTTP:
     supports_images = True
     supports_conversation = True
 
-    def __init__(self, base_url: str, model: str, timeout_seconds: float = 120.0, max_response_bytes: int = 65536, *, experimental_answer_suggestions: bool = False, max_tokens: int = TEXT_MAX_TOKENS) -> None:
+    def __init__(self, base_url: str, model: str, timeout_seconds: float = TEXT_TIMEOUT_SECONDS, max_response_bytes: int = 65536, *, experimental_answer_suggestions: bool = False, max_tokens: int = TEXT_MAX_TOKENS) -> None:
         self.experimental_answer_suggestions = experimental_answer_suggestions
-        if type(max_tokens) is not int or not 1 <= max_tokens <= 4096:
-            raise ValueError("max_tokens must be an integer between 1 and 4096")
+        if type(max_tokens) is not int or not 1 <= max_tokens <= 8192:
+            raise ValueError("max_tokens must be an integer between 1 and 8192")
         self.max_tokens = max_tokens
         self.base_url = base_url.rstrip("/")
         self.model = model

@@ -39,7 +39,7 @@ values, unselected destinations, other-owner refusal, owner-bound execution,
 admission refusal, malformed receipts, malformed requests, executor exceptions,
 no automatic retry, and locked-device behavior through `ConversationService`.
 
-The built runtime wheel (`1e4b8184…`) was staged and imported on Unit C before
+The built runtime wheel (`bc2ce87b…`) was staged and imported on Unit C before
 installing it into `/opt/sage-lantern/venv`; the package-level verification
 passed with `action_guard.py` SHA-256 `f844e2ed…`. The pre-install package tree
 is retained at

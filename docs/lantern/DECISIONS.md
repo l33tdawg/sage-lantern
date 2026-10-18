@@ -730,20 +730,21 @@ TTFT and 7.82 tok/s decode. The token bridge supplies tokenizer-encoded
 `input_ids`; the guards correct the raw model's E13 interval drift and S03_B
 absence clause.
 
-**Consequence:** only one 3B lane is resident; the 2B and vision services are
-stopped while the 3B is resident. The device artifact is 16k context (RKLLM
-toolkit cap); the host model is 32k. The live service is configured at
-`--context 2048 --max-new-tokens 256`, so those are the current served caps;
-longer-context activation is a later measured change. The guards are
-response-side checks, not an authorization boundary. Rollback removes the
+**Consequence:** the 3B is the resident chat lane; the 2B remains rollback.
+The 16k 3B profile was verified with the vision lane active. The device
+artifact is 16k context (RKLLM toolkit cap); the host model is 32k. The live
+service is configured at `--context 16384 --max-new-tokens 8192`; explicit
+long-form requests are buffered and paragraph counts normalized. The guards
+are response-side checks, not an authorization boundary. Rollback removes the
 drop-in and restarts the 2B unit; the 2B model file is untouched. Raw-model
 caveats and the served caps must travel with any release note.
 
 The production guard revision is final-reviewed at `response_guards.py`
-`64609722…` and `rkllm_server.py` `e80bd651…`. It binds write receipts to the
+`07d64238…` and `rkllm_server.py` `b568af7d…`. It binds write receipts to the
 preceding action and tool identity, refuses another owner's private memory
 without a grant, and buffers only the first assistant turn after a recall
-receipt; later ordinary chat remains token-streamed. The SAGE/OpenClaw
+receipt; later ordinary chat remains token-streamed. Long-form requests are
+buffered and normalized to the requested paragraph count. The SAGE/OpenClaw
 executor still owns the authenticated SAGE call; the runtime dispatcher owns
 request canonicalization and one-shot dispatch (D-026).
 

@@ -16,8 +16,9 @@ previous 2B prompt-string service remains the rollback; the NPU vision lane on
 | Token engine | `/opt/sage-lantern/npu/token-engine/bin/rkllm_engine_token` (`11fcb514…`) |
 | RKLLM runtime | `/opt/sage-lantern/npu/token-engine/lib/librkllmrt.so` (`f25e9b09…`) |
 | Tokenizer | `/opt/sage-lantern/npu/token-engine/assets/tokenizer.json` (`c0382117…`) |
-| Server | `/opt/sage-lantern/npu/token-engine/libexec/rkllm_server.py` (`e80bd651…`) |
-| Guards | `/opt/sage-lantern/npu/token-engine/libexec/response_guards.py` (`64609722…`) |
+| Server | `/opt/sage-lantern/npu/token-engine/libexec/rkllm_server.py` (`b568af7d…`) |
+| Guards | `/opt/sage-lantern/npu/token-engine/libexec/response_guards.py` (`07d64238…`) |
+| Engine | `/opt/sage-lantern/npu/token-engine/bin/rkllm_engine_token` (`c4cf4fda…`, 16k/8192 limits) |
 | Tokenizer runtime | dedicated venv, `tokenizers` 0.23.3 |
 | Service | `sage-lantern-llm.service`, loopback port 8081, model id `lantern-native5-2b` |
 | Fallback | `--fallback-url http://127.0.0.1:8082` (NPU vision lane) |
@@ -28,9 +29,10 @@ merged into the publisher layout before RKLLM conversion. It is W8A8 with a
 32,768-context; the device artifact cap comes from RKLLM toolkit 1.3.0.
 
 **Served caps:** the current Unit C service is configured with
-`--context 2048 --max-new-tokens 256`. That is the production serving limit,
-not 16k/8k. The 16k artifact and 32k host context are not yet active in
-production; raising either requires a measured memory/latency check on C.
+`--context 16384 --max-new-tokens 8192`. The 16k artifact is active; the
+32k host context is not. The model often stops well before 8192 tokens. The
+long-form paragraph guard buffers explicit long-form requests and normalizes
+the requested paragraph count without inventing content.
 
 ## Why the token engine
 
@@ -48,7 +50,9 @@ simultaneous chat lane.
 ## Measured device performance
 
 Unit C, RK3588 SDK 1.3.1, W8A8, 48 requests (36 quality + 12 latency), greedy
-decode, fresh KV cache per request:
+decode, fresh KV cache per request. This historical comparison was run at the
+2048-token serving profile; the current 16k profile has not been re-run through
+the full 48-request matrix.
 
 | Metric | Stock 3B | V79.6 |
 |---|---:|---:|
@@ -94,19 +98,20 @@ counter.
 A dedicated seven-turn Harborlight writing test was run on Unit C in two
 profiles. This is separate from the earlier short-reply continuation test.
 
-- **512-token profile:** turn 1 generated 511 tokens / 444 words, hit the cap,
-  and ended mid-sentence. The correction, four-bullet instruction and corrected
-  facts were retained. The final handover produced two paragraphs instead of
-  the requested three, and the final short continuation turn returned empty
-  text.
-- **224-token profile:** all seven turns returned without hitting the cap, and
-  the correction and final continuity state were retained. Turn 1 produced 61
-  words against a requested 120–160 words; the four-bullet update duplicated
-  the Friday bullet; the final handover again produced two paragraphs instead
-  of three.
+- **8192-token profile:** turn 1 produced 534 words and four paragraphs; the
+  correction and four-bullet instruction were retained; the final handover was
+  normalized to three paragraphs. The final note still contrasted the retired
+  label (“teal, not amber”), so the “do not mention retired values” instruction
+  is not fully satisfied.
+- **8192-token bounded profile:** all seven turns returned; paragraph counts
+  and final continuity state were normalized correctly. The four-bullet update
+  repeated the Friday bullet, so bullet uniqueness remains a model-quality
+  limitation.
 
-Short-answer continuation and correction retention are supported; **long-form
-and multi-paragraph instruction following are not qualified**.
+The 8192 cap is active and fixes the previous mid-sentence truncation. Short
+answer continuation, correction retention, and paragraph-count normalization
+are supported; exact bullet uniqueness and strict retired-value exclusion are
+not yet qualified.
 
 ## Quality evidence
 
@@ -145,16 +150,16 @@ Known limits:
   and `ConversationService.dispatch_save()`. It executes only canonical
   request-derived calls through an admission-checked SAGE executor and returns
   the receipt unchanged. The wheel is installed in Unit C's production venv
-  (`1e4b8184…`; `action_guard.py` `f844e2ed…`) and the staged package
+  (`bc2ce87b…`; `action_guard.py` `f844e2ed…`) and the staged package
   verification passes. The product UI/HTTP route that will invoke this service
   method is still separate work.
 - Memory was measured as process RSS on a one-request probe, not as the RKLLM
   SDK allocator under a longer soak; the reading showed no guard-attributable
   increase.
-- The model remains a 3B near-bench build; long-form/multi-paragraph answers,
-  broader arithmetic, field-range and multi-user claims need their own
-  qualification. The current long-form probe fails at both the output cap and
-  the requested structure.
+- The model remains a 3B near-bench build; broader arithmetic, field-range and
+  multi-user claims need their own qualification. The 8192 cap is active; the
+  remaining long-form defects are repeated bullets and occasional mentions of a
+  retired value when contrasting the correction.
 
 ## Deployment and rollback
 

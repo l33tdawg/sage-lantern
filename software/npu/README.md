@@ -60,24 +60,42 @@ token engine, with `response_guards.py` enabled. The full deployment record is
 | Component | Durable path |
 |---|---|
 | Model | `/opt/sage-lantern/npu/models/v79_6-fused-w8a8-opt1-ctx16384-rk3588.rkllm` (`41172d78…`) |
-| Token engine | `/opt/sage-lantern/npu/token-engine/bin/rkllm_engine_token` (`11fcb514…`) |
+| Token engine | `/opt/sage-lantern/npu/token-engine/bin/rkllm_engine_token` (`c4cf4fda…`, 16k/8192 limits) |
 | Runtime | `/opt/sage-lantern/npu/token-engine/lib/librkllmrt.so` (`f25e9b09…`) |
 | Tokenizer | `/opt/sage-lantern/npu/token-engine/assets/tokenizer.json` (`c0382117…`), `tokenizers` 0.23.3 |
-| Server + guards | `/opt/sage-lantern/npu/token-engine/libexec/rkllm_server.py` (`e80bd651…`), `response_guards.py` (`64609722…`) |
+| Server + guards | `/opt/sage-lantern/npu/token-engine/libexec/rkllm_server.py` (`b568af7d…`), `response_guards.py` (`07d64238…`) |
 
 The production prompt-string engine cannot initialize the 3B model: it fails the
 3,085,697,024-byte NPU IOVA mapping. The token engine loads the same artifact;
 the server sends `prompt_utf8_hex` plus `input_ids` encoded by the model
-tokenizer. Only one 3B lane fits in the NPU IOVA window, so the 2B and vision
-services are stopped while the 3B is resident. The 2B service is the rollback.
+tokenizer. The 2B service remains the rollback. The 16k 3B profile was verified
+with the NPU vision lane active; the 2B chat lane is not resident at the same
+time.
 
-Measured on Unit C, W8A8, 48 requests: 625.1 ms median TTFT (stock 669.7),
+Measured on Unit C, W8A8, 48 requests at the historical 2048 context:
+625.1 ms median TTFT (stock 669.7),
 7.82 tok/s decode (8.03), 3,393 MB SDK memory (3,250), 28/28 wrapped action
 prompts. The guarded checks pass E13_A/E13_B and S03_B; E12_A/B pass. The model
 is compiled at 16k context by the RKLLM toolkit cap; the training host model is
-32k. The live 8081 service is configured `--context 2048
---max-new-tokens 256`; those are the served caps, and raising them is a later
-measured change.
+32k. The live 8081 service is configured `--context 16384
+--max-new-tokens 8192`; explicit long-form requests are buffered and paragraph
+counts are normalized. The model may stop well before the output cap.
+
+The token engine source is tracked as
+`software/npu/rkllm_engine_token.cpp` with `token_protocol.hpp` and
+`build_binding.hpp`. Build it against the pinned RKLLM 1.3.1 header/runtime with
+the target's `/usr/bin/c++`:
+
+```sh
+/usr/bin/c++ -O2 -std=c++17 -I <pinned-header-dir> \
+  software/npu/rkllm_engine_token.cpp \
+  -L /opt/sage-lantern/npu/token-engine/lib -lrkllmrt \
+  -Wl,-rpath,/opt/sage-lantern/npu/token-engine/lib \
+  -o rkllm_engine_token
+```
+
+The deployed budget is 16,384 context / 8,192 default output. The source
+binding is `adad98ce…`; the built Unit C binary is `c4cf4fda…`.
 
 The guards short-circuit deterministic interval answers before generation,
 correlate write receipts by tool identity and the preceding action, refuse an

@@ -4,7 +4,7 @@
   "device": "Unit C",
   "wheel": {
     "name": "sage_lantern_runtime-0.2.0-py3-none-any.whl",
-    "sha256": "1e4b8184b704652f486170db07423ecb48dbb762ea4debc960e552910975270e"
+    "sha256": "bc2ce87bdf1ddc5540ee7ed83f76aeee61d4f6141dee670ec1156035b48fbe08"
   },
   "installed_package": {
     "version": "0.2.0",

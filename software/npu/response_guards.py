@@ -46,6 +46,15 @@ STATUS_QUESTION = re.compile(
     r"|(?:\b(?:outcome|status)\s+(?:shown|reported)\s+by\s+the\s+receipt\b)",
     re.I,
 )
+PARAGRAPH_REQUEST = re.compile(
+    r"\b(?:exactly\s+)?(one|two|three|four|five|six|seven|eight|nine|ten|\d+)"
+    r"[\s-]+paragraphs?\b",
+    re.I,
+)
+WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
 COMPLETION_CLAIM = re.compile(
     r"(?:\b(?:i\s+have|i've|has\s+been|have\s+been|successfully|was)\s+"
     r"(?:saved|stored|written|committed|recorded|published|posted|shared|"
@@ -153,6 +162,65 @@ def _last_user_text(messages):
     return ""
 
 
+def requested_paragraphs(messages):
+    match = PARAGRAPH_REQUEST.search(_last_user_text(messages))
+    if match is None:
+        return None
+    value = match.group(1).lower()
+    count = WORD_NUMBERS.get(value)
+    if count is None:
+        try:
+            count = int(value)
+        except ValueError:
+            return None
+    return count if 2 <= count <= 10 else None
+
+
+def normalize_paragraphs(text, count):
+    """Return exactly ``count`` prose paragraphs without inventing content."""
+    if not isinstance(text, str) or not isinstance(count, int) or count < 2:
+        return text
+    prose = re.sub(r"(?m)^\s*#{1,6}\s+.*(?:\n|$)", "", text).strip()
+    blocks = [block.strip() for block in re.split(r"\n\s*\n", prose) if block.strip()]
+    if not blocks:
+        return text
+    if len(blocks) > count:
+        base, extra = divmod(len(blocks), count)
+        grouped = []
+        start = 0
+        for index in range(count):
+            size = base + (1 if index < extra else 0)
+            grouped.append(" ".join(blocks[start:start + size]).strip())
+            start += size
+        blocks = grouped
+    if len(blocks) < count:
+        sentences = []
+        for block in blocks:
+            sentences.extend(part.strip() for part in re.split(
+                r"(?<=[.!?])\s+", block) if part.strip())
+        if len(sentences) >= count:
+            base, extra = divmod(len(sentences), count)
+            grouped = []
+            start = 0
+            for index in range(count):
+                size = base + (1 if index < extra else 0)
+                grouped.append(" ".join(sentences[start:start + size]).strip())
+                start += size
+            blocks = grouped
+    return "\n\n".join(blocks[:count]) if len(blocks) >= count else "\n\n".join(blocks)
+
+
+def longform_text(messages, model_text):
+    count = requested_paragraphs(messages)
+    if count is None or TOOL_CALL.fullmatch(model_text or ""):
+        return model_text
+    return normalize_paragraphs(model_text, count)
+
+
+def needs_longform_post_guard(messages):
+    return requested_paragraphs(messages) is not None
+
+
 def _private_owner_target(text):
     normalized = (text or "").replace("‘", "'").replace("’", "'")
     match = PRIVATE_OWNER_REQUEST.search(normalized)
@@ -232,6 +300,8 @@ def action_policy(messages, model_text):
 
 def needs_post_guard(messages):
     """Return whether a recall answer needs inspection before it is streamed."""
+    if needs_longform_post_guard(messages):
+        return True
     action_index, request = _last_actionable_request(messages)
     if action_index is None or request.get("action") != "recall":
         return False
