@@ -43,9 +43,9 @@ same artifact and measured correctly; it expects `input_ids`, so the server
 encodes the rendered chat with the model's tokenizer and sends both
 `prompt_utf8_hex` and `input_ids`.
 
-Only one 3B lane fits in the NPU IOVA window. The 2B and vision services are
-stopped while the 3B class model is resident; the 2B is the rollback, not a
-simultaneous chat lane.
+Only one 3B lane fits in the NPU IOVA window. The 2B text lane is the rollback,
+not a simultaneous 3B peer. The 0.8B vision lane remains active on port 8082;
+it measured 1,479,036 KB RSS alongside the 3B lane.
 
 ### Unit headroom (18 October 2026)
 
