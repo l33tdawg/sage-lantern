@@ -89,6 +89,25 @@ with guards off: a 4,064 KB difference in the direction of guards-on, i.e.
 inside run-to-run noise. This is process RSS, not the RKLLM SDK allocator
 counter.
 
+### Long-form and continuation probe
+
+A dedicated seven-turn Harborlight writing test was run on Unit C in two
+profiles. This is separate from the earlier short-reply continuation test.
+
+- **512-token profile:** turn 1 generated 511 tokens / 444 words, hit the cap,
+  and ended mid-sentence. The correction, four-bullet instruction and corrected
+  facts were retained. The final handover produced two paragraphs instead of
+  the requested three, and the final short continuation turn returned empty
+  text.
+- **224-token profile:** all seven turns returned without hitting the cap, and
+  the correction and final continuity state were retained. Turn 1 produced 61
+  words against a requested 120–160 words; the four-bullet update duplicated
+  the Friday bullet; the final handover again produced two paragraphs instead
+  of three.
+
+Short-answer continuation and correction retention are supported; **long-form
+and multi-paragraph instruction following are not qualified**.
+
 ## Quality evidence
 
 - The three measured English failures are fixed: the train arrival comparison
@@ -132,8 +151,10 @@ Known limits:
 - Memory was measured as process RSS on a one-request probe, not as the RKLLM
   SDK allocator under a longer soak; the reading showed no guard-attributable
   increase.
-- The model remains a 3B near-bench build; broader arithmetic, field-range,
-  long-conversation and multi-user claims need their own measurements.
+- The model remains a 3B near-bench build; long-form/multi-paragraph answers,
+  broader arithmetic, field-range and multi-user claims need their own
+  qualification. The current long-form probe fails at both the output cap and
+  the requested structure.
 
 ## Deployment and rollback
 

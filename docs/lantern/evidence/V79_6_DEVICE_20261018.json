@@ -180,10 +180,60 @@
     "memory_note": "Combined server+engine RSS difference was -4064 KB (guards on lower), which is run-to-run noise; this is process RSS, not the RKLLM SDK allocator counter.",
     "note": "Ordinary chat guard overhead is within run-to-run noise; stock is a direct-engine reference, not the same HTTP transport."
   },
+  "longform_conversation_20261018": {
+    "extended_512": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 511,
+        "words": 444,
+        "paragraphs": 6,
+        "at_cap": true,
+        "ended_mid_sentence": true
+      },
+      "correction_retained": true,
+      "four_bullets": true,
+      "final_handover": {
+        "paragraphs": 2,
+        "required_paragraphs": 3,
+        "corrected_label_and_day": true,
+        "retired_values_absent": true
+      },
+      "final_turn_empty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_EXTENDED_20261018.json",
+      "sha256": "e3f2a530b3cadeb0a0da147fe9695688c2c8d74a5077cf8e134feb621d90634d"
+    },
+    "sustained_224": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 70,
+        "words": 61,
+        "requested_words": "120-160",
+        "paragraphs": 2,
+        "at_cap": false
+      },
+      "correction_retained": true,
+      "bullet_instruction": {
+        "requested": 4,
+        "observed_bullets": 4,
+        "duplicate_friday_bullet": true
+      },
+      "final_handover": {
+        "paragraphs": 2,
+        "required_paragraphs": 3
+      },
+      "final_turn_nonempty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_SUSTAINED_20261018.json",
+      "sha256": "12311fc1cb154dd619be392b8c2bc85e777f822ac4bc6c43f330985d7b8b166a"
+    },
+    "conclusion": "Short-answer continuation and correction retention pass; long-form/multi-paragraph instruction following is not qualified. The 512-token profile truncates the first answer at the cap, and the 224-token profile misses requested length and format."
+  },
   "known_limits": [
-    "The 48-request performance comparison was measured with guards off; a separate 12-case guard-on/off latency probe was run, but guard-on memory was not measured.",
+    "The 48-request performance comparison was measured with guards off; a separate 12-case guard-on/off latency probe and process-RSS memory reading were run.",
     "The live service serves 2048 context and 256 output tokens, not the 16k artifact or 32k host context.",
     "The first assistant turn after a named recall receipt is buffered for the absence guard; later ordinary chat remains streamed.",
+    "Long-form/multi-paragraph answers are not qualified: the 512-token profile truncates, and the 224-token profile misses requested length and format.",
     "The action runtime is installed on Unit C, but its product HTTP/UI route is not yet wired; cross-owner grants also need an owner-bound executor.",
     "The raw model still has E13 interval drift and the S03_B absence clause when guards are disabled."
   ]

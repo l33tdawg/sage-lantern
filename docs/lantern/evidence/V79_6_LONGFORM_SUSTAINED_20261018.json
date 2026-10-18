@@ -1,0 +1,196 @@
+{
+  "profile": "sustained",
+  "max_tokens": 224,
+  "completed_turns": 7,
+  "requested_turns": 7,
+  "checks": {
+    "turn1_two_paragraphs": true,
+    "turn1_not_truncated_by_cap": true,
+    "correction_turn": true,
+    "four_bullets": false,
+    "final_three_paragraphs": false,
+    "final_uses_friday": true,
+    "final_uses_teal": true,
+    "final_uses_two_people": true,
+    "final_retired_values_absent": true,
+    "turn7_nonempty": true
+  },
+  "all_checks_pass": false,
+  "turns": [
+    {
+      "turn": 1,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note:\n\nThe intake label for tools is amber, indicating high-risk conditions. High-risk tests require two people for safety and accuracy. Safety reviews are scheduled for Wednesday, ensuring all tools are in proper working order and meet safety standards. Regular maintenance and inspections are crucial to prevent accidents and maintain the integrity of the tool library.",
+      "ttft_ms": 817.3989790084306,
+      "total_ms": 9736.887531005777,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 123,
+        "completion_tokens": 70,
+        "total_tokens": 193
+      },
+      "timings": {
+        "prompt_n": 123,
+        "prompt_ms": 783.703,
+        "prompt_per_token_ms": 6.371569105691057,
+        "predicted_n": 70,
+        "predicted_ms": 8914.58,
+        "predicted_per_token_ms": 127.35114285714286
+      },
+      "paragraphs": 2,
+      "bullets": 0,
+      "words": 61,
+      "at_cap": false
+    },
+    {
+      "turn": 2,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note:\n\nThe intake label for tools is amber, indicating high-risk conditions. High-risk tests require two people for safety and accuracy. Safety reviews are scheduled for Wednesday to ensure all tools are in proper working order and meet safety standards. Additionally, a monthly maintenance routine is implemented to prevent accidents and maintain the integrity of the tool library. This routine includes inspections, lubrication, and repairs to ensure all tools are functioning correctly and safely.",
+      "ttft_ms": 1490.3322439931799,
+      "total_ms": 13308.456402999582,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 224,
+        "completion_tokens": 92,
+        "total_tokens": 316
+      },
+      "timings": {
+        "prompt_n": 224,
+        "prompt_ms": 1479.09,
+        "prompt_per_token_ms": 6.603080357142857,
+        "predicted_n": 92,
+        "predicted_ms": 11812.2,
+        "predicted_per_token_ms": 128.39347826086959
+      },
+      "paragraphs": 2,
+      "bullets": 0,
+      "words": 79,
+      "at_cap": false
+    },
+    {
+      "turn": 3,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note:\n\nThe intake label for tools is teal, indicating low-risk conditions. High-risk tests require two people for safety and accuracy. Safety reviews are scheduled for Friday to ensure all tools are in proper working order and meet safety standards.",
+      "ttft_ms": 2328.358974016737,
+      "total_ms": 9040.10536201531,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 353,
+        "completion_tokens": 52,
+        "total_tokens": 405
+      },
+      "timings": {
+        "prompt_n": 353,
+        "prompt_ms": 2300.05,
+        "prompt_per_token_ms": 6.5157223796034,
+        "predicted_n": 52,
+        "predicted_ms": 6708.21,
+        "predicted_per_token_ms": 129.00403846153847
+      },
+      "paragraphs": 2,
+      "bullets": 0,
+      "words": 45,
+      "at_cap": false
+    },
+    {
+      "turn": 4,
+      "ok": true,
+      "text": "• Safety reviews are scheduled for Friday.\n• The intake label for tools is teal.\n• High-risk tests require two people for safety and accuracy.\n• Safety reviews are scheduled for Friday.",
+      "ttft_ms": 2859.737928985851,
+      "total_ms": 7782.459185982589,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 428,
+        "completion_tokens": 37,
+        "total_tokens": 465
+      },
+      "timings": {
+        "prompt_n": 428,
+        "prompt_ms": 2845.38,
+        "prompt_per_token_ms": 6.648084112149533,
+        "predicted_n": 37,
+        "predicted_ms": 4920.62,
+        "predicted_per_token_ms": 132.98972972972973
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "words": 29,
+      "at_cap": false
+    },
+    {
+      "turn": 5,
+      "ok": true,
+      "text": "42",
+      "ttft_ms": 3254.3441420129966,
+      "total_ms": 3517.6877549965866,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 488,
+        "completion_tokens": 2,
+        "total_tokens": 490
+      },
+      "timings": {
+        "prompt_n": 488,
+        "prompt_ms": 3245.62,
+        "prompt_per_token_ms": 6.650860655737705,
+        "predicted_n": 2,
+        "predicted_ms": 263.126,
+        "predicted_per_token_ms": 131.563
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "words": 1,
+      "at_cap": false
+    },
+    {
+      "turn": 6,
+      "ok": true,
+      "text": "Harborlight Tool Library handover summary:\n\nThe intake label for tools is teal, indicating low-risk conditions. Safety reviews are scheduled for Friday to ensure all tools are in proper working order and meet safety standards. High-risk tests require two people for safety and accuracy. A monthly maintenance task includes inspections and lubrication to prevent accidents and maintain tool integrity.",
+      "ttft_ms": 3584.6477370068897,
+      "total_ms": 12721.535585995298,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 535,
+        "completion_tokens": 70,
+        "total_tokens": 605
+      },
+      "timings": {
+        "prompt_n": 535,
+        "prompt_ms": 3568.26,
+        "prompt_per_token_ms": 6.669644859813085,
+        "predicted_n": 70,
+        "predicted_ms": 9132.41,
+        "predicted_per_token_ms": 130.463
+      },
+      "paragraphs": 2,
+      "bullets": 0,
+      "words": 60,
+      "at_cap": false
+    },
+    {
+      "turn": 7,
+      "ok": true,
+      "text": "The intake label for tools is teal, safety reviews are scheduled for Friday, high-risk tests require two people, and a monthly maintenance task includes inspections and lubrication.",
+      "ttft_ms": 4249.295368004823,
+      "total_ms": 8627.237095992314,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 625,
+        "completion_tokens": 33,
+        "total_tokens": 658
+      },
+      "timings": {
+        "prompt_n": 625,
+        "prompt_ms": 4232.03,
+        "prompt_per_token_ms": 6.771248,
+        "predicted_n": 33,
+        "predicted_ms": 4375.23,
+        "predicted_per_token_ms": 132.58272727272725
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "words": 28,
+      "at_cap": false
+    }
+  ]
+}
