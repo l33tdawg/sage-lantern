@@ -60,6 +60,19 @@
       "evidence": "docs/lantern/evidence/V79_6_PRODUCTION_SMOKE_20261018.json",
       "sha256": "1e6100b9c7ad01bce68cfd8927c33a22051d7b999eaee161bb602d1a7d966775"
     },
+    "production_smoke_8192": {
+      "all_pass": true,
+      "actions": {
+        "passed": 28,
+        "total": 28
+      },
+      "e12": {
+        "V58_E12_A": true,
+        "V58_E12_B": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_PRODUCTION_SMOKE_8192_20261018.json",
+      "sha256": "1e6100b9c7ad01bce68cfd8927c33a22051d7b999eaee161bb602d1a7d966775"
+    },
     "guard_check": {
       "all_pass": true,
       "cases": {
@@ -68,6 +81,16 @@
         "S03_B": true
       },
       "evidence": "docs/lantern/evidence/V79_6_GUARD_CHECK_20261018.json",
+      "sha256": "c309a3e7f80ad010ad6755072c8da83ada63d7f57b92553ba4d7c45d466e9dc1"
+    },
+    "guard_check_8192": {
+      "all_pass": true,
+      "cases": {
+        "E13_A": true,
+        "E13_B": true,
+        "S03_B": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_GUARD_CHECK_8192_20261018.json",
       "sha256": "c309a3e7f80ad010ad6755072c8da83ada63d7f57b92553ba4d7c45d466e9dc1"
     },
     "stream_guard_check": {
