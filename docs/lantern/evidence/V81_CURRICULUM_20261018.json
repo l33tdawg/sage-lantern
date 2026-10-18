@@ -80,5 +80,13 @@
     ],
     "recommendation": "Publish a guarded Lantern research preview, not bare V81 weights. The guarded path clears sealed 64/64, fresh64 24/24, stock28 28/28 and E12/E13/S03; disclose E03_A arithmetic and the non-commercial license. No general or commercial claim."
   },
+  "published_release": {
+    "url": "https://github.com/l33tdawg/sage-lantern/releases/tag/v81-research-preview",
+    "tag": "v81-research-preview",
+    "commit": "8f98275377c8d22d97988e5603741b6ed1fe55e0",
+    "asset_sha256": "8805b3dddebb2580ba10f2d10c2299f473987d616aa10c8c62cd59572353d2f0",
+    "asset_bytes": 773591717,
+    "prerelease": true
+  },
   "local_evidence": "work/lantern-curriculum-v80-20261018/V81_RESULT.json, captures/, pipeline/, sealed_v81/"
 }
