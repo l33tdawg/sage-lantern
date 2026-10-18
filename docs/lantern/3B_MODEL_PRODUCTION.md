@@ -303,6 +303,24 @@ status and action pass; do not present V80 as a production or long-form
 qualification. Evidence:
 [`V80_CURRICULUM_20261018.json`](evidence/V80_CURRICULUM_20261018.json).
 
+### V81 balanced rank-32 candidate
+
+A rank-32 balanced retrain from the V79.6 chain (2,028 unique rows, 2,028
+updates) restored the action/status behavior V80 lost while keeping the
+curriculum gains. On the fresh 64-case sealed set V81 scored 64/64, against
+34/64 for stock, 36/64 for V79.6 and 63/64 for V80. Frozen fresh64 returned to
+21/24, stock28 held 28/28 and E12_A/B passed.
+
+The remaining raw failures are `V58_S13_B` (used a quoted public destination
+instead of the authorized private home), `V58_S03_B` (errored-lookup absence
+prose), `V58_S16_B` (ignored a supplied recall query) and `V58_E03_A`
+(arithmetic derailment). The existing save guard canonicalizes S13_B to the
+private home and the status guard repairs S03_B; S16_B and E03_A remain
+unguarded. No export, device or publication claim is made. Bare V81 weights
+would carry the raw S13_B authorization failure, so a publication would need
+the guarded runtime or a targeted raw repair. Evidence:
+[`V81_CURRICULUM_20261018.json`](evidence/V81_CURRICULUM_20261018.json).
+
 ## Deployment and rollback
 
 The systemd drop-in
