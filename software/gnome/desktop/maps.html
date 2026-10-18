@@ -122,6 +122,8 @@
       const statusUrl = "http://127.0.0.1:8090/status";
       const packsUrl = "http://127.0.0.1:8091/packs.json";
       const mapServer = "http://127.0.0.1:8091/";
+      const initialCenter = [100.35, 5.35];
+      const initialZoom = 11;
       const toggle = document.getElementById("gnss-position");
       const dot = document.getElementById("gnss-dot");
       const state = document.getElementById("gnss-state");
@@ -223,7 +225,7 @@
           const protocol = new pmtiles.Protocol();
           maplibregl.addProtocol("pmtiles", protocol.tile);
           const packs = await loadPacks();
-          packInfo = pickPack(packs, 100.35, 5.35) || null;
+          packInfo = pickPack(packs, initialCenter[0], initialCenter[1]) || null;
           const sources = {
             world_land: {type: "geojson", data: window.SAGE_WORLD.land,
                          attribution: "Natural Earth (public domain)"},
@@ -275,8 +277,8 @@
               sources: sources,
               layers: layers
             },
-            center: [100.35, 5.35],
-            zoom: 11,
+            center: initialCenter,
+            zoom: initialZoom,
             maxZoom: 16,
             attributionControl: true
           });
