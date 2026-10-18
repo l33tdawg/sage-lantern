@@ -5,7 +5,8 @@
  * Orange Pi 5 Plus 40-pin connection. Confirm the fitted board first.
  * The HAT's NSS is physical pin 40, NOT SPI0's native CS0 on pin 24.
  * SPI0_M2 supplies pins 19/21/23; gpio3_A3 supplies pin 40 as kernel CS.
- * No GPIOs for reset, RF switch, IRQ or GNSS are driven by this overlay.
+ * UART6_M1 is enabled for the L76K GNSS receiver on header pins 8/10.
+ * No GNSS reset/PPS/standby GPIOs, RF switch or radio IRQ are driven here.
  * It does not initialize the radio or enable any transmission.
  */
 / {
@@ -28,6 +29,16 @@
                 reg = <0>;
                 spi-max-frequency = <1000000>;
             };
+        };
+    };
+
+    /* The L76K GNSS UART is wired to the Raspberry-header TXD/RXD pins 8/10,
+     * which are UART6_M1 on the Orange Pi 5 Plus. UART6's base pinctrl is
+     * already the M1 mapping; only its status needs enabling. */
+    fragment@1 {
+        target = <&uart6>;
+        __overlay__ {
+            status = "okay";
         };
     };
 };

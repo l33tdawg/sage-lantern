@@ -1,0 +1,5 @@
+# SAGE Lantern GNSS: L76K on UART6_M1 (/dev/ttyS6, 9600 8N1).
+# The UART is enabled by the meshticulum-sx1262-hf overlay.
+DEVICES="/dev/ttyS6"
+GPSD_OPTIONS="-n"
+USBAUTO="false"

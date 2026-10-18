@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=GNSS Sky View
+Comment=Live L76K satellites and fix status through gpsd
+Exec=xgps
+Icon=/usr/share/icons/hicolor/scalable/apps/sage-maps.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=true

@@ -64,6 +64,20 @@ clock/freshness binding, disconnect handling, UI/map integration and real
 no-fix/indoors/cold-start tests are still required. Map source/licence, offline
 map storage and routing remain separate backlog gates.
 
+## Live receiver on C — 18 October 2026
+
+The HAT is the L76K GNSS variant. Its TXD/RXD map to UART6_M1 on Orange Pi
+header pins 8/10. The `meshticulum-sx1262-hf` overlay now enables `&uart6`;
+UART2 remains the debug console and is not the GNSS path. `/dev/ttyS6` emits
+9600-baud NMEA, and `gpsd 3.27.5` is enabled on that device with
+`USBAUTO=false`.
+
+The first indoor reading is **TPV mode 1, 0 satellites, HDOP 25.5**, and the
+receiver reports **`ANTENNA OPEN`**. This is receiver/service proof, not a
+location or navigation result. Connect the GNSS antenna and move to open sky,
+then re-read `gpspipe -w`/`xgps` before making any fix, accuracy or map-position
+claim.
+
 ## Verification
 
 ```sh

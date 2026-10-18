@@ -78,6 +78,13 @@ no application requirement to drive GNSS reset, enable or UART RX is established
 by the existing code. This does not mean those pins may float: the HAT schematic
 must establish safe defaults and required electrical connections.
 
+**Live C update (18 October 2026):** the L76K HAT TXD/RXD are UART6_M1 on
+header pins 8/10. The `meshticulum-sx1262-hf` overlay enables `&uart6`;
+`/dev/ttyS6` emits 9600-baud NMEA and `gpsd 3.27.5` is enabled on it with
+`USBAUTO=false`. The first indoor reading is TPV mode 1 / 0 satellites and the
+receiver reports `ANTENNA OPEN`; connect the antenna and move to open sky. This
+is serial/service proof, not a fix or location result. PPS remains unused.
+
 An [offline NMEA replay validator](CF_GNSS_REPLAY.md) is now available for
 synthetic/captured-output checks. It does not add a live receiver, PPS consumer
 or serial ownership and never labels replay coordinates as verified current.

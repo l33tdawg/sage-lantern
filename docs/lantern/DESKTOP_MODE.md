@@ -66,13 +66,14 @@ Google Maps remains an **online-only** web shortcut. Its tiles are not cached
 or redistributed. Offline maps will use OpenStreetMap data (ODbL) in a bounded
 regional pack served locally, with attribution and a documented disk budget.
 
-The current C hardware check found no GNSS receiver: no `/dev/ttyACM*` or
-`/dev/ttyUSB*`, no `gpsd` package/service and no kernel GNSS device. C–F are
-planned to have GNSS, and the SX1262/GNSS HAT may carry a receiver, but the
-receiver/interface still has to be confirmed and wired. The existing
-`cf-gnss-replay.py` parser is an offline validation candidate, not a live
-location service. The Maps page therefore says “GNSS receiver not detected”
-rather than showing a fake fix.
+The C unit now has a live L76K GNSS path. The HAT's GNSS TXD/RXD are UART6_M1
+on header pins 8/10; the `meshticulum-sx1262-hf` overlay enables `&uart6`
+(without touching UART2, which is the debug console). `/dev/ttyS6` emits
+9600-baud NMEA, and `gpsd 3.27.5` is enabled on it. The receiver currently
+reports `ANTENNA OPEN`, TPV mode 1 and 0 satellites, so the Maps page reports
+“GNSS receiver live · antenna open” rather than inventing a position. Connect
+the GNSS antenna and move to open sky before expecting a fix. `GNSS Sky View` in
+the app grid opens `xgps` for live satellites and fix state.
 
 The next maps increment is a bounded OSM/PMTiles regional pack plus a local
 map renderer, followed by a `gpsd`/NMEA live owner and a UI fix/accuracy

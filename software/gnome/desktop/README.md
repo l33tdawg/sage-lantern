@@ -12,6 +12,7 @@ First-version desktop presentation for the `sage` kiosk user:
 - Maps opens the branded location panel with online Google Maps/OSM links and
   the offline OpenStreetMap plan.
 - `Return to Lantern Portrait` is available in the app grid.
+- `GNSS Sky View` opens `gpsmon` against the live L76K/gpsd feed.
 
 Install or remove from the repository root on the device:
 

@@ -36,6 +36,7 @@ install_files() {
   install -Dm644 "$assets/sage-cerebrum.desktop" "$app_dir/sage-cerebrum.desktop"
   install -Dm644 "$assets/sage-maps.desktop" "$app_dir/sage-maps.desktop"
   install -Dm644 "$assets/sage-lantern-portrait.desktop" "$app_dir/sage-lantern-portrait.desktop"
+  install -Dm644 "$assets/sage-gnss.desktop" "$app_dir/sage-gnss.desktop"
   if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q "$app_dir" || true; fi
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
 }
@@ -122,13 +123,14 @@ case "${1:-install}" in
     echo "  wallpaper: $wallpaper"
     echo "  start page: $start_page"
     echo "  shortcuts: SAGE Lantern Desktop, SAGE CEREBRUM, SAGE Maps & Location"
-    echo "  controls: Return to Lantern Portrait (app grid)"
+    echo "  controls: Return to Lantern Portrait, GNSS Sky View (app grid)"
     ;;
   uninstall)
     restore_state
     rm -f "$wallpaper" "$start_page" "$icon_dir/sage-lantern-desktop.svg" "$icon_dir/sage-cerebrum.svg" \
       "$icon_dir/sage-maps.svg" "$app_dir/sage-lantern-desktop.desktop" "$app_dir/sage-cerebrum.desktop" \
       "$app_dir/sage-maps.desktop" "$app_dir/sage-lantern-portrait.desktop" \
+      "$app_dir/sage-gnss.desktop" \
       /usr/share/sage-lantern/desktop/maps.html
     rm -rf "$state_dir"
     echo "Removed SAGE Lantern desktop skin and restored previous desktop settings"
