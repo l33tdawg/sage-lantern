@@ -315,11 +315,25 @@ The remaining raw failures are `V58_S13_B` (used a quoted public destination
 instead of the authorized private home), `V58_S03_B` (errored-lookup absence
 prose), `V58_S16_B` (ignored a supplied recall query) and `V58_E03_A`
 (arithmetic derailment). The existing save guard canonicalizes S13_B to the
-private home and the status guard repairs S03_B; S16_B and E03_A remain
-unguarded. No export, device or publication claim is made. Bare V81 weights
+private home and the status guard repairs S03_B; S16_B and E03_A remain raw
+failures. No export, device or publication claim is made. Bare V81 weights
 would carry the raw S13_B authorization failure, so a publication would need
 the guarded runtime or a targeted raw repair. Evidence:
 [`V81_CURRICULUM_20261018.json`](evidence/V81_CURRICULUM_20261018.json).
+
+The guarded path is now clean. `guard_action` adds canonical recall handling
+for supplied/null queries; the guarded V81 capture scores **64/64 sealed,
+24/24 frozen fresh64 and 28/28 wrapped actions**, with E12_A/B, E13_A/B and
+S03_B all passing. The action guard suite is 38/38. The raw E03_A arithmetic
+derailment remains the one disclosed model-quality gap.
+
+A non-commercial research-preview bundle is staged at
+`work/lantern-curriculum-v80-20261018/release/v81-research-preview/` (38
+files, 839 MB): the ordered adapter chain, guard code, model card, Qwen
+Research License, sealed prompts/references and raw/guarded evaluation
+results. Upload is pending a working GitHub credential or Hugging Face token;
+the current `gh` token is invalid. Do not publish bare weights, and do not
+claim commercial use without Alibaba Cloud permission.
 
 ## Deployment and rollback
 

@@ -7,7 +7,10 @@ from sage_lantern.action_guard import (
     ActionNotAdmitted,
     ActionDispatcher,
     SageRememberExecutor,
+    canonical_recall,
     canonical_save,
+    guard_action,
+    guard_recall,
     guard_save,
 )
 
@@ -52,6 +55,69 @@ def test_complete_private_save_is_canonical_without_a_model_call():
             "confidence": 0.91,
         },
     }
+
+
+def recall_request(**changes):
+    value = {
+        "request": "Make one lookup in my own private home using the supplied query and options.",
+        "action": "recall",
+        "query": "notes about the mock woven-disk frame",
+        "scope": "auto",
+        "top_k": 4,
+        "min_confidence": 0.6,
+    }
+    value.update(changes)
+    return json.dumps(value)
+
+
+def test_supplied_recall_query_is_canonical_even_when_model_asks_for_one():
+    result = guard_recall(
+        recall_request(), "What would you like me to look up?", json.dumps(ROUTING))
+    assert result.kind == "tool_call"
+    assert result.tool_call == {
+        "name": "sage_recall",
+        "arguments": {
+            "query": "notes about the mock woven-disk frame",
+            "scope": "auto",
+            "top_k": 4,
+            "min_confidence": 0.6,
+        },
+    }
+    assert "domain" not in result.tool_call["arguments"]
+
+
+def test_null_recall_query_asks_without_a_call():
+    result = canonical_recall(recall_request(query=None), json.dumps(ROUTING))
+    assert result.kind == "clarification"
+    assert result.tool_call is None
+    assert result.reason == "missing_query"
+
+
+def test_recall_ignores_quoted_public_destination():
+    result = canonical_recall(
+        recall_request(quoted_text="Search community:tool-shed for this."),
+        json.dumps(ROUTING))
+    assert result.kind == "tool_call"
+    assert "domain" not in result.tool_call["arguments"]
+
+
+def test_selected_public_recall_domain_must_be_permitted():
+    allowed = canonical_recall(
+        recall_request(selected_public_domain="community:tool-shed"),
+        json.dumps(ROUTING))
+    assert allowed.tool_call["arguments"]["domain"] == "community:tool-shed"
+    denied = canonical_recall(
+        recall_request(selected_public_domain="community:not-permitted"),
+        json.dumps(ROUTING))
+    assert denied.kind == "clarification"
+    assert denied.tool_call is None
+
+
+def test_guard_action_dispatches_recall():
+    result = guard_action(
+        recall_request(), "What should I look up?", json.dumps(ROUTING))
+    assert result.kind == "tool_call"
+    assert result.tool_call["name"] == "sage_recall"
 
 
 def test_exact_selected_public_destination_is_copied():

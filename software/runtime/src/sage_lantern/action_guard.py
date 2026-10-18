@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 TOOL_CALL = re.compile(r"\s*<tool_call>\s*(\{.*\})\s*</tool_call>\s*", re.S)
 MEMORY_TYPES = {"fact", "observation", "inference", "task"}
+RECALL_SCOPES = {"local", "auto", "federated"}
 COMPLETION_CLAIM = re.compile(
     r"(?:\b(?:i\s+have|i've|has\s+been|have\s+been|successfully|was)\s+"
     r"(?:saved|stored|written|committed|recorded|published|posted|shared|"
@@ -207,6 +208,90 @@ def canonical_save(request_json: str, routing_json: str) -> GuardResult:
     )
 
 
+def canonical_recall(request_json: str, routing_json: str) -> GuardResult:
+    """Return the one lookup derived only from the trusted recall request."""
+    request, routing, error = _parse_inputs(request_json, routing_json)
+    if error is not None:
+        return GuardResult(
+            "error", "The request could not be parsed; no lookup was made.",
+            reason=error.reason)
+    if request.get("action") != "recall":
+        return GuardResult("pass", "", reason="not_a_recall_action")
+    query = request.get("query")
+    if not isinstance(query, str) or not query.strip():
+        return GuardResult(
+            "clarification",
+            "What should I look up? No query was supplied.",
+            reason="missing_query")
+    arguments = {"query": query}
+    scope = request.get("scope")
+    if scope is not None:
+        if scope not in RECALL_SCOPES:
+            return GuardResult(
+                "clarification",
+                "The supplied lookup scope is not valid; nothing was looked up.",
+                reason="invalid_scope")
+        arguments["scope"] = scope
+    top_k = request.get("top_k")
+    if top_k is not None:
+        if (not isinstance(top_k, int) or isinstance(top_k, bool) or top_k <= 0):
+            return GuardResult(
+                "clarification",
+                "The supplied lookup limit is not valid; nothing was looked up.",
+                reason="invalid_top_k")
+        arguments["top_k"] = top_k
+    min_confidence = request.get("min_confidence")
+    if min_confidence is not None:
+        if (not isinstance(min_confidence, (int, float))
+                or isinstance(min_confidence, bool)
+                or not 0 <= min_confidence <= 1):
+            return GuardResult(
+                "clarification",
+                "The supplied confidence limit is not valid; nothing was looked up.",
+                reason="invalid_min_confidence")
+        arguments["min_confidence"] = min_confidence
+
+    permitted = routing.get("permitted_public_domains", [])
+    if not isinstance(permitted, list) or any(
+            not isinstance(domain, str) or not domain for domain in permitted):
+        return GuardResult(
+            "error", "The routing could not be read; no lookup was made.",
+            reason="invalid_routing")
+    destination = request.get("selected_destination")
+    public_selection = request.get("selected_public_domain")
+    if destination is not None and public_selection is not None:
+        if destination == "own_home" or destination != public_selection:
+            return GuardResult(
+                "clarification",
+                "The supplied destinations conflict; nothing was looked up.",
+                reason="conflicting_destination")
+    domain = None
+    if destination == "own_home":
+        domain = None
+    elif public_selection is not None:
+        if public_selection in permitted:
+            domain = public_selection
+        else:
+            return GuardResult(
+                "clarification",
+                "The selected public domain is not permitted; nothing was looked up.",
+                reason="unpermitted_selected_public_domain")
+    elif destination is not None:
+        if destination in permitted:
+            domain = destination
+        else:
+            return GuardResult(
+                "clarification",
+                "The selected destination is not permitted; nothing was looked up.",
+                reason="unpermitted_selected_destination")
+    if domain is not None:
+        arguments["domain"] = domain
+    return GuardResult(
+        "tool_call", "",
+        tool_call={"name": "sage_recall", "arguments": arguments},
+        reason="canonicalized_request")
+
+
 def guard_save(request_json: str, model_text: str, routing_json: str) -> GuardResult:
     """Evaluate model output against a canonical save request.
 
@@ -234,6 +319,40 @@ def guard_save(request_json: str, model_text: str, routing_json: str) -> GuardRe
             reason="replaced_unverified_completion_claim")
     return GuardResult(
         "pass", model_text, reason="model_did_not_claim_completion")
+
+
+def guard_recall(request_json: str, model_text: str, routing_json: str) -> GuardResult:
+    """Canonicalize a requested lookup even when the model asks for its query."""
+    canonical = canonical_recall(request_json, routing_json)
+    if canonical.kind != "tool_call":
+        return canonical
+    parsed = _parse_tool_call(model_text)
+    if parsed is not None and parsed.get("name") != "sage_recall":
+        return GuardResult(
+            "error", "That action is not the requested lookup; nothing was looked up.",
+            reason="wrong_tool")
+    return GuardResult(
+        "tool_call", "", tool_call=canonical.tool_call,
+        reason="canonicalized_request")
+
+
+def guard_action(request_json: str, model_text: str, routing_json: str) -> GuardResult:
+    """Dispatch one trusted action request to the save or recall guard."""
+    try:
+        request = json.loads(request_json)
+    except (TypeError, json.JSONDecodeError):
+        return GuardResult(
+            "error", "The request could not be parsed; nothing was performed.",
+            reason="invalid_request_json")
+    if not isinstance(request, dict):
+        return GuardResult(
+            "error", "The request could not be parsed; nothing was performed.",
+            reason="invalid_request_shape")
+    if _is_save(request):
+        return guard_save(request_json, model_text, routing_json)
+    if request.get("action") == "recall":
+        return guard_recall(request_json, model_text, routing_json)
+    return GuardResult("pass", model_text, reason="not_an_action_request")
 
 
 def render(result: GuardResult) -> str:

@@ -57,18 +57,28 @@
   "guard_check": {
     "V58_S13_B": "guard_save canonicalizes to the authorized private-home save with no domain",
     "V58_S03_B": "response_guards.status_text repairs to a failed-lookup non-absence answer",
-    "V58_S16_B": "no save guard applies to recall; supplied query still ignored raw",
+    "V58_S16_B": "the new canonical_recall guard uses the supplied query and options",
     "V58_E03_A": "no arithmetic guard; raw derailment remains"
+  },
+  "guarded_v81": {
+    "sealed": "64/64",
+    "fresh64": "24/24",
+    "stock28": "28/28",
+    "E12_A_B": "2/2",
+    "E13_A_B": "2/2",
+    "S03_B": "1/1",
+    "guard_module_sha256": "50835b209594108abfa864c97bb7b9f0f986a13296e9bc516e9ffe0951413972",
+    "tests": "38/38 action guard tests pass"
   },
   "assessment": {
     "improvement": "V81 restores fresh64 to V79.6's 21/24 while keeping the curriculum gains and reaching 64/64 on the fresh sealed set.",
     "publication_blockers": [
-      "Raw S13_B uses a quoted public destination instead of the authorized private home; the guard fixes it, bare weights do not.",
-      "Raw S16_B ignores a supplied recall query.",
-      "Raw E03_A derails on arithmetic.",
+      "Raw S13_B uses a quoted public destination instead of the authorized private home; the guarded path fixes it, bare weights do not.",
+      "Raw S16_B ignores a supplied recall query; canonical_recall fixes it.",
+      "Raw E03_A derails on arithmetic; no guard covers E03_A.",
       "Qwen2.5-VL-3B is under the non-commercial Qwen Research License; commercial publication needs Alibaba permission."
     ],
-    "recommendation": "Publish a guarded Lantern research preview, not bare V81 weights. Integrate the save/status guard, add recall-query normalization, and fix or disclose E03_A before release. No general or commercial claim."
+    "recommendation": "Publish a guarded Lantern research preview, not bare V81 weights. The guarded path clears sealed 64/64, fresh64 24/24, stock28 28/28 and E12/E13/S03; disclose E03_A arithmetic and the non-commercial license. No general or commercial claim."
   },
   "local_evidence": "work/lantern-curriculum-v80-20261018/V81_RESULT.json, captures/, pipeline/, sealed_v81/"
 }
