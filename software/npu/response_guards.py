@@ -637,6 +637,49 @@ def interval_answer(messages):
     )
 
 
+CADENCE_QUESTION = re.compile(
+    r"\b(?:how\s+often|how\s+frequently|what(?:'s|\s+is)\s+the\s+"
+    r"(?:interval|frequency|cadence)|what\s+(?:interval|frequency|cadence)|"
+    r"which\s+(?:interval|frequency|cadence))\b",
+    re.I,
+)
+CADENCE_DOMAIN = re.compile(
+    r"\b(check|checks|review|reviews|inspection|inspections|maintenance|service|"
+    r"servicing|audit|audits|rotation|cleaning|test|tests|calibration|update|updates)\b",
+    re.I,
+)
+CADENCE_GIVEN = re.compile(
+    r"\b(?:every\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|other|"
+    r"day|week|month|year|morning|evening|monday|tuesday|wednesday|thursday|"
+    r"friday|saturday|sunday)|daily|weekly|fortnightly|biweekly|"
+    r"monthly|quarterly|annually|yearly|once\s+a|twice\s+a|\d+\s+times\s+a)\b",
+    re.I,
+)
+
+
+def cadence_answer(messages):
+    """Ask for a missing check/review interval instead of inventing one."""
+    text = _last_user_text(messages)
+    if not text:
+        return None
+    if CADENCE_QUESTION.search(text) is None:
+        return None
+    domain = CADENCE_DOMAIN.search(text)
+    if domain is None:
+        return None
+    supplied = " ".join(
+        message["content"] for message in messages
+        if isinstance(message, dict) and message.get("role") == "user"
+        and isinstance(message.get("content"), str)
+    )
+    if CADENCE_GIVEN.search(supplied):
+        return None
+    noun = domain.group(1).lower()
+    if noun.endswith("s") and noun not in {"maintenance"}:
+        noun = noun[:-1]
+    return f"The {noun} interval isn't specified here. What interval should apply?"
+
+
 def status_text(messages, model_text):
     """Repair unsupported absence claims after a failed or empty recall."""
     action_index, request = _last_actionable_request(messages)

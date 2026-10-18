@@ -68,9 +68,33 @@
     "E13_A_B": "2/2",
     "S03_B": "1/1",
     "guard_module_sha256": "50835b209594108abfa864c97bb7b9f0f986a13296e9bc516e9ffe0951413972",
-    "response_guards_sha256": "ac69b131412ada129483c9003e301f5fb930ed37536919a3ec4ca90fd199ae07",
+    "response_guards_sha256": "8b226022728a02509cda669fbfb070f1043ed7b7153d6cd207fdccabfb4b78e1",
     "action_guard_tests": "38/38 pass",
-    "response_guard_tests": "57 pass, 20 subtests pass"
+    "response_guard_tests": "69 pass, 20 subtests pass"
+  },
+  "runtime_guards": {
+    "grounded_longform": {
+      "path": "software/npu/grounded_longform.py",
+      "sha256": "103da4652c24370e36a81a3ebd677e7b8d6a144ae26e3a0eeeb87d64f88641e9",
+      "installed_on_unit_c": "/opt/sage-lantern/npu/token-engine/libexec/grounded_longform.py",
+      "scope": "explicit paragraph count plus explicit fact list, narrow correction and missing-detail forms",
+      "sealed_longform": "20/20",
+      "families": {
+        "grounded": "8/8",
+        "sparse": "4/4",
+        "missing": "4/4",
+        "correction": "4/4"
+      },
+      "device_capture": "work/lantern-v81-longform-20261018/captures/device_v811_guard_longform_final2.jsonl",
+      "device_score": "work/lantern-v81-longform-20261018/captures/score_device_v811_guard_longform_final2.json",
+      "deterministic_latency_ms": "1-41 for composer cases"
+    },
+    "cadence_answer": {
+      "behavior": "asks for a missing check/review interval instead of inventing one",
+      "live_probe": "The check interval isn't specified here. What interval should apply?"
+    },
+    "server_sha256": "674ae3d23f5527518a641ded9b1475e21aeb76bb4de2123b26000e779c251db0",
+    "tests": "69 passed, 20 subtests passed"
   },
   "device_deployment": {
     "unit": "Unit C, RK3588 engineering device",

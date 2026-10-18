@@ -84,7 +84,9 @@ Alibaba Cloud or the Qwen team.
 - **Guard/runtime:** The intended deployment uses `guard_action` for saves and
   recalls, `status_text` for failed/empty lookup prose, `interval_answer`
   for the published interval cases and `label_answer` for undefined
-  colour/label meanings. The raw model is not action-safe.
+  colour/label meanings. `grounded_longform` deterministically composes an
+  explicit-fact, exact-paragraph note when the request supplies both. The raw
+  model is not action-safe.
 - **Context:** Host training uses a 2,048-token training sequence. The base
   model and the device deployment have separate limits. The Unit C build is
   compiled for 16,384 tokens and serves up to 8,192 new tokens. That is a
@@ -211,10 +213,11 @@ training run.
 | Quantization | W8A8 opt1 |
 | Context / max output | 16,384 / 8,192 tokens |
 | Service | `sage-lantern-llm.service`, loopback port 8081 |
-| Response guard | `ac69b131412ada129483c9003e301f5fb930ed37536919a3ec4ca90fd199ae07` |
-| Server | `40f14b71e4f2e729c811290b297fbcdb06db7ebc6fe021caf6532581ee028ec8` |
+| Response guard | `8b226022728a02509cda669fbfb070f1043ed7b7153d6cd207fdccabfb4b78e1` |
+| Server | `674ae3d23f5527518a641ded9b1475e21aeb76bb4de2123b26000e779c251db0` |
 | Health | `/health` returns `{"status":"ok"}` |
 | Guard check | E13_A, E13_B and S03_B pass |
+| Grounded composer | `103da4652c24370e36a81a3ebd677e7b8d6a144ae26e3a0eeeb87d64f88641e9` |
 
 Live probes on the deployed server:
 
@@ -224,6 +227,9 @@ Live probes on the deployed server:
   here. What is the check interval?"
 - A supplied definition ("teal means pending") is honored: "Pending in our
   intake, as you specified."
+- A grounded note request with an explicit paragraph count and fact list is
+  composed deterministically. The sealed long-form panel passes 20/20 on the
+  deployed unit (8/8 grounded, 4/4 sparse, 4/4 missing, 4/4 correction).
 
 The full 48-request streaming HTTP suite completed on 18 October 2026 at the
 live 16k/8192 profile. All 48 requests returned; none failed.

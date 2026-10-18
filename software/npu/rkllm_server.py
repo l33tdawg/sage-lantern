@@ -35,6 +35,7 @@ MAX_PROXY_RESPONSE_BYTES = 1024 * 1024
 MAX_PROXY_LINE_BYTES = 65536
 ENGINE_MARKER = "@@RKLLM_JSON@@ "
 _RESPONSE_GUARDS = None
+_GROUNDED_LONGFORM = None
 
 
 def response_guards():
@@ -47,6 +48,18 @@ def response_guards():
         spec.loader.exec_module(module)
         _RESPONSE_GUARDS = module
     return _RESPONSE_GUARDS
+
+
+def grounded_longform():
+    """Load the sibling grounded long-form composer without depending on sys.path."""
+    global _GROUNDED_LONGFORM
+    if _GROUNDED_LONGFORM is None:
+        path = Path(__file__).with_name("grounded_longform.py")
+        spec = importlib.util.spec_from_file_location("lantern_grounded_longform", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _GROUNDED_LONGFORM = module
+    return _GROUNDED_LONGFORM
 
 
 class EngineError(RuntimeError):
@@ -350,7 +363,11 @@ class Handler(BaseHTTPRequestHandler):
                                                   "no fallback configured"}})
             return
         if self.response_guards:
-            deterministic = response_guards().interval_answer(messages)
+            deterministic = grounded_longform().compose_grounded_longform(messages)
+            if deterministic is None:
+                deterministic = response_guards().interval_answer(messages)
+            if deterministic is None:
+                deterministic = response_guards().cadence_answer(messages)
             if deterministic is None:
                 deterministic = response_guards().label_answer(messages)
             if deterministic is None:

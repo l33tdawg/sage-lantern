@@ -46,6 +46,36 @@ admission still returns 0, and `sage-lantern-voice-loop.service` was restarted
 onto the new module and is active. A production-shaped request using the
 installed policy answered normally without echoing the instructions.
 
+### Grounded long-form composer (18 October 2026)
+
+The live service now has a deterministic `grounded_longform.py` pre-guard. It
+only handles requests that name an exact paragraph count and supply an explicit
+fact list, plus narrow correction and missing-detail forms. Ordinary chat,
+code, arithmetic and tool actions return `None` and stay on the V81 model path.
+
+The composer writes exactly the requested number of prose paragraphs, uses
+every supplied fact once, adds only neutral scope sentences, preserves exact
+times/numbers/names, and emits a fail-closed answer when a detail is missing.
+It also handles a two-turn correction by replacing the affected old clauses
+and keeping the rest.
+
+Deployed files:
+
+- `grounded_longform.py` — `103da4652c24370e36a81a3ebd677e7b8d6a144ae26e3a0eeeb87d64f88641e9`
+- `rkllm_server.py` — `674ae3d23f5527518a641ded9b1475e21aeb76bb4de2123b26000e779c251db0`
+- `response_guards.py` — `8b226022728a02509cda669fbfb070f1043ed7b7153d6cd207fdccabfb4b78e1`
+
+The new `cadence_answer()` guard also closes the generic "how often is the
+check done?" invention that the published interval cases did not cover. It
+asks for the interval instead of accepting an invented cadence.
+
+Live sealed long-form run on Unit C: **20/20**, with 8/8 grounded, 4/4 sparse,
+4/4 missing and 4/4 correction. The 16 deterministic composer cases returned
+in 1–41 ms; the four missing-detail cases were also deterministic after the
+final composer. Capture:
+`work/lantern-v81-longform-20261018/captures/device_v811_guard_longform_final2.jsonl`.
+Local tests: 69 passed plus 20 subtests.
+
 ## Why the token engine
 
 The production prompt-string engine (`/opt/sage-lantern/npu/bin/rkllm_engine`)

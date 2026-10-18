@@ -857,5 +857,36 @@ class LabelGuardTests(unittest.TestCase):
         ]))
 
 
+class CadenceGuardTests(unittest.TestCase):
+    def test_generic_check_cadence_fails_closed(self):
+        answer = GUARDS.cadence_answer([
+            {"role": "user", "content": "How often is the check done?"},
+        ])
+        self.assertEqual(
+            answer,
+            "The check interval isn't specified here. What interval should apply?",
+        )
+
+    def test_supplied_cadence_is_not_intercepted(self):
+        self.assertIsNone(GUARDS.cadence_answer([
+            {"role": "user",
+             "content": "The safety review runs every Wednesday. How often is the check done?"},
+        ]))
+        self.assertIsNone(GUARDS.cadence_answer([
+            {"role": "user",
+             "content": "We do a weekly inspection. How frequently should we review it?"},
+        ]))
+
+    def test_general_knowledge_frequency_is_not_intercepted(self):
+        self.assertIsNone(GUARDS.cadence_answer([
+            {"role": "user", "content": "How often does the moon orbit Earth?"},
+        ]))
+
+    def test_non_cadence_question_is_not_intercepted(self):
+        self.assertIsNone(GUARDS.cadence_answer([
+            {"role": "user", "content": "What should the check cover?"},
+        ]))
+
+
 if __name__ == "__main__":
     unittest.main()
