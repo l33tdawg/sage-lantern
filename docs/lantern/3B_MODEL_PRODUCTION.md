@@ -268,6 +268,41 @@ Known limits:
   It uses a different path from the historical native guards-off table, so use
   it as the live-profile measurement rather than as a like-for-like delta.
 
+## V80 curriculum development
+
+The owner chose the broader verified English curriculum on 18 October 2026.
+The first increment added 994 verified synthetic rows: 614 for unknown/defined
+label semantics, missing cadence and missing-fact grounding, and 380 for
+value, label, cadence, assistant-error, ambiguity and history corrections.
+They were mixed with V79.6 action schema, V79.2 notices, V79 clarify rows,
+V79.8 arithmetic and a stratified V46 English sample: 1,726 unique rows,
+1,726 updates, rank 16, LR 1e-6. V80 and a 736-update V80.1 repair were
+evaluated on a separately authored, 64-case sealed set plus the frozen
+development sets.
+
+On the sealed set, V80 scored 63/64 against 36/64 for V79.6 and 33/64 for
+stock. The V80 family results were 16/16 unknown labels, 7/8 defined labels,
+8/8 missing cadence, 4/4 defined cadence, 8/8 missing grounding and 8/8, 6/6,
+4/4 and 2/2 across the four correction families. The one remaining sealed
+failure ignored a definition supplied in the same turn. V80 also held all 28
+wrapped stock action prompts semantically, passed E12_A/B, and reproduced the
+known raw E13/S03 guard dependencies.
+
+The tradeoff is confined to the raw development panels: V80 scored 17/24 on
+the frozen fresh64 tool/status cases against 21/24 for V79.6. The new failures
+are flat tool-call arguments, trailing prose after a valid call, and
+status/absence prose. The action guard already canonicalizes the flat shape
+and replaces prose claims, and the status guard repairs failed-lookup prose,
+but the guard is not yet integrated at the SAGE/OpenClaw dispatcher. V80.1
+fixed the trailing-prose call and a 3.3k-character E03_A derailment but traded
+one status case and did not improve the aggregate.
+
+Neither candidate is exported, promoted or device-measured. The next gate is
+guarded-path integration plus a higher-capacity balanced English, arithmetic,
+status and action pass; do not present V80 as a production or long-form
+qualification. Evidence:
+[`V80_CURRICULUM_20261018.json`](evidence/V80_CURRICULUM_20261018.json).
+
 ## Deployment and rollback
 
 The systemd drop-in
