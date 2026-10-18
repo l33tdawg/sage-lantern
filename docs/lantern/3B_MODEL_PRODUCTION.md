@@ -34,6 +34,19 @@ merged into the publisher layout before RKLLM conversion. It is W8A8 with a
 long-form paragraph guard buffers explicit long-form requests and normalizes
 the requested paragraph count without inventing content.
 
+### Runtime policy
+
+The production venv imports the 157-word `TEXT_POLICY` from
+`sage_lantern.adapters` (policy SHA-256 `4d2f5918…`). It was rebuilt as
+`sage_lantern_runtime-0.2.0-py3-none-any.whl` (SHA-256 `cfeb9240…`, source
+snapshot `e565cfae…`) with two independent byte-identical builds, then
+installed into `/opt/sage-lantern/venv`. The only module delta against the
+installed package was `adapters.py`. The previous module (`e99c67e7…`) is
+backed up under `/var/backups/lantern-runtime-policy-20261018/`; audio
+admission still returns 0, and `sage-lantern-voice-loop.service` was restarted
+onto the new module and is active. A production-shaped request using the
+installed policy answered normally without echoing the instructions.
+
 ## Why the token engine
 
 The production prompt-string engine (`/opt/sage-lantern/npu/bin/rkllm_engine`)
@@ -65,9 +78,11 @@ capacity constraint is the RKLLM IOVA window, which admits one 3B lane at a time
 ## Measured device performance
 
 Unit C, RK3588 SDK 1.3.1, W8A8, 48 requests (36 quality + 12 latency), greedy
-decode, fresh KV cache per request. This historical comparison was run at the
-2048-token serving profile; the current 16k profile has not been re-run through
-the full 48-request matrix.
+decode, fresh KV cache per request. The stock/V79.6 table below is the
+historical native comparison at the 2048-token serving profile with guards off.
+The live 16k/8192 profile was re-run through the full 48-request matrix on
+18 October 2026 over streaming HTTP with guards on; see the next subsection.
+Because the path and profile differ, the two runs are not a clean delta.
 
 | Metric | Stock 3B | V79.6 |
 |---|---:|---:|
@@ -83,6 +98,41 @@ At 1,536 prompt tokens V79.6 measured 11,733 ms TTFT and 6.98 tok/s decode,
 against stock 11,544 ms and 7.23 tok/s. The 128-token median favors V79.6; the
 longest prompt is slightly slower. These are local near-bench timings, not a
 field, thermal-soak or multi-user claim.
+
+### Live 16k/8192 profile
+
+Run 18 October 2026 against the production service on port 8081
+(`--context 16384 --max-new-tokens 8192`, guard `54cd4829…`), streaming HTTP
+with guards on. All 48 requests completed; the capture is
+`device_v79_6_http48_live16k_20261018.json` in the development work directory.
+
+The 36 quality cases:
+
+| Metric | Live 16k, HTTP, guards on |
+|---|---:|
+| TTFT median | 713.4 ms |
+| TTFT p90 | 860.5 ms |
+| Decode median | 7.50 tok/s |
+| Decode aggregate | 7.35 tok/s |
+| Response median | 6765.8 ms |
+| Generated tokens mean | 56.4 |
+
+Fixed latency set (64 output tokens; three cases per prompt length):
+
+| Prompt tokens | TTFT median | Response median | Decode median |
+|---:|---:|---:|---:|
+| 128 | 858.5 ms | 9074.0 ms | 7.69 tok/s |
+| 512 | 3590.4 ms | 12330.3 ms | 7.20 tok/s |
+| 1024 | 7708.9 ms | 17244.3 ms | 6.62 tok/s |
+| 1536 | 12778.9 ms | 22995.8 ms | 6.16 tok/s |
+
+Across all 48 cases: TTFT median 744.3 ms, p90 7681.2 ms, response median
+8948.6 ms, decode median 7.26 tok/s and aggregate 7.21 tok/s. Relative to the
+historical native guards-off 2048 run, the live path adds about 0.1 s at 128
+prompt tokens, 0.4–0.7 s at 512–1024 and about 1.0 s at 1536; quality-case
+decode is 7.50 vs 7.82 tok/s. The difference includes the HTTP/tokenizer path,
+guards and the 16k engine profile, so it is not attributable to context size
+alone. These remain near-bench measurements.
 
 ### Guard-on latency probe
 
@@ -203,9 +253,9 @@ Known limits:
   and `ConversationService.dispatch_save()`. It executes only canonical
   request-derived calls through an admission-checked SAGE executor and returns
   the receipt unchanged. The wheel is installed in Unit C's production venv
-  (`bc2ce87b…`; `action_guard.py` `f844e2ed…`) and the staged package
-  verification passes. The product UI/HTTP route that will invoke this service
-  method is still separate work.
+  (`cfeb9240…` after the 18 October policy rebuild; `action_guard.py`
+  `f844e2ed…`) and the staged package verification passes. The product
+  UI/HTTP route that will invoke this service method is still separate work.
 - Memory is measured as process RSS and service-cgroup current usage, not as
   the RKLLM SDK allocator under a long soak. At 16k/8192 the engine was 3.99 GB
   RSS and the service cgroup 4.16 GB; this is not a thermal or multi-hour soak.
@@ -213,8 +263,10 @@ Known limits:
   multi-user claims need their own qualification. The 8192 cap is active and
   the structural long-form guards work, but invented label meanings/cadence and
   semantic restatement remain model-quality defects. The full 48-request
-  benchmark at the 16k/8192 profile is still pending; the table above is the
-  historical 2048-context measurement.
+  benchmark at the 16k/8192 profile completed on 18 October 2026 (48/48;
+  quality-case TTFT 713.4 ms median / 860.5 ms p90, decode 7.50 tok/s median).
+  It uses a different path from the historical native guards-off table, so use
+  it as the live-profile measurement rather than as a like-for-like delta.
 
 ## Deployment and rollback
 
@@ -251,6 +303,12 @@ python3 export_rkllm_chat_candidate.py \
 python3 run_device_comparison.py \
   --model /var/tmp/lantern-focused-finetune-20261012/v79_6.rkllm \
   --output device_v79_6_48
+
+# Live-profile 48-request run against the production service (streaming HTTP)
+python3 run_device_http_benchmark.py \
+  --base-url http://127.0.0.1:8081 \
+  --requests device_requests48.jsonl \
+  --output device_v79_6_http48_live16k_20261018.json
 
 # Guarded functional check against the production port
 python3 run_device_guard_check.py \
