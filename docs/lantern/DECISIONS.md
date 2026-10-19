@@ -835,30 +835,29 @@ guards the fresh path.
 `software/runtime/tests/test_storage_supervisor.py`,
 `software/meshticulum-integration/tests/integrations/sage/test_forward_radio_native_fence.py`.
 
-## D-028 — Six main Lanterns are ROCK 5B+; Orange Pi units are bench-only
+## D-028 — Main fleet is four ROCK 5B+ plus two Orange Pi bench units
 
-**Decision (2026-10-19, owner):** The main Lantern fleet is **six ROCK 5B+
-units**. The two ROCK 5B+ 12 GB boards already in hand remain part of that fleet
-as the 12 GB floor-spec units; four more ROCK 5B+ 16 GB boards complete the six
-at the preferred memory size. The Orange Pi 5 Plus C-F units remain in use as
-bench/development devices, but they are not product candidates and do not need
+**Decision (2026-10-19, owner):** Six is a planning number, not a fixed
+requirement. The working main fleet is **four ROCK 5B+ units** — the two 12 GB
+boards in hand plus **two 16 GB boards to order** — and **two Orange Pi 5 Plus
+units** used as bench/development main units. The Orange Pi units do not need
 internal DSI/CSI ribbon routing, internal 5 V panel power, final enclosure fit,
-or final panel/touch/thermal acceptance.
+or final panel/touch/thermal acceptance. The two ROCK 5B 8 GB boards remain the
+A/B Meshticulum relay units and are separate from the main fleet.
 
 **Reason:** 16 GB is the preferred memory size in
-`FINAL_COMPUTE_REQUIREMENT.md`; 12 GB is the measured floor. The product needs
-the ROCK's PD input and onboard WiFi/BT, and the internal DSI/CSI path is the
-remaining first-article gate. Keeping Orange Pi on the bench preserves the
-software test bed without carrying a second product enclosure/display/camera
-programme.
+`FINAL_COMPUTE_REQUIREMENT.md`; 12 GB is the measured floor. Four ROCK 5B+
+units give two of each memory profile on the product path; two Orange Pi units
+preserve a second software/bench platform without a second product-integration
+programme. Buying four 16 GB boards is unnecessary for this fleet.
 
-**Consequence:** The January 2027 two-platform bake-off no longer decides the
-product platform; ROCK 5B+ is the product platform. C-F panel/camera results
-remain bench evidence only. The six-unit fleet needs six DSI panels, six AC005
-adapters, six coolers, six 512 GB NVMe drives, six IMX415 cameras and six radio
-HATs; current in-hand quantities must be reconciled against that before the
-batch is called complete. The 12 GB pair must stay labelled as the floor-spec
-units and be included in the full regression.
+**Consequence:** Order **two** 16 GB boards, not four. The four AC005 adapters
+already ordered are exactly right for four ROCK units; only two more DSI panels
+are needed (four total), plus two coolers, four 512 GB NVMe drives, four IMX415
+cameras and four radio HATs for the ROCK units. The 12 GB pair stays labelled
+as the floor-spec regression pair. Orange Pi panel/camera results remain bench
+evidence only. The product platform remains ROCK; the January bake-off is no
+longer a product-platform decision.
 
 **Affects:** `docs/lantern/FINAL_COMPUTE_REQUIREMENT.md`,
 `hardware/BILL_OF_MATERIALS.md`,
