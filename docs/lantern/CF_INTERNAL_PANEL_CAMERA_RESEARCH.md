@@ -70,13 +70,36 @@ The zero-risk alternative is a supported sensor: **IMX219 (Pi Camera V2)** or
 
 ## Verdict
 
+### ROCK 5B+ cable map (19 October 2026)
+
+The earlier note that the panel adapter was unresolved is corrected for the
+15-pin panel port. Radxa's **AC005** is the matching cable: **39P 0.3 mm to
+15P 1.0 mm, same side**, listed for Raspberry Pi 5-inch and 7-inch displays.
+Use it as:
+
+| Link | Cable / connection | Notes |
+|---|---|---|
+| DSI video + touch I2C | Radxa AC005, 39P 0.3 mm ↔ 15P 1.0 mm | 39P end into the ROCK 5B+ DSI connector; 15P end into the panel's 15-pin port |
+| Panel power | 4-pin PH2.0 lead to four Dupont plugs | 5 V to ROCK 40-pin header pin 2 or 4; GND to pin 6. The DSI FPC carries 3.3 V, not the backlight 5 V |
+| Touch | Routed in the 15-pin DSI FPC | GT911 at I2C address 0x14; panel bridge at 0x45; ROCK I2C6 |
+| Not used | 22P 0.5 mm ↔ 15P 1.0 mm ribbons in three lengths | Pi 5-side cables; they do not fit the ROCK's 39-pin DSI connector |
+
+The panel's 15-pin pinout is the standard Pi DSI order: GND, D1N/D1P, CN/CP,
+D0N/D0P, GND, SCL0, SDA0, GND, 3V3, 3V3. The ROCK 5B+ DSI connector supplies
+LCD_3V3 and I2C6 on that path. The 22-pin panel port is an alternative Pi 5
+interface; using it on the ROCK would need an additional 39P→22P adapter and
+is not the first-article route.
+
+Do not use AC012 here: AC012 is the 39-to-40 cable for the Radxa 8HD, not the
+Waveshare 22/15-pin panel.
+
 - **The ROCK 5B+ passes the internal-wiring requirement at the mechanism
   level**: vendor-documented internal DSI (including a Pi-style ribbon panel)
   and two internal 4-lane CSI connectors with supported sensors and overlays.
   This is the answer to the "can it be internal at all" question, and it is
   yes — with a documented example of a Pi panel on the 5B+.
 - **Our exact parts are the remaining work, not the board**: the Waveshare
-  6.25" panel needs an adapter FPC, internal 5 V and a Rockchip panel driver;
+  6.25" panel uses AC005 (39P to 15P), internal 5 V and a Rockchip panel driver;
   the IMX519 cameras need a driver port or a swap to IMX219/IMX415. Both are
   bench tasks with precedent, not missing hardware.
 - The Orange Pi 5 Plus has no equivalent vendor-documented internal path in
@@ -84,9 +107,8 @@ The zero-risk alternative is a supported sensor: **IMX219 (Pi Camera V2)** or
 
 ## Actions
 
-1. Hardware: identify the exact adapter FPCs (panel 22/15-pin → ROCK DSI;
-   camera → ROCK CSI) and the internal 5 V route; record them as purchase
-   lines.
+1. Hardware: order/verify AC005 for the panel's 15-pin port, identify the
+   camera → ROCK CSI adapter, and record the internal 5 V route.
 2. Software: port/author the 6.25" panel DRM overlay for the RK3588 kernel
    (init sequence + timings + I2C6 touch), and check IMX519 support in the
    Radxa/Armbian kernel; if it is absent, decide between porting the driver

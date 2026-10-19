@@ -173,7 +173,9 @@ and reboot cycle. The compositor currently sits at the GDM greeter on tty1;
 the `sage` Wayland session on tty2 is online but inactive. Every DRM
 connector now reports disconnected (`card0-HDMI-A-1`, `card0-HDMI-A-2` and
 `card0-DP-1`), so the panel must be physically attached and powered before
-acceptance can start.
+acceptance can start. No USB touch device enumerates on C either, so check the
+panel's USB power/touch lead and the panel itself before replacing the HDMI
+cable.
 
 ## Map shipping design
 
