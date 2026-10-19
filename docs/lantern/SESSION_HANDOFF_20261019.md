@@ -88,8 +88,10 @@ covered by 10 more tests. `FileJournalBackend` adds a private mode-0700
 file-backed store with atomic replace and fsync. `native_probe.py` defines the
 future probe interface, and `settlement_fault_replay.py` produced 11 cases in
 `docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. Nothing is
-installed on C. The native owner, real pidfd/cgroup probes and native fault
-replays remain open.
+installed on C. `linux_probe.py` implements the procfs probe (pidfd signal 0,
+cgroup.events, unix socket table, mountinfo, descriptor state) against a
+synthetic root, and an end-to-end probe-to-journal settlement passes. A real
+child run on Unit C, the native owner and native fault replays remain open.
 
 The hardware inventory is now repeatable with
 `scripts/lantern/hardware_inventory.py`; the Unit C output is at

@@ -71,8 +71,19 @@ interface a future native owner implements:
 - `settle_from_probe` passes the proof through the validated journal. A
   missing probe, an invalid result or a probe error returns `uncertain`.
 
-The default `UnavailableProbe` refuses. No native syscall implementation is
-provided.
+The default `UnavailableProbe` refuses. The Linux implementation is described
+below and is still a source-only, uninstalled component.
+
+`software/security/desktop_loader_candidate/linux_probe.py` is the Linux
+implementation. It reads the machine ID and boot ID, checks a pidfd with
+`pidfd_send_signal(fd, 0, ...)`, reads `cgroup.events`, scans
+`/proc/net/unix`, parses mountinfo and checks descriptor state. It accepts a
+configurable procfs root for tests and an injectable pidfd liveness function.
+It returns a proof only when every recorded resource is terminal.
+
+The pidfd check sends signal 0, which checks liveness without delivering a
+signal. It does not adopt a PID or kill a child. The probe is not wired to a
+service and has not been run against a real child on Unit C.
 
 ## What is proven
 
@@ -107,6 +118,11 @@ replace, and concurrent create.
 `scripts/tests/test_native_probe.py` adds 4 tests: unavailable probe, valid
 probe settling through the journal, probe error and invalid probe result.
 
+`scripts/tests/test_linux_probe.py` adds 10 tests against a synthetic procfs:
+terminal proof, live pidfd, populated cgroup, present socket, present mount,
+open descriptor, machine mismatch, absent cgroup, missing identity and an
+end-to-end settlement through the durable journal.
+
 `scripts/lantern/settlement_fault_replay.py` runs 11 source-level cases and
 writes `docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. The
 record covers normal settlement, create and CAS failures before and after the
@@ -124,8 +140,8 @@ the native owner can persist settlement across power loss.
 2. Independently protected monotonic state, with rollback resistance and a
    complete read-back after every write.
 3. A real pidfd and cgroup probe that reports terminal state without adopting
-   a PID or killing a possibly released child, implemented behind
-   `NativeProbe.observe`.
+   a PID or killing a possibly released child. The Linux source exists; it
+   still needs a real-child run and review on the target kernel.
 4. Resource identities recorded at attempt time, including the child and every
    owned descriptor or mount.
 5. A redacted evidence digest per observation and a signed or otherwise
