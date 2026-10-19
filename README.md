@@ -20,7 +20,7 @@ A [SAGE Foundation](https://sage-foundation.net/) project, created and maintaine
 
 **Development preview, public since 19 October 2026.** This is the product repository for the Lantern device: runtime, touchscreen apps, provisioning tools, firmware glue and the offline map packs. The [Foundation site](https://sage-foundation.net/) carries the programme and contact details. [Offline maps](maps/README.md) are published as release assets. [Device status](docs/lantern/DELIVERY_BACKLOG.md) records what is proven and what is not.
 
-[Documentation](docs/index.md) · [Project family](#the-sage-project-family) · [Offline maps](maps/README.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[Documentation](docs/index.md) · [Project family](#the-sage-project-family) · [Lantern 3B model](https://github.com/l33tdawg/lantern-3b) · [Offline maps](maps/README.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 A curious mind shouldn't need a better postcode. SAGE is an initiative to
 democratise intelligence: local AI that works without reliable internet, and
@@ -52,6 +52,7 @@ running the 3B chat model as its live device lane; V79.6 remains the rollback.
 | --- | --- |
 | **SAGE** | [Main SAGE repository](https://github.com/l33tdawg/sage/) — agent memory, governance and core infrastructure. |
 | **Meshticulum** | [Meshticulum](https://github.com/l33tdawg/meshticulum) — reusable transport, reliable flow, radio and IP carrier work, and verified resource protocols. |
+| **Lantern 3B** | [Model repository](https://github.com/l33tdawg/lantern-3b) — weights, adapter chain, guard, model card and evaluation. Non-commercial research preview. |
 | **Lantern** | This repository — product apps and UI, device provisioning, runtime orchestration and private SAGE integrations. |
 
 Lantern consumes the SAGE SDK and Meshticulum. Neither depends on Lantern. The
@@ -70,6 +71,16 @@ build path, notices and proof records. Start with the
 or the [HTTP gateway notes](https://github.com/l33tdawg/meshticulum/blob/main/docs/HTTP_GATEWAY.md).
 Its published figures are near-bench application goodput, not field-range or
 carrier-capacity claims.
+
+**Lantern 3B** is the language model inside the device: a guarded 3B English
+research preview built on Qwen2.5-VL-3B-Instruct. Start with the
+[model repository](https://github.com/l33tdawg/lantern-3b), the
+[model card](https://github.com/l33tdawg/lantern-3b/blob/main/MODEL_CARD.md)
+or the
+[V81 research preview](https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview).
+The adapter chain is non-commercial research material under the Qwen Research
+License. The guard is part of the contract for saves and recalls; the weights
+alone are not qualified for general assistance or long-form writing.
 
 ### The Foundation and the mission
 
