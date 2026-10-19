@@ -158,9 +158,19 @@ dual-radio plans and the XIAO/Wio kits are bench comparison inventory, not a
 second radio installed by default. The public README, DEVICE_ROLES, HARDWARE_BOM
 and bill of materials were corrected on 19 October.
 
-The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
-claim exists. The privacy toggle is off by default; `/status?position=1`
-returns no coordinates without a fresh mode 2/3 fix.
+Rechecked on C at 2026-10-19 17:53 MYT: gpsd is active on `/dev/ttyS6`
+(u-blox, 9600 baud) and the status bridge returns **mode 1, 0 satellites,
+HDOP 25.5**, with raw NMEA carrying `$GPTXT ... ANTENNA OPEN`. The owned
+1 x TAN1216Q23 GNSS SMA-male helix is not fitted. No fix or position claim
+exists. The privacy toggle is off by default; `/status?position=1` returns no
+coordinates without a fresh mode 2/3 fix.
+
+Physical C acceptance still needs a person at the unit: connect the GNSS
+helix, place C with sky view, unlock the `sage` session on tty2, then check
+the 1560x720 landscape panel at all four corners and centre, Back/drawer,
+CEREBRUM, Maps, GNSS Sky View, Return to Portrait/D-022, and one sleep/wake
+and reboot cycle. The compositor currently sits at the GDM greeter on tty1;
+the `sage` Wayland session on tty2 is online but inactive.
 
 ## Map shipping design
 
