@@ -18,6 +18,8 @@ source-level settlement contract:
   and launch UUID the obligation belongs to.
 - `SettlementObligation` carries that binding and the exact owned resources.
   At least one resource must be a pidfd or child identity.
+- `bind_release` maps the frozen release selection and launch UUID to that
+  obligation without validating or settling it.
 - `SettlementProof` carries the obligation digest, the observing machine and
   boot, the native owner name, one terminal observation per resource, and a
   digest over the proof payload.
@@ -82,8 +84,12 @@ configurable procfs root for tests and an injectable pidfd liveness function.
 It returns a proof only when every recorded resource is terminal.
 
 The pidfd check sends signal 0, which checks liveness without delivering a
-signal. It does not adopt a PID or kill a child. The probe is not wired to a
-service and has not been run against a real child on Unit C.
+signal. It does not adopt a PID or kill a child. A disposable `sleep` child was
+probed on Unit C: the pidfd was opened, the child exited 0, the probe produced
+a proof and the durable journal moved `attempted` to `settled` at revision 1.
+The evidence is in
+`docs/lantern/evidence/LINUX_PROBE_CHILD_C_20261019.json`. The probe is not
+wired to a service or the desktop launch authority.
 
 ## What is proven
 
@@ -96,6 +102,8 @@ The tests in `scripts/tests/test_lifecycle_settlement.py` cover:
 - a wrong launch, machine or proof digest does not settle;
 - a different boot with full resource evidence settles;
 - a different boot without child evidence is refused;
+- a release binding preserves the launch, machine and generation;
+- a release binding with no resources is refused;
 - an unavailable backend returns uncertain and settles nothing.
 
 The tests in `scripts/tests/test_settlement_journal.py` cover:
@@ -140,8 +148,9 @@ the native owner can persist settlement across power loss.
 2. Independently protected monotonic state, with rollback resistance and a
    complete read-back after every write.
 3. A real pidfd and cgroup probe that reports terminal state without adopting
-   a PID or killing a possibly released child. The Linux source exists; it
-   still needs a real-child run and review on the target kernel.
+   a PID or killing a possibly released child. The Linux source exists and
+   passed a disposable-child run on C; it still needs integration with the
+   actual launch authority and a full native fault replay.
 4. Resource identities recorded at attempt time, including the child and every
    owned descriptor or mount.
 5. A redacted evidence digest per observation and a signed or otherwise

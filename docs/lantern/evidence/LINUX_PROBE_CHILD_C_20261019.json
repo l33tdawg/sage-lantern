@@ -1,0 +1,10 @@
+{
+  "schema": "sage.lantern.linux-probe-child.v1",
+  "child_exit": 0,
+  "pidfd_open": true,
+  "proof": true,
+  "reason": "",
+  "attempt": "attempted",
+  "settled": "settled",
+  "revision": 1
+}

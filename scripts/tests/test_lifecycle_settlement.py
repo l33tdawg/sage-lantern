@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+from dataclasses import dataclass
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "software/security/desktop_loader_candidate/lifecycle_settlement.py"
@@ -159,6 +160,52 @@ class SettlementTests(unittest.TestCase):
         outcome = p.SettlementAuthority(Backend(make_proof())).settle(duplicate)
         self.assertEqual(outcome.status, "uncertain")
         self.assertIn("duplicated", outcome.reason)
+
+    def test_bind_release_preserves_launch_and_generation(self):
+        @dataclass
+        class Identity:
+            machine_id: str
+            boot_id: str
+
+        @dataclass
+        class Selection:
+            identity: Identity
+            anchor_revision: int
+            generation: int
+            current_sha256: str
+
+        @dataclass
+        class Release:
+            selection: Selection
+            launch_id: str
+
+        release = Release(
+            Selection(Identity(MACHINE, BOOT), 9, 7, "3" * 64), LAUNCH)
+        obligation = p.bind_release(
+            release, CAPTURE, POLICY, (RESOURCES[0], RESOURCES[1]))
+        self.assertEqual(obligation.binding.launch_id, LAUNCH)
+        self.assertEqual(obligation.binding.generation, 7)
+        self.assertEqual(obligation.binding.machine_id, MACHINE)
+
+    def test_bind_release_requires_resources(self):
+        @dataclass
+        class Identity:
+            machine_id: str
+            boot_id: str
+
+        @dataclass
+        class Selection:
+            identity: Identity
+            generation: int
+
+        @dataclass
+        class Release:
+            selection: Selection
+            launch_id: str
+
+        release = Release(Selection(Identity(MACHINE, BOOT), 7), LAUNCH)
+        with self.assertRaises(p.SettlementRefused):
+            p.bind_release(release, CAPTURE, POLICY, ())
 
 
 if __name__ == "__main__":

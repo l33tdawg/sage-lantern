@@ -79,6 +79,28 @@ class SettlementObligation:
     resources: tuple[ResourceRef, ...]
 
 
+def bind_release(release, capture_id, policy_sha256, resources):
+    """Map a frozen release attempt to a settlement obligation.
+
+    `release` is the release record's selection and launch UUID. This function
+    does not validate or settle it; `SettlementAuthority` does that later.
+    """
+    selection = getattr(release, "selection", None)
+    identity = getattr(selection, "identity", None)
+    if (identity is None or not _text(getattr(identity, "machine_id", None))
+            or not _text(getattr(identity, "boot_id", None))
+            or not _positive(getattr(selection, "generation", None))
+            or not _text(getattr(release, "launch_id", None))):
+        raise SettlementRefused("release_binding_invalid")
+    if type(resources) is not tuple or not resources:
+        raise SettlementRefused("release_resources_missing")
+    return SettlementObligation(
+        LaunchBinding(
+            identity.machine_id, identity.boot_id, capture_id,
+            selection.generation, policy_sha256, release.launch_id),
+        resources)
+
+
 @dataclass(frozen=True)
 class ResourceObservation:
     """A terminal observation for one expected resource."""
