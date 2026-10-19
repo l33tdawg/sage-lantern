@@ -31,6 +31,8 @@ world view independent of the regional pack's bbox.
 | Malaysia | `99.6,0.85,119.3,7.4` | 0–11 | 18,793,137 | 5,970 |
 | Malaysia | `99.6,0.85,119.3,7.4` | 0–12 | 44,260,241 | 21,023 |
 | Klang Valley | `101.30,2.90,101.90,3.50` | 0–13 | 10,755,117 | 282 |
+| Singapore | `103.60,1.15,104.05,1.44` | 0–12 | 2,778,893 | 49 |
+| Johor Bahru | `103.55,1.44,103.95,1.78` | 0–13 | 3,953,605 | 138 |
 | World base | global | 0–6 | about 425,000 | n/a (GeoJSON) |
 
 The z0–11 Malaysia build is the country-tier pack: 18.8 MB for 5,970 tiles,
@@ -58,8 +60,9 @@ plausibly ask for:
 3. **Klang Valley** — metro tier, z0–13 (Kuala Lumpur, Putrajaya, Selangor
    core). Built and installed 19 October 2026.
 4. **Singapore** — country/city tier, z0–12, so the Johor crossing has context
-   on both sides.
-5. **Johor Bahru** — metro tier, z0–13, paired with Singapore.
+   on both sides. Built and installed 19 October 2026.
+5. **Johor Bahru** — metro tier, z0–13, paired with Singapore. Built and
+   installed 19 October 2026.
 
 Everything else is sideloaded on request. A unit is not shipped with a
 continent it has no owner for.
@@ -102,6 +105,23 @@ service restart; reloading the page picks it up.
 Signing and automatic delivery are **not** part of this increment. Manifest
 authenticity is currently a transport/operator responsibility; the signed
 trust-root channel is task `30741772`.
+
+## Sideload rehearsal
+
+On 19 October 2026 the install path was rehearsed on C from a staging directory
+standing in for removable media:
+
+- a 1 TB free-space floor refused the install with exit 2 and left no file;
+- a corrupted `broken.pmtiles` was refused as not a PMTiles archive;
+- both Singapore and Johor Bahru installed from staging and verified;
+- reinstalling Singapore without `--replace` was refused;
+- reinstalling Johor Bahru with `--replace` moved the old pair to
+  `.backups/20261019T000531Z/`;
+- `/packs.json` showed all five packs live with the same service PID, so no
+  restart was needed.
+
+This proves the software path, not physical SD/USB media. A real card or stick
+still needs one pass on the unit.
 
 ## Guardrails
 

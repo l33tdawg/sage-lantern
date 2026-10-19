@@ -38,7 +38,17 @@ view is inside its smaller bbox.
 The **Klang Valley metro pack** is built and installed: z0–13, 282 planned
 tiles, 10,755,117 bytes, SHA-256 `a87385b5…`. A Kuala Lumpur view at z12
 selected Klang Valley over Malaysia and rendered street detail. Unit C's map
-directory now holds three packs totalling 31 MB.
+directory now holds five packs: Penang, Malaysia, Klang Valley, Singapore
+(z0–12, 2,778,893 bytes) and Johor Bahru (z0–13, 3,953,605 bytes). Pack
+payloads total 39,047,090 bytes; the directory is 43,004,621 bytes including
+manifests and one replace backup. Singapore at z11 and Johor Bahru at z12 both
+selected their own packs and rendered on C.
+
+The sideload path was rehearsed from a staging directory: free-space refusal,
+corrupt-pack refusal, no-overwrite refusal, install, and replace-with-backup
+all behaved, and `/packs.json` updated without a service restart (PID
+unchanged). Evidence: `work/lantern-maps-20261019/SIDELOAD_REHEARSAL_20261019.json`.
+Physical SD/USB media is still untested.
 
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
@@ -121,8 +131,8 @@ labels or a different base, not more self-generated pairs.
 1. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait.
-2. Build the Singapore/Johor pair through the installed pack manager, then
-   rehearse an SD/USB sideload on C.
+2. Run one install from physical SD/USB media, then connect the GNSS antenna
+   for the live-fix and physical panel acceptance pass.
 3. Continue C-native and conversation-product acceptance.
 4. Resume weights only with independent preference labels or a different base.
 
