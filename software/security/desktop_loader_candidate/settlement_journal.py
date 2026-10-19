@@ -11,9 +11,16 @@ persists the record idempotently and verifies the write by reading it back.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from contextlib import contextmanager
 import hashlib
 import json
+import os
+from pathlib import Path
 import re
+import secrets
+import stat
+
+import fcntl
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -88,6 +95,136 @@ class UnavailableJournalBackend:
 
     def compare_exchange(self, before, after):
         raise JournalBackendUnavailable("no_qualified_journal_backend")
+
+
+def _record_dict(record):
+    return {
+        "obligation_sha256": record.obligation_sha256,
+        "state": record.state,
+        "revision": record.revision,
+        "proof_sha256": record.proof_sha256,
+        "receipt_sha256": record.receipt_sha256,
+    }
+
+
+def _record_from_dict(data):
+    if not isinstance(data, dict) or set(data) != {
+            "obligation_sha256", "state", "revision",
+            "proof_sha256", "receipt_sha256"}:
+        raise JournalRefused("journal_record_schema_invalid")
+    return _record(SettlementRecord(
+        data["obligation_sha256"], data["state"], data["revision"],
+        data["proof_sha256"], data["receipt_sha256"]))
+
+
+class FileJournalBackend:
+    """Single-host durable CAS store for settlement records.
+
+    The directory must be private (mode 0700). Each record is one JSON file,
+    written through a private temporary file, fsynced and renamed into place.
+    A lock file serializes create and compare-exchange operations. This is a
+    source component, not an installed service and not a multi-host store.
+    """
+    MAX_BYTES = 4096
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if stat.S_IMODE(self.root.stat().st_mode) & 0o077:
+            raise JournalRefused("journal_directory_not_private")
+        self.lock_path = self.root / ".lock"
+
+    @contextmanager
+    def _locked(self):
+        descriptor = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+    def _path(self, digest):
+        if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+            raise JournalRefused("journal_digest_invalid")
+        path = self.root / (digest + ".json")
+        if path.is_symlink():
+            raise JournalRefused("journal_record_symlink")
+        return path
+
+    def _read(self, digest):
+        path = self._path(digest)
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            return None
+        if len(raw) > self.MAX_BYTES:
+            raise JournalRefused("journal_record_too_large")
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as error:
+            raise JournalRefused("journal_record_decode") from error
+        record = _record_from_dict(data)
+        if record.obligation_sha256 != digest:
+            raise JournalRefused("journal_record_digest_mismatch")
+        return record
+
+    def _write(self, record):
+        path = self._path(record.obligation_sha256)
+        payload = canonical(_record_dict(record)) + b"\n"
+        if len(payload) > self.MAX_BYTES:
+            raise JournalRefused("journal_record_too_large")
+        temp = self.root / (
+            f".{record.obligation_sha256}.{os.getpid()}."
+            f"{secrets.token_hex(6)}.tmp")
+        descriptor = None
+        try:
+            descriptor = os.open(
+                temp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.write(descriptor, payload)
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = None
+            os.replace(temp, path)
+            directory = os.open(self.root, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            except OSError:
+                # Some filesystems do not support directory fsync.
+                pass
+            finally:
+                os.close(directory)
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            try:
+                temp.unlink()
+            except FileNotFoundError:
+                pass
+        return record
+
+    def read(self, obligation_sha256):
+        with self._locked():
+            return self._read(obligation_sha256)
+
+    def create(self, record):
+        _record(record)
+        with self._locked():
+            path = self._path(record.obligation_sha256)
+            if path.exists():
+                return None
+            return self._write(record)
+
+    def compare_exchange(self, before, after):
+        _record(before)
+        _record(after)
+        if before.obligation_sha256 != after.obligation_sha256:
+            raise JournalRefused("journal_cas_binding_mismatch")
+        with self._locked():
+            current = self._read(before.obligation_sha256)
+            if current != before:
+                return None
+            return self._write(after)
 
 
 def _record(value, digest=None):

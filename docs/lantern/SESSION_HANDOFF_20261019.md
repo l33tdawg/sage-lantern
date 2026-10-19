@@ -84,8 +84,12 @@ resources, requires a terminal pidfd or child observation, and returns
 `uncertain` for missing, extra, non-terminal or digest-mismatched evidence.
 `settlement_journal.py` adds a one-record-per-obligation CAS journal with
 idempotent attempts and settlements, readback and unknown-write recovery,
-covered by 10 more tests. Nothing is installed on C. The native owner, real
-durable store, real probes and native fault replays remain open.
+covered by 10 more tests. `FileJournalBackend` adds a private mode-0700
+file-backed store with atomic replace and fsync. `native_probe.py` defines the
+future probe interface, and `settlement_fault_replay.py` produced 11 cases in
+`docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. Nothing is
+installed on C. The native owner, real pidfd/cgroup probes and native fault
+replays remain open.
 
 The hardware inventory is now repeatable with
 `scripts/lantern/hardware_inventory.py`; the Unit C output is at
