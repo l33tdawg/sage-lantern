@@ -665,10 +665,11 @@ capture is proven on a physical 5B+.
 
 **Amendment 2026-10-19 (later, owner):** after reviewing the IMX519 porting
 risk, the owner directed the four ROCK units to use the **Radxa Camera 4K
-(IMX415)**. Four modules are in the Arace cart at RM205 each (RM820 subtotal),
-checkout pending. The IMX519-7B modules remain bench/experimental and are not
-the product camera. This restores the original IMX415 product path; the
-IMX519 driver port is no longer on the critical path.
+(IMX415)**. Four modules were ordered from Arace at RM205 each (RM820
+subtotal); the owner confirmed the order on 19 October. The IMX519-7B modules
+remain bench/experimental and are not the product camera. This restores the
+original IMX415 product path; the IMX519 driver port is no longer on the
+critical path.
 
 ## D-022 — Docked desktop requires a login
 

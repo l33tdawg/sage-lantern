@@ -45,10 +45,10 @@ panel/touch/thermal acceptance. The two ROCK 5B 8 GB boards remain the A/B
 Meshticulum relay units. D-028 records this. The four AC005 adapters already
 ordered are exactly right; remaining ROCK-unit gaps are two 16 GB boards,
 two coolers, two more DSI panels (four total) and four **256 GB** NVMe drives.
-The owner directed four **Radxa Camera 4K IMX415** modules for the ROCK units;
-they are in the Arace cart at RM205 each (RM820 subtotal, checkout pending).
-The IMX519-7B modules remain bench/experimental only. LoRa HAT procurement is
-deferred — spare HATs are in hand and they are cheap/readily available later.
+The owner ordered four **Radxa Camera 4K IMX415** modules from Arace at RM205
+each (RM820 subtotal) and confirmed the order on 19 October. The IMX519-7B
+modules remain bench/experimental only. LoRa HAT procurement is deferred —
+spare HATs are in hand and they are cheap/readily available later.
 
 - The product radio baseline is one LoRa radio per unit. Meshticulum carries
   messages and resource transfers over that single half-duplex radio. Extra
@@ -136,8 +136,9 @@ board-side cable. AC012 is 39-to-40 for the Radxa 8HD, not for the Waveshare
 1.0 mm). Camera update (19 October): the owner initially identified a 16 MP
 autofocus IMX519 (label `IMX519-7B`; Waveshare `IMX519-78` family) in hand,
 but after reviewing the ROCK driver risk directed four **Radxa Camera 4K
-IMX415** modules for the four ROCK units. Four are in the Arace cart at RM205
-each (RM820 subtotal, checkout pending). The IMX519-7B modules remain
+IMX415** modules for the four ROCK units. Four were ordered from Arace at
+RM205 each (RM820 subtotal) and the owner confirmed the order on 19 October.
+The IMX519-7B modules remain
 bench/experimental only; they are a Pi libcamera module with no official ROCK
 5B+ driver/overlay. The Orange Pi 5 Plus CSI connector is a 30-pin mezzanine
 and the IMX519 is a 22-pin camera, so C-F bench use also needs a 30-to-22
@@ -262,7 +263,7 @@ requests, 0 task notices and 0 unfinished claims; reply watermark
 - **7c72ccdf** — Mail/domain: owner password-manager, contact, redirect and
   Cloudflare decisions remain.
 - **92680e1c** — G/H hardware: AC005/panel path, 5V lead, and the four IMX415
-  cameras in the Arace cart (checkout pending); IMX519-7B is bench-only.
+  cameras ordered from Arace; IMX519-7B is bench-only.
 - **178dfca7** — Public knowledge plane: OPEN-COM-003 export schema, public
   domain/cache and content scale remain.
 - **30741772** — Trust root: signed root-update channel and rotation drill.
