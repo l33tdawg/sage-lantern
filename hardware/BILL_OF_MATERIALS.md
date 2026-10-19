@@ -18,15 +18,21 @@ and **unknown** means the records do not settle it.
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
 | 2 | Radxa ROCK 5B, 8 GB | Owned | The A/B test boards. The earlier note that A/B were Orange Pi was corrected. |
-| 4 | Orange Pi 5 Plus, 16 GB | Planned | Two extra boards were ordered in September, but the records conflate the original pair with A/B. Count the physical boards before describing four as received. |
-| 2 | Radxa ROCK 5B+, 12 GB | Ordered 30 September, owner-reported arrived by 9 October | Electrical bring-up and qualification are not established. |
+| 4 | Orange Pi 5 Plus, 16 GB | Bench/development only (D-028) | Count the physical boards before calling four received. No longer a product candidate and no internal DSI/CSI or final-enclosure acceptance required. |
+| 2 | Radxa ROCK 5B+, 12 GB | In hand | Main fleet floor-spec units. Keep labelled as the 12 GB regression pair. |
+| 4 | Radxa ROCK 5B+, 16 GB | Planned | Main fleet preferred spec; order four to complete the six-unit fleet. |
+
+The six-unit main fleet is therefore **2 x 12 GB + 4 x 16 GB ROCK 5B+**.
+The six-unit gap list (boards, coolers, panels, AC005 adapters, NVMe, cameras
+and radios) is in
+[`SESSION_HANDOFF_20261019.md`](../docs/lantern/SESSION_HANDOFF_20261019.md).
 
 ## Display
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
 | 4 | Waveshare 6.25-inch HDMI capacitive touch panel, 720x1560, SKU 26757 | In hand | The C-F bench panel. It is not the final product panel. |
-| 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | Ordered | G/H panel. Last merchant state was awaiting shipment on 30 September. Arrival and working display are unknown. |
+| 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | Arrived | Two panels in hand; four more needed for the six-unit main fleet. |
 | 2 | Radxa FPC adapter cable AC012 | Identified, likely wrong for this panel | AC012 is a 39-pin to 40-pin cable for the Radxa Display 8 HD. The Waveshare 6.25-inch DSI panel is 22-pin or 15-pin. The correct adapter is unresolved. |
 | 2 | 15-pin 1.0 mm FPC and PH2.0 four-pin power lead, about 200 mm | Part of the panel package | The recorded plan uses the AC012 DSI path and the included lead to header 5 V/GND. This is a proposed route, not a proven harness. |
 

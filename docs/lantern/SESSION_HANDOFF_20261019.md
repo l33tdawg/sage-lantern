@@ -36,6 +36,16 @@ The PR stack is settled:
 
 Hardware and device waits:
 
+**Fleet plan update (19 October, owner):** the main Lantern fleet is six
+ROCK 5B+ units — the two 12 GB boards in hand plus four more 16 GB boards.
+C-F Orange Pi units stay as bench/development devices and no longer need
+internal DSI/CSI routing, internal 5 V panel power, final enclosure fit or
+final panel/touch/thermal acceptance. D-028 records this and supersedes the
+two-platform product decision. Immediate six-unit gaps: four 16 GB boards,
+four coolers, four more DSI panels (six total), **two more AC005 adapters**
+(only four ordered, six needed), six 512 GB NVMe drives, six IMX415 cameras
+and six radio HATs.
+
 - The product radio baseline is one LoRa radio per unit. Meshticulum carries
   messages and resource transfers over that single half-duplex radio. Extra
   radios are bench comparison inventory only.
