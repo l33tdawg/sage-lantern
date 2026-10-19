@@ -95,6 +95,9 @@ disposable `sleep` child was probed on C: proof true, journal `attempted` to
 `settled` at revision 1, evidence
 `docs/lantern/evidence/LINUX_PROBE_CHILD_C_20261019.json`. Integration with the
 actual launch authority and native fault replays remain open.
+`settlement_owner.py` is the disabled owner facade: it binds a release, records
+the attempt and settles through the probe and journal. It has no service
+wiring.
 
 The hardware inventory is now repeatable with
 `scripts/lantern/hardware_inventory.py`; the Unit C output is at

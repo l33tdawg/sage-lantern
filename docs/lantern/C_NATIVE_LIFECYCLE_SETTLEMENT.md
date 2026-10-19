@@ -91,6 +91,20 @@ The evidence is in
 `docs/lantern/evidence/LINUX_PROBE_CHILD_C_20261019.json`. The probe is not
 wired to a service or the desktop launch authority.
 
+## Disabled owner facade
+
+`software/security/desktop_loader_candidate/settlement_owner.py` composes the
+pieces into one reviewable owner:
+
+- `track_release(release, capture_id, policy_sha256, resources)` binds the
+  frozen release selection to the settlement obligation and records the
+  attempt.
+- `settle(obligation)` asks the probe for evidence and passes it through the
+  journal.
+
+The owner takes a journal and a probe in its constructor. It has no service
+wiring, no activation file and no device path.
+
 ## What is proven
 
 The tests in `scripts/tests/test_lifecycle_settlement.py` cover:
@@ -130,6 +144,10 @@ probe settling through the journal, probe error and invalid probe result.
 terminal proof, live pidfd, populated cgroup, present socket, present mount,
 open descriptor, machine mismatch, absent cgroup, missing identity and an
 end-to-end settlement through the durable journal.
+
+`scripts/tests/test_settlement_owner.py` adds 2 end-to-end tests: track a
+release and settle it through the Linux probe and file journal, and refuse a
+release with no resources.
 
 `scripts/lantern/settlement_fault_replay.py` runs 11 source-level cases and
 writes `docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. The
