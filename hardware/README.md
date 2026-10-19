@@ -76,6 +76,7 @@ It controls allocation when older notes disagree.
 - [Bill of materials](BILL_OF_MATERIALS.md)
 - [Printable parts](stl/README.md)
 - [Hardware reconciliation, 19 October 2026](RECONCILIATION_20261019.md)
+- [Physical verification checklist](PHYSICAL_CHECKLIST.md)
 - [Build guide](../docs/build/README.md)
 - [Bring-up and validation](../docs/lantern/BRINGUP_AND_VALIDATION.md)
 - [Internal panel and camera research](../docs/lantern/CF_INTERNAL_PANEL_CAMERA_RESEARCH.md)

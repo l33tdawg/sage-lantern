@@ -8,6 +8,12 @@ bill of materials.
 
 Read over SSH on 19 October 2026:
 
+The repeatable collector is
+[`scripts/lantern/hardware_inventory.py`](../scripts/lantern/hardware_inventory.py).
+It reads procfs and sysfs only and omits serial numbers by default. The Unit C
+output is saved as
+[`docs/lantern/evidence/HARDWARE_INVENTORY_C_20261019.json`](../docs/lantern/evidence/HARDWARE_INVENTORY_C_20261019.json).
+
 | Item | Observation |
 |---|---|
 | Board | Orange Pi 5 Plus |
@@ -19,9 +25,19 @@ Read over SSH on 19 October 2026:
 | GNSS | `/dev/ttyS6` present |
 | I2C | buses 0, 1, 3, 6, 7, 9, 10, 11 present |
 | Display | three DRM connectors disconnected, one unknown |
+| USB inventory | two Genesys hubs, the SAGE Lantern Audio device and a Logitech C270; the remaining entries are host controllers |
 
 The USB audio and C270 are the bench path. They do not qualify the I2S
 microphone or the CSI camera for D-F.
+
+Run the collector on each new unit before fitting peripherals:
+
+```sh
+python3 scripts/lantern/hardware_inventory.py > evidence/<unit>-inventory.json
+```
+
+Keep serial numbers out of public evidence. Use `--include-serials` only for a
+private unit record.
 
 ## Board count
 

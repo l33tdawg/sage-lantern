@@ -87,6 +87,12 @@ idempotent attempts and settlements, readback and unknown-write recovery,
 covered by 10 more tests. Nothing is installed on C. The native owner, real
 durable store, real probes and native fault replays remain open.
 
+The hardware inventory is now repeatable with
+`scripts/lantern/hardware_inventory.py`; the Unit C output is at
+`docs/lantern/evidence/HARDWARE_INVENTORY_C_20261019.json`. The bench fields to
+fill for the board count, DSI/CSI contacts and G/H bring-up are in
+`hardware/PHYSICAL_CHECKLIST.md`.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.

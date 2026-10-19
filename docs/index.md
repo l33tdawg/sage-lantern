@@ -20,6 +20,7 @@ This tree covers the Lantern device and the services that support it. Start with
 - [Hardware overview](../hardware/README.md): device roles, current status and safety notes.
 - [Bill of materials](../hardware/BILL_OF_MATERIALS.md): parts, quantities and what is still pending.
 - [Hardware reconciliation](../hardware/RECONCILIATION_20261019.md): live unit inventory, DSI and CSI findings.
+- [Physical checklist](../hardware/PHYSICAL_CHECKLIST.md): bench checks and fields to record.
 - [Printable parts](../hardware/stl/README.md): STL folder and print-file conventions. Nothing is published yet.
 - [Build guide](build/README.md): the full build path and what it assumes.
 - [Assembly](build/ASSEMBLY.md): physical build sequence for the C-F unit.
