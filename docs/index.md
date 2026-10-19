@@ -15,6 +15,21 @@ This tree covers the Lantern device and the services that support it. Start with
 - [SSH management](lantern/SSH_MANAGEMENT.md): operator access and key rotation. No private keys live here.
 - [Hardware and software contract](lantern/HARDWARE_SOFTWARE_CONTRACT.md): where the ownership boundary sits.
 
+## Hardware and build
+
+- [Hardware overview](../hardware/README.md): device roles, current status and safety notes.
+- [Bill of materials](../hardware/BILL_OF_MATERIALS.md): parts, quantities and what is still pending.
+- [Printable parts](../hardware/stl/README.md): STL folder and print-file conventions. Nothing is published yet.
+- [Build guide](build/README.md): the full build path and what it assumes.
+- [Assembly](build/ASSEMBLY.md): physical build sequence for the C-F unit.
+- [Software stack](build/SOFTWARE.md): install order, checks and rollback.
+
+## First boot and recovery
+
+- [Boot overview](boot/README.md): the boot path and what is verified.
+- [First boot](boot/FIRST_BOOT.md): owner setup, networking and service checks.
+- [Recovery](boot/RECOVERY.md): rollback, service recovery and evidence preservation.
+
 ## Maps
 
 - [Offline map packs](../maps/README.md): catalog, pack sizes and install commands.

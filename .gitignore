@@ -10,6 +10,8 @@ __pycache__/
 node_modules/
 dist/
 build/
+!docs/build/
+!docs/build/**
 .next/
 .vinext/
 .wrangler/

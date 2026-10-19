@@ -1,6 +1,20 @@
-# SAGE Lantern
+<p align="center">
+  <img src="assets/lantern-mark.svg" alt="SAGE Lantern mark" width="88" height="88">
+</p>
 
-**Intelligence. For all of us.**
+<h1 align="center">SAGE Lantern</h1>
+
+<p align="center"><strong>Intelligence. For all of us.</strong></p>
+
+<p align="center">
+  <a href="docs/lantern/DELIVERY_BACKLOG.md"><img alt="Status: development preview" src="https://img.shields.io/badge/status-development%20preview-ffbe62?style=flat-square"></a>
+  <a href="LICENSE"><img alt="Licence: Apache 2.0" src="https://img.shields.io/badge/licence-Apache--2.0-0b1820?style=flat-square"></a>
+  <a href="maps/README.md"><img alt="Offline maps: 5 packs" src="https://img.shields.io/badge/offline%20maps-5%20packs-173746?style=flat-square"></a>
+</p>
+
+![SAGE Lantern concept device](assets/lantern-banner.jpg)
+
+<p align="center"><em>Concept illustration of the Lantern device. Not a photograph of a produced unit.</em></p>
 
 A [SAGE Foundation](https://sage-foundation.net/) project, created and maintained by [Dhillon Andrew Kannabhiran (@l33tdawg)](https://github.com/l33tdawg). Part of the broader [SAGE project](https://github.com/l33tdawg/sage/).
 
@@ -80,6 +94,10 @@ and [Lantern hardware](https://sage-foundation.net/hardware/) covers the device
 programme. To talk about the mission, a build or a community pilot, write to
 [dhillon@sage.ngo](mailto:dhillon@sage.ngo).
 
+![Community use concept](assets/connectivity.jpg)
+
+<p align="center"><em>AI illustration of the mission. Not a photograph of a deployed pilot.</em></p>
+
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
 physical hold-to-talk control, an outward camera for visual questions and a
 10,000 mAh USB-C pack in a serviceable tray, running local intelligence on an
@@ -97,6 +115,17 @@ transport plus the SAGE public chain, with the contracts that make them one
 interoperable, community-owned commons. One person's discovery can become
 everyone's possibility, deliberately and only that far: personal knowledge
 stays personal, and anything shared is reviewed before it travels.
+
+### Offline maps
+
+![Penang offline map running on Unit C](assets/maps-penang.jpg)
+
+The device ships with a Natural Earth world overview. Detailed regions arrive
+as separate packs, each with a manifest and a SHA-256. Five are published now:
+Penang, Malaysia, Klang Valley, Singapore and Johor Bahru. The catalog is
+machine-readable, and the installer verifies every byte before a pack lands.
+
+[Browse the map packs](maps/README.md) · [Download the release](https://github.com/l33tdawg/sage-lantern/releases/tag/maps-20261019)
 
 ## How it works
 
@@ -180,10 +209,23 @@ The device acceptance gate is
 [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md). Treat it
 as the current source of truth for what is proven and what is still open.
 
+## Build a Lantern
+
+| Guide | What it covers |
+| --- | --- |
+| [Hardware overview](hardware/README.md) | Device roles, current status and safety notes |
+| [Bill of materials](hardware/BILL_OF_MATERIALS.md) | Parts, quantities and what is still pending |
+| [Printable parts](hardware/stl/README.md) | STL folder and print-file conventions; nothing published yet |
+| [Build guide](docs/build/README.md) | The full build path and what it assumes |
+| [Assembly](docs/build/ASSEMBLY.md) | Physical build sequence for the C-F unit |
+| [First boot](docs/boot/FIRST_BOOT.md) | Owner setup, networking and service checks |
+| [Recovery](docs/boot/RECOVERY.md) | Rollback and evidence preservation |
+
 ## Repository layout
 
 | Path | What lives there |
 | --- | --- |
+| [`hardware/`](hardware/) | Hardware overview, bill of materials and printable parts |
 | [`software/runtime/`](software/runtime/) | Device runtime: local voice loop, mesh/LoRa broker and transport, SAGE vault integration, storage-supervisor lifecycle, audio readiness, device lock and community services |
 | [`software/npu/`](software/npu/) | RKLLM text and vision engines, HTTP servers, response guards and the Unit C 3B deployment notes |
 | [`apps/lantern-fleet-admin/`](apps/lantern-fleet-admin/) | Device touchscreen UI and local fleet-admin console (Next.js/React): ask-and-answer flow, history, messages, camera, sharing, settings and read-only operator views |
