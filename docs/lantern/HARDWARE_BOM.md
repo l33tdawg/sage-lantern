@@ -1,6 +1,6 @@
 # SAGE Lantern Hardware Bill of Materials and Arrival Status
 
-**Current device use cases (2026-09-27):** A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units; C–F are real Orange Pi 5 Plus user Lanterns with dual LoRa, GPS and WiFi. [Device roles](DEVICE_ROLES.md) controls allocation; this dated BOM remains historical.
+**Current device use cases (2026-09-27):** A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units; C–F are real Orange Pi 5 Plus user Lanterns with one LoRa baseline radio, GPS and WiFi. Earlier dual-radio notes are historical bench work. [Device roles](DEVICE_ROLES.md) controls allocation; this dated BOM remains historical.
 
 > **Superseded for the fleet build (2026-09-21).** This file records ordering and
 > arrival state as of 11 September 2026 as seen from this repository. It mixes

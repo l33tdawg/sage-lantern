@@ -105,6 +105,12 @@ The hardware inventory is now repeatable with
 fill for the board count, DSI/CSI contacts and G/H bring-up are in
 `hardware/PHYSICAL_CHECKLIST.md`.
 
+The product radio baseline is **one LoRa radio per unit**. Meshticulum carries
+messages and resource transfers over that single half-duplex radio. Earlier
+dual-radio plans and the XIAO/Wio kits are bench comparison inventory, not a
+second radio installed by default. The public README, DEVICE_ROLES, HARDWARE_BOM
+and bill of materials were corrected on 19 October.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.

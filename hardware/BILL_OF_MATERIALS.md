@@ -35,7 +35,7 @@ and **unknown** means the records do not settle it.
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
 | 4 | Waveshare SX1262 LoRaWAN HAT, 915 MHz and GNSS, SKU 24654 | In hand | Count and unit assignment still want a bench check. |
-| 6 | Seeed XIAO ESP32S3 with Wio-SX1262 Meshtastic kit, MPN 102010611 | Ordered | Covers C-H. Receipt, flashing and in-shell RF qualification are unknown. |
+| 6 | Seeed XIAO ESP32S3 with Wio-SX1262 Meshtastic kit, MPN 102010611 | Ordered, bench comparison inventory | The product baseline is one radio per unit. These are not second radios installed by default. Receipt, flashing and in-shell RF qualification are unknown. |
 | 2 | Heltec LoRa 32 V4 bench modules | Owned | Older bench inventory. The six-unit Heltec order was cancelled. Do not treat the Heltec pin map as qualified for the XIAO. |
 | 4 | 915 MHz SMA-male whip antenna | Owned | Confirm fit and connector reach. |
 | 1 | TAN1216Q23 GNSS SMA-male helix antenna | Owned | Three more GNSS antennas are unresolved. Active, passive and bias matching still needs confirmation. |

@@ -33,8 +33,9 @@ It controls allocation when older notes disagree.
 - The 6.25-inch 720x1560 panel is the current bench panel for C-F and the
   retained panel choice for G/H. The final G/H product path is the ribbon DSI
   panel.
-- The radio baseline is one LoRa radio per unit. A second radio is an optional
-  comparison, not a requirement before testing.
+- The product radio baseline is one LoRa radio per unit. Meshticulum carries
+  messages and resource transfers over that single half-duplex radio. Extra
+  radios are bench comparison inventory, not a product requirement.
 - The GNSS receiver is the L76K on the Waveshare SX1262/GNSS HAT. Its UART is
   UART6_M1 on header pins 8 and 10. UART2 is the debug console.
 

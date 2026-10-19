@@ -38,8 +38,8 @@ acceptance status.
 
 Current device allocation: **A/B are single-LoRa Lamplighter, administration,
 knowledge delivery and repeater support units with dashboard screens. C–F are
-the current bench and acceptance Lanterns: Orange Pi 5 Plus, one LoRa baseline
-radio, an optional second radio, GPS and WiFi via the Pi. G/H are the next user
+the current bench and acceptance Lanterns: Orange Pi 5 Plus, one LoRa radio,
+GPS and WiFi via the Pi. G/H are the next user
 units on the ROCK 5B+.** See the [device-role map](docs/lantern/DEVICE_ROLES.md)
 for verified readiness and remaining integration work. Unit C is the first unit
 running the 3B chat model as its live device lane; V79.6 remains the rollback.
