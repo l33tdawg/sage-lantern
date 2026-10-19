@@ -327,12 +327,14 @@ parent's verified compressed OS-image hash and separate NVMe boot acceptance.
      --owner-approved-companion-bootstrap
    ```
 
-   Explicit authorized `--execute` invokes native `init-lantern-private` as
-   `sage-lantern`, creating independent Root/Companion/public keys and private
-   genesis. It binds the actual generated chain to protected config. No keys are
-   passed on argv, copied from A or derived from the chosen device name. The
-   public key is not public enrollment. The identity-only phase is insufficient
-   for the app's commissioning-completion gate.
+   Explicit authorized `--execute` invokes native `init-fresh-personal-sage
+   --profile /etc/sage/provisioning-profile.yaml --unit unit-b
+   --owner-approved-companion-bootstrap` as `sage-lantern`, creating independent
+   Root/Companion/public keys and private genesis. It binds the actual generated
+   chain to protected config. No keys are passed on argv, copied from A or
+   derived from the chosen device name. The public key is not public enrollment.
+   The identity-only phase is insufficient for the app's commissioning-completion
+   gate.
 4. **Install the locked app.** Use the same runner with `--phase app`, the same
    release arguments, and the complete B-specific `--account`, radio inventory,
    radio serial/VID/PID/stable-path/fingerprint, audio serial/VID/PID/stable-path

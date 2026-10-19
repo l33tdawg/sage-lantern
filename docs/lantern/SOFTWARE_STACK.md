@@ -2,7 +2,7 @@
 
 **Status:** ARM64 beta bundle prepared; hardware execution pending  
 **Target:** Radxa ROCK 5B+, Debian Bookworm, Linux aarch64, Python 3.11  
-**SAGE release:** `v11.19.10` (`2b94b7054e19771f4fb49aff853939c81818b0c7`)
+**SAGE release:** `v11.23.27` (`76ba18d28e3ac9f7c2495989116aa07ced5eb6ef`)
 
 ## Purpose
 
@@ -26,8 +26,9 @@ The scaffold already preserves one correlation/session ID through the loop, reco
 
 | Component | Pin | Purpose |
 |---|---:|---|
-| SAGE | 11.19.10 | Sovereign personal memory node and Python SDK |
-| Lantern runtime | 0.1.0 | State machine and voice-loop orchestration |
+| SAGE | 11.23.27 | Sovereign personal memory node |
+| Sage agent SDK | 11.19.10 | Separate bundled Python client wheel |
+| Lantern runtime | 0.2.0 | State machine and voice-loop orchestration |
 | llama.cpp | b9637 | Local OpenAI-compatible inference server; built statically from locked source on the target |
 | Qwen 3.5 4B | Unsloth Q4_K_M at `e87f176` | Local language model; llama.cpp-compatible GGUF, LFS SHA-256 `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4` |
 | whisper.cpp | 1.8.6 | Local speech recognition |

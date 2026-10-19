@@ -50,6 +50,7 @@ AUTH = 'scripts/lantern/unit-a-device-auth.py'
 AUTH_UNIT = 'software/systemd/sage-lantern-device-auth.service'
 AUTH_DRAIN = '/var/lib/sage-lantern/device-lock/drain'
 APPLIANCE_FILES = {
+    'software/bundle/linux-arm64/bin/sage-gui': '/opt/sage-lantern/bin/sage-gui',
     'scripts/lantern/wait-auth-native.py': '/usr/local/libexec/sage-lantern-wait-auth-native',
     'scripts/lantern/request-broker-contact.py': '/usr/local/libexec/sage-lantern-request-broker-contact',
     'software/systemd/sage-lantern-mesh-runtime.service.d/25-radio-commission-journal.conf': '/etc/systemd/system/sage-lantern-mesh-runtime.service.d/25-radio-commission-journal.conf',
@@ -59,6 +60,7 @@ APPLIANCE_FILES = {
     'software/systemd/sage-lantern-voice-loop.service': '/etc/systemd/system/sage-lantern-voice-loop.service',
     'software/systemd/sage-lantern-mesh-runtime.service': '/etc/systemd/system/sage-lantern-mesh-runtime.service',
     'software/systemd/sage-lantern-gateway-evidence.service': '/etc/systemd/system/sage-lantern-gateway-evidence.service',
+    'software/systemd/sage-lantern-personal-sage.service': '/etc/systemd/system/sage-lantern-personal-sage.service',
     'software/systemd/sage-lantern-voice-loop.service.d/40-mesh-broker.conf': '/etc/systemd/system/sage-lantern-voice-loop.service.d/40-mesh-broker.conf',
     'scripts/lantern/sage-lantern-kiosk': '/usr/local/bin/sage-lantern-kiosk',
     'scripts/lantern/cf-mode-supervisor.py': '/usr/local/libexec/sage-lantern-mode-supervisor',
@@ -668,8 +670,9 @@ def install_files(plan, rules, release, manifest, ui, *, allow_owner_setup, comm
         data = read_payload(release / name, entry)
         publish(root / DESTINATION.lstrip('/') / name.removeprefix(APP), data, entry['mode'], replace=replace)
     for name, data in files.items():
-        publish(root / name.lstrip('/'), data,
-                0o755 if name.startswith(('/usr/local/libexec/', '/usr/local/bin/')) else 0o644, replace=replace)
+        executable = (name == '/opt/sage-lantern/bin/sage-gui'
+                      or name.startswith(('/usr/local/libexec/', '/usr/local/bin/')))
+        publish(root / name.lstrip('/'), data, 0o755 if executable else 0o644, replace=replace)
     if replace:
         # The release's runtime wheel carries the sources the app services import;
         # it is installed before the receipt commits the new release.
@@ -714,24 +717,64 @@ def installed_source_closure(release, manifest, purelib):
                 require(hashlib.sha256(stream.read(2 * 1024 * 1024 + 1)).hexdigest() == digest, 'installed source differs from release')
 
 
-def onboarding_service_check(release, manifest, *, root=Path('/')):
+def onboarding_service_check(release, manifest, *, root=Path('/'), predecessor=None):
     name = 'software/systemd/sage-lantern-personal-sage.service'
     entry = next(entry for entry in manifest['files'] if entry['path'] == name)
     expected = read_payload(release / name, entry)
     require(b'LOCAL_VOICE_READY' not in expected and b'ConditionPathExists=/etc/sage-lantern-device-lock.enabled\n' in expected,
             'personal SAGE onboarding gate missing')
-    require(b'ExecStartPre=/opt/sage-lantern/bin/sage-gui check-lantern-private-config\n' in expected,
+    require(b'ConditionPathExists=/etc/sage/provisioning-profile.yaml\n' in expected,
+            'personal SAGE provisioning profile gate missing')
+    require(b'ExecStartPre=/opt/sage-lantern/bin/sage-gui check-private-config\n' in expected,
             'personal SAGE config capability gate missing')
+    require(b'CapabilityBoundingSet=CAP_DAC_READ_SEARCH\n' in expected
+            and b'AmbientCapabilities=CAP_DAC_READ_SEARCH\n' in expected,
+            'personal SAGE provisioning-profile read capability missing')
     for setting in (b'REST_ADDR=127.0.0.1:8080', b'SAGE_CMT_RPC_ADDR=tcp://127.0.0.1:26657',
-                    b'SAGE_CMT_P2P_ADDR=tcp://127.0.0.1:26656', b'SAGE_TLS_ADDR=127.0.0.1:8443',
-                    b'SAGE_LANTERN_PRIVATE_LISTENERS=1'):
+                    b'SAGE_CMT_P2P_ADDR=tcp://127.0.0.1:26656', b'SAGE_TLS_ADDR=127.0.0.1:8443'):
         require(b'Environment=' + setting + b'\n' in expected, 'personal SAGE loopback override missing')
+    require(b'SAGE_LANTERN_PRIVATE_LISTENERS' not in expected
+            and b'check-lantern-private-config' not in expected,
+            'legacy personal SAGE policy remains in unit')
+    profile_name = 'software/config/sage-provisioning-profile.example.yaml'
+    profile_entry = next(entry for entry in manifest['files'] if entry['path'] == profile_name)
+    expected_profile = read_payload(release / profile_name, profile_entry)
+    profile = root / 'etc/sage/provisioning-profile.yaml'
+    no_links(profile)
+    info = profile.stat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == 0
+            and stat.S_IMODE(info.st_mode) == 0o600 and 0 < info.st_size <= 16 * 1024,
+            'personal SAGE provisioning profile is not root-owned mode 0600')
+    require(profile.read_bytes() == expected_profile,
+            'personal SAGE provisioning profile differs from reviewed release')
     installed = root / 'etc/systemd/system/sage-lantern-personal-sage.service'
-    require(read_payload(installed, entry) == expected, 'base personal SAGE unit needs reviewed onboarding update')
+    if predecessor is None:
+        require(read_payload(installed, entry) == expected,
+                'base personal SAGE unit needs reviewed onboarding update')
+    else:
+        expected_predecessor = predecessor_targets(
+            predecessor['root'], predecessor['manifest']).get(
+                '/etc/systemd/system/sage-lantern-personal-sage.service')
+        require(expected_predecessor is not None
+                and installed_digest(root, '/etc/systemd/system/sage-lantern-personal-sage.service')
+                == expected_predecessor,
+                'installed personal SAGE unit differs from the predecessor release')
+    crash_privacy = b'[Service]\nLimitCORE=0:0\n'
     for prefix in ('etc/systemd/system', 'run/systemd/system'):
         dropins = root / prefix / 'sage-lantern-personal-sage.service.d'
         no_links(dropins)
-        require(not dropins.exists(), 'personal SAGE overrides require explicit review')
+        if not dropins.exists():
+            continue
+        allowed = prefix == 'etc/systemd/system' and predecessor is not None
+        names = sorted(path.name for path in dropins.iterdir())
+        require(allowed and names == ['90-sage-lantern-crash-privacy.conf'],
+                'personal SAGE overrides require explicit review')
+        override = dropins / names[0]
+        info = override.stat()
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0
+                and stat.S_IMODE(info.st_mode) == 0o644
+                and override.read_bytes() == crash_privacy,
+                'personal SAGE crash-privacy override differs')
 
 
 def kiosk_gdm_candidate(raw, account):
@@ -905,6 +948,7 @@ def commissioning_binding(args, manifest_digest, *, root=Path('/')):
     """Select the manifest the commissioning receipt must match; never silently widens it."""
     pin = getattr(args, 'commissioned_manifest_sha256', None)
     predecessor_root = getattr(args, 'predecessor_release_root', None)
+    installed_root = getattr(args, 'installed_release_root', None)
     if pin is None:
         require(predecessor_root is None, 'predecessor release root without commissioned manifest pin')
         return manifest_digest
@@ -925,11 +969,25 @@ def commissioning_binding(args, manifest_digest, *, root=Path('/')):
         predecessor = json.loads(raw)
     except ValueError:
         raise ValueError('invalid predecessor manifest')
-    rows = predecessor.get('files') if type(predecessor) is dict else None
+    binary_manifest = predecessor
+    if installed_root is not None:
+        require(type(installed_root) is str and Path(installed_root).is_absolute()
+                and installed_root == str(Path(installed_root)),
+                'absolute installed release root required')
+        installed_manifest_path = Path(installed_root) / 'manifest.json'
+        no_links(installed_manifest_path)
+        installed_raw = installed_manifest_path.read_bytes()
+        require(len(installed_raw) <= 64 * 1024 * 1024, 'unsafe installed release manifest')
+        try:
+            binary_manifest = json.loads(installed_raw)
+        except ValueError:
+            raise ValueError('invalid installed release manifest')
+    rows = binary_manifest.get('files') if type(binary_manifest) is dict else None
     require(type(rows) is list, 'invalid predecessor manifest')
     entry = next((row for row in rows if type(row) is dict and row.get('path') == stage.BINARY), None)
     require(type(entry) is dict and type(entry.get('sha256')) is str
-            and re.fullmatch(r'[0-9a-f]{64}', entry['sha256']), 'predecessor release lacks native binary binding')
+            and re.fullmatch(r'[0-9a-f]{64}', entry['sha256']),
+            'installed/predecessor release lacks native binary binding')
     installed = root / 'opt/sage-lantern/bin/sage-gui'
     no_links(installed)
     descriptor = os.open(installed, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -940,7 +998,8 @@ def commissioning_binding(args, manifest_digest, *, root=Path('/')):
         digest = hashlib.sha256()
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
-    require(digest.hexdigest() == entry['sha256'], 'installed native binary differs from commissioning release')
+    require(digest.hexdigest() == entry['sha256'],
+            'installed native binary differs from the selected release')
     return pin
 
 
@@ -966,17 +1025,26 @@ def main(argv=None):
     parser.add_argument('--accept-evolved-commissioning-output', action='store_true',
                         help='Successor install only: accept a commissioning output the running appliance has evolved since commissioning '
                              '(currently only the personal SAGE config, sage.yaml); the observed digest is recorded in the install receipt')
+    parser.add_argument('--accept-evolved-runtime-config', action='store_true',
+                        help='Successor install only: also accept the running appliance\'s evolved lantern.toml; '
+                             'the exact observed digest is recorded and the existing config is preserved')
     args = parser.parse_args(argv)
     try:
         require(bool(args.gdm_base_sha256) == args.enable_kiosk_autologin, 'GDM hash and kiosk opt-in must be supplied together')
         require(not args.accept_evolved_commissioning_output or args.installed_release_root is not None,
                 'accept-evolved-commissioning-output requires an installed predecessor release')
+        require(not args.accept_evolved_runtime_config or args.installed_release_root is not None,
+                'accept-evolved-runtime-config requires an installed predecessor release')
         prepared = prepare(args)
         manifest_digest = hashlib.sha256(Path(args.manifest).read_bytes()).hexdigest()
         commissioning_digest = commissioning_binding(args, manifest_digest)
         if args.install:
             commissioning = helper('app_commissioning', 'scripts/lantern/provision-fresh-appliance.py')
-            accept_evolved = commissioning.EVOLVABLE_COMMISSION_FILES if args.accept_evolved_commissioning_output else frozenset()
+            accept_evolved = set()
+            if args.accept_evolved_commissioning_output:
+                accept_evolved.add('sage.yaml')
+            if args.accept_evolved_runtime_config:
+                accept_evolved.add('lantern.toml')
             commissioning.commission_completion_check(args.unit_id, commissioning_digest, accept_evolved=accept_evolved)
             installed = native_preflight(args)
             components = prepared[3]['selection']['components']
@@ -995,7 +1063,7 @@ def main(argv=None):
             else:
                 require(not args.accept_replaced, 'accept-replaced requires an installed predecessor release')
                 installed_source_closure(prepared[2], prepared[3], installed['purelib'])
-            onboarding_service_check(prepared[2], prepared[3])
+            onboarding_service_check(prepared[2], prepared[3], predecessor=predecessor)
             kiosk = None
             if args.enable_kiosk_autologin:
                 kiosk = kiosk_plan(args.account, args.gdm_base_sha256)

@@ -33,6 +33,8 @@ SELF = 'scripts/lantern/provision-fresh-appliance.py'
 APP = 'scripts/lantern/install-fleet-appliance-local.py'
 POSTCOMMISSION = 'scripts/lantern/provision-postcommission-startup.py'
 FRESH_HANDOFF = 'scripts/lantern/handoff-fresh-audio-lifetime.py'
+PROVISIONING_PROFILE = 'software/config/sage-provisioning-profile.example.yaml'
+PROVISIONING_PROFILE_PATH = '/etc/sage/provisioning-profile.yaml'
 POST_PHASES = {'postcommission-handoff': 'handoff', 'postcommission-startup': 'install-startup'}
 POST_OPTIONS = ('startup_dependencies', 'startup_dependencies_sha256', 'startup_expected',
                 'startup_expected_sha256', 'startup_attempt_id', 'apply_postcommission')
@@ -153,12 +155,16 @@ def commands(args, payload):
         if args.phase == 'identity-config':
             require(getattr(args, 'commission_plan', None) and re.fullmatch(r'[0-9a-f]{64}', getattr(args, 'commission_plan_sha256', '') or ''),
                     'reviewed protected configuration plan required')
-        return [['/usr/sbin/runuser', '-u', 'sage-lantern', '--', '/usr/bin/env', '-i',
+        return [['/usr/bin/setpriv', '--reuid', 'sage-lantern', '--regid', 'sage-lantern',
+                 '--init-groups', '--inh-caps', '-all,+dac_read_search',
+                 '--ambient-caps', '-all,+dac_read_search', '--bounding-set', '-all,+dac_read_search',
+                 '/usr/bin/env', '-i',
                  'PATH=/usr/bin:/bin', 'HOME=/var/lib/sage-lantern', 'SAGE_HOME=/var/lib/sage-lantern/sage-personal',
-                 'SAGE_LANTERN_PRIVATE_LISTENERS=1', 'REST_ADDR=127.0.0.1:8080',
+                 'REST_ADDR=127.0.0.1:8080',
                  'SAGE_TLS_ADDR=127.0.0.1:8443', 'SAGE_CMT_RPC_ADDR=tcp://127.0.0.1:26657',
                  'SAGE_CMT_P2P_ADDR=tcp://127.0.0.1:26656', '/opt/sage-lantern/bin/sage-gui',
-                 'init-lantern-private', '--owner-approved-companion-bootstrap', args.unit_id]]
+                 'init-fresh-personal-sage', '--profile', PROVISIONING_PROFILE_PATH,
+                 '--unit', args.unit_id, '--owner-approved-companion-bootstrap']]
     require(not getattr(args, 'owner_approved_companion_bootstrap', False) and not getattr(args, 'identity_config_sha256', None),
             'identity-only options in other phase')
     if args.phase == 'base':
@@ -278,12 +284,18 @@ def identity_preflight(args, payload, *, root=Path('/')):
     verifier = helper('identity_manifest', 'scripts/appliance-release-manifest.py')
     config = root / 'var/lib/sage-lantern/sage-personal/config.yaml'
     metadata = root / 'etc/sage-lantern/unit.env'
+    profile = root / PROVISIONING_PROFILE_PATH.lstrip('/')
+    profile_template = payload / PROVISIONING_PROFILE
     binary = root / 'opt/sage-lantern/bin/sage-gui'
-    for path in (config, metadata, binary):
+    for path in (config, metadata, profile, profile_template, binary):
         for component in (path, *path.parents):
             require(not component.is_symlink(), 'identity input symlink')
         info = path.stat()
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not info.st_mode & 0o022, 'unsafe identity input')
+    profile_info = profile.stat()
+    require(profile_info.st_uid == 0 and stat.S_IMODE(profile_info.st_mode) == 0o600
+            and identity_config_bytes(profile) == identity_config_bytes(profile_template),
+            'reviewed root-owned provisioning profile required')
     require(metadata.stat().st_uid == 0 and binary.stat().st_uid == 0, 'operator-owned binding and executable required')
     account = pwd.getpwnam('sage-lantern')
     require(account.pw_uid != 0 and config.stat().st_uid == account.pw_uid and stat.S_IMODE(config.stat().st_mode) == 0o600,
@@ -336,7 +348,8 @@ def commission_preflight(args, payload):
     paths = [entry['path'] for entry in manifest['files'] if entry['role'] == 'sage_manifest']
     require(len(paths) == 1, 'SAGE provenance missing')
     provenance = json.loads(assembler.read(payload / paths[0]), object_pairs_hook=assembler.unique)
-    required = {'cmd/sage-gui/lantern_fresh_init.go', 'cmd/sage-gui/lantern_private_listeners.go',
+    required = {'cmd/sage-gui/fresh_personal_init.go', 'cmd/sage-gui/private_listeners.go',
+                'cmd/sage-gui/provisioning_profile.go',
                 'cmd/sage-gui/private_media_config.go', 'api/rest/private_media_handler.go',
                 'api/rest/workflow_journal_handler.go', 'internal/store/workflow_journal.go'}
     require(provenance.get('schema') == 'sage.lantern.binary-staging.v1'
@@ -355,7 +368,7 @@ COMMISSION_FILES = {'sage.yaml': 'var/lib/sage-lantern/sage-personal/config.yaml
 # (vault unlock and federation bookkeeping). A successor install may accept that
 # one output as evolved when the operator asks explicitly; every other output must
 # still match its recorded digest before anything is replaced.
-EVOLVABLE_COMMISSION_FILES = frozenset({'sage.yaml'})
+EVOLVABLE_COMMISSION_FILES = frozenset({'sage.yaml', 'lantern.toml'})
 PENDING = 'etc/sage-lantern/commissioning.pending.json'
 COMPLETE = 'etc/sage-lantern/commissioning-complete.json'
 

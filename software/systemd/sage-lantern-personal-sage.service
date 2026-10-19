@@ -4,6 +4,7 @@ After=local-fs.target network.target sage-lantern-embed-shim.service
 Wants=sage-lantern-embed-shim.service
 ConditionPathExists=/etc/sage-lantern-device-lock.enabled
 ConditionPathExists=/etc/sage-lantern/appliance-installed.json
+ConditionPathExists=/etc/sage/provisioning-profile.yaml
 ConditionFileNotEmpty=/var/lib/sage-lantern/sage-personal/config.yaml
 ConditionFileNotEmpty=/var/lib/sage-lantern/sage-personal/agent.key
 ConditionFileNotEmpty=/var/lib/sage-lantern/sage-personal/data/cometbft/config/genesis.json
@@ -21,12 +22,13 @@ Environment=REST_ADDR=127.0.0.1:8080
 Environment=SAGE_CMT_RPC_ADDR=tcp://127.0.0.1:26657
 Environment=SAGE_CMT_P2P_ADDR=tcp://127.0.0.1:26656
 Environment=SAGE_TLS_ADDR=127.0.0.1:8443
-Environment=SAGE_LANTERN_PRIVATE_LISTENERS=1
 ExecStart=/opt/sage-lantern/bin/sage-gui serve
-ExecStartPre=/opt/sage-lantern/bin/sage-gui check-lantern-private-config
+ExecStartPre=/opt/sage-lantern/bin/sage-gui check-private-config
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true

@@ -11,6 +11,17 @@ docs, maps catalog and release assets. The profile README and the GitHub Pages
 hub both link to this repository. The product repo links to `lantern-3b` and the
 model repo links back.
 
+The SAGE provisioning-profile migration is installed and live on Unit C as
+release `lantern-cf-20261019-sage112327-r24`, manifest SHA-256
+`7795632965ce28ab1bc42fab90a249e43c798da6496cf5be4094c9da6b5d3e15`.
+SAGE is now **11.23.27**, binary SHA-256
+`7f0660ec4cc09ba21290eb29950ccaad6afb84c7bda6179c1d27771b420edb7a`.
+`/etc/sage/provisioning-profile.yaml` is root-owned mode 0600. The service keeps
+`NoNewPrivileges=true` and receives only `CAP_DAC_READ_SEARCH` so the non-root
+account can load that policy profile. All SAGE listeners are loopback-only.
+Evidence and rollback paths are in
+`work/sage-provisioning-profile-migration-20261019/`.
+
 The open PR stack is stale and needs one decision before it can move:
 
 - PR 3, `codex/transport-qualification-20261014`, contains PR 1 and is the only
@@ -44,6 +55,7 @@ installed or accepted.
 | Service | State |
 |---|---|
 | `sage-lantern-llm.service` | active, port 8081, V81 `ac7021b6…`, 16k/8192 |
+| `sage-lantern-personal-sage.service` | active, SAGE 11.23.27, profile-gated, loopback-only |
 | `sage-lantern-voice-loop.service` | active |
 | `gpsd` | active on the L76K `/dev/ttyS6` |
 | `sage-lantern-gnss-status.service` | active, loopback 8090 |
@@ -196,15 +208,18 @@ labels or a different base, not more self-generated pairs.
 
 ## Task board
 
-14 assigned open tasks remain:
+14 assigned open tasks remain: one index record, **267c5475** (replacing
+14fab869), and 13 engineering workstreams. The inbox is clear — 0 pending
+requests, 0 task notices and 0 unfinished claims; reply watermark
+`2026-10-19T01:38:14.498Z`.
 
 - **4c25d4a3** — Lantern/SAGE desktop mode: physical panel, touch, CEREBRUM
   and landscape acceptance still open.
-- **a65d8a51** — GNSS/maps: bridge, live UI and Penang pack shipped; antenna
-  fix, physical panel and map-shipping tier decision remain.
+- **a65d8a51** — GNSS/maps: bridge, live Maps UI and the five-pack catalog
+  shipped; antenna fix, physical panel and map-shipping tier decision remain.
 - **122f430a** — Meshticulum: other session; 1 MB rerun needs a fresh window.
-- **d410e922** — Lantern 3B: V81 shipped; weights next step needs independent
-  preference labels.
+- **d410e922** — Lantern 3B: V81 research preview live on C with guards;
+  weights next step needs independent preference labels.
 - **21647cae** — C-native qualification: protected backend, lifecycle,
   consent/session, D-022 and D/E/F gates remain.
 - **131d5018** — Conversation product: installed owner-session UI, private
@@ -225,18 +240,22 @@ labels or a different base, not more self-generated pairs.
 
 ## Next order
 
-1. Decide the `verified_epoch` contract, then close PR 1 and PR 2 as superseded
+1. Review, commit and push the r24 SAGE provisioning-profile, installer and
+   source change; it is still uncommitted.
+2. Decide the `verified_epoch` contract, then close PR 1 and PR 2 as superseded
    and finish or abandon the PR 3 rebase.
-2. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
+3. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait. Run one physical SD/USB map install when a card is
    available.
-3. Wire the settlement owner into the native launch authority and repeat the
+4. Wire the settlement owner into the native launch authority and repeat the
    native fault replay on C.
-4. Resolve the panel/CSI adapters and physical board count with Flint; bring up
+5. Resolve the panel/CSI adapters and physical board count with Flint; bring up
    one G/H unit.
-5. Continue conversation-product acceptance.
-6. Resume weights only with independent preference labels or a different base.
+6. Continue conversation-product acceptance.
+7. Resume weights only with independent preference labels or a different base.
+8. Run the Meshticulum native/proper-bundle 1 MB and mixed-path qualification
+   in a fresh bounded radio window; close PR 37 as superseded by PR 38.
 
 ## Guardrails
 

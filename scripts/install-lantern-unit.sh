@@ -66,7 +66,7 @@ def lantern_name(name):
 
 for name in ('opt/sage-lantern', 'var/lib/sage-lantern', 'etc/sage-lantern',
              'etc/sage-lantern-device-lock.enabled', 'etc/sage-lantern-vault-setup.enabled',
-             'run/sage-lantern-suspend'):
+             'etc/sage/provisioning-profile.yaml', 'run/sage-lantern-suspend'):
     if exists(root / name):
         refuse('existing /' + name)
 

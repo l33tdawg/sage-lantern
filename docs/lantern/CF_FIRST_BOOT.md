@@ -114,7 +114,8 @@ booting SD; use the separate root-source evidence to see where `/` actually is.
    protected-config, app, audio, mesh, startup, display and update gates now
    admit exact A–F identities in source. Their tests preserve cross-unit
    mismatch refusals. The native SAGE initializer also needs the matching new
-   binary; the old cached 11.19.10 binary has no `init-lantern-private` command.
+   binary; the stack now pins 11.23.27 and installs the root-owned
+   `/etc/sage/provisioning-profile.yaml` before identity initialization.
    Source expansion and a compiled candidate still require a complete matched
    appliance release and native acceptance. The candidate profile now packages
    NPU 2B, CPU 4B vision and local embeddings. The vision planner pins both NPU

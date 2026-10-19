@@ -25,6 +25,11 @@
       "source": "https://github.com/OHF-Voice/piper1-gpl/releases/tag/v1.4.2",
       "version": "1.4.2"
     },
+    "pyyaml": {
+      "license": "MIT",
+      "source": "https://pypi.org/project/PyYAML/6.0.2/",
+      "version": "6.0.2"
+    },
     "qwen3.5-4b": {
       "license": "Apache-2.0",
       "source": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/tree/e87f176479d0855a907a41277aca2f8ee7a09523",
@@ -32,13 +37,13 @@
     },
     "sage": {
       "license": "Apache-2.0",
-      "source": "https://github.com/l33tdawg/sage/releases/tag/v11.19.10",
-      "version": "11.19.10"
+      "source": "https://github.com/l33tdawg/sage/releases/tag/v11.23.27",
+      "version": "11.23.27"
     },
     "sage-agent-sdk": {
       "license": "Apache-2.0",
-      "source": "https://pypi.org/project/sage-agent-sdk/11.19.10/",
-      "version": "11.19.10"
+      "source": "../sage/sdk/python (local staged release; embedded source manifest)",
+      "version": "11.19.10+lantern.20260906"
     },
     "whisper.cpp": {
       "license": "MIT",
@@ -48,9 +53,9 @@
   },
   "files": [
     {
-      "bytes": 65798328,
+      "bytes": 67829922,
       "path": "software/bundle/linux-arm64/bin/sage-gui",
-      "sha256": "945c98c535f512371e526ab4083ddbd55411686f20bae90950a69f9d8fe13799"
+      "sha256": "7f0660ec4cc09ba21290eb29950ccaad6afb84c7bda6179c1d27771b420edb7a"
     },
     {
       "bytes": 1078,
@@ -333,6 +338,11 @@
       "sha256": "6b6ce71a18a23f84323f43514b5e15435e194dbde817e662a2e9c0b47bc70a1c"
     },
     {
+      "bytes": 736829,
+      "path": "software/bundle/python-wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "5d225db5a45f21e78dd9358e58a98702a0302f2659a3c6cd320564b75b86f47c"
+    },
+    {
       "bytes": 13427,
       "path": "software/bundle/python-wheels/annotated_types-0.8.0-py3-none-any.whl",
       "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
@@ -453,14 +463,14 @@
       "sha256": "8845c0631c0be43abdd865511c41eab235e0be69c81dc66a50911594198679b0"
     },
     {
-      "bytes": 50423,
-      "path": "software/bundle/python-wheels/sage_agent_sdk-11.19.10-py3-none-any.whl",
-      "sha256": "ffaacce8a5878b7b42c14ccbce9f7ca5f9c60ebc0566b28e53d5fd27a7393110"
+      "bytes": 57628,
+      "path": "software/bundle/python-wheels/sage_agent_sdk-11.19.10+lantern.20260906-py3-none-any.whl",
+      "sha256": "d61c829045a0ad30bccbb32b54734c5b14ba81236fc79f14d7dee69489478ae9"
     },
     {
-      "bytes": 156714,
+      "bytes": 513573,
       "path": "software/bundle/python-wheels/sage_lantern_runtime-0.2.0-py3-none-any.whl",
-      "sha256": "21809cefad4566b45aed592bea66ee01c211f9add372ecba70981324ad04bccd"
+      "sha256": "324de3e23ef96aa86d6b145e3b97b572b9da503f5ea59eab493321a852c3803a"
     },
     {
       "bytes": 6299353,
@@ -503,6 +513,16 @@
       "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"
     },
     {
+      "bytes": 675569344,
+      "path": "software/cache/models/mmproj-BF16.gguf",
+      "sha256": "302b92d565080b9cc0281186979ae75a7429ec23d14f6f7607a035539b21f3a6"
+    },
+    {
+      "bytes": 146146432,
+      "path": "software/cache/models/nomic-embed-text-v1.5.Q8_0.gguf",
+      "sha256": "3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7"
+    },
+    {
       "bytes": 2740937888,
       "path": "software/cache/models/qwen3.5-4b-q4_k_m.gguf",
       "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
@@ -513,9 +533,9 @@
       "sha256": "762283319feb3de30886dc850d42f0e426b06600e7f9639d34e06506597309ca"
     },
     {
-      "bytes": 10393817,
-      "path": "software/cache/sources/sage-v11.19.10.tar.gz",
-      "sha256": "07c9b877f3e7f7dcd262a067cbbe8fe8ceec64e06dbfbad9ffa9e6adbbdd7bb6"
+      "bytes": 19914953,
+      "path": "software/cache/sources/sage-v11.23.27.tar.gz",
+      "sha256": "a5f21af5eb80267fa0689c99c8006ed92a4aac2e4faa531a84f6a96a46c91977"
     },
     {
       "bytes": 8841784,

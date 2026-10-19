@@ -13,8 +13,8 @@ OUTPUT = ROOT / "software" / "stack.lock.json"
 
 COMPONENTS = {
     "sage": {
-        "version": "11.19.10",
-        "source": "https://github.com/l33tdawg/sage/releases/tag/v11.19.10",
+        "version": "11.23.27",
+        "source": "https://github.com/l33tdawg/sage/releases/tag/v11.23.27",
         "license": "Apache-2.0",
     },
     "llama.cpp": {
@@ -83,6 +83,8 @@ def main() -> None:
     files = []
     for directory in roots:
         for path in sorted(item for item in directory.rglob("*") if item.is_file()):
+            if any(part.startswith(("tmp-", ".tmp-")) for part in path.relative_to(directory).parts):
+                continue
             files.append(
                 {
                     "path": str(path.relative_to(ROOT)),

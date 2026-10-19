@@ -43,6 +43,7 @@ PRIVATE_KEY = "/var/lib/sage-lantern/identity/lantern-agent.key"
 SAGE_YAML = Path('/var/lib/sage-lantern/sage-personal/config.yaml')
 GENESIS = SAGE_YAML.parent / 'data/cometbft/config/genesis.json'
 SAGE_BINARY = Path('/opt/sage-lantern/bin/sage-gui')
+PROVISIONING_PROFILE = Path('/etc/sage/provisioning-profile.yaml')
 POLICY_FIELDS = {'chain_id', 'data_dir', 'agent_key_file', 'rest_addr', 'encryption',
     'private_media', 'embedding', 'federation', 'quorum', 'voter', 'vendored_agent_bootstrap'}
 
@@ -69,13 +70,16 @@ def native_config_check(expected):
         with SAGE_BINARY.open('rb') as stream:
             return hashlib.file_digest(stream, 'sha256').hexdigest()
     require(binary_digest() == expected)
-    _trusted_file(Path('/usr/sbin/runuser'))
+    _trusted_file(Path('/usr/bin/setpriv'))
+    _trusted_file(PROVISIONING_PROFILE)
     environment = dict(PATH='/usr/sbin:/usr/bin:/sbin:/bin', LANG='C', LC_ALL='C',
         HOME='/var/lib/sage-lantern', SAGE_HOME=str(SAGE_YAML.parent), REST_ADDR='127.0.0.1:8080',
         SAGE_CMT_RPC_ADDR='tcp://127.0.0.1:26657', SAGE_CMT_P2P_ADDR='tcp://127.0.0.1:26656',
-        SAGE_TLS_ADDR='127.0.0.1:8443', SAGE_LANTERN_PRIVATE_LISTENERS='1')
-    result = subprocess.run(['/usr/sbin/runuser', '-u', 'sage-lantern', '--', str(SAGE_BINARY),
-        'check-lantern-private-config'], env=environment, stdin=subprocess.DEVNULL,
+        SAGE_TLS_ADDR='127.0.0.1:8443')
+    result = subprocess.run(['/usr/bin/setpriv', '--reuid', 'sage-lantern', '--regid', 'sage-lantern',
+        '--init-groups', '--inh-caps', '-all,+dac_read_search', '--ambient-caps', '-all,+dac_read_search',
+        '--bounding-set', '-all,+dac_read_search', str(SAGE_BINARY), 'check-private-config'],
+        env=environment, stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
     require(result.returncode == 0 and binary_digest() == expected)
 

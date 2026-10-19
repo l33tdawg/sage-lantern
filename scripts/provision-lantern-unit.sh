@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -116,6 +118,10 @@ metadata_file="${config_root}/unit.env"
 requirements_file="${state_root}/identity/EXTERNAL_IDENTITY_REQUIREMENTS.txt"
 inventory_file="${state_root}/inventory/unit-inventory.env"
 provisioned_file="${state_root}/PROVISIONED"
+profile_root="${staging_root%/}/etc/sage"
+profile_file="${profile_root}/provisioning-profile.yaml"
+profile_template="${source_root}/software/config/sage-provisioning-profile.example.yaml"
+[[ -f "${profile_template}" ]] || die 'reviewed SAGE provisioning profile template is missing'
 
 if [[ -f "${metadata_file}" ]]; then
   recorded_unit="$(sed -n 's/^UNIT_ID=//p' "${metadata_file}")"
@@ -153,7 +159,7 @@ fi
 
 if ((dry_run == 1)); then
   log "DRY RUN: ${action} unit ${unit_id} under ${staging_root:-/}"
-  log "DRY RUN: would write ${metadata_file} and ${requirements_file}"
+  log "DRY RUN: would write ${profile_file}, ${metadata_file} and ${requirements_file}"
   if [[ "${action}" == verify ]]; then
     log "DRY RUN: verification passed; would write ${inventory_file}, then ${provisioned_file} last"
   fi
@@ -162,14 +168,33 @@ fi
 
 if ((target_mode == 1)); then
   install -d -o root -g sage-lantern -m 0750 "${config_root}"
+  [[ ! -L "${profile_root}" ]] || die 'existing /etc/sage is a symlink; refusing to install policy'
+  install -d -o root -g root -m 0755 "${profile_root}"
   # The runtime and first-run SAGE ceremony execute as sage-lantern. Keep its
   # private state tree service-owned; root-owned mode 0700 would lock the
   # service account out of its own home after `prepare`.
   install -d -o sage-lantern -g sage-lantern -m 0700 "${state_root}" "${state_root}/identity" "${state_root}/inventory"
 else
   install -d -m 0750 "${config_root}"
+  [[ ! -L "${profile_root}" ]] || die 'existing /etc/sage is a symlink; refusing to install policy'
+  install -d -m 0755 "${profile_root}"
   install -d -m 0700 "${state_root}" "${state_root}/identity" "${state_root}/inventory"
 fi
+
+if [[ -L "${profile_file}" ]]; then
+  die 'existing SAGE provisioning profile is a symlink; refusing to replace it'
+fi
+if [[ -e "${profile_file}" ]]; then
+  cmp -s "${profile_template}" "${profile_file}" || die 'existing SAGE provisioning profile differs; refusing to overwrite it'
+else
+  profile_tmp="$(mktemp "${profile_root}/.provisioning-profile.XXXXXX")"
+  cp "${profile_template}" "${profile_tmp}"
+  chmod 0600 "${profile_tmp}"
+  ((target_mode == 0)) || chown root:root "${profile_tmp}"
+  mv "${profile_tmp}" "${profile_file}"
+fi
+chmod 0600 "${profile_file}"
+((target_mode == 0)) || chown root:root "${profile_file}"
 
 if [[ ! -f "${metadata_file}" ]]; then
   metadata_tmp="$(mktemp "${config_root}/.unit.env.XXXXXX")"

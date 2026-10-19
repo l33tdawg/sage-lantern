@@ -76,6 +76,12 @@ class StageApplianceTests(unittest.TestCase):
     def build(self):
         return STAGE.build(self.source, self.artifacts, self.output, "fixture-1")
 
+    def test_sage_provisioning_profile_travels_as_support_policy(self):
+        name = 'software/config/sage-provisioning-profile.example.yaml'
+        self.assertIn(name, {row['path'] for row in STAGE.required_sources()})
+        self.assertIn(name, STAGE.SUPPORT)
+        self.assertNotIn(name, STAGE.INSTALLERS)
+
     def test_reproducible_complete_inventory_and_destinations(self):
         first = self.build()
         second = self.root / "second"

@@ -18,9 +18,13 @@ class PhaseRunnerTests(unittest.TestCase):
             install_os_packages=False, owner_approved_companion_bootstrap=True, identity_config_sha256='b' * 64)
         steps = MODULE.commands(args, Path('/synthetic/payload'))
         self.assertEqual(len(steps), 1)
-        self.assertIn('init-lantern-private', steps[0])
-        self.assertEqual(steps[0][-1], 'unit-b')
-        self.assertIn('SAGE_LANTERN_PRIVATE_LISTENERS=1', steps[0])
+        self.assertIn('init-fresh-personal-sage', steps[0])
+        self.assertEqual(steps[0][:4], ['/usr/bin/setpriv', '--reuid', 'sage-lantern', '--regid'])
+        self.assertTrue(any('+dac_read_search' in argument for argument in steps[0]))
+        self.assertEqual(steps[0][-5:], ['--profile', '/etc/sage/provisioning-profile.yaml',
+                                        '--unit', 'unit-b', '--owner-approved-companion-bootstrap'])
+        self.assertNotIn('SAGE_LANTERN_PRIVATE_LISTENERS=1', steps[0])
+        self.assertNotIn('init-lantern-private', steps[0])
         self.assertNotIn('serve', steps[0])
         args.owner_approved_companion_bootstrap = False
         with self.assertRaises(ValueError):

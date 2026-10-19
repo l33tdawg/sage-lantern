@@ -69,6 +69,7 @@ SUPPORT = (
     "scripts/lantern/recover-cross-boot-audio.py", "scripts/lantern/collect-cross-boot-audio-pins.py",
     "software/systemd/sage-lantern-startup.service",
     "software/config/sage-personal.example.yaml",
+    "software/config/sage-provisioning-profile.example.yaml",
     # The console lane (D-019) travels as reviewed support payload: the local
     # bundle builder/deployer/checker and the typed-question rehearsal are the
     # per-unit lane, and the activation runbook is the reviewed procedure that
@@ -157,7 +158,7 @@ NPU_ARTIFACT_PINS = {
 }
 NPU_SOURCE_PINS = {
     "software/npu/rkllm_engine.cpp": "408eb358080dca83e533fb8e4b819c2792242e443fb0e6227ee3bf5e6a8e3cfc",
-    "software/npu/rkllm_server.py": "71101a623ece4c4decaf872c3caa06734c240088ec06556145a93a0ece036886",
+    "software/npu/rkllm_server.py": "674ae3d23f5527518a641ded9b1475e21aeb76bb4de2123b26000e779c251db0",
     "software/npu/vlm_engine.cpp": "e4912a4cb6849d8247ec983361709e96d88497393caeedff2942f62b4322c4a5",
     "software/npu/vlm_server.py": "9fdc82afa2014b629e428b3e72cc5114a8de15263f6d6140f0860b6b39712f58",
 }
@@ -214,7 +215,9 @@ def module_names(root, prefix, package, extras):
     directory = root / prefix / "src" / package
     MANIFEST.no_links(directory)
     names = sorted(path for path in directory.iterdir() if path.name != "__pycache__")
-    require(1 <= len(names) <= 128 and all(path.suffix == ".py" and path.is_file() for path in names), "module tree must contain only direct Python source files")
+    # The 18 October policy-wheel rebuild brought the runtime past its original
+    # 128-module bound. Keep the same bounded inventory as the runtime builder.
+    require(1 <= len(names) <= 160 and all(path.suffix == ".py" and path.is_file() for path in names), "module tree must contain only direct Python source files")
     require(directory / "__init__.py" in names, "missing package initializer")
     return [prefix + "/" + name for name in extras] + [path.relative_to(root).as_posix() for path in names]
 

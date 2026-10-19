@@ -241,9 +241,12 @@ def test_native_validator_is_pinned_readonly_and_environment_isolated(tmp_path, 
     calls = []
     def run(arguments, **kwargs):
         calls.append(arguments)
-        assert arguments == ['/usr/sbin/runuser', '-u', 'sage-lantern', '--', str(binary), 'check-lantern-private-config']
+        assert arguments == ['/usr/bin/setpriv', '--reuid', 'sage-lantern', '--regid', 'sage-lantern',
+                             '--init-groups', '--inh-caps', '-all,+dac_read_search', '--ambient-caps',
+                             '-all,+dac_read_search', '--bounding-set', '-all,+dac_read_search', str(binary),
+                             'check-private-config']
         assert kwargs['env']['SAGE_HOME'] == '/var/lib/sage-lantern/sage-personal'
-        assert kwargs['env']['SAGE_LANTERN_PRIVATE_LISTENERS'] == '1'
+        assert 'SAGE_LANTERN_PRIVATE_LISTENERS' not in kwargs['env']
         assert kwargs['env']['SAGE_CMT_P2P_ADDR'] == 'tcp://127.0.0.1:26656'
         assert 'HTTP_PROXY' not in kwargs['env'] and 'PYTHONPATH' not in kwargs['env']
         assert kwargs['stdin'] == kwargs['stdout'] == kwargs['stderr'] == subprocess.DEVNULL

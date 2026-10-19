@@ -48,7 +48,11 @@ class GeneratedConfigTests(unittest.TestCase):
                     allow_native_build=False, install_os_packages=False,
                     owner_approved_companion_bootstrap=True, identity_config_sha256='a' * 64,
                     manifest_sha256='b' * 64, commission_plan_sha256='c' * 64)
-                self.assertEqual(RUNNER.commands(args, Path('/synthetic/payload'))[0][-1], unit)
+                command = RUNNER.commands(args, Path('/synthetic/payload'))[0]
+                self.assertIn('init-fresh-personal-sage', command)
+                self.assertEqual(command[command.index('--profile') + 1], '/etc/sage/provisioning-profile.yaml')
+                self.assertEqual(command[command.index('--unit') + 1], unit)
+                self.assertEqual(command[-1], '--owner-approved-companion-bootstrap')
                 self.assertEqual(RUNNER.commission_binding(args)['unit_id'], unit)
                 identity = {**self.identity, 'unit_id': unit}
                 result = ASSEMBLER.generated_config(json.dumps(identity).encode(), unit,
@@ -207,15 +211,20 @@ class GeneratedConfigTests(unittest.TestCase):
                                                      accept_evolved=frozenset({'sage.yaml'}))
         self.assertEqual(RUNNER.commission_output_drift(receipt, root=root),
                          {'sage.yaml': hashlib.sha256(config.read_bytes()).hexdigest()})
-        with self.assertRaisesRegex(ValueError, 'unreviewed evolvable commissioning output'):
-            RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
-                                               accept_evolved=frozenset({'lantern.toml'}))
         runtime = root / RUNNER.COMMISSION_FILES['lantern.toml']
         original = runtime.read_bytes()
         runtime.write_bytes(original + b'\n')
         with self.assertRaisesRegex(ValueError, 'commission output changed: lantern.toml'):
             RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
                                                accept_evolved=frozenset({'sage.yaml'}))
+        receipt = RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
+                                                     accept_evolved=frozenset({'sage.yaml', 'lantern.toml'}))
+        self.assertEqual(RUNNER.commission_output_drift(receipt, root=root),
+                         {'sage.yaml': hashlib.sha256(config.read_bytes()).hexdigest(),
+                          'lantern.toml': hashlib.sha256(runtime.read_bytes()).hexdigest()})
+        with self.assertRaisesRegex(ValueError, 'unreviewed evolvable commissioning output'):
+            RUNNER.commission_completion_check(args.unit_id, args.manifest_sha256, root=root, owner_uid=os.getuid(),
+                                               accept_evolved=frozenset({'bindings.json'}))
         runtime.write_bytes(original)
 
     def test_preinit_mismatch_and_backup_collision_do_not_claim(self):

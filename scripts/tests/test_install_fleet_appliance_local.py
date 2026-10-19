@@ -269,12 +269,19 @@ class FreshAppTests(unittest.TestCase):
         stderr = io.StringIO()
         with patch.object(MODULE, 'prepare') as prepare, contextlib.redirect_stderr(stderr):
             self.assertEqual(MODULE.main(self.refusal_argv() + ['--accept-evolved-commissioning-output']), 2)
+            self.assertEqual(MODULE.main(self.refusal_argv() + ['--accept-evolved-runtime-config']), 2)
         prepare.assert_not_called()
         self.assertIn('accept-evolved-commissioning-output requires an installed predecessor release', stderr.getvalue())
+        self.assertIn('accept-evolved-runtime-config requires an installed predecessor release', stderr.getvalue())
 
     def test_radio_artifact_pins_match_stager(self):
         stage = MODULE.helper('radio_stage_pin_test', 'scripts/stage-appliance-release.py')
         self.assertEqual(MODULE.RADIO_PINS, stage.RADIO_PINS)
+
+    def test_sage_binary_is_a_managed_successor_target(self):
+        self.assertEqual(
+            MODULE.APPLIANCE_FILES['software/bundle/linux-arm64/bin/sage-gui'],
+            '/opt/sage-lantern/bin/sage-gui')
 
     def test_retained_radio_journal_denies_fresh_install(self):
         for name in ('sage-lantern-radio-commission', 'sage-lantern-radio-operator'):
@@ -394,6 +401,18 @@ class FreshAppTests(unittest.TestCase):
         current = 'f' * 64
         args = SimpleNamespace(commissioned_manifest_sha256=pin, predecessor_release_root=str(predecessor))
         self.assertEqual(MODULE.commissioning_binding(args, current, root=self.root), pin)
+        newer = b'newer native binary\n'
+        installed_release = self.directory / 'installed-release'
+        installed_release.mkdir()
+        (installed_release / 'manifest.json').write_text(json.dumps({
+            'release_id': 'synthetic-installed', 'files': [
+                {'path': binary_rel, 'sha256': hashlib.sha256(newer).hexdigest(),
+                 'bytes': len(newer), 'mode': 0o755, 'role': 'sage_binary'}]}))
+        installed.write_bytes(newer)
+        successor_args = SimpleNamespace(commissioned_manifest_sha256=pin, predecessor_release_root=str(predecessor),
+                                         installed_release_root=str(installed_release))
+        self.assertEqual(MODULE.commissioning_binding(successor_args, current, root=self.root), pin)
+        installed.write_bytes(binary)
         self.assertEqual(MODULE.commissioning_binding(
             SimpleNamespace(commissioned_manifest_sha256=None, predecessor_release_root=None),
             current, root=self.root), current)
