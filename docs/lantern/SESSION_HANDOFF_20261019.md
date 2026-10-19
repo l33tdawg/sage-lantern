@@ -45,8 +45,12 @@ panel/touch/thermal acceptance. The two ROCK 5B 8 GB boards remain the A/B
 Meshticulum relay units. D-028 records this. The four AC005 adapters already
 ordered are exactly right. The two extra 6240B coolers were ordered from RS
 Malaysia on 19 October (MYR56.92); the RS order with the four AC005 totals
-MYR95.32. Remaining ROCK-unit gaps are two 16 GB boards, two more DSI panels
-(four total) and four **256 GB** NVMe drives.
+MYR95.32. The two additional ROCK 5B+ 16 GB boards were ordered from RS Export
+as order **1000144782**: 2 × RS 162-225, £810.42 delivered, estimated
+23 October. Two Waveshare 6.25-inch DSI LCD (B) panels, SKU 35000, were
+ordered as **261019-122830-E0**: $143.76 with FedEx, awaiting shipment. NVMe
+is covered by two spare **256 GB** drives in hand; no NVMe order is open. This
+closes the ROCK-unit procurement gaps.
 The owner ordered four **Radxa Camera 4K IMX415** modules from Arace at RM205
 each (RM820 subtotal) and confirmed the order on 19 October. The IMX519-7B
 modules remain bench/experimental only. LoRa HAT procurement is deferred —
@@ -55,8 +59,9 @@ spare HATs are in hand and they are cheap/readily available later.
 - The product radio baseline is one LoRa radio per unit. Meshticulum carries
   messages and resource transfers over that single half-duplex radio. Extra
   radios are bench comparison inventory only.
-- Flint has the open questions on the correct DSI panel adapter, the physical
-  Orange Pi count and the 30-to-22 IMX519 CSI adapter.
+- The DSI panel adapter (AC005), the two-Orange-Pi bench count and the
+  four-ROCK / 2 × 16 GB plan are settled. The 30-to-22 IMX519 CSI adapter
+  remains bench-only, not on the product path.
 - The GNSS antenna is still disconnected. No fix exists. The physical panel,
   touch, CEREBRUM, Sky View and sleep/wake checks still need a person at C.
 
@@ -289,8 +294,8 @@ requests, 0 task notices and 0 unfinished claims; reply watermark
    available.
 4. Wire the settlement owner into the native launch authority and repeat the
    native fault replay on C.
-5. Resolve the panel/CSI adapters and physical board count with Flint; bring up
-   one G/H unit.
+5. Bring up one G/H unit once the 16 GB boards and panels arrive; keep the
+   IMX519 CSI adapter off the product path.
 6. Continue conversation-product acceptance.
 7. Resume weights only with independent preference labels or a different base.
 8. Run the Meshticulum native/proper-bundle 1 MB and mixed-path qualification
