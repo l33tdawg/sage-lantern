@@ -6,6 +6,8 @@ A [SAGE Foundation](https://sage-foundation.net/) project, created and maintaine
 
 **Development preview, public since 19 October 2026.** This is the product repository for the Lantern device: runtime, touchscreen apps, provisioning tools, firmware glue and the offline map packs. The [Foundation site](https://sage-foundation.net/) carries the programme and contact details. [Offline maps](maps/README.md) are published as release assets. [Device status](docs/lantern/DELIVERY_BACKLOG.md) records what is proven and what is not.
 
+[Documentation](docs/index.md) · [Project family](#the-sage-project-family) · [Offline maps](maps/README.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+
 A curious mind shouldn't need a better postcode. SAGE is an initiative to
 democratise intelligence: local AI that works without reliable internet, and
 community-owned networks that keep people connected when the usual connections
