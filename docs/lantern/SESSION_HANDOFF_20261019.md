@@ -22,18 +22,17 @@ account can load that policy profile. All SAGE listeners are loopback-only.
 Evidence and rollback paths are in
 `work/sage-provisioning-profile-migration-20261019/`.
 
-The open PR stack is stale and needs one decision before it can move:
+The PR stack is settled:
 
-- PR 3, `codex/transport-qualification-20261014`, contains PR 1 and is the only
-  live branch. PR 1 and PR 2 are superseded by it.
-- PR 3 is 152 commits behind main and conflicts on 28 files. A test merge in a
-  temporary worktree resolved the file conflicts and reached 112 passing tests,
-  then stopped on a real semantic conflict: PR 3's `verified_epoch` probes fresh
-  on every call, while main's replay-window regression test expects one
-  snapshot and one vault check per window.
-- Decide whether main keeps the cached per-window contract or PR 3's
-  fresh-probe contract wins and the regression guard is updated. Do not merge
-  PR 3 until that is settled. No merge was pushed.
+- PR 1 and PR 2 are superseded by PR 3 and should close.
+- PR 3, `codex/transport-qualification-20261014`, now includes main through
+  merge `99b5e15`. The storage-epoch conflict is resolved by D-027:
+  `verified_epoch()` stays uncached for the six native forward-secrecy fences,
+  while `admission_epoch()` carries main's one-second reuse for capture leases
+  and hot admission checks.
+- Native proof for the merge: 180 storage/daemon tests, 34 fence tests and 298
+  forward native owner/provider/relay/bound-pair tests. Remaining integration
+  failures are sandbox IP-bind and external-service limits.
 
 Hardware and device waits:
 
@@ -240,10 +239,10 @@ requests, 0 task notices and 0 unfinished claims; reply watermark
 
 ## Next order
 
-1. Review, commit and push the r24 SAGE provisioning-profile, installer and
-   source change; it is still uncommitted.
-2. Decide the `verified_epoch` contract, then close PR 1 and PR 2 as superseded
-   and finish or abandon the PR 3 rebase.
+1. ~~Review, commit and push the r24 SAGE provisioning-profile, installer and
+   source change.~~ Done: `5b1a8f1` on `main`.
+2. Close PR 1 and PR 2 as superseded, then review the settled PR 3 merge
+   (`99b5e15`). The `verified_epoch` contract is D-027.
 3. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait. Run one physical SD/USB map install when a card is

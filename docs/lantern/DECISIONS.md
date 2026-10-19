@@ -803,6 +803,38 @@ permission to let the model write directly.
 `software/runtime/src/sage_lantern/action_guard.py`,
 `software/runtime/src/sage_lantern/conversation_service.py`.
 
+## D-027 — Storage epoch verification has two contracts
+
+**Decision (2026-10-19):** `RootStorageSupervisor.verified_epoch()` is
+uncached: every call re-derives the signed storage snapshot and the vault
+identity under the supervisor's state fence. Native forward-secrecy gates use
+it for their pre/post observations. `admission_epoch()` is the cached hot-path
+contract: it reuses one verified pair for `LIVE_CHECK_SECONDS`, keyed on the
+broker's whole in-process state, and capture leases and other admission checks
+use it.
+
+**Reason:** PR 3 forked before the 19 September replay-window fix and
+reintroduced a fresh `verified_epoch()` for its native callers. Main had
+already replaced per-check probing with a one-second reuse after a measured
+incident: a dispatch wake paid about 165 signed snapshots inside a 10 s radio
+budget, the local SAGE node returned 54 `503 Replay window saturated` answers,
+`authorize_context` was denied and the A-to-B row was undelivered. Neither
+contract is safe for both callers. The six native fences must see the vault
+status before and after their own signed-row read; a cached pair would collapse
+those observations. Admission checks must not pay a signed snapshot per check.
+
+**Consequence:** Do not merge the two names or serve a cached result from
+`verified_epoch()`. A native security fence that needs current vault state uses
+`verified_epoch()`; a hot admission or lease check uses `admission_epoch()`.
+`test_admission_checks_reuse_one_verification_per_window` guards the reuse, and
+`test_six_fences_each_observe_native_pre_vault_and_paired_post_vault_status`
+guards the fresh path.
+
+**Affects:** `software/runtime/src/sage_lantern/storage_supervisor.py`,
+`software/runtime/src/sage_lantern/mesh_daemon.py`,
+`software/runtime/tests/test_storage_supervisor.py`,
+`software/meshticulum-integration/tests/integrations/sage/test_forward_radio_native_fence.py`.
+
 ## Open decisions
 
 | ID | Decision needed | Evidence required | Owner | Target phase |
