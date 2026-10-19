@@ -62,6 +62,22 @@ def test_unknown_nested_field_names_and_collection_contents_never_escape_schema(
         MODULE.public_policy(value)
 
 
+def test_canonical_loopback_embedding_profile_can_be_inspected():
+    value = policy()
+    value['embedding'] = {**MODULE.LOCAL_EMBEDDING, 'api_key': ''}
+    assert MODULE.public_policy(MODULE.parse(yaml.safe_dump(value).encode())) == value
+    assert 'nomic-embed-text-v1.5' not in json.dumps(MODULE.schema(value))
+
+
+@pytest.mark.parametrize('key,child', [('provider', 'openai-compatible'), ('dimension', 384),
+    ('model', 'other-model'), ('base_url', 'http://other-host:8084'), ('api_key', 'DO_NOT_EXPORT')])
+def test_partial_local_embedding_profiles_or_credentials_refuse(key, child):
+    value = policy()
+    value['embedding'] = {**MODULE.LOCAL_EMBEDDING, 'api_key': '', key: child}
+    with pytest.raises(ValueError):
+        MODULE.public_policy(MODULE.parse(yaml.safe_dump(value).encode()))
+
+
 @pytest.mark.parametrize('raw', [b'key: 1\nkey: 2\n', b'key: &anchor true\nother: *anchor\n',
                                b'key: {enabled: true, enabled: false}\n', b'!!python/object:unknown {}'])
 def test_ambiguous_or_executable_yaml_is_refused(raw):

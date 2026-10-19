@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any
 
 
+MESH_RUNTIME = Path("/etc/sage-lantern/mesh-runtime.json")
+
+
 SCHEMA = "sage.lantern.local-status.v1"
 UNIT_BINDING = None
 ALLOWED_ORIGINS = {"http://127.0.0.1:3100", "http://localhost:3100"}
@@ -218,9 +221,14 @@ def _temperature() -> int | None:
 
 
 def _touch() -> dict[str, Any]:
-    for path in glob.glob("/sys/class/input/event*/device/name"):
-        name = _read(path)
-        if "WS170120" in name or "touch" in name.lower():
+    """Direct-input property or a known panel name; presence is not touch acceptance."""
+    for device in sorted(glob.glob("/sys/class/input/event*/device")):
+        name = _read(device + "/name")
+        try:
+            direct = bool(int(_read(device + "/properties") or "0", 16) & 0x02)
+        except ValueError:
+            direct = False
+        if direct or "WS170120" in name or "touch" in name.lower():
             return {"present": True, "detail": name}
     return {"present": False, "detail": "No touch controller detected"}
 
@@ -258,26 +266,45 @@ def load_unit_binding(path: Path) -> dict[str, Any]:
         if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o022 or info.st_size > 16384:
             raise ValueError('unsafe binding file')
         value = json.loads(stream.read(16385), object_pairs_hook=unique)
-    if value.get('schema') != 'sage.lantern.unit-plan.v1' or value.get('unit_id') not in {'unit-a', 'unit-b'}:
+    if value.get('schema') != 'sage.lantern.unit-plan.v1' or value.get('unit_id') not in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'}:
         raise ValueError('invalid unit binding')
-    for kind, prefix in (('audio', '/dev/snd/by-id/'), ('radio', '/dev/serial/by-id/')):
-        binding = value.get(kind)
-        if not isinstance(binding, dict) or not isinstance(binding.get('stable_path'), str):
+    radio = value.get('radio')
+    if not (isinstance(radio, dict) and radio.get('present') is False):
+        if not isinstance(radio, dict) or not isinstance(radio.get('stable_path'), str):
             raise ValueError('missing device binding')
-        if not re.fullmatch(re.escape(prefix) + r'[A-Za-z0-9_.:+-]+', binding['stable_path']):
+        if not re.fullmatch(r'/dev/serial/by-id/[A-Za-z0-9_.:+-]+', radio['stable_path']):
             raise ValueError('invalid stable device path')
-        if not isinstance(binding.get('usb_serial'), str) or not re.fullmatch(r'[A-Za-z0-9:_-]{1,128}', binding['usb_serial']):
+        if not isinstance(radio.get('usb_serial'), str) or not re.fullmatch(r'[A-Za-z0-9:_-]{1,128}', radio['usb_serial']):
             raise ValueError('invalid USB serial')
-    if value['unit_id'] == 'unit-b' and 'SAGE-LANTERN-A-AUDIO' in value['audio']['stable_path']:
-        raise ValueError('wrong unit audio binding')
-    if value['audio']['usb_serial'] not in Path(value['audio']['stable_path']).name:
-        raise ValueError('audio binding mismatch')
+    audio = value.get('audio')
+    if isinstance(audio, dict) and audio.get('source') == 'platform':
+        id_path = audio.get('id_path')
+        if not isinstance(id_path, str) or not re.fullmatch(r'platform-[a-z0-9]+(-[a-z0-9]+)*', id_path):
+            raise ValueError('invalid platform audio binding')
+        if audio.get('stable_path') != '/dev/snd/by-path/' + id_path:
+            raise ValueError('platform audio binding mismatch')
+        if audio.get('platform_device') != id_path[len('platform-'):]:
+            raise ValueError('platform audio device mismatch')
+    else:
+        if not isinstance(audio, dict) or not isinstance(audio.get('stable_path'), str):
+            raise ValueError('missing device binding')
+        if not re.fullmatch(r'/dev/snd/by-id/[A-Za-z0-9_.:+-]+', audio['stable_path']):
+            raise ValueError('invalid stable device path')
+        if not isinstance(audio.get('usb_serial'), str) or not re.fullmatch(r'[A-Za-z0-9:_-]{1,128}', audio['usb_serial']):
+            raise ValueError('invalid USB serial')
+        if value['unit_id'] != 'unit-a' and 'SAGE-LANTERN-A-AUDIO' in audio['stable_path']:
+            raise ValueError('wrong unit audio binding')
+        if audio['usb_serial'] not in Path(audio['stable_path']).name:
+            raise ValueError('audio binding mismatch')
     return value
 
 
 def _radio(evidence_path: Path, binding=None) -> dict[str, Any]:
     if binding is None:
         return {'present': False, 'detail': 'Radio binding unavailable', 'link_verified': False}
+    if binding['radio'].get('present') is False:
+        return {'present': False, 'detail': 'Radio not fitted (explicitly declared absent)',
+                'link_verified': False, 'name': binding['unit_id'] + ' radio'}
     path = Path(binding['radio']['stable_path'])
     state: dict[str, Any] = {
         "present": path.exists(),
@@ -306,24 +333,39 @@ def _radio(evidence_path: Path, binding=None) -> dict[str, Any]:
 
 
 def _audio_operational() -> bool:
+    """Mesh units ask the broker; a local unit answers from its durable admission.
+
+    `operational_ready()` is the mesh profile's stronger probe: it asks the
+    broker to confirm the retained capture path is live. A unit with no mesh
+    runtime has no broker to ask, and that must not read as "audio is broken" —
+    a missing optional capability never gates the console. The durable audio
+    admission (`audio_readiness --admit`, a real capture re-commissioned from
+    the reviewed profile) is the local answer; the broker stays authoritative
+    wherever its runtime is actually installed.
+    """
     try:
-        from sage_lantern.audio_readiness import operational_ready
-        return operational_ready() is True
+        from sage_lantern.audio_readiness import admission_verified, operational_ready
+        if MESH_RUNTIME.exists() or MESH_RUNTIME.is_symlink():
+            return operational_ready() is True
+        return admission_verified() is True
     except Exception:
         return False
 
 
 def _audio(binding=None) -> dict[str, Any]:
     audio = binding['audio'] if binding is not None else None
+    usb = audio is not None and audio.get('source', 'usb') == 'usb'
     present = audio is not None and Path(audio['stable_path']).exists()
     ready = present and _audio_operational()
     return {
         "present": present,
         "ready": ready,
         "detail": ('Audio service ready; capture is checked when recording' if ready else
-                   'Configured audio USB path present; audio service unavailable' if present else
-                   'Configured audio USB path missing' if audio else 'Audio binding unavailable'),
-        "serial": audio['usb_serial'] if audio else None,
+                   ('Configured audio USB path present; audio service unavailable' if usb else
+                    'Configured platform capture device present; audio service unavailable') if present else
+                   ('Configured audio USB path missing' if usb else
+                    'Configured platform capture device missing') if audio else 'Audio binding unavailable'),
+        "serial": audio.get('usb_serial') if usb else None,
         'capture_verified': False,
         "ptt_ready": False,
     }
@@ -368,7 +410,7 @@ def _voice_correction_ready(capability='correction_ready') -> bool:
         connection.close()
 
 
-def _voice() -> dict[str, Any]:
+def _voice(*, probe_capabilities: bool = True) -> dict[str, Any]:
     state_path = Path("/run/sage-lantern-voice/state.json")
     try:
         value = json.loads(state_path.read_text(encoding="utf-8"))
@@ -379,6 +421,7 @@ def _voice() -> dict[str, Any]:
                 'correction_ready': False}
     return {
         "phase": value.get("phase", "unknown"),
+        "session_context": value.get("session_context"),
         "session_id": value.get("session_id"),
         "transcript": value.get("transcript", ""),
         "response": value.get("response", ""),
@@ -386,13 +429,27 @@ def _voice() -> dict[str, Any]:
         "detail": value.get("detail", ""),
         "timings_ms": value.get("timings_ms", {}),
         "touch_ready": value.get("touch_ready") is True,
-        'correction_ready': value.get('correction_ready') is True and _voice_correction_ready(),
-        'review_ready': value.get('review_ready') is True and _voice_correction_ready('review_ready'),
+        'correction_ready': probe_capabilities and value.get('correction_ready') is True and _voice_correction_ready(),
+        'review_ready': probe_capabilities and value.get('review_ready') is True and _voice_correction_ready('review_ready'),
         'review_id': value.get('review_id') if value.get('phase') == 'review' else None,
         "photo_ready": value.get("photo_ready") is True,
         "has_photo": value.get("has_photo") is True,
         "progress_stage": value.get("progress_stage") if value.get("progress_stage") in {"starting", "transcribing", "recalling", "photo_analysis", "generating", "answering", "speaking"} else None,
         "input_source": value.get("input_source"),
+    }
+
+
+def collect_voice_status() -> dict[str, Any]:
+    # Content only: readiness remains on /status, where its live capability
+    # checks run. No hardware scan, subprocess, SAGE poll or controller probe.
+    voice = _voice(probe_capabilities=False)
+    fields = ('phase', 'session_context', 'session_id', 'transcript', 'response',
+              'follow_up_questions', 'detail', 'timings_ms', 'review_id',
+              'has_photo', 'progress_stage', 'input_source')
+    return {
+        'schema': 'sage.lantern.voice-status.v1',
+        'observed_at': datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
+        'voice': {key: voice[key] for key in fields if key in voice},
     }
 
 
@@ -435,6 +492,34 @@ def _session_authorized(token: str | None) -> bool:
         return False
 
 
+def _context_required() -> bool:
+    try:
+        from sage_lantern.device_access import lock_enabled
+        return lock_enabled()
+    except Exception:
+        return True
+
+
+def _session_context(token):
+    try:
+        from sage_lantern.device_access import session_context
+        return session_context(token)
+    except Exception:
+        return None
+
+
+def _fence_voice(voice, context):
+    from sage_lantern.session_context import SessionContext
+    try:
+        if type(voice) is dict and SessionContext.parse(voice.get("session_context")) == context:
+            return voice
+    except ValueError:
+        pass
+    return {"phase": "unavailable", "transcript": "", "response": "", "detail": "",
+            "touch_ready": False, "correction_ready": False, "review_ready": False,
+            "photo_ready": False, "has_photo": False}
+
+
 class StatusHandler(BaseHTTPRequestHandler):
     server_version = "SAGELanternStatus/1"
 
@@ -450,7 +535,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         origins = self.headers.get_all("Origin", [])
         methods = self.headers.get_all("Access-Control-Request-Method", [])
         requested = self.headers.get_all("Access-Control-Request-Headers", [])
-        if (not self.trusted_host() or self.path != "/status" or len(origins) != 1 or origins[0] not in ALLOWED_ORIGINS
+        if (not self.trusted_host() or self.path not in {"/status", "/voice"} or len(origins) != 1 or origins[0] not in ALLOWED_ORIGINS
                 or methods != ["GET"] or len(requested) != 1
                 or requested[0].strip().lower() != "x-lantern-session"
                 or len(self.headers.get_all("X-Lantern-Session", [])) > 1):
@@ -469,18 +554,31 @@ class StatusHandler(BaseHTTPRequestHandler):
         if not self.trusted_host():
             self.send_error(403)
             return
-        if self.path not in {"/status", "/health"}:
+        if self.path not in {"/status", "/voice", "/health"}:
             self.send_error(404)
             return
         if len(self.headers.get_all("X-Lantern-Session", [])) > 1:
             self.send_error(400)
             return
-        if self.path == "/status" and not self.session_authorized():
+        protected = self.path in {"/status", "/voice"}
+        if protected and not self.session_authorized():
             self.send_error(403)
             return
-        payload = {"ok": True} if self.path == "/health" else collect_status()
+        token = self.headers.get("X-Lantern-Session")
+        context = None
+        if protected and _context_required():
+            context = _session_context(token)
+            if context is None:
+                self.send_error(403)
+                return
+        payload = ({"ok": True} if self.path == "/health" else
+                   collect_voice_status() if self.path == "/voice" else collect_status())
+        if context is not None:
+            payload["voice"] = _fence_voice(payload.get("voice"), context)
+            payload["session_context"] = context.to_dict()
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        if self.path == "/status" and not self.session_authorized():
+        if protected and (not self.session_authorized()
+                or (context is not None and _session_context(token) != context)):
             self.send_error(403)
             return
         self.send_response(200)
@@ -492,7 +590,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
         self.end_headers()
-        if self.path == "/status" and not self.session_authorized():
+        if protected and (not self.session_authorized()
+                or (context is not None and _session_context(token) != context)):
             self.close_connection = True
             return
         if self.path == "/status":

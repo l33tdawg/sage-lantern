@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from sage_lantern.mesh_serial_owner import SerialOwnerError
 
 
 SCRIPT = Path(__file__).parents[1] / "lantern/prepare-fresh-mesh-runtime.py"
@@ -58,6 +59,17 @@ def policy(config):
         vendored_agent_bootstrap=dict(agent_key_file=MODULE.PRIVATE_KEY, home_domain='local-field-knowledge', clearance=1),
         private_media=dict(enabled=True, actor_bytes=1024, node_bytes=2048, actor_objects=10,
                            node_objects=20, min_free_bytes=4096))
+
+
+@pytest.mark.parametrize('unit', ['unit-c', 'unit-d', 'unit-e', 'unit-f'])
+def test_fleet_mesh_requires_matching_independent_public_receipts(documents, unit):
+    for document in documents:
+        document['unit_id'] = unit
+    documents[4]['radio']['unit_id'] = unit
+    assert validate(documents).unit_id == unit
+    documents[5]['unit_id'] = 'unit-a'
+    with pytest.raises(SerialOwnerError, match='invalid_unit_binding'):
+        validate(documents)
 
 
 def test_fresh_public_receipts_need_no_legacy_attestations(documents):
@@ -229,9 +241,12 @@ def test_native_validator_is_pinned_readonly_and_environment_isolated(tmp_path, 
     calls = []
     def run(arguments, **kwargs):
         calls.append(arguments)
-        assert arguments == ['/usr/sbin/runuser', '-u', 'sage-lantern', '--', str(binary), 'check-lantern-private-config']
+        assert arguments == ['/usr/bin/setpriv', '--reuid', 'sage-lantern', '--regid', 'sage-lantern',
+                             '--init-groups', '--inh-caps', '-all,+dac_read_search', '--ambient-caps',
+                             '-all,+dac_read_search', '--bounding-set', '-all,+dac_read_search', str(binary),
+                             'check-private-config']
         assert kwargs['env']['SAGE_HOME'] == '/var/lib/sage-lantern/sage-personal'
-        assert kwargs['env']['SAGE_LANTERN_PRIVATE_LISTENERS'] == '1'
+        assert 'SAGE_LANTERN_PRIVATE_LISTENERS' not in kwargs['env']
         assert kwargs['env']['SAGE_CMT_P2P_ADDR'] == 'tcp://127.0.0.1:26656'
         assert 'HTTP_PROXY' not in kwargs['env'] and 'PYTHONPATH' not in kwargs['env']
         assert kwargs['stdin'] == kwargs['stdout'] == kwargs['stderr'] == subprocess.DEVNULL

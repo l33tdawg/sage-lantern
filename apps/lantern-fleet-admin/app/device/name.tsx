@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { saveDeviceName, type DeviceProfile } from '../../lib/device-profile';
 import { BackIcon, LanternIcon } from './icons';
 
@@ -11,6 +11,19 @@ export default function DeviceNameScreen({ profile, saved, close }: {
   const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const back = useRef<HTMLButtonElement>(null);
+  /**
+   * The first suggestion, which is the first control when there is no Back.
+   *
+   * Setup renders this screen with no `close`, so it has no Back button and the
+   * first thing a keyboard user can reach is a name.
+   */
+  const firstChoice = useRef<HTMLButtonElement>(null);
+  // Focus travels with the surface: the caller replaces the panel that held the
+  // control the user just activated, so without this the screen opens with focus
+  // on the document body and a keyboard or remote user has to tab through the
+  // shared header before reaching anything on the screen they are looking at.
+  useEffect(() => { (back.current ?? firstChoice.current)?.focus(); }, []);
   const save = async () => {
     if (busy || !name.trim()) return;
     setBusy(true); setError('');
@@ -19,7 +32,7 @@ export default function DeviceNameScreen({ profile, saved, close }: {
     finally { setBusy(false); }
   };
   return <section className="device-subscreen device-name" aria-label="Name your Lantern">
-    <header className="device-subheader">{close && <button disabled={busy} onClick={close}><BackIcon />Back</button>}<div className="device-page-title"><LanternIcon /><h1>Your Lantern</h1></div></header>
+    <header className="device-subheader">{close && <button ref={back} disabled={busy} onClick={close}><BackIcon />Back</button>}<div className="device-page-title"><LanternIcon /><h1>Your Lantern</h1></div></header>
     <div className="device-subcontent">
       <h2>{profile.setup_required ? 'Choose a name' : 'Change the name'}</h2>
       <p className="device-note">{profile.setup_required ? 'This name stays on your device. You can change it later.' : 'Your questions and memories stay the same.'}</p>
@@ -29,7 +42,7 @@ export default function DeviceNameScreen({ profile, saved, close }: {
         <button type="button" disabled={busy || name.length >= 40} onClick={() => setName((value) => value + ' ')}>Space</button>
         <button type="button" disabled={busy || !name} onClick={() => setName((value) => value.slice(0, -1))} aria-label="Erase last letter">⌫</button>
         <button type="button" disabled={busy || !name} onClick={() => setName('')}>Clear</button>
-      </div> : <div className="device-name-choices">{['River', 'Cedar', 'Sunrise', 'Moon', 'Orchid', 'Horizon'].map((choice) => <button key={choice} disabled={busy} aria-pressed={name === choice} onClick={() => setName(choice)}>{choice}</button>)}<button disabled={busy} onClick={() => setTyping(true)}>Choose another name</button></div>}
+      </div> : <div className="device-name-choices">{['River', 'Cedar', 'Sunrise', 'Moon', 'Orchid', 'Horizon'].map((choice, index) => <button key={choice} ref={index === 0 ? firstChoice : undefined} disabled={busy} aria-pressed={name === choice} onClick={() => setName(choice)}>{choice}</button>)}<button disabled={busy} onClick={() => setTyping(true)}>Choose another name</button></div>}
       {error && <p role="alert">{error}</p>}
       <div className="device-name-actions">{typing && <button disabled={busy} onClick={() => setTyping(false)}>Suggestions</button>}<button className="device-action-primary" disabled={busy || !name.trim()} onClick={() => void save()}>{busy ? 'Saving…' : 'Use this name'}</button></div>
     </div>

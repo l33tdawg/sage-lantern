@@ -53,7 +53,7 @@ class ConversationStore:
     """Create with an absolute private directory; existing invalid DBs fail closed.
 
     enqueue(ticket, item) accepts session_id, created_at (timezone required),
-    question, answer, has_photo, and optional reflection text. It returns the
+    question, answer, has_photo, and optional reflection/thread metadata. It returns the
     interaction and optional reflection operation IDs, or [] without consent.
     pending() returns immutable JSON payload strings and their SHA-256 hashes.
     record_receipt() records evidence, not a claim of SAGE ledger erasure.
@@ -271,12 +271,18 @@ class ConversationStore:
     def enqueue(self, ticket, item):
         required = {"session_id", "created_at", "question", "answer", "has_photo"}
         if (not isinstance(item, dict) or not required <= item.keys()
-                or item.keys() - required - {"reflection"}
+                or item.keys() - required - {"reflection", "thread_id", "supersedes"}
                 or type(item["has_photo"]) is not bool
                 or any(not isinstance(item[field], str) for field in required - {"has_photo"})
                 or ("reflection" in item and not isinstance(item["reflection"], str))):
             raise ConversationStoreError("invalid_item")
         session_id = _session(item["session_id"])
+        for field in ("thread_id", "supersedes"):
+            if field in item:
+                if type(item[field]) is not str or UUID(_session(item[field])).int == 0:
+                    raise ConversationStoreError("invalid_item")
+        if "supersedes" in item and ("thread_id" not in item or item["supersedes"] == session_id):
+            raise ConversationStoreError("invalid_item")
         try:
             created = datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
             if created.utcoffset() is None:
@@ -300,6 +306,8 @@ class ConversationStore:
                     continue
                 content = ({key: item[key] for key in required} if kind == "interaction" else
                            {"session_id": session_id, "created_at": item["created_at"], "reflection": item["reflection"]})
+                if kind == "interaction":
+                    content.update({field: item[field] for field in ("thread_id", "supersedes") if field in item})
                 payload = _encode({"version": 1, "kind": kind, **content})
                 if len(payload.encode("utf-8")) > MAX_PAYLOAD_BYTES:
                     raise ConversationStoreError("capacity_exceeded")

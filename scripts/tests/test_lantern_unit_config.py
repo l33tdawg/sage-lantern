@@ -70,6 +70,71 @@ class UnitConfigTests(unittest.TestCase):
         self.assertEqual(plan["radio"]["public_key"], "22" * 32)
         self.assertFalse(plan["ownership_verified"])
 
+    def test_radio_absent_is_explicit_and_forbids_pins_inventories_and_peers(self):
+        absent = dict(radio_absent=True, radio_inventory=None, radio_usb_serial=None, radio_vendor_id=None,
+                      radio_product_id=None, radio_stable_path=None, radio_public_fingerprint=None,
+                      peer_radio_inventory=[])
+        plan = CONFIG.build_plan(self.args(**absent))
+        self.assertEqual(plan["radio"], {"present": False, "reason": "operator-declared-absent"})
+        self.assertEqual(plan["compared_peer_units"], [])
+        self.assertFalse(plan["fleet_comparison_performed"])
+        self.assertIn("Radio explicitly declared absent; no radio inventory was supplied or compared.",
+                      plan["limitations"])
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**absent, "radio_absent": False}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**absent, "radio_absent": True, "radio_inventory": str(self.radio)}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**absent, "radio_stable_path": "/dev/serial/by-id/usb-RADIO-B"}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**absent, "peer_radio_inventory": [str(self.peer)]}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(radio_inventory=None, radio_usb_serial=None, radio_vendor_id=None,
+                                        radio_product_id=None, radio_stable_path=None, radio_public_fingerprint=None,
+                                        peer_radio_inventory=[]))
+
+    def test_platform_capture_audio_plan_and_udev_rule(self):
+        platform = dict(audio_usb_serial=None, audio_platform_id_path="platform-es8388-sound",
+                        audio_stable_path="/dev/snd/by-path/platform-es8388-sound",
+                        audio_vendor_id=None, audio_product_id=None)
+        plan = CONFIG.build_plan(self.args(**platform))
+        self.assertEqual(plan["audio"], {"present": True, "source": "platform",
+                                         "stable_path": "/dev/snd/by-path/platform-es8388-sound",
+                                         "id_path": "platform-es8388-sound", "platform_device": "es8388-sound"})
+        self.assertIn("Capture audio is an operator-named platform codec, not a USB microphone.",
+                      plan["limitations"])
+        self.assertEqual(CONFIG.audio_udev_rules(plan),
+                         'SUBSYSTEM=="sound", KERNELS=="es8388-sound", GROUP="sage-lantern", MODE="0660"')
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**platform, "audio_stable_path": "/dev/snd/by-path/platform-other-sound"}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**platform, "audio_vendor_id": "1234"}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**platform, "audio_usb_serial": "AUDIO-B"}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.build_plan(self.args(**{**platform, "audio_platform_id_path": "usb-es8388-sound"}))
+        with self.assertRaises(CONFIG.PlanError):
+            CONFIG.audio_udev_rules({"audio": {"source": "platform", "id_path": "platform-es8388-sound",
+                                               "platform_device": "es8388-sound",
+                                               "stable_path": "/dev/snd/by-path/platform-other-sound"}})
+
+    def test_c_to_f_plans_require_their_own_metadata_and_radio(self):
+        for letter in 'cdef':
+            with self.subTest(unit=letter):
+                unit = 'unit-' + letter
+                radio = self.write_radio(letter, '33')
+                self.metadata.write_text(f'UNIT_ID={unit}\nPROVISIONING_SCHEMA=sage-lantern-unit-v1\n')
+                args = self.args(unit_id=unit, radio_inventory=str(radio),
+                    radio_usb_serial='RADIO-' + letter.upper(),
+                    radio_stable_path='/dev/serial/by-id/usb-RADIO-' + letter.upper(),
+                    radio_public_fingerprint='sha256:' + hashlib.sha256(bytes.fromhex('33' * 32)).hexdigest())
+                plan = CONFIG.build_plan(args)
+                self.assertEqual(plan['unit_id'], unit)
+                self.assertEqual(plan['hostname'], 'sage-lantern-' + letter)
+                args.unit_id = 'unit-b'
+                with self.assertRaises(CONFIG.PlanError):
+                    CONFIG.build_plan(args)
+
     def test_cli_json_only_and_no_mutation(self):
         before = {path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
         result = subprocess.run([sys.executable, str(SCRIPT), *self.arguments], capture_output=True, text=True)
@@ -96,7 +161,7 @@ class UnitConfigTests(unittest.TestCase):
                 CONFIG.voice_activation_config(args, {**plan, **changes})
 
     def test_unit_subset_and_account_validation(self):
-        for unit in ("unit-aa", "unit-B", "unit-b;id", "unit-b/..", "other"):
+        for unit in ("unit-aa", "unit-B", "unit-g", "unit-z", "unit-b;id", "unit-b/..", "other"):
             with self.subTest(unit=unit), self.assertRaises(CONFIG.PlanError):
                 CONFIG.build_plan(self.args(unit_id=unit))
         for account in ("root", "sage-lantern", "../radxa", "radxa;id", ""):

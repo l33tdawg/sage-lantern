@@ -182,7 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True)
     parser.add_argument('--manifest-sha256', required=True)
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'), required=True)
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'), required=True)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--expected')
     parser.add_argument('--expected-sha256')

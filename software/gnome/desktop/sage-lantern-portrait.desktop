@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Return to Lantern Portrait
+Comment=Leave the desktop and return to the portrait Lantern kiosk
+Exec=/usr/local/bin/sage-lantern-desktop-mode off
+Icon=/usr/share/icons/hicolor/scalable/apps/sage-lantern-desktop.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=false

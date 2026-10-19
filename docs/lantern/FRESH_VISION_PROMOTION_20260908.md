@@ -1,5 +1,9 @@
 # Vision CLI promotion
 
+**Superseded 2026-09-29 (D-016):** the current lane is the NPU vision server
+(`sage-lantern-vlm.service` on 8082); this promotion note covers the historical
+R7-era CPU vision path and is kept as a dated record.
+
 The reviewed vision bundle was accepted with 336 tests and 11 subtests. This
 revision changes only the requested CLI admission predicate in production:
 root remains mandatory; apply additionally requires both explicit approvals

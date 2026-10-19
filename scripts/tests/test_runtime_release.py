@@ -330,6 +330,18 @@ class BinaryPreflightTests(unittest.TestCase):
             with self.subTest(version=version), patch.object(RELEASE.subprocess, "run", return_value=result), self.assertRaises(ValueError):
                 RELEASE.verify_target_binary(self.root)
 
+    def test_native_auto_vote_capability_suffix_preserves_exact_version_gate(self):
+        output = self.result.stdout.replace('max-app-v30)', 'max-app-v30, auto-vote-v28)')
+        with patch.object(RELEASE.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, output, '')):
+            self.assertEqual(RELEASE.verify_target_binary(self.root), self.version)
+        for malformed in (output.replace(self.version, self.version + '.wrong'),
+                          output.replace('auto-vote-v28', 'auto-vote-vunknown'),
+                          output.replace('auto-vote-v28)', 'auto-vote-v28, extra)'),
+                          output.replace('max-app-v30, ', '')):
+            with self.subTest(output=malformed), patch.object(RELEASE.subprocess, 'run',
+                    return_value=subprocess.CompletedProcess([], 0, malformed, '')), self.assertRaises(ValueError):
+                RELEASE.verify_target_binary(self.root)
+
     def test_hash_mismatch_duplicate_lock_and_wrong_architecture_never_execute(self):
         original = self.binary.read_bytes()
         for mode in ("hash", "duplicate", "architecture"):

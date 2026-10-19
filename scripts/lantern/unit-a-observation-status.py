@@ -44,6 +44,19 @@ def service_state(unit: str) -> str:
     return value if value in {"active", "inactive", "failed", "activating", "deactivating"} else "unknown"
 
 
+def touch_present() -> bool:
+    """Direct-input property or a known panel name; presence is not touch acceptance."""
+    for device in sorted(glob.glob("/sys/class/input/event*/device")):
+        name = read_text(device + "/name")
+        try:
+            direct = bool(int(read_text(device + "/properties") or "0", 16) & 0x02)
+        except ValueError:
+            direct = False
+        if direct or "touch" in name.lower() or "WS170120" in name:
+            return True
+    return False
+
+
 def temperature() -> int | None:
     values: list[int] = []
     for path in glob.glob("/sys/class/thermal/thermal_zone*/temp"):
@@ -71,10 +84,7 @@ def write_status(destination: Path) -> None:
             "display_connected": any(
                 read_text(path) == "connected" for path in glob.glob("/sys/class/drm/card*-*/status")
             ),
-            "touch_present": any(
-                "touch" in read_text(path).lower() or "WS170120" in read_text(path)
-                for path in glob.glob("/sys/class/input/event*/device/name")
-            ),
+            "touch_present": touch_present(),
             "radio_present": Path("/dev/sage-lantern-radio").exists(),
             "audio_present": bool(
                 glob.glob(

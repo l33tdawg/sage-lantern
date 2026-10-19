@@ -1,4 +1,147 @@
-# Lantern MeshCore packet-RSSI candidate
+# Lantern MeshCore patches
+
+## companion-bridge-lane-selection.patch - upstream PR #3454, 2026-09-19
+
+Turns the companion bridge into a real fast lane: a packet whose destination is
+known to be on the bridge goes over ESP-NOW only (the radio's airtime is not
+spent, and its counters stay flat), everything else is mirrored **before** the
+radio transmit rather than after it, acknowledgements travel the lane too, and
+the bridge reports its counters through companion stats sub-type 3.
+
+Measured on the two bench units: 25/25 confirmed frames, 583 B/s against 89.1 B/s
+on the commissioned LoRa profile, zero radio frames sent by either unit, and the
+same result with the peer's LoRa moved out of band. The image is
+`work/espnow-20260919/images/firmware-bridge-lane3.bin` (sha `d3e91106…`); both
+radios were restored to the r5 image afterwards. PR:
+[meshcore-dev/MeshCore#3454](https://github.com/meshcore-dev/MeshCore/pull/3454),
+on top of #3410. Session record: `work/espnow-20260919/REPORT.md` (round 2).
+
+## Upstream PR status — revalidated 2026-09-19 19:00 +08
+
+Three pull requests and one issue are open against `meshcore-dev/MeshCore`
+(all from `l33tdawg`, all against `dev`). All three were re-checked against
+`dev` @ `166f75c1` (their base `34404309` had moved 24 commits) and all three
+still merge with **no conflict**; with all three merged together — they overlap
+in `examples/companion_radio/MyMesh.cpp` and `.h`, `NodePrefs.h` and
+`src/helpers/CommonCLI.h` — five environments build with PlatformIO 6.2.0:
+
+| environment | RAM | flash |
+|---|---|---|
+| `heltec_v4_companion_radio_usb` | 105,024 B (5.0%) | 651,801 B (9.9%) |
+| `heltec_v4_companion_radio_usb_bridge_espnow` | 130,364 B (6.2%) | 1,064,981 B (16.3%) |
+| `heltec_v4_repeater` | 61,892 B (3.0%) | 1,172,297 B (17.9%) |
+| `heltec_v4_repeater_bridge_espnow` | 63,556 B (3.0%) | 1,182,733 B (18.0%) |
+| `RAK_4631_companion_radio_ble` | 151,448 B (64.3%) | 479,096 B (67.2%) |
+
+The `heltec_v4_repeater_bridge_espnow` environment that could not be built while
+PR #3410 was written (ESPAsyncWebServer download failure) now builds, so no
+configuration in this set is left un-compiled. PR bodies were refreshed with
+these results, the hardware-validation note for #3403, and the fact that the
+ESP-NOW lane is still unflashed.
+
+| | PR / issue | state 2026-09-19 | mergeable | checks | maintainer response |
+|---|---|---|---|---|---|
+| contacts-response atomicity | [meshcore-dev/MeshCore#3403](https://github.com/meshcore-dev/MeshCore/pull/3403) | open | yes (clean onto `dev` @ 166f75c1) | never ran (fork PRs need approval) | none |
+| companion bridge + `BridgePrefs` | [meshcore-dev/MeshCore#3410](https://github.com/meshcore-dev/MeshCore/pull/3410) | open | yes | never ran | none |
+| rolling-window relay airtime budget (r5) | [meshcore-dev/MeshCore#3450](https://github.com/meshcore-dev/MeshCore/pull/3450) | open, submitted 2026-09-19 04:47Z | yes | never ran | none |
+| windowed bulk mode (measured case) | [meshcore-dev/MeshCore#3404](https://github.com/meshcore-dev/MeshCore/issues/3404) | open, no reply, no labels | — | — | none |
+
+Nothing here needs a rebase: the branches merge cleanly, and the PR descriptions
+now state the current build and hardware status. The blocker is review
+attention, not the patches.
+
+## client-repeat-917.patch — r4 node + repeater, built 2026-09-19
+
+Lets the companion firmware enable its own repeat bit on the commissioned
+917.375 MHz channel. The forwarding path already exists in the companion
+(`MyMesh::allowPacketForward()` → `_prefs.isRepeatEn()`); the frequency
+allowlist in `MyMesh::isValidClientRepeatFreq()` was the only blocker, and this
+patch sets upstream's own `ALLOWED_REPEAT_FREQ_RANGE` to exactly `{917375,917375}`
+in `[env:heltec_v4_companion_radio_usb]` and identifies the build as `r4`.
+
+Image built with PlatformIO 6.2.0 from the pinned d9296435 tree with the r3
+patch set applied: 641,936 bytes, sha256
+`3d63685fe82d1e5e1d9e309b91745dfa3799a70f72c56a667b07482e48d7239a`, version
+string `v1.17.1-d929643-r4`. Host admission for r4 ships in the same change set
+(`meshcore_transport.SUPPORTED_FIRMWARE`). Repeat stays off until the repeat bit
+is written through `CMD_SET_RADIO_PARAMS`; see
+`docs/lantern/MESH_STORE_AND_FORWARD.md` for the duty-cycle gate that must be
+settled before it is switched on. Build record:
+`work/mesh-repeat-sf-20260919/README.md`.
+
+## companion-bridge.patch - submitted upstream 2026-09-14
+
+**Hardware fix (2026-09-19):** the submitted patch cannot work on a board - the
+companion never calls `bridge.begin()` and sets no bridge defaults, so the
+ESP-NOW lane never starts (and an empty `bridge_secret` would fault
+`xorCrypt()`). `companion-bridge-20260919-hardware-fix.patch` applies on top:
+repeater-shaped defaults in the companion constructor, `bridge.begin()` in
+`MyMesh::begin()`, and a `BRIDGE_DELAY_MS` build flag. Both units were flashed
+with that image and measured: the lane carries mesh traffic (16/25 frames
+confirmed with the LoRa path physically blocked) but is not a speed lane while
+the bridge mirrors *after* the radio finishes transmitting. Session record:
+`work/espnow-20260919/REPORT.md`.
+
+Lets a **companion** radio use a bridge, which is the piece Lantern's two-tier
+plan needs: LoRa stays the long-range transport and ESP-NOW carries the same mesh
+packets locally at 2.4 GHz.
+
+Upstream had ESP-NOW as a mesh radio (`variants/generic_espnow`) and as a
+repeater bridge (`heltec_v4_repeater_bridge_espnow`), but never as a companion -
+and it was not an oversight. The bridges take `NodePrefs*` meaning the CLI class
+in `helpers/CommonCLI.h`, the companion has its own unrelated `NodePrefs`, and
+including both in one translation unit fails outright:
+
+```
+src/helpers/CommonCLI.h:25:7: error: redefinition of 'class NodePrefs'
+```
+
+The patch extracts the six bridge settings into `BridgePrefs` (both `NodePrefs`
+classes inherit it, so every existing `_prefs.bridge_*` call site is unchanged
+and `BridgeBase` no longer includes `CommonCLI.h` at all), then wires the bridge
+into the companion using the `logRx`/`logTx` hooks the companion never
+overrode. Adds `heltec_v4_companion_radio_usb_espnowbridge`.
+
+Upstream pull request: **meshcore-dev/MeshCore#3410**, against `dev`. Not merged
+as of 2026-09-14. Built clean on four environments (new bridge companion, plain
+companion, nRF52 companion, nRF52 repeater); the existing ESP-NOW bridge
+*repeater* environment could not be built here because its `ESPAsyncWebServer`
+download kept failing on this machine - it needs a CI check. **Not hardware
+tested.**
+
+## contacts-response-atomic.patch — submitted upstream 2026-09-13
+
+Fixes the defect that latched unit A's contact reads (see
+`work/messages-ab-20260913/DIAGNOSIS_20260913.md` section 11.2). A
+`CMD_GET_CONTACTS` reply is streamed one frame per `loop()` pass, while the
+packet callbacks push frames (`0x80`, `0x81`, `0x82`, `0x83`, `0x8A`, `0x8F`,
+`0x90`, raw/trace/log data) from that same `loop()` in between, so a push lands
+inside the response. The patch holds pushes in a bounded FIFO while the iterator
+is running and flushes them in order once it ends.
+
+Upstream pull request: **meshcore-dev/MeshCore#3403**, against `dev`. Not merged
+as of 2026-09-13. Where it landed is not what matters for us: the point is that
+the interleaving is a firmware defect, not a host parser choice.
+
+Base for the patch is upstream `dev`, not the pinned `d9296435` the units run, so
+`git apply` it against a `dev` checkout:
+
+```
+git apply /path/to/contacts-response-atomic.patch
+pio run -e heltec_v4_companion_radio_usb
+```
+
+Built for `heltec_v4_companion_radio_usb` (ESP32-S3) and
+`RAK_4631_companion_radio_ble` (nRF52): RAM +1,416 bytes, flash +232 / +1,280
+bytes. **Not hardware tested**, and not deployed to either unit.
+
+Applying it to our units is a sequence, not a flash: the host admits firmware by
+exact version string (`meshcore_transport.SUPPORTED_FIRMWARE`), so a patched build
+needs a host admission change in the same release, plus the app-partition
+preservation steps in the packet-RSSI section below. Do not flash A before the
+read latch is understood end to end.
+
+## Lantern MeshCore packet-RSSI candidate
 
 Base: MeshCore `d92964352441e53b93e8667b802e04f6e072b39e`.
 Target: `heltec_v4_companion_radio_usb` (OLED).

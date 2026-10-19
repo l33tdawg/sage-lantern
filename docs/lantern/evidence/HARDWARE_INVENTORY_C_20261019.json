@@ -1,0 +1,145 @@
+{
+  "schema": "sage.lantern.hardware-inventory.v1",
+  "collected_at": "2026-10-19T02:14:38.662656Z",
+  "host": {
+    "hostname": "lantern-c",
+    "model": "Orange Pi 5 Plus",
+    "compatible": [
+      "rockchip,rk3588-orangepi-5-plus",
+      "rockchip,rk3588"
+    ],
+    "serial": null
+  },
+  "cpu": {
+    "processors": 8
+  },
+  "memory": {
+    "mem_total_kb": 16342404
+  },
+  "storage": [
+    {
+      "name": "mtdblock0",
+      "bytes": 16777216,
+      "model": null,
+      "removable": false,
+      "partitions": []
+    },
+    {
+      "name": "nvme0n1",
+      "bytes": 256060514304,
+      "model": "Netac NVMe SSD 256GB",
+      "removable": false,
+      "partitions": [
+        "nvme0n1p1"
+      ]
+    }
+  ],
+  "usb": [
+    {
+      "id": "1-1",
+      "vendor": "05e3",
+      "product": "0610",
+      "name": "USB2.1 Hub",
+      "manufacturer": "GenesysLogic"
+    },
+    {
+      "id": "2-1",
+      "vendor": "05e3",
+      "product": "0620",
+      "name": "USB3.2 Hub",
+      "manufacturer": "GenesysLogic"
+    },
+    {
+      "id": "4-1",
+      "vendor": "303a",
+      "product": "8000",
+      "name": "SAGE Lantern Audio",
+      "manufacturer": "SAGE Commons"
+    },
+    {
+      "id": "5-1",
+      "vendor": "046d",
+      "product": "0825",
+      "name": null,
+      "manufacturer": null
+    },
+    {
+      "id": "usb1",
+      "vendor": "1d6b",
+      "product": "0002",
+      "name": "xHCI Host Controller",
+      "manufacturer": "Linux 6.1.115-vendor-rk35xx xhci-hcd"
+    },
+    {
+      "id": "usb2",
+      "vendor": "1d6b",
+      "product": "0003",
+      "name": "xHCI Host Controller",
+      "manufacturer": "Linux 6.1.115-vendor-rk35xx xhci-hcd"
+    },
+    {
+      "id": "usb3",
+      "vendor": "1d6b",
+      "product": "0002",
+      "name": "EHCI Host Controller",
+      "manufacturer": "Linux 6.1.115-vendor-rk35xx ehci_hcd"
+    },
+    {
+      "id": "usb4",
+      "vendor": "1d6b",
+      "product": "0001",
+      "name": "Generic Platform OHCI controller",
+      "manufacturer": "Linux 6.1.115-vendor-rk35xx ohci_hcd"
+    },
+    {
+      "id": "usb5",
+      "vendor": "1d6b",
+      "product": "0002",
+      "name": "EHCI Host Controller",
+      "manufacturer": "Linux 6.1.115-vendor-rk35xx ehci_hcd"
+    },
+    {
+      "id": "usb6",
+      "vendor": "1d6b",
+      "product": "0001",
+      "name": "Generic Platform OHCI controller",
+      "manufacturer": "Linux 6.1.115-vendor-rk35xx ohci_hcd"
+    }
+  ],
+  "serial_ports": [
+    "ttyS6",
+    "ttyS9"
+  ],
+  "i2c_buses": [
+    "i2c-0",
+    "i2c-1",
+    "i2c-10",
+    "i2c-11",
+    "i2c-3",
+    "i2c-6",
+    "i2c-7",
+    "i2c-9"
+  ],
+  "displays": [
+    {
+      "connector": "card0-DP-1",
+      "status": "disconnected",
+      "enabled": "disabled"
+    },
+    {
+      "connector": "card0-HDMI-A-1",
+      "status": "disconnected",
+      "enabled": "disabled"
+    },
+    {
+      "connector": "card0-HDMI-A-2",
+      "status": "disconnected",
+      "enabled": "disabled"
+    },
+    {
+      "connector": "card0-Writeback-1",
+      "status": "unknown",
+      "enabled": "disabled"
+    }
+  ]
+}

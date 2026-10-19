@@ -21,9 +21,12 @@ from sage_lantern.storage_supervisor import RootStorageSupervisor, StorageSuperv
 def test_inbox_write_unknown_cannot_resume_root(runtime, supervisor_setup, monkeypatch, stage, failure):
     state, supervisor, resource, config, opened = runtime
     config.update(messaging_enabled=True, dispatch_enabled=True, delivery_receipts_enabled=True)
-    start = CommunityMeshProvider.start_receiving
-    monkeypatch.setattr(CommunityMeshProvider, "start_receiving",
-        lambda provider, **kwargs: start(provider, **kwargs, interval=0.2))
+    # The root now admits its first worker through restart_receiving too.
+    # Accelerate that actual path so all fragments reach the injected write
+    # within the bounded join, instead of testing an unconsumed input queue.
+    restart = CommunityMeshProvider.restart_receiving
+    monkeypatch.setattr(CommunityMeshProvider, "restart_receiving",
+        lambda provider, **kwargs: restart(provider, **kwargs, interval=0.2))
     original = WorkflowStore.put
     failed = []
 
@@ -85,9 +88,9 @@ def test_inbox_write_unknown_cannot_resume_root(runtime, supervisor_setup, monke
 def test_ready_cannot_resume_unknown_receipt(runtime, monkeypatch, failure):
     state, supervisor, resource, config, opened = runtime
     config.update(messaging_enabled=True, dispatch_enabled=True, delivery_receipts_enabled=True)
-    start = CommunityMeshProvider.start_receiving
-    monkeypatch.setattr(CommunityMeshProvider, "start_receiving",
-        lambda provider, **kwargs: start(provider, **kwargs, interval=0.2))
+    restart = CommunityMeshProvider.restart_receiving
+    monkeypatch.setattr(CommunityMeshProvider, "restart_receiving",
+        lambda provider, **kwargs: restart(provider, **kwargs, interval=0.2))
     original = MeshReceiptSender._put
     failed = []
 

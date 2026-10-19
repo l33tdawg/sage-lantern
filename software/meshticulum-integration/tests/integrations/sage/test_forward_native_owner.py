@@ -46,7 +46,8 @@ def setup(*,initiator=True,scopes=SCOPES,approval_override=None,original=None,pe
         peers=[dict(chain_id=remote.chain_id,agent_id=remote.public_key.hex(),radio_public_key='a'*64)])
     h._config_reader=lambda:copy.deepcopy(h.config)
     supervisor=SimpleNamespace(phase='active',broker_id='b'*32,_resource=h,
-        resource_lifecycle_check=lambda:state.live,verified_epoch=lambda:state.instance_id+':1')
+        resource_lifecycle_check=lambda:state.live,verified_epoch=lambda:state.instance_id+':1',
+        admission_epoch=lambda:state.instance_id+':1')
     h.supervisor=supervisor
     revision=hashlib.sha256(_canonical(h.config)).hexdigest()
     approved=approval_binding(ctx,intention,initiator,config_revision=revision,broker_id=supervisor.broker_id,

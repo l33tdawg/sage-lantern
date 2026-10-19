@@ -1,0 +1,58 @@
+{
+  "schema": "sage.lantern.unit-c-cleanup.v1",
+  "date": "2026-10-19",
+  "before": {
+    "filesystem": "/dev/nvme0n1p1",
+    "size": "234G",
+    "used": "211G",
+    "free": "12G",
+    "use_percent": 95
+  },
+  "removed": {
+    "release_payloads": [
+      "lantern-release-20260928-r4",
+      "lantern-release-20260928-r5",
+      "lantern-release-20260928-r6",
+      "lantern-release-20260928-r6-delta.incoming",
+      "lantern-release-20260929-r7",
+      "lantern-release-20260929-r8",
+      "lantern-release-20260929-r9",
+      "lantern-release-20260929-r10",
+      "lantern-release-20260929-r11",
+      "lantern-release-20260929-r13",
+      "lantern-release-20260929-r14",
+      "lantern-release-20260929-r15"
+    ],
+    "scratch_patterns": [
+      "/var/tmp/rook-*",
+      "/var/tmp/lantern-python-build-*",
+      "/var/tmp/lantern-3b-*"
+    ],
+    "apt_cache_cleared": true
+  },
+  "preserved": {
+    "release_payloads": [
+      "lantern-release-20260929-r16",
+      "lantern-release-20260930-r17"
+    ],
+    "finetune_workspace": "/var/tmp/lantern-focused-finetune-20261012 (15G)",
+    "bootstrap_images": "/var/lib/lantern-images (26G, includes D/E/F bootstraps and base image)",
+    "release_metadata": "/var/backups/lantern-release-metadata-20261019 (191M, manifests/selection/checksums)"
+  },
+  "after": {
+    "used": "98G",
+    "free": "125G",
+    "use_percent": 44
+  },
+  "verification": {
+    "sage-lantern-llm.service": "active",
+    "sage-lantern-voice-loop.service": "active",
+    "gpsd": "active",
+    "sage-lantern-gnss-status.service": "active",
+    "sage-lantern-maps.service": "active",
+    "llm_health": "ok",
+    "gnss_status": "mode 1, no fix, HDOP 25.5",
+    "map_server_health": "ok"
+  },
+  "recoverability": "Old release payloads are deleted; their manifests, selection files and SHA-256 checksums are preserved. They can be rebuilt from the release pipeline. The removed /var/tmp entries were old test scratch, not tracked release evidence."
+}

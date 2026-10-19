@@ -40,6 +40,99 @@ class RequestSocket:
 
 
 class DeviceAuthTests(unittest.TestCase):
+    def test_broker_voice_and_status_share_one_context_through_rotation(self):
+        """Real source composition; the PIN verifier remains synthetic."""
+        from sage_lantern import device_access
+        import argparse
+        import uuid
+        def load(name, filename):
+            spec = importlib.util.spec_from_file_location(name, SCRIPT.parent / filename)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        voice = load("context_voice_integration", "unit-a-voice-loop.py")
+        status_server = load("context_status_integration", "unit-a-status-server.py")
+        token = self.unlock()
+        original_context = device_access.session_context
+        original_authorized = device_access.authorized
+        def transport(method, path, body):
+            status, value, _ = self.request(method, path, json.loads(body), origin=False)
+            return status, json.dumps(value, separators=(",", ":")).encode()
+        with patch.object(device_access, "_marker_state", return_value=True), \
+                patch.object(device_access, "session_context", side_effect=lambda value:
+                    original_context(value, transport=transport)), \
+                patch.object(device_access, "authorized", side_effect=lambda value:
+                    original_authorized(value, transport=transport)):
+            loop = voice.VoiceLoop(argparse.Namespace(max_seconds=30, min_seconds=0.1,
+                state=self.directory / "voice.json", audio_dir=self.directory / "audio"))
+            _, credentials = loop.control.start(str(uuid.uuid4()), device_token=token)
+            session = loop.control.take(False)
+            loop.device_session = (session["session_id"], token, True)
+            first = device_access.session_context(token)
+            loop.write_state("processing", session_id=session["session_id"], transcript="synthetic private question", response="")
+            publication = json.loads(loop.args.state.read_text())
+            self.assertEqual(publication["session_context"], first.to_dict())
+            self.assertEqual(status_server._fence_voice(publication, first), publication)
+            self.broker.lock(token)
+            replacement = self.unlock()
+            current = device_access.session_context(replacement)
+            self.assertNotEqual(first, current)
+            self.assertEqual(status_server._fence_voice(publication, current)["transcript"], "")
+            with self.assertRaises(voice.ControlError) as denied:
+                loop.control.confirm_start(loop.control.owner["request_id"], session["session_id"],
+                                           credentials["token"], device_token=replacement)
+            self.assertEqual((denied.exception.status, denied.exception.code), (403, "device_locked"))
+
+    def test_session_context_helper_round_trips_real_broker_source(self):
+        from sage_lantern import device_access
+        token = self.unlock()
+        def transport(method, path, body):
+            status, value, _ = self.request(method, path, json.loads(body), origin=False)
+            return status, json.dumps(value, separators=(",", ":")).encode()
+        with patch.object(device_access, "_marker_state", return_value=True):
+            first = device_access.session_context(token, transport=transport)
+            self.assertEqual(first.to_dict(), self.broker.session_context(token))
+            self.broker.lock(token)
+            self.assertIsNone(device_access.session_context(token, transport=transport))
+
+    def test_session_context_is_token_bound_and_contains_no_credential(self):
+        token = self.unlock()
+        for origin in (False, True):
+            status, value, _ = self.request("POST", "/session-context", {"token": token}, origin=origin)
+            self.assertEqual(status, 200)
+            self.assertEqual(set(value), {"schema", "epoch", "session_ref"})
+            self.assertEqual(value["schema"], "sage.lantern.session-context.v1")
+            self.assertRegex(value["epoch"], r"^[0-9a-f]{32}$")
+            self.assertRegex(value["session_ref"], r"^[0-9a-f]{64}$")
+            self.assertNotIn(token, json.dumps(value))
+        self.assertEqual(value, self.broker.session_context(token))
+        # Voice publication does not participate in this authority at all.
+        self.assertEqual(value, self.broker.session_context(token))
+        self.assertNotEqual(value, MODULE.AuthBroker(self.device).session_context(token))
+        self.broker.lock(token)
+        replacement = self.unlock()
+        self.assertNotEqual(value, self.broker.session_context(replacement))
+        self.assertEqual(self.request("POST", "/session-context", {"token": token}, origin=False)[0], 401)
+
+    def test_session_context_never_activates_or_renews_a_ticket(self):
+        pending = self.device.unlock("12345678")
+        self.assertEqual(self.request("POST", "/session-context", {"token": pending}, origin=False)[0], 401)
+        self.assertTrue(self.device.pending(pending))
+        self.assertFalse(self.device.authorized(pending))
+        token = self.unlock()
+        self.now += 5
+        self.broker.session_context(token)
+        self.now += 2
+        self.assertEqual(self.request("POST", "/session-context", {"token": token}, origin=False)[0], 401)
+
+    def test_session_context_refuses_epoch_change_and_shutdown(self):
+        token = self.unlock()
+        before = self.broker.access_epoch()
+        with patch.object(self.broker, "access_epoch", side_effect=[before, {**before, "epoch": "b" * 32}]):
+            self.assertEqual(self.request("POST", "/session-context", {"token": token}, origin=False)[0], 401)
+        self.broker.shutdown()
+        self.assertEqual(self.request("POST", "/session-context", {"token": token}, origin=False)[0], 503)
+
     def test_access_epoch_helper_only_and_old_state_unchanged(self):
         status, first, headers = self.request("GET", "/access-epoch", origin=False)
         self.assertEqual(status, 200)
@@ -60,6 +153,15 @@ class DeviceAuthTests(unittest.TestCase):
         self.assertNotEqual(active["epoch"], self.request("GET", "/access-epoch", origin=False)[1]["epoch"])
         other = MODULE.AuthBroker(self.device)
         self.assertNotEqual(other.access_epoch()["epoch"], self.broker.access_epoch()["epoch"])
+
+    def test_desktop_grants_unreachable_from_browser_or_loopback_http(self):
+        for origin in (False, True):
+            for path in ('/desktop/open', '/desktop/unlock', '/desktop/activate', '/desktop/check'):
+                status, value, _ = self.request('POST', path, {'pin': '12345678'}, origin=origin)
+                self.assertEqual(status, 404)
+                self.assertEqual(value, {'error': 'not_found'})
+        self.assertIsNone(self.broker.desktop.guard)
+        self.verifier.assert_not_called()
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

@@ -61,6 +61,12 @@ class ProvisionLanternUnitTests(unittest.TestCase):
         state = self.root / "var/lib/sage-lantern"
         self.assertFalse((state / "PROVISIONED").exists())
         self.assertTrue((state / "identity/EXTERNAL_IDENTITY_REQUIREMENTS.txt").is_file())
+        profile = self.root / "etc/sage/provisioning-profile.yaml"
+        self.assertTrue(profile.is_file())
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o600)
+        self.assertIn("schema: sage.provisioning-profile.v1", profile.read_text())
+        self.assertIn("private_listeners: true", profile.read_text())
+        self.assertIn("unit_metadata_key: \"UNIT_ID=\"", profile.read_text())
         self.assertEqual(
             (self.root / "etc/sage-lantern/unit.env").read_text().splitlines()[0],
             "UNIT_ID=unit-a",
@@ -120,6 +126,16 @@ class ProvisionLanternUnitTests(unittest.TestCase):
         result = self.run_script("prepare", "--unit-id", "unit-b")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("already prepared as unit-a", result.stderr)
+
+    def test_existing_provisioning_profile_cannot_be_weakened(self) -> None:
+        self.assertEqual(self.run_script("prepare", "--unit-id", "unit-a").returncode, 0)
+        profile = self.root / "etc/sage/provisioning-profile.yaml"
+        profile.write_text(profile.read_text().replace("private_listeners: true", "private_listeners: false"))
+        changed = profile.read_bytes()
+        result = self.run_script("prepare", "--unit-id", "unit-a")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("existing SAGE provisioning profile differs", result.stderr)
+        self.assertEqual(profile.read_bytes(), changed)
 
     def test_dry_run_does_not_write(self) -> None:
         result = self.run_script("prepare", "--unit-id", "unit-a", "--dry-run")

@@ -8,7 +8,7 @@ No appliance keys/state, staged binary, services or public enrollment were touch
 
 The existing `sage-gui setup` is a general-purpose browser wizard, not a bounded
 appliance initializer. `serve` previously owned genesis generation but also starts
-services. New `init-lantern-private` calls that same
+services. `init-fresh-personal-sage` calls that same
 `initCometBFTConfigWithBootstrap` without `serve`, database startup, network
 listeners, TLS generation, public enrollment or PIN handling. It mints a private
 chain through SAGE's existing random chain-ID mechanism and dual Root/application
@@ -23,17 +23,34 @@ Paths, all on the target:
 - Private genesis, validator/node keys and state:
   `/var/lib/sage-lantern/sage-personal/data/cometbft/{config,data}`.
 
-The native command requires Linux ARM64, nonroot `sage-lantern`, exact fixed home,
-prepared matching unit ID, private listener policy and independently reviewed
-initial config. Root/app/public public IDs are compared for distinctness; random
+The native command requires Linux ARM64, nonroot `sage-lantern`, the root-owned
+provisioning profile at `/etc/sage/provisioning-profile.yaml`, a prepared matching
+unit ID and independently reviewed initial config. The profile is a regular
+root-owned mode-0600 file, no larger than 16 KiB, with schema
+`sage.provisioning-profile.v1`. It fixes `home`, `identity_dir`, `account`,
+`private_listeners: true`, the authorized unit list, the existing Lantern artifact
+filenames and the `/etc/sage-lantern/unit.env` `UNIT_ID=` binding. Root/app/public
+public IDs are compared for distinctness; random
 independent generation is not an audit of every other appliance's identity.
 Genesis is verified using SAGE's existing vendored-genesis verifier. Output is
 public IDs plus actual genesis chain ID, with `local_enrollment_committed`,
 `public_enrolled`, `vault_initialized`, `ready`, `provisioned` all false.
 
+The profile stays root-owned `0600`; the service does not receive blanket root
+access. The unit and one-shot init/check paths grant only
+`CAP_DAC_READ_SEARCH`, sufficient to read the profile while still requiring a
+non-root `sage-lantern` execution account.
+
 ## Operator phase between base and app
 
 Prepare service-owned 0600 `sage-personal/config.yaml` in its 0700 directory.
+For a new C–F node using the canonical NPU/CPU bundle, review
+[`sage-personal.example.yaml`](../../software/config/sage-personal.example.yaml).
+It selects the bundled 768-dimensional Nomic embedding model through the local
+Ollama-compatible shim on port 8084. This is a fresh-node input template, not a
+migration for A/B or any existing indexed database. It contains no chain ID or
+identity keys; the initializer creates those independently on each unit.
+
 Its initial policy must include these fields; preserve separately reviewed
 embedding/media settings rather than replacing them with this excerpt:
 
@@ -66,11 +83,18 @@ python3 scripts/lantern/provision-fresh-appliance.py \
 ```
 
 Only on the authorized native target, `--execute` verifies the prepared unit
-binding, installed binary against the canonical payload, and initial config hash,
-then runs `sage-gui init-lantern-private --owner-approved-companion-bootstrap unit-b`
-as `sage-lantern` with a cleared environment and fixed loopback policy. No key is
-passed on argv or copied from the stage. The matching binary must contain the
-new command; old releases fail instead of falling back to `serve`.
+binding, installed binary against the canonical payload, exact provisioning
+profile and initial config hash, then runs:
+
+```sh
+sage-gui init-fresh-personal-sage \
+  --profile /etc/sage/provisioning-profile.yaml \
+  --unit unit-b --owner-approved-companion-bootstrap
+```
+
+It runs as `sage-lantern` with a cleared environment. No key is passed on argv or
+copied from the stage. The matching binary and profile must both be present; an
+old release or a profile-free host fails instead of falling back to `serve`.
 
 Existing identity directory contents other than the preparer's requirements text,
 existing state, redirected paths and partial initialization are rejected. The

@@ -5,7 +5,8 @@ import threading
 import pytest
 
 from sage_lantern.meshcore_transport import (
-    FIRMWARE, MAX_FRAME, PACKET_SIGNAL_WINDOW, MeshCoreClient, MeshCoreError, SerialFDStream, decode_incoming, encode_frame,
+    BRIDGE_STATS_LAYOUT, BRIDGE_STATS_NAMES, FIRMWARE, MAX_FRAME, PACKET_SIGNAL_WINDOW, MeshCoreClient,
+    MeshCoreError, SerialFDStream, decode_incoming, encode_frame,
 )
 
 
@@ -95,7 +96,9 @@ def client(incoming, chunk=1):
     return MeshCoreClient(stream, expected_public_key=KEY), stream
 
 
-@pytest.mark.parametrize("version", ["v1.17.1-d929643-r1", "v1.17.1-d929643-r2", "v1.17.1-d929643-r3"])
+@pytest.mark.parametrize("version", ["v1.17.1-d929643-r1", "v1.17.1-d929643-r2", "v1.17.1-d929643-r3",
+                                     "v1.17.1-d929643-r4", "v1.17.1-d929643-r5", "v1.17.1-d929643-r6",
+                                     "v1.17.1-d929643-r7"])
 def test_packet_rssi_candidate_reports_its_actual_version(version):
     device, stream = client(handshake_bytes(version=version))
     assert device.handshake().firmware == version
@@ -122,6 +125,45 @@ def stats_frames(last_rssi, last_snr_quarter, packets=12):
     return (frame(bytes((24, 0)) + struct.pack("<HIHB", 4100, 300, 0, 0))
         + frame(bytes((24, 1)) + struct.pack("<hbbII", -110, last_rssi, last_snr_quarter, 3, 4))
         + frame(bytes((24, 2)) + struct.pack("<IIIIIII", packets, 10, 6, 4, 7, 5, 1)))
+
+
+def bridge_frame(**overrides):
+    """The bridge counters a lane firmware reports, in wire order."""
+    values = dict(espnow_tx=27, espnow_tx_announce=9, espnow_tx_unicast=27, espnow_tx_failed=0,
+                  espnow_tx_done=36, espnow_tx_error=0, espnow_rx=27, espnow_rx_announce=8,
+                  espnow_rx_bad=0, fastlane_tx=27, mirror_tx=0, fastlane_miss=0,
+                  fastlane_fallback=0, peer_unicast_failed=0, fastlane_ack_tx=0,
+                  rx_to_queue_last_ms=1, rx_to_queue_max_ms=1, inject_to_process_last_ms=2,
+                  inject_to_process_max_ms=233, dropped_dup=0, dropped_other=0, injected=27,
+                  bridge_delay_ms=0, peers_known=1, running=1, self_hash=117)
+    values.update(overrides)
+    return frame(bytes((24, 3)) + struct.pack(BRIDGE_STATS_LAYOUT,
+                                              *(values[name] for name in BRIDGE_STATS_NAMES)))
+
+
+@pytest.mark.parametrize("version", ["v1.17.1-d929643-r6", "v1.17.1-d929643-r7"])
+def test_health_reads_bridge_counters_from_the_firmware_that_serves_them(version):
+    incoming = (handshake_bytes(version=version) + stats_frames(-75, 25)
+                + bridge_frame())
+    device, stream = client(incoming)
+    device.handshake()
+    result = device.health(authorize=lambda: True)
+    assert result["bridge"]["fastlane_tx"] == 27
+    assert result["bridge"]["running"] is True
+    assert result["bridge"]["peers_known"] == 1
+    assert result["bridge"]["inject_to_process_max_ms"] == 233
+    assert bytes(stream.output).endswith(encode_frame(bytes((56, 3))))
+
+
+def test_health_does_not_ask_a_firmware_without_a_bridge_for_bridge_counters():
+    """r5 and earlier answer sub-type 3 with an error frame, so the host must not
+    spend a read on it - the request itself would be the only effect."""
+    incoming = handshake_bytes(version="v1.17.1-d929643-r5") + stats_frames(-75, 25)
+    device, stream = client(incoming)
+    device.handshake()
+    result = device.health(authorize=lambda: True)
+    assert "bridge" not in result
+    assert bytes(stream.output).endswith(encode_frame(bytes((56, 2))))
 
 
 def test_health_reports_packet_signal_consumed_while_receiver_polls():

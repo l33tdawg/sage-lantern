@@ -132,6 +132,104 @@ class VoiceCaptureTests(unittest.TestCase):
         loop.stop_recording.assert_called_once_with(process)
         self.assertTrue(process.stderr.closed)
 
+    def test_capture_limit_refuses_release_and_recorder_exit_at_deadline(self):
+        for source, completion, elapsed in (
+            ("physical", "release", 30.0),
+            ("physical", "release", 30.04),
+            ("physical", "exit", 30.0),
+            ("touch", "stop", 30.04),
+        ):
+            with self.subTest(source=source, completion=completion, elapsed=elapsed), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "input.wav"
+                with wave.open(str(path), "wb") as recording:
+                    recording.setparams((2, 2, 16000, 0, "NONE", "not compressed"))
+                    recording.writeframes(b"\1\0" * 32000)
+                loop = MODULE.VoiceLoop(argparse.Namespace(alsa_device="mock", min_seconds=0.35, max_seconds=30))
+                loop.write_state = Mock()
+                loop.stop_recording = Mock(return_value=True)
+                now = [0.0]
+                process = Mock(returncode=1, stderr=io.BytesIO())
+                process.poll.side_effect = lambda: 0 if completion == "exit" and now[0] else None
+                loop.ptt = Mock(side_effect=lambda: "up" if now[0] else "down")
+                with patch.object(MODULE.time, "monotonic", side_effect=lambda: now[0]):
+                    if source == "touch":
+                        _, credentials = loop.control.start("test-request")
+                        session = loop.control.take(False)
+                    else:
+                        session = loop.control.take(True)
+                    session_id = session["session_id"]
+
+                    def advance(_delay):
+                        if source == "touch":
+                            if now[0] < 27:
+                                now[0] += 3
+                                loop.control.command("keepalive", session_id, credentials["token"])
+                                return
+                            now[0] = 29.99
+                            loop.control.command("stop", session_id, credentials["token"])
+                        now[0] = elapsed
+
+                    with patch.object(MODULE.subprocess, "Popen", return_value=process), patch.object(MODULE.time, "sleep", side_effect=advance):
+                        self.assertFalse(loop.capture(session_id, path))
+                    self.assertEqual(loop.control.action(session_id), "cancel")
+                    self.assertFalse(loop.control.begin_processing(session_id))
+                loop.stop_recording.assert_called_once_with(process)
+                self.assertTrue(process.stderr.closed)
+
+    def test_physical_release_before_limit_preserves_audio_despite_slow_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input.wav"
+            with wave.open(str(path), "wb") as recording:
+                recording.setparams((2, 2, 16000, 0, "NONE", "not compressed"))
+                recording.writeframes(b"\1\0" * 32000)
+            loop = MODULE.VoiceLoop(argparse.Namespace(alsa_device="mock", min_seconds=0.35, max_seconds=30))
+            loop.write_state = Mock()
+            now = [0.0]
+            loop.ptt = Mock(side_effect=lambda: "up" if now[0] else "down")
+            process = Mock(returncode=1, stderr=io.BytesIO())
+            process.poll.return_value = None
+
+            def stop(_process):
+                now[0] += 3
+                return True
+
+            def advance(_delay):
+                now[0] = 29.0
+
+            loop.stop_recording = Mock(side_effect=stop)
+            with patch.object(MODULE.time, "monotonic", side_effect=lambda: now[0]):
+                session_id = loop.control.take(True)["session_id"]
+                with patch.object(MODULE.subprocess, "Popen", return_value=process), patch.object(MODULE.time, "sleep", side_effect=advance):
+                    self.assertTrue(loop.capture(session_id, path))
+                self.assertTrue(loop.control.begin_processing(session_id))
+            self.assertTrue(process.stderr.closed)
+
+    def test_capture_refuses_full_limit_wav_after_early_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input.wav"
+            with wave.open(str(path), "wb") as recording:
+                recording.setparams((2, 2, 16000, 0, "NONE", "not compressed"))
+                recording.writeframes(b"\1\0" * (2 * 16000 * 30))
+            loop = MODULE.VoiceLoop(argparse.Namespace(alsa_device="mock", min_seconds=0.35, max_seconds=30))
+            loop.ptt = Mock(return_value="up")
+            loop.write_state = Mock()
+            loop.stop_recording = Mock(return_value=True)
+            process = Mock(returncode=1, stderr=io.BytesIO())
+            process.poll.return_value = None
+            now = [0.0]
+            with patch.object(MODULE.time, "monotonic", side_effect=lambda: now[0]):
+                session_id = loop.control.take(True)["session_id"]
+
+                def released(_session_id):
+                    now[0] = 29.0
+                    return "physical"
+
+                with patch.object(loop.control, "source", side_effect=released), patch.object(MODULE.subprocess, "Popen", return_value=process):
+                    self.assertFalse(loop.capture(session_id, path))
+                self.assertEqual(loop.control.action(session_id), "cancel")
+                self.assertFalse(loop.control.begin_processing(session_id))
+            self.assertTrue(process.stderr.closed)
+
 
 class VoiceEventTests(unittest.TestCase):
     def setUp(self):
@@ -275,6 +373,25 @@ class VoiceEventTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in calls], ["processing", "processing", "processing", "complete"])
         self.assertEqual(calls[2].kwargs["response"], "unfinished")
         self.assertEqual(calls[2].kwargs["detail"], "Answering…")
+
+    def test_real_content_is_published_within_170ms_during_upstream_pause(self):
+        published = []
+        self.loop.write_state.side_effect = lambda *args, **kwargs: published.append(
+            (MODULE.time.monotonic(), args[0], kwargs.get('response', '')))
+        self.execute([self.delta("unfinished"), self.final()], idle_polls=7)
+        visible = [(when, text) for when, phase, text in published
+                   if phase == 'processing' and text.strip()]
+        self.assertEqual(len(visible), 1)
+        self.assertLessEqual(visible[0][0], 0.17)
+        self.assertEqual(visible[0][1], 'unfinished')
+        self.assertEqual(published[-1][2], self.result['response'])
+
+    def test_paused_non_space_unicode_keeps_exact_content(self):
+        text = '你好، مرحبا'
+        self.execute([self.delta(text), self.final()], idle_polls=7)
+        visible = [call.kwargs['response'] for call in self.loop.write_state.call_args_list
+                   if call.args[0] == 'processing' and call.kwargs.get('response')]
+        self.assertEqual(visible, [text])
 
     def test_split_unicode_json_lines_and_unterminated_final(self):
         first = self.delta("Kuala ")

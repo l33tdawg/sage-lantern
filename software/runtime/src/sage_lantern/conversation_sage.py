@@ -270,6 +270,11 @@ class ConversationSage:
             if not isinstance(domains, list) or self.domain not in domains:
                 raise ConversationSageError("private_domain_grant_unavailable")
 
+    def authorize_action(self, *, write: bool = True) -> bool:
+        """Resolve the current SAGE profile/domain grant before an action."""
+        self._authorize(write=write)
+        return True
+
     def record_turn(self, session_id: str, event_id: str, text: str) -> Submission:
         """Persist one caller-redacted turn; stable event IDs must survive restart."""
         return self._submit(session_id, event_id, "turn", text)

@@ -135,7 +135,8 @@ def item(value):
     require(datetime.fromisoformat(value["created_at"].replace("Z", "+00:00")).tzinfo is not None)
     require((value["state"], value["workflow_state"]) in {
         ("unknown", "received"), ("queued", "queued"), ("unknown", "dispatching"),
-        ("sent", "awaiting_receipt"), ("delivered", "delivered"), ("read", "read")})
+        ("sent", "awaiting_receipt"), ("delivered", "delivered"), ("read", "read"),
+        ("cancelled", "cancelled")})
     return MailboxItem(**value)
 
 
@@ -182,7 +183,12 @@ class MeshVoiceFacade:
                 while True:
                     remaining = deadline - time.monotonic()
                     require(remaining > 0)
-                    connection.settimeout(remaining if method == "close" else min(5, remaining))
+                    # A request can wait behind a whole background radio job.
+                    # Silence while queued is not loss of authorization: the
+                    # daemon challenges the live session again before acting.
+                    # Match its 45-second request bound instead of abandoning
+                    # an otherwise valid request after five quiet seconds.
+                    connection.settimeout(remaining if method == "close" else min(45, remaining))
                     response = receive(connection)
                     if set(response) == {"guard"}:
                         require(method != "close" and type(response["guard"]) is str
@@ -206,6 +212,10 @@ class MeshVoiceFacade:
     def radio_status(self, *, access_check):
         from .mesh_radio_events import validate_status
         return validate_status(self._call('radio_status', {}, access_check, timeout=30))
+
+    def custody_status(self, *, access_check):
+        from .mesh_custodian import validate_status
+        return validate_status(self._call('custody_status', {}, access_check))
 
     def contacts(self, *, access_check):
         result = self._call("contacts", {}, access_check)

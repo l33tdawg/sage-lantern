@@ -127,7 +127,9 @@ def test_independent_lifecycle_scope_and_original_accounting_checks_remain_requi
     with relay_mode(tmp_path) as (r, requests):
         before = copy.deepcopy(r.owner._accounting_binding)
         if changed == 'lifecycle': r.hardware.supervisor.resource_lifecycle_check = lambda: False
-        elif changed == 'supervisor_epoch': r.hardware.supervisor.verified_epoch = lambda: 'f' * 64 + ':1'
+        elif changed == 'supervisor_epoch':
+            r.hardware.supervisor.verified_epoch = lambda: 'f' * 64 + ':1'
+            r.hardware.supervisor.admission_epoch = lambda: 'f' * 64 + ':1'
         elif changed == 'scope': r.state.owner_live = False
         elif changed == 'debt': r.accounting.debt = fixture.DEBT.plus(fixture.Cost(1, 1))
         else: r.accounting.actual = fixture.Cost()

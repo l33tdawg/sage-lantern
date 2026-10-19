@@ -1,0 +1,32 @@
+[Unit]
+# Vision/photo lane: resident RKNN vision encoder + RKLLM 0.8B on the NPU (D-016).
+# Owns 8082, the port the NPU chat server (sage-lantern-llm.service) already targets
+# with --fallback-url, so the runtime's photo path is unchanged in shape. The CPU 4B
+# llama.cpp vision fallback (sage-lantern-llm-cpu.service, also drafted for 8082) is
+# retired for C–F by D-016; the two must never be enabled together.
+# The model pair must stay toolkit/runtime-matched (rkllm-toolkit 1.3.0 here); a
+# 1.2.3-era conversion is rejected by the runtime by design.
+Description=SAGE Lantern NPU vision (RKNN + RKLLM 0.8B) photo server
+After=local-fs.target
+ConditionPathExists=/var/lib/sage-lantern/LOCAL_VOICE_READY
+ConditionPathExists=!/run/sage-lantern-sleep.fenced
+
+[Service]
+Type=simple
+User=sage-lantern
+Group=sage-lantern
+# render: /dev/dri/renderD129 (the RKNPU node). video: /dev/dma_heap/*, which the RKNPU
+# runtime allocates through. Without both, rknn_init/rkllm_init fail with
+# "Device is not available".
+SupplementaryGroups=render video
+Environment=LD_LIBRARY_PATH=/opt/sage-lantern/npu/lib
+ExecStart=/usr/bin/python3 /opt/sage-lantern/npu/libexec/vlm_server.py --engine /opt/sage-lantern/npu/bin/vlm_engine --vision-model /opt/sage-lantern/npu/models/qwen3.5-0.8b_vision_rk3588.rknn --model /opt/sage-lantern/npu/models/qwen3.5-0.8b_w8a8_rk3588.rkllm --host 127.0.0.1 --port 8082 --model-name lantern-qwen35-08b-vision --context 4096 --cpus 4 --vision-cores 3 --max-new-tokens 256
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

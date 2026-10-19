@@ -198,7 +198,28 @@ def signed_observation(helper, backend, expected):
     return _signed_scan(helper, backend, expected, inspection=observe)
 
 
-def _signed_scan(helper, backend, expected, *, inspection):
+def comparable_inventory(rows, config):
+    """Ignore only the revision of an exact, empty, idle receiver slot.
+
+    Empty radio polls advance this counter while leaving its contents unchanged.
+    Message, receipt, assembly and non-idle receiver records remain byte-exact.
+    This comparison is not containment; the supplied inspection still establishes
+    whether the current records and stopped producers admit maintenance.
+    """
+    from sage_lantern.mesh_receiver import _validate as validate_receiver
+    result = []
+    for row in rows:
+        value = row
+        if (row['record_id'] == config['receiver_slot'] and row['kind'] == 'mesh_inbound'
+                and row['payload'].get('schema') == 'sage.lantern.mesh-receiver.v1'
+                and row['payload'].get('state') == 'idle'):
+            validate_receiver(row['payload'])
+            value = dict(row, revision=0)
+        result.append(value)
+    return result
+
+
+def _signed_scan(helper, backend, expected, *, inspection, normalize_idle=True):
     from sage_lantern import conversation_records
     from sage_lantern.device_access import access_epoch
     from sage_lantern.mesh_daemon import load_config, load_identity
@@ -224,9 +245,12 @@ def _signed_scan(helper, backend, expected, *, inspection):
             epoch = probe.snapshot().epoch
             rows = store.scan(limit=50, max_records=4096, access_check=guard)
             summary = inspection(rows, store, identity, guard, config)
-            require(store.scan(limit=50, max_records=4096, access_check=guard) == rows
+            require(type(normalize_idle) is bool)
+            compare = (lambda values: comparable_inventory(values, config)) if normalize_idle else (lambda values: values)
+            comparable = compare(rows)
+            require(compare(store.scan(limit=50, max_records=4096, access_check=guard)) == comparable
                     and probe.snapshot().epoch == epoch and guard())
-            return epoch, summary['sha256']
+            return epoch, helper.sha(helper.canonical(comparable))
     finally:
         os.close(descriptor)
 
@@ -249,19 +273,54 @@ def bootstrap_inventory(helper, system):
 PROJECTOR = '/opt/sage-lantern/models/mmproj-BF16.gguf'
 
 
+# The reviewed LLM swap of 2026-09-19: the NPU serving shape replaces the
+# llama.cpp shape on the same unit. A release pin may move from the llama.cpp
+# artifacts below to the NPU shape exactly once; every other model-file change
+# still refuses, and after the swap the NPU paths are compared like any other
+# baseline.
+LLAMA_CPP_ARTIFACTS = {'/opt/sage-lantern/llama.cpp/llama-server',
+                       '/opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf',
+                       '/opt/sage-lantern/models/mmproj-BF16.gguf'}
+LLAMA_CPP_UNIT = '/etc/systemd/system/sage-lantern-llm.service'
+LLAMA_CPP_DROPINS = {LLAMA_CPP_UNIT + '.d/' + name for name in
+                     ('45-cpu-profile.conf', '46-vision.conf', 'zzzz-fresh-native-update.conf')}
+
+
+def superseded_by_npu(argv, retained):
+    """True when a retained pin holds only reviewed llama.cpp-era artifacts and
+    the live unit now runs the reviewed NPU shape."""
+    if type(argv) is not list or not argv or argv[0] != '/usr/bin/python3':
+        return False
+    names = set(retained)
+    return bool(names) and names <= (LLAMA_CPP_ARTIFACTS | LLAMA_CPP_DROPINS | {LLAMA_CPP_UNIT})
+
+
 def model_files(helper, argv, model, retained_model_files=None):
-    paths = {model['FragmentPath'], *model['DropInPaths'].split(), argv[0]}
+    paths = {model['FragmentPath'], *model['DropInPaths'].split()}
     require(argv.count('--model') == 1 and argv.index('--model') + 1 < len(argv))
     paths.add(argv[argv.index('--model') + 1])
-    if '--mmproj' in argv:
-        require(argv.count('--mmproj') == 1 and argv.index('--mmproj') + 1 < len(argv))
-        paths.add(argv[argv.index('--mmproj') + 1])
+    if argv and argv[0] == '/usr/bin/python3':
+        # The NPU shape: the interpreter is a symlink and is not a pinned file.
+        # The artifacts that matter are the server script and the engine beside
+        # the shared model, and they are hashed instead.
+        require(len(argv) > 1 and argv[1].endswith('.py'))
+        paths.add(argv[1])
+        require(argv.count('--engine') == 1)
+        paths.add(argv[argv.index('--engine') + 1])
+    else:
+        paths.add(argv[0])
+        if '--mmproj' in argv:
+            require(argv.count('--mmproj') == 1 and argv.index('--mmproj') + 1 < len(argv))
+            paths.add(argv[argv.index('--mmproj') + 1])
     if retained_model_files is not None:
         require(type(retained_model_files) is dict
             and all(type(name) is str and type(digest) is str
                 and re.fullmatch('[0-9a-f]{64}', digest)
                 for name, digest in retained_model_files.items())
-            and set(retained_model_files) in (paths, paths | {PROJECTOR}))
+            and (set(retained_model_files) in (paths, paths | {PROJECTOR})
+                 or superseded_by_npu(argv, retained_model_files)))
+        if superseded_by_npu(argv, retained_model_files):
+            return {name: helper.file_hash(name) for name in sorted(paths)}
         paths = set(retained_model_files)
     files = {name: helper.file_hash(name) for name in sorted(paths)}
     if retained_model_files is not None:
@@ -295,7 +354,10 @@ def collect(helper, source_pins, *, retained_model_files=None):
     backend = helper.Recovery(expected)
     try:
         backend.lock()
-        expected['storage_epoch'], expected['workflow_sha256'] = signed_inventory(helper, backend, expected)
+        # Cold boot has stopped producers and held locks. Preserve the raw
+        # hash used by Recovery.reconcile; idle normalization is for updates.
+        expected['storage_epoch'], expected['workflow_sha256'] = _signed_scan(
+            helper, backend, expected, inspection=backend.inspect_inventory, normalize_idle=False)
         backend.reconcile()
         require(model_argv(system, helper) == argv)
         return expected

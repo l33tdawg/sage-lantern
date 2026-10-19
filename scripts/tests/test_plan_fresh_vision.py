@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -50,23 +51,107 @@ def installed(tmp_path, monkeypatch):
     return files, write, configure
 
 
-@pytest.mark.parametrize('unit,alsa', [('unit-a', 'hw:CARD=UnitA,DEV=0'), ('unit-b', 'hw:CARD=UnitB,DEV=1')])
+@pytest.mark.parametrize('unit,alsa', [('unit-' + letter.lower(), 'hw:CARD=Unit' + letter + ',DEV=0') for letter in 'ABCDEF'])
 def test_exact_fresh_candidates_preserve_binding_and_broker(installed, unit, alsa):
     files, write, configure = installed
     configure(unit, alsa)
     result = MODULE.plan(unit, files)
-    voice, llm = result['candidates']
+    (voice,) = result['candidates']
     assert voice['content'] == MODULE.voice_base(alsa).rstrip('\n') + ' --photo-ready\n'
     assert voice['content'].count('--photo-ready') == 1
     assert '--config /etc/sage-lantern/lantern.toml' in voice['content']
     assert '--drain-request /run/sage-lantern-mesh-control/voice-drain-request.json' in voice['content']
-    assert '--mmproj /opt/sage-lantern/models/mmproj-BF16.gguf' in llm['content']
+    assert result['enable'] == [MODULE.VLM]
+    assert result['keep_disabled'] == [MODULE.CPU_LLM]
+    assert all(MODULE.CPU_LLM + '.d/' not in item['destination'] for item in result['candidates'])
+    assert all(MODULE.LLM + '.d/' not in item['destination'] for item in result['candidates'])
+    assert result['serving_profile'] == 'npu-text-8081-npu-vision-8082'
     assert result['preserve'] == sorted(MODULE.expected_dropin_paths())
     assert result['mode'] == 'plan-only'
     assert result['readiness_verified'] is result['activation_authorized'] is result['installed_files_written'] is False
-    assert len(result['input_sha256']) == 7
+    assert len(result['input_sha256']) == 9
     assert len(result['evidence_requirements']['required']) >= 6
+    assert set(result['evidence_requirements']) == {
+        'npu_model', 'vision_encoder', 'vision_llm', 'engine', 'required'}
+    assert result['evidence_requirements']['vision_encoder']['sha256'] == (
+        'e96a3f016163e7cf7ae516ed9878ccad7c576c658d71a60333f5cb154680fd81')
+    assert result['evidence_requirements']['vision_llm']['sha256'] == (
+        'ba85edac97e8f4ed2cdf0d94a3744b5609385b4706c45677f55cdaeb465ce054')
     assert result == MODULE.plan(unit, files)
+
+
+def test_reviewed_local_question_gate_is_verified_and_preserved(installed):
+    files, write, configure = installed
+    write(MODULE.QUESTION_GATE, MODULE.QUESTION_GATE_CONTENT)
+    result = MODULE.plan('unit-a', files)
+    assert MODULE.QUESTION_GATE in result['preserve']
+    assert result['input_sha256'][MODULE.QUESTION_GATE] == MODULE.digest(MODULE.QUESTION_GATE_CONTENT.encode())
+    assert len(result['input_sha256']) == 10
+    # The gate is an activation, not a candidate: the plan still proposes the
+    # same one voice drop-in and never rewrites the local question lane.
+    assert all(item['destination'] != MODULE.QUESTION_GATE for item in result['candidates'])
+    assert result['local_question_lane'] is True
+    assert result['voice_sleep_profile'] == 'standard'
+
+
+def test_question_gate_constant_matches_the_reviewed_release_file():
+    # The planner runs on a unit, so its expectation is a constant; the reviewed
+    # bytes live once in the release tree. Drift between them is a defect.
+    reviewed = (ROOT / 'software/systemd/sage-lantern-voice-loop.service.d/60-local-question-lane.conf').read_text()
+    assert reviewed == MODULE.QUESTION_GATE_CONTENT
+    assert MODULE.QUESTION_GATE.endswith('/sage-lantern-voice-loop.service.d/60-local-question-lane.conf')
+
+
+def test_cf_non_mesh_voice_sleep_profile_is_reviewed_and_recorded(installed, sleep_payloads):
+    files, write, configure = installed
+    alsa = 'hw:CARD=UnitC,DEV=0'
+    configure('unit-c', alsa)
+    payloads = sleep_payloads(alsa)
+    for name, content in payloads.items():
+        write(name, content)
+    assert payloads[MODULE.SLEEP_VOICE].decode() == MODULE.voice_sleep(alsa)
+    write(MODULE.SLEEP_VOICE, MODULE.cf_voice_sleep(alsa))
+    result = MODULE.plan('unit-c', files)
+    assert result['voice_sleep_profile'] == 'non-mesh-broker'
+    assert result['local_question_lane'] is False
+    # A third variant of the same drop-in is still refused by name.
+    write(MODULE.SLEEP_VOICE,
+          MODULE.cf_voice_sleep(alsa).replace('SAGE_LANTERN_MESH_BROKER=0', 'SAGE_LANTERN_MESH_BROKER=1'))
+    with pytest.raises(ValueError, match='sleep override mismatch'):
+        MODULE.plan('unit-c', files)
+
+
+def test_planner_sleep_bytes_are_the_installers_bytes(tmp_path):
+    """The planner's expectation and both installers are one artifact.
+
+    The planner decides whether an installed sleep drop-in is reviewed; the
+    installers generate it. If they drift, a unit that was installed by the
+    reviewed installer is refused by the planner (or the reverse).
+    """
+    alsa = 'hw:CARD=UnitC,DEV=0'
+    bindings = tmp_path / 'appliance-bindings.json'
+    bindings.write_text(json.dumps({'audio': {'alsa_device': alsa}}) + '\n')
+    for filename, expected in (('install-idle-suspend-local.py', MODULE.voice_sleep),
+                               ('install-cf-idle-suspend-local.py', MODULE.cf_voice_sleep)):
+        spec = importlib.util.spec_from_file_location('installer_' + filename.replace('-', '_'),
+                                                      ROOT / 'scripts/lantern' / filename)
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        _, payloads = installer.build_plan(ROOT, bindings=bindings)
+        assert payloads[MODULE.SLEEP_VOICE].decode() == expected(alsa)
+
+
+def test_changed_or_foreign_question_lane_override_is_refused(installed):
+    files, write, configure = installed
+    changed = MODULE.QUESTION_GATE_CONTENT.replace('Restart=on-failure', 'Restart=no')
+    write(MODULE.QUESTION_GATE, changed)
+    with pytest.raises(ValueError, match='local question lane override mismatch'):
+        MODULE.plan('unit-a', files)
+    write(MODULE.QUESTION_GATE, MODULE.QUESTION_GATE_CONTENT)
+    assert MODULE.plan('unit-a', files)['preserve'].count(MODULE.QUESTION_GATE) == 1
+    write(MODULE.SYSTEMD + MODULE.VOICE + '.d/61-unreviewed.conf', '[Service]\n')
+    with pytest.raises(ValueError, match='unknown systemd override'):
+        MODULE.plan('unit-a', files)
 
 
 @pytest.mark.parametrize('alsa', ['hw:CARD=Audio,DEV=0 --photo-ready', 'default', 'hw:0,0',
@@ -79,7 +164,7 @@ def test_invalid_audio_cannot_inject_command(installed, alsa):
         MODULE.plan('unit-a', files)
 
 
-@pytest.mark.parametrize('unit,alsa', [('unit-a', 'hw:CARD=UnitA,DEV=0'), ('unit-b', 'hw:CARD=UnitB,DEV=1')])
+@pytest.mark.parametrize('unit,alsa', [('unit-' + letter.lower(), 'hw:CARD=Unit' + letter + ',DEV=0') for letter in 'ABCDEF'])
 @pytest.mark.parametrize('sleep', [False, True])
 def test_guarded_audio_closure_preserves_exact_fences(installed, unit, alsa, sleep):
     files, write, configure = installed
@@ -87,12 +172,12 @@ def test_guarded_audio_closure_preserves_exact_fences(installed, unit, alsa, sle
     for name, content in MODULE.AUDIO_INPUTS.items():
         write(name, content)
     if sleep:
-        for name, content in MODULE.SLEEP_DROPINS.items():
+        for name, content in MODULE.sleep_dropins(alsa).items():
             write(name, content)
     result = MODULE.plan(unit, files, fresh_audio=True)
     expected = MODULE.expected_dropin_paths() | MODULE.AUDIO_INPUTS.keys()
     if sleep:
-        expected |= MODULE.SLEEP_DROPINS.keys()
+        expected |= set(MODULE.SLEEP_DROPIN_PATHS)
     assert result['preserve'] == sorted(expected)
     assert result['audio_profile'] == 'commissioned-guard'
     for name in expected:
@@ -203,7 +288,7 @@ def test_unknown_overrides_in_all_reviewed_search_roots_reject(installed, direct
         MODULE.plan('unit-a', files)
 
 
-@pytest.mark.parametrize('service', [MODULE.VOICE, MODULE.LLM])
+@pytest.mark.parametrize('service', [MODULE.VOICE, MODULE.LLM, MODULE.CPU_LLM, MODULE.VLM])
 def test_changed_base_and_shadow_services_reject(installed, service):
     files, write, configure = installed
     name = MODULE.SYSTEMD + service
@@ -324,57 +409,67 @@ def test_cli_rejects_activation_output_and_alternate_root_options(argument):
 
 @pytest.fixture
 def sleep_payloads():
+    """Build the A/B installer's sleep payloads for one unit's capture binding."""
     spec = importlib.util.spec_from_file_location('sleep_generator', ROOT / 'scripts/lantern/install-idle-suspend-local.py')
     installer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(installer)
-    plan, payloads = installer.build_plan(ROOT)
-    return {name: payloads[name] for name in MODULE.SLEEP_DROPINS}
+
+    def build(alsa):
+        with tempfile.TemporaryDirectory() as temporary:
+            bindings = Path(temporary) / 'appliance-bindings.json'
+            bindings.write_text(json.dumps({'audio': {'alsa_device': alsa}}) + '\n')
+            _, payloads = installer.build_plan(ROOT, bindings=bindings)
+        return {name: payloads[name] for name in MODULE.SLEEP_DROPIN_PATHS}
+
+    return build
 
 
-@pytest.mark.parametrize('unit,alsa', [('unit-a', 'hw:CARD=UnitA,DEV=0'), ('unit-b', 'hw:CARD=UnitB,DEV=1')])
+@pytest.mark.parametrize('unit,alsa', [('unit-' + letter.lower(), 'hw:CARD=Unit' + letter + ',DEV=0') for letter in 'ABCDEF'])
 def test_reviewed_generated_sleep_preserved_with_later_fresh_voice(installed, sleep_payloads, unit, alsa):
     files, write, configure = installed
     configure(unit, alsa)
-    for name, content in sleep_payloads.items():
-        assert content == MODULE.SLEEP_DROPINS[name].encode()
+    payloads = sleep_payloads(alsa)
+    for name, content in payloads.items():
+        assert content == MODULE.sleep_dropins(alsa)[name].encode()
         write(name, content)
     result = MODULE.plan(unit, files)
-    assert result['preserve'] == sorted(MODULE.expected_dropin_paths() | sleep_payloads.keys())
-    assert len(result['input_sha256']) == 10
-    for name, content in sleep_payloads.items():
+    assert result['preserve'] == sorted(MODULE.expected_dropin_paths() | payloads.keys())
+    assert len(result['input_sha256']) == 14
+    for name, content in payloads.items():
         assert result['input_sha256'][name] == MODULE.digest(content)
         assert files.read(name) == content
-    voice, llm = result['candidates']
+    (voice,) = result['candidates']
     assert voice['content'] == MODULE.voice_base(alsa).rstrip('\n') + ' --photo-ready\n'
-    for candidate in (voice, llm):
-        assert candidate['destination'].endswith('/95-lantern-local-vision.conf')
-        assert Path(candidate['destination']).name > '90-sleep-baseline.conf'
-        assert 'ConditionPathExists=' not in candidate['content']
-        assert 'Environment=' not in candidate['content']
-        assert 'ExecStartPost=' not in candidate['content']
-        assert 'ReadWritePaths=' not in candidate['content']
-        assert 'Restart=' not in candidate['content']
+    assert voice['destination'].endswith('/95-lantern-local-vision.conf')
+    assert Path(voice['destination']).name > '90-sleep-baseline.conf'
+    assert 'ConditionPathExists=' not in voice['content']
+    assert 'Environment=' not in voice['content']
+    assert 'ExecStartPost=' not in voice['content']
+    assert 'ReadWritePaths=' not in voice['content']
+    assert 'Restart=' not in voice['content']
     assert result['activation_authorized'] is result['readiness_verified'] is False
     assert result == MODULE.plan(unit, files)
 
 
 @pytest.mark.parametrize('selected', [subset for count in (1, 2)
-                                    for subset in itertools.combinations(MODULE.SLEEP_DROPINS, count)])
+                                    for subset in itertools.combinations(MODULE.SLEEP_DROPIN_PATHS, count)])
 def test_partial_sleep_configuration_rejected(installed, sleep_payloads, selected):
     files, write, configure = installed
+    payloads = sleep_payloads('hw:CARD=UnitA,DEV=0')
     for name in selected:
-        write(name, sleep_payloads[name])
+        write(name, payloads[name])
     with pytest.raises(ValueError, match='incomplete reviewed sleep'):
         MODULE.plan('unit-a', files)
 
 
-@pytest.mark.parametrize('name', MODULE.SLEEP_DROPINS)
+@pytest.mark.parametrize('name', MODULE.SLEEP_DROPIN_PATHS)
 @pytest.mark.parametrize('mutation', ['append', 'clear-fence', 'change-path'])
 def test_sleep_bytes_not_merely_names_checked(installed, sleep_payloads, name, mutation):
     files, write, configure = installed
-    for path, content in sleep_payloads.items():
+    payloads = sleep_payloads('hw:CARD=UnitA,DEV=0')
+    for path, content in payloads.items():
         write(path, content)
-    content = sleep_payloads[name]
+    content = payloads[name]
     if mutation == 'append':
         content += b'\n'
     elif mutation == 'clear-fence':
@@ -388,7 +483,7 @@ def test_sleep_bytes_not_merely_names_checked(installed, sleep_payloads, name, m
 
 def test_sleep_does_not_allow_unknown_later_vision_or_fence_variants(installed, sleep_payloads):
     files, write, configure = installed
-    for name, content in sleep_payloads.items():
+    for name, content in sleep_payloads('hw:CARD=UnitA,DEV=0').items():
         write(name, content)
     write(MODULE.SYSTEMD + MODULE.VOICE + '.d/99-sage-lantern-sleep.conf', MODULE.SLEEP_FENCE)
     with pytest.raises(ValueError, match='unknown systemd override'):
@@ -397,7 +492,8 @@ def test_sleep_does_not_allow_unknown_later_vision_or_fence_variants(installed, 
 
 def test_sleep_inputs_revalidated_before_return(installed, sleep_payloads, monkeypatch):
     files, write, configure = installed
-    for name, content in sleep_payloads.items():
+    payloads = sleep_payloads('hw:CARD=UnitA,DEV=0')
+    for name, content in payloads.items():
         write(name, content)
     original = files.inventory
     calls = 0
@@ -405,8 +501,8 @@ def test_sleep_inputs_revalidated_before_return(installed, sleep_payloads, monke
         nonlocal calls
         calls += 1
         if calls == 2:
-            name = next(iter(sleep_payloads))
-            write(name, sleep_payloads[name] + b'\n')
+            name = next(iter(payloads))
+            write(name, payloads[name] + b'\n')
         return original()
     monkeypatch.setattr(files, 'inventory', inventory)
     with pytest.raises(ValueError, match='changed during planning'):

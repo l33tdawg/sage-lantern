@@ -1,0 +1,21 @@
+# Product-owned policy consumed by SAGE v11.23.25 and later.
+# Install this as /etc/sage/provisioning-profile.yaml, owned by root with mode
+# 0600. The profile is deliberately separate from the writable SAGE home.
+schema: sage.provisioning-profile.v1
+home: /var/lib/sage-lantern/sage-personal
+identity_dir: /var/lib/sage-lantern/identity
+account: sage-lantern
+units:
+  - unit-a
+  - unit-b
+  - unit-c
+  - unit-d
+  - unit-e
+  - unit-f
+private_listeners: true
+public_key_file: lantern-public.key
+claim_file: lantern-initialization-started
+identity_requirements_file: EXTERNAL_IDENTITY_REQUIREMENTS.txt
+result_schema: sage.lantern.initialized.v1
+unit_metadata_file: /etc/sage-lantern/unit.env
+unit_metadata_key: "UNIT_ID="

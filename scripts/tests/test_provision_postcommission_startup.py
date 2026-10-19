@@ -23,7 +23,7 @@ handoff = load('handoff-fresh-audio-lifetime')
 BOOT = '11111111-1111-4111-8111-111111111111'
 
 
-@pytest.mark.parametrize('unit', ['unit-a', 'unit-b'])
+@pytest.mark.parametrize('unit', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
 def test_fresh_install_does_not_assume_enable_creates_state_directory(monkeypatch, tmp_path, unit):
     installer = load('install-startup-coordinator')
     coordinator = load('startup-coordinator')
@@ -69,6 +69,7 @@ def test_fresh_install_does_not_assume_enable_creates_state_directory(monkeypatc
     assert coordinator.CONFIG.read_bytes() == config.read_bytes()
     assert installer.SERVICE.read_bytes() == service.read_bytes()
     assert calls == [['/usr/bin/systemctl', 'daemon-reload'],
+        ['/usr/bin/systemctl', 'disable', 'sage-lantern-llm.service'],
         ['/usr/bin/systemctl', 'enable', installer.SERVICE.name]]
     assert not os.path.lexists(coordinator.JOURNALS.parent)
     with pytest.raises(FileNotFoundError):
@@ -96,7 +97,7 @@ def fixture_backend(monkeypatch, tmp_path, unit='unit-b'):
     return backend, snapshot
 
 
-@pytest.mark.parametrize('unit', ['unit-a', 'unit-b'])
+@pytest.mark.parametrize('unit', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
 def test_real_inspect_readonly_independent_documents(monkeypatch, tmp_path, unit):
     backend, snapshot = fixture_backend(monkeypatch, tmp_path, unit)
     result = backend.inspect('handoff')
@@ -202,7 +203,7 @@ def test_real_systemd_parser_empty_cgroup(monkeypatch):
         phase.startup_inactive(system)
 
 
-@pytest.mark.parametrize('unit', ['unit-a', 'unit-b'])
+@pytest.mark.parametrize('unit', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
 def test_generated_handoff_real_installer_preflight(monkeypatch, tmp_path, unit):
     installer = load('install-startup-coordinator')
     coordinator = load('startup-coordinator')

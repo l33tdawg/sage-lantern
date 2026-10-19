@@ -43,6 +43,49 @@ class FakeTTS:
         output_path.write_bytes(b"RIFFfake")
 
 
+class StubVerifier:
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.calls = []
+
+    def verify(self, question, answer):
+        self.calls.append((question, answer))
+        return self.verdict
+
+
+@pytest.mark.parametrize("status,text", [("ok", "Based on local context: Guava leaves have opposite arrangement."),
+                                        ("corrected", "Guava leaves are opposite."),
+                                        ("unavailable", "Based on local context: Guava leaves have opposite arrangement.")])
+def test_verifier_replaces_only_a_corrected_answer(tmp_path, status, text):
+    from sage_lantern.answer_verification import Verdict
+
+    verifier = StubVerifier(Verdict(status, text, 0.4))
+    orchestrator = VoiceOrchestrator(StateMachine(JsonlEventLog(tmp_path / 'state.jsonl')),
+        FakeSTT(), FakeContext(), FakeLLM(), None, tmp_path, verifier)
+    result = orchestrator.run_audio(tmp_path / 'fixture.wav')
+    assert result.response == text
+    assert result.verification["status"] == status
+    assert result.timings_ms["verify"] == pytest.approx(400, abs=1)
+    assert verifier.calls == [("What plant is this?",
+                               "Based on local context: Guava leaves have opposite arrangement.")]
+
+
+def test_verifier_is_not_consulted_without_a_response(tmp_path):
+    from sage_lantern.answer_verification import Verdict
+
+    class SilentLLM:
+        last_metrics = None
+
+        def respond(self, query, context):
+            return "   "
+
+    verifier = StubVerifier(Verdict("corrected", "never", 0.1))
+    orchestrator = VoiceOrchestrator(StateMachine(JsonlEventLog(tmp_path / 'state.jsonl')),
+        FakeSTT(), FakeContext(), SilentLLM(), None, tmp_path, verifier)
+    result = orchestrator.run_audio(tmp_path / 'fixture.wav')
+    assert result.response == "   " and result.verification is None and verifier.calls == []
+
+
 class OrchestratorTests(unittest.TestCase):
     def test_complete_voice_loop_uses_one_session_id(self):
         with tempfile.TemporaryDirectory() as tmp:

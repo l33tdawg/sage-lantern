@@ -24,7 +24,12 @@ function ShareContent({ source, close }: { source?: ShareSource; close: () => vo
   const mounted = useRef(false);
   const submitting = useRef(false);
   const requestId = useRef<string | null>(null);
-  const statusRequests = useRef(new Map<string, ShareRefreshRequest>());
+  /**
+   * Request state is render-visible — the list renders each item's own request —
+   * so it is state rather than a ref. A ref read during render is not a dependency
+   * React tracks, which is the thing the lint rule is right to forbid.
+   */
+  const [statusRequests, setStatusRequests] = useState(new Map<string, ShareRefreshRequest>());
   const activeRequest = useRef<AbortController | null>(null);
   const listRequest = useRef<AbortController | null>(null);
   const [observations, setObservations] = useState<Partial<Record<string, ShareObservation>>>({});
@@ -55,7 +60,13 @@ function ShareContent({ source, close }: { source?: ShareSource; close: () => vo
         } else if (!source && current.sharing.available) {
           const result = parseShares(await communityRequest('shares/list', {}, controller.signal));
           if (!controller.signal.aborted) {
-            for (const item of result.items) statusRequests.current.set(item.id, shareRefreshRequest(item.id));
+            // Retain the requests already known and add the ones this list
+            // returned, so reloading does not forget a request the user has made.
+            setStatusRequests((current) => {
+              const next = new Map(current);
+              for (const item of result.items) next.set(item.id, shareRefreshRequest(item.id));
+              return next;
+            });
             setItems(result.items); setMore(result.more);
           }
         }
@@ -83,9 +94,8 @@ function ShareContent({ source, close }: { source?: ShareSource; close: () => vo
   };
   const refreshShare = async (id: string, action: 'refresh' | 'inspect') => {
     if (submitting.current || !status?.sharing.available) return;
-    const attempt = statusRequests.current.get(id);
+    const attempt = statusRequests.get(id);
     if (!attempt) return;
-    statusRequests.current.set(id, attempt);
     submitting.current = true; setBusy(true); setError('');
     setObservations((values) => { const next = { ...values }; delete next[id]; return next; });
     const controller = new AbortController();
@@ -116,7 +126,7 @@ function ShareContent({ source, close }: { source?: ShareSource; close: () => vo
           {expired && <p role="status">Preview expired. Go back and review it again.</p>}
       </> : !status ? <p role="status">Checking shared knowledge…</p> : !status.sharing.available ? <section className="device-panel"><h2>Public sharing isn’t ready yet</h2><p>Public identity, secure storage and verified status tracking must be connected first.</p></section> : items === null ? <p role="status">Loading your submissions…</p> : items.length ? items.map((item) => {
         const observed = observations[item.id];
-        const attempt = statusRequests.current.get(item.id);
+        const attempt = statusRequests.get(item.id);
         const state = attempt?.busy || attempt?.uncertain ? 'unknown' : observed?.state ?? item.state;
         return <article className="device-panel" key={item.id}><h2>{item.question}</h2><p className={`device-community-badge state-${state}`} role="status">{communityLabel(state)}</p>
           {observed?.trust_basis === 'pinned_gateway' && <p>Gateway report{observed.observed_status ? `: ${observed.observed_status}` : ' pending'}. Public acceptance is not independently verified.</p>}

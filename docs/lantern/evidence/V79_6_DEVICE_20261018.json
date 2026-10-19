@@ -1,0 +1,363 @@
+{
+  "date": "2026-10-18",
+  "device": "Unit C",
+  "model_artifact": {
+    "path": "/opt/sage-lantern/npu/models/v79_6-fused-w8a8-opt1-ctx16384-rk3588.rkllm",
+    "sha256": "41172d782a6a401549ab2000f2ef44debb890d69c6a72e228c4548ccc3de78c6",
+    "format": "RKLLM W8A8",
+    "compiled_context": 16384
+  },
+  "production_service": {
+    "unit": "sage-lantern-llm.service",
+    "port": 8081,
+    "model_name": "lantern-native5-2b",
+    "server_sha256": "b568af7d92ace4e0e363597987501da4956da5a67762de89b8dc73a7a4424c76",
+    "response_guards_sha256": "07d642380a33476e6bc34a707cbb8b33fb136679d162db1319d05496c0c88226",
+    "engine_sha256": "c4cf4fda5b28556421271b03ee3b12ada35f3758babf730165377b239885e2f5",
+    "engine_source_sha256": "adad98ce40b23a41ad828bd717368f559c43434a8f0283023866d6eac94831ac",
+    "drop_in_sha256": "826ca695566634ea9fe8b0e63226175dfad98a3ab1c7138c7771efffc110d4ab",
+    "rollback_backup_sha256": "1c5888ae",
+    "served_context": 16384,
+    "served_max_new_tokens": 8192,
+    "health": {
+      "active": true,
+      "n_restarts": 0,
+      "health_status": "ok"
+    }
+  },
+  "benchmark": {
+    "scope": "Unit C, 48 requests, W8A8, response guards disabled, historical 2048-context serving profile",
+    "stock": {
+      "ttft_median_ms": 669.7,
+      "ttft_p90_ms": 1327.0,
+      "decode_median_tokens_per_second": 8.03,
+      "decode_aggregate_tokens_per_second": 7.78,
+      "response_median_ms": 6772.1,
+      "sdk_memory_mb": 3250.3,
+      "load_ms": 5083.6
+    },
+    "v79_6": {
+      "ttft_median_ms": 625.1,
+      "ttft_p90_ms": 734.1,
+      "decode_median_tokens_per_second": 7.82,
+      "decode_aggregate_tokens_per_second": 7.80,
+      "response_median_ms": 6040.8,
+      "sdk_memory_mb": 3393.3,
+      "load_ms": 5267.1
+    }
+  },
+  "device_tests": {
+    "production_smoke": {
+      "all_pass": true,
+      "actions": {
+        "passed": 28,
+        "total": 28
+      },
+      "e12": {
+        "V58_E12_A": true,
+        "V58_E12_B": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_PRODUCTION_SMOKE_20261018.json",
+      "sha256": "1e6100b9c7ad01bce68cfd8927c33a22051d7b999eaee161bb602d1a7d966775"
+    },
+    "production_smoke_8192": {
+      "all_pass": true,
+      "actions": {
+        "passed": 28,
+        "total": 28
+      },
+      "e12": {
+        "V58_E12_A": true,
+        "V58_E12_B": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_PRODUCTION_SMOKE_8192_20261018.json",
+      "sha256": "1e6100b9c7ad01bce68cfd8927c33a22051d7b999eaee161bb602d1a7d966775"
+    },
+    "guard_check": {
+      "all_pass": true,
+      "cases": {
+        "E13_A": true,
+        "E13_B": true,
+        "S03_B": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_GUARD_CHECK_20261018.json",
+      "sha256": "c309a3e7f80ad010ad6755072c8da83ada63d7f57b92553ba4d7c45d466e9dc1"
+    },
+    "guard_check_8192": {
+      "all_pass": true,
+      "cases": {
+        "E13_A": true,
+        "E13_B": true,
+        "S03_B": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_GUARD_CHECK_8192_20261018.json",
+      "sha256": "c309a3e7f80ad010ad6755072c8da83ada63d7f57b92553ba4d7c45d466e9dc1"
+    },
+    "stream_guard_check": {
+      "all_pass": true,
+      "cases": {
+        "E13_A_stream": true,
+        "S03_B_stream_failed_lookup": true,
+        "S12_B_stream_private_owner": true,
+        "receipt_status_stream_committed": true,
+        "receipt_status_stream_pending": true,
+        "receipt_status_stream_failed": true,
+        "new_save_question_reached_engine": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_STREAM_GUARD_20261018.json",
+      "sha256": "20e3dd67bf767929b6ebac6da3c57e15078f96cb35a1e3f4777484737e0683e2"
+    },
+    "long_conversation_and_tools": {
+      "all_pass": true,
+      "long_conversation": {
+        "initial_recall": true,
+        "corrected_code": true,
+        "unchanged_date": true,
+        "late_recall": true
+      },
+      "tools": {
+        "save": true,
+        "receipt_status": true,
+        "recall": true,
+        "unauthorized_private": true
+      },
+      "evidence": "docs/lantern/evidence/V79_6_LONG_TESTS_20261018.json",
+      "sha256": "7a5b9e05ad5d994415cff8fde143090f24847e820b953f1876f5ae53801cd9bf"
+    }
+  },
+  "host_tests": {
+    "response_guard_suite": {
+      "passed": 36,
+      "failed": 0
+    },
+    "work_guard_and_smoke_suite": {
+      "passed": 39,
+      "failed": 0
+    },
+    "loopback_fake_engine_suite": {
+      "passed": 6,
+      "failed": 0
+    },
+    "runtime_action_guard_suite": {
+      "passed": 33,
+      "failed": 0
+    },
+    "conversation_service_suite": {
+      "passed": 42,
+      "failed": 0
+    },
+    "conversation_sage_suite": {
+      "passed": 81,
+      "failed": 0
+    }
+  },
+  "action_runtime": {
+    "wheel": "sage_lantern_runtime-0.2.0-py3-none-any.whl",
+    "wheel_sha256": "bc2ce87bdf1ddc5540ee7ed83f76aeee61d4f6141dee670ec1156035b48fbe08",
+    "action_guard_sha256": "f844e2ed88d91ff4a02f6ff3e8730c5188012bd9fd265c6dab626ead62dca612",
+    "conversation_service_sha256": "2b11cfd78dd3fbc8c26fcaa213743f8da7775a07d38c57499a318dbc3b5b79e8",
+    "conversation_sage_sha256": "495190a838429a707e28482cbe632c9ed1207ffc28d6af60c9bac39f3b8be87d",
+    "installed_version": "0.2.0",
+    "device_verification": {
+      "all_pass": true,
+      "result_kind": "result",
+      "receipt_status": "proposed",
+      "cross_owner_refused": "unauthorized_private_owner",
+      "conversation_service_boundary": true
+    },
+    "evidence": "docs/lantern/evidence/V79_6_ACTION_RUNTIME_DEVICE_20261018.json",
+    "rollback": "/var/tmp/lantern-focused-finetune-20261012/runtime-pre-action-guard-20261018",
+    "product_route": "not yet wired to HTTP or UI"
+  },
+  "guard_on_probe_20261018": {
+    "scope": "12 fixed latency prompts (128/512/1024/1536 prompt tokens), 64 output tokens, streaming HTTP, same V79.6 artifact and 2048 context",
+    "guards_on": {
+      "ttft_median_ms": 5132.4,
+      "ttft_p90_ms": 11662.3,
+      "total_median_ms": 13356.6,
+      "decode_median_tokens_per_second": 7.650,
+      "decode_aggregate_tokens_per_second": 7.561,
+      "server_rss_kb": 90880,
+      "engine_rss_kb": 3463876,
+      "combined_rss_kb": 3554756,
+      "sha256": "8ffe6c76ed38d24a4f8fd0ea6524b602bbc4081e47850ed58616b08e61483b6e"
+    },
+    "guards_off": {
+      "ttft_median_ms": 5090.9,
+      "ttft_p90_ms": 11885.7,
+      "total_median_ms": 13349.1,
+      "decode_median_tokens_per_second": 7.645,
+      "decode_aggregate_tokens_per_second": 7.519,
+      "server_rss_kb": 91068,
+      "engine_rss_kb": 3467752,
+      "combined_rss_kb": 3558820,
+      "sha256": "537b430d0618f907d913fbd29b4e54aaf127549eadfb970ab1f0fff2a0a64d47"
+    },
+    "stock_direct_engine_same_12_ids": {
+      "ttft_median_ms": 5078.0,
+      "ttft_p90_ms": 11540.8,
+      "total_median_ms": 13340.7,
+      "decode_median_tokens_per_second": 7.620,
+      "decode_aggregate_tokens_per_second": 7.587
+    },
+    "guards_on_ttft_overhead_ms": 41.5,
+    "guards_on_total_overhead_ms": 7.5,
+    "memory_note": "Combined server+engine RSS difference was -4064 KB (guards on lower), which is run-to-run noise; this is process RSS, not the RKLLM SDK allocator counter.",
+    "note": "Ordinary chat guard overhead is within run-to-run noise; stock is a direct-engine reference, not the same HTTP transport."
+  },
+  "longform_conversation_20261018": {
+    "extended_8192": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 529,
+        "words": 534,
+        "paragraphs": 4,
+        "at_cap": false
+      },
+      "correction_retained": true,
+      "four_bullets": true,
+      "final_handover": {
+        "paragraphs": 3,
+        "corrected_label_and_day": true,
+        "retired_values_absent": false,
+        "note": "The final note said 'teal, not amber', explicitly contrasting the retired label."
+      },
+      "final_turn_nonempty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_EXTENDED_8192_20261018.json",
+      "sha256": "ce91b5a1260a9e275ae808d413f726a3c27898dae19bd85ced7a1b4f6e49c793"
+    },
+    "sustained_8192": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 59,
+        "words": 61,
+        "paragraphs": 2,
+        "at_cap": false
+      },
+      "correction_retained": true,
+      "bullet_instruction": {
+        "requested": 4,
+        "observed_bullets": 4,
+        "duplicate_friday_bullet": true
+      },
+      "final_handover": {
+        "paragraphs": 3
+      },
+      "final_turn_nonempty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_SUSTAINED_8192_20261018.json",
+      "sha256": "47d3902e1b40180fba4cee473d99fe9e8ced067540d0133b5e34e316b79ceeb7"
+    },
+    "extended_512": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 511,
+        "words": 444,
+        "paragraphs": 6,
+        "at_cap": true,
+        "ended_mid_sentence": true
+      },
+      "correction_retained": true,
+      "four_bullets": true,
+      "final_handover": {
+        "paragraphs": 2,
+        "required_paragraphs": 3,
+        "corrected_label_and_day": true,
+        "retired_values_absent": true
+      },
+      "final_turn_empty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_EXTENDED_20261018.json",
+      "sha256": "e3f2a530b3cadeb0a0da147fe9695688c2c8d74a5077cf8e134feb621d90634d"
+    },
+    "sustained_224": {
+      "completed_turns": 7,
+      "all_checks_pass": false,
+      "turn1": {
+        "completion_tokens": 70,
+        "words": 61,
+        "requested_words": "120-160",
+        "paragraphs": 2,
+        "at_cap": false
+      },
+      "correction_retained": true,
+      "bullet_instruction": {
+        "requested": 4,
+        "observed_bullets": 4,
+        "duplicate_friday_bullet": true
+      },
+      "final_handover": {
+        "paragraphs": 2,
+        "required_paragraphs": 3
+      },
+      "final_turn_nonempty": true,
+      "evidence": "docs/lantern/evidence/V79_6_LONGFORM_SUSTAINED_20261018.json",
+      "sha256": "12311fc1cb154dd619be392b8c2bc85e777f822ac4bc6c43f330985d7b8b166a"
+    },
+    "conclusion": "The 8192 profile removes the previous output-cap truncation and the paragraph guard produces four paragraphs initially and three in the final handover. Exact bullet uniqueness and strict retired-value exclusion remain model-quality limitations."
+  },
+  "benchmark_live_16k_20261018": {
+    "scope": "Unit C, 48 requests (36 quality + 12 latency), V79.6 W8A8, live production service port 8081, --context 16384 --max-new-tokens 8192, response guard 54cd4829 active, streaming HTTP, greedy decode, fresh KV cache per request",
+    "completed_requests": 48,
+    "overall": {
+      "ttft_median_ms": 744.3,
+      "ttft_p90_ms": 7681.2,
+      "response_median_ms": 8948.6,
+      "decode_median_tokens_per_second": 7.26,
+      "decode_aggregate_tokens_per_second": 7.21,
+      "generated_tokens_mean": 58.0
+    },
+    "quality36": {
+      "ttft_median_ms": 713.4,
+      "ttft_p90_ms": 860.5,
+      "response_median_ms": 6765.8,
+      "decode_median_tokens_per_second": 7.5,
+      "decode_aggregate_tokens_per_second": 7.35,
+      "generated_tokens_mean": 56.4
+    },
+    "latency_by_prompt_tokens": {
+      "128": {"ttft_median_ms": 858.5, "response_median_ms": 9074.0, "decode_median_tokens_per_second": 7.69},
+      "512": {"ttft_median_ms": 3590.4, "response_median_ms": 12330.3, "decode_median_tokens_per_second": 7.2},
+      "1024": {"ttft_median_ms": 7708.9, "response_median_ms": 17244.3, "decode_median_tokens_per_second": 6.62},
+      "1536": {"ttft_median_ms": 12778.9, "response_median_ms": 22995.8, "decode_median_tokens_per_second": 6.16}
+    },
+    "historical_native_2048_guards_off_quality36": {
+      "ttft_median_ms": 625.1,
+      "ttft_p90_ms": 734.1,
+      "response_median_ms": 6040.8,
+      "decode_median_tokens_per_second": 7.82,
+      "ttft_at_1536_prompt_tokens_ms": 11733.3
+    },
+    "caveat": "The live run uses the streaming HTTP and tokenizer path with guards and the 16k engine profile; the historical run used the native engine with guards off at 2048. The difference is not a clean context-size delta.",
+    "evidence": "work/lantern-3b-focused-finetune-20261012/device_v79_6_http48_live16k_20261018.json"
+  },
+  "runtime_policy_20261018": {
+    "wheel": "sage_lantern_runtime-0.2.0-py3-none-any.whl",
+    "wheel_sha256": "cfeb9240561931a942b21e0043544af94915eaa27d9f694aa154780a69c9e284",
+    "source_snapshot_sha256": "e565cfaee345f56ff6664713594df296f470cfe81208d6f8d47a454b3d4c206c",
+    "installed_version": "0.2.0",
+    "policy_words": 157,
+    "policy_sha256": "4d2f5918f19ca70e263f5b6fa22d92802b532fa870e943051576951f245200c5",
+    "module_delta": ["adapters.py"],
+    "previous_adapters_sha256": "e99c67e72d504c801f84e7ca21725e6b9b6032a7601a2f3b56820e326f7cb045",
+    "backup": "/var/backups/lantern-runtime-policy-20261018/adapters.py.pre-157",
+    "audio_admission": "pass (exit 0)",
+    "action_guard_sha256": "f844e2ed88d91ff4a02f6ff3e8730c5188012bd9fd265c6dab626ead62dca612",
+    "product_service": "sage-lantern-voice-loop.service",
+    "service_state": "active since 2026-10-18 14:20:00 +08",
+    "product_smoke": {
+      "request_shape": "installed TEXT_POLICY as the system message plus the Local SAGE context wrapper",
+      "elapsed_seconds": 6.5,
+      "policy_echo": false
+    }
+  },
+  "known_limits": [
+    "The historical 48-request native comparison was measured with guards off at the 2048-context profile. The live 16k/8192 profile was re-run through the same 48-request matrix over streaming HTTP with guards on (48/48); the two paths are not directly comparable.",
+    "The live service serves 16k context and 8192 output tokens; long-prompt TTFT at 1536 tokens measured 12.78 s on the live path.",
+    "The first assistant turn after a named recall receipt is buffered for the absence guard; later ordinary chat remains streamed.",
+    "Long-form paragraph structure is normalized, but exact bullet uniqueness and strict retired-value exclusion are not qualified.",
+    "The action runtime is installed on Unit C, but its product HTTP/UI route is not yet wired; cross-owner grants also need an owner-bound executor.",
+    "The raw model still has E13 interval drift and the S03_B absence clause when guards are disabled."
+  ]
+}

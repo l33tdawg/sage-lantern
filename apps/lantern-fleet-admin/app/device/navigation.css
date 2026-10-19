@@ -1,0 +1,155 @@
+/* Shared navigation rhythm for the candidate's destinations.
+ *
+ * Every full-screen destination in this candidate uses the same three-part
+ * arrangement, so a user learns it once:
+ *
+ *   1. a title bar — Back at the leading edge, the destination's name, and at
+ *      most one action at the trailing edge;
+ *   2. one scrollable content region that owns its own overflow;
+ *   3. a bottom action row when the screen has a primary action.
+ *
+ * `.device-subscreen` / `.device-subheader` / `.device-subcontent` in screen.css
+ * already implement parts 1–2 for the existing secondary screens, and the new
+ * destinations reuse them rather than defining a second rhythm. What is added
+ * here is the same bar for a *top-level* destination, which has no Back — Chat
+ * is reached from Home and returns there through the header's Home control, so a
+ * second Back would be a duplicate of an existing control.
+ *
+ * Tokens come from screen.css. Every interactive target is at least 72px, and
+ * rules are declared bare as well as scoped to `.device-screen` for the same
+ * specificity reason as the Home tiles: `.device-screen button` is one class
+ * plus one element, so a bare class loses inside the real Screen.
+ */
+
+.device-page-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #34505e;
+}
+
+.device-page-bar .device-page-title {
+  min-width: 0;
+}
+
+.device-page-bar .device-page-title h1 {
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+/* The one action a top-level destination may carry on the bar. */
+.device-page-bar-action,
+.device-screen .device-page-bar-action {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 72px;
+}
+
+.device-page-bar-action svg {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+/* Chat's own bar sits above the message stack inside the main region, so the
+ * scrollable content keeps the remaining height rather than the bar scrolling
+ * away with it. That frame is now chat.tsx, which declares these rules under
+ * `.device-chat` in chat.css; the `.device-chat-shell` rules that used to live
+ * here went with the shell they named. */
+
+@media (max-width: 520px) {
+  .device-page-bar { gap: 8px; padding-bottom: 8px; }
+  .device-page-bar .device-page-title h1 { font-size: 22px; }
+  .device-page-bar-action { min-height: 72px; padding-inline: 12px; }
+}
+
+/* A destination's own glyph when it illustrates a state panel rather than a
+ * title bar. The icons carry only a viewBox, so without an explicit size one
+ * fills the panel and inflates everything under it — the same trap the Home
+ * tiles hit with the shared CameraIcon. Declared bare as well as scoped for the
+ * same specificity reason as the rules above. */
+.device-panel-glyph,
+.device-screen .device-panel-glyph {
+  display: block;
+  color: var(--device-accent);
+  margin-bottom: 4px;
+}
+
+.device-panel-glyph svg,
+.device-screen .device-panel-glyph svg {
+  width: 44px;
+  height: 44px;
+  display: block;
+}
+
+/* A field on a secondary screen.
+ *
+ * The device shell styles its buttons and its keyboard, but it had no rule for a
+ * plain field, so the Agent form's Name/Description/Interval/Instruction fell
+ * back to the browser's light defaults: a white box at its intrinsic width,
+ * overlapping its own label on the navy panel and nowhere near a 72px target.
+ * Heartbeat's interval had the same problem in a second place — 21px tall with
+ * 13.3px type in each required viewport.
+ *
+ * The treatment is declared once here and applied to the two screens that name
+ * themselves, rather than to every subscreen: the other secondary screens were
+ * reviewed with their current fields, and this is not licence to restyle them. */
+.device-task-form .device-section-label { display: block; }
+
+.device-task-form input,
+.device-task-form textarea,
+.device-task-form select,
+.device-heartbeat-screen .heartbeat-interval-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 72px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 24px;
+  color: var(--device-ink);
+  background: var(--device-surface);
+  border: 1px solid #7396ac;
+  border-radius: 12px;
+}
+
+.device-task-form textarea { resize: vertical; }
+
+/* Clearance for the field's focus ring. The ring is drawn 5px outside the field
+ * (3px outline, 2px offset) and the field and the key grid are siblings in a panel
+ * with no margins between them, so without this the ring is painted across the
+ * first row of keys. */
+.device-task-form .question-keyboard { margin-top: 8px; }
+
+.device-task-form input:focus-visible,
+.device-task-form textarea:focus-visible,
+.device-task-form select:focus-visible,
+.device-heartbeat-screen .heartbeat-interval-field input:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/* The date control keeps its own picker affordance, so it takes the shell's
+ * surface and target size without pretending to be typewritten text. */
+.device-task-form input[type="datetime-local"] { color-scheme: dark; }
+
+/* Heartbeat stacks its interval label above the field. The row is a
+ * label/control pair, and a full-width field beside a label cannot share a line. */
+.device-heartbeat-screen .heartbeat-interval-field { display: block; }
+.device-heartbeat-screen .heartbeat-interval-field label { display: block; margin-bottom: 8px; }
+
+/* Hardware keeps every published string exactly as the device sent it and lets it
+ * wrap. A validated 250-character radio name or a 400-character service value is
+ * one unbreakable word to the layout, so the overview buttons grew to 4,847px of
+ * horizontal overflow at 420x900 and clipped the screen. `min-width: 0` lets the
+ * flex children shrink below their content width and `overflow-wrap: anywhere`
+ * (inherited by the detail paragraphs) breaks the strings — the words themselves
+ * are untouched. */
+.device-hardware-screen .device-panel { min-width: 0; overflow-wrap: anywhere; }
+.device-hardware-screen .device-actions li { min-width: 0; max-width: 100%; }
+.device-hardware-screen .device-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.device-hardware-screen .device-section-label { white-space: normal; overflow-wrap: anywhere; }

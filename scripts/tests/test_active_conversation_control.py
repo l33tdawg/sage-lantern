@@ -2,11 +2,14 @@ import uuid
 from types import SimpleNamespace
 import pytest
 from test_question_correction import MODULE, TOKEN, request
+from sage_lantern.session_context import SessionContext
 
 @pytest.fixture
 def control(monkeypatch):
     monkeypatch.setattr(MODULE, 'token_authorized', lambda token: token == TOKEN)
     monkeypatch.setattr(MODULE, 'lock_required', lambda: True)
+    monkeypatch.setattr(MODULE.device_access, 'session_context',
+                        lambda token: SessionContext('a' * 32, 'b' * 64) if token == TOKEN else None)
     return MODULE.VoiceControl(30)
 
 
@@ -125,4 +128,3 @@ def test_clear_after_snapshot_before_handler_cannot_publish_old_thread(control, 
         return snapshot
     monkeypatch.setattr(control, 'conversation_request', read)
     assert request(control, {}, path='/conversation/state') == (403, {'error': 'device_locked'})
-

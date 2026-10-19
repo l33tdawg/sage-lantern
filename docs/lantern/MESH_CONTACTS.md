@@ -17,11 +17,24 @@ Envelope has exactly `payload`, `nonce`, `signature`. Payload has exactly:
 | `radio_public_key` | Full 32-byte valid Ed25519 public key, lowercase hex, different from agent key |
 | `display_name` | NFC, 1–128 characters, ≤512 UTF-8 bytes, no edge whitespace, controls or line/paragraph separators |
 | `revision` | Integer 0 through 2^53−1, never boolean; increment for every changed payload |
-| `issued_at`, `expires_at` | Integer Unix seconds; positive issuance, issuance ≤ now < expiry, TTL ≤3600 seconds |
+| `issued_at`, `expires_at` | Integer Unix seconds; positive issuance, issuance ≤ now < expiry, TTL ≤86400 seconds (24 h, the shared `mesh_contacts.MAX_WINDOW_SECONDS`) |
 | `findable`, `messaging_allowed` | Strict booleans, independently meaningful; false defaults |
 
 All integer fields are bounded by 2^53−1. No future-time grace. The caller must
 provide a trustworthy current Unix time; this module has no clock service.
+
+The 24-hour ceiling is the owner's approval window for an explicitly approved
+message (2026-09-13): the message approval is derived from the card, so the card
+has to be able to outlive a single hour. It is a ceiling, not a default — the
+issuing owner still chooses the TTL, and the shortest of (now + 24 h, the peer's
+`expires_at`) is what a queued message actually gets. Revocation is unaffected by
+the length of the window: a *delivered* superseding card (higher revision, or
+`findable`/`messaging_allowed` false) takes effect immediately, and an older
+unexpired card can never be replayed back over it. What a longer TTL does widen
+is the worst case when the revocation cannot be delivered at all: a peer keeps
+listing the last card it holds until it is superseded or expires, now bounded by
+24 h instead of 1 h. Render card age/expiry from `contacts/radio`
+(`issued_at`/`expires_at`) rather than presenting a held card as currently true.
 
 Canonical JSON is UTF-8, lexicographically sorted object keys, compact separators,
 literal Unicode (`ensure_ascii=False`), no NaN/Infinity. Input must equal its

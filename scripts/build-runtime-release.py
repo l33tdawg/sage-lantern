@@ -44,7 +44,9 @@ def build(output, root=ROOT):
     project = root / "software/runtime"
     payloads = {"pyproject.toml": source_bytes(project / "pyproject.toml")}
     modules = sorted((project / "src/sage_lantern").glob("*.py"))
-    if not 1 <= len(modules) <= 128:
+    # The runtime has grown past the original 128-module bound (129 as of the
+    # 18 October 2026 policy-wheel rebuild); keep a bounded inventory check.
+    if not 1 <= len(modules) <= 160:
         raise ValueError("invalid module inventory")
     for path in modules:
         payloads[str(path.relative_to(project))] = source_bytes(path)

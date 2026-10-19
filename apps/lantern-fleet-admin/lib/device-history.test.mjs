@@ -37,3 +37,22 @@ test('retention capability must be a boolean and is never inferred', () => {
   assert.equal(parseDeviceHistory({ enabled: true, items: [], saving_off_keeps_items: true }).saving_off_keeps_items, true);
   assert.throws(() => parseDeviceHistory({ enabled: true, items: [], saving_off_keeps_items: 'true' }));
 });
+
+test('what deletion did to the photo survives the parse', () => {
+  // The runtime reports this beside `sage_backed`, and the deletion wording is
+  // only accurate if the field actually reaches the gallery.
+  const stated = parseDeviceHistory({ enabled: true, items: [], sage_backed: true, photo_storage: 'sage_immutable', photo_removal: 'history_link_only' });
+  assert.equal(stated.photo_removal, 'history_link_only');
+  assert.equal(stated.photo_storage, 'sage_immutable');
+});
+
+test('an unknown removal answer is carried through rather than failing the read', () => {
+  // Rejecting it would fail the whole history read, so a device whose runtime
+  // learned a new value would lose its gallery instead of one sentence's
+  // precision. It is not evidence that the bytes are gone.
+  assert.equal(parseDeviceHistory({ enabled: true, items: [], photo_removal: 'something_new' }).photo_removal, 'something_new');
+  assert.equal(parseDeviceHistory({ enabled: true, items: [] }).photo_removal, undefined);
+  for (const field of ['photo_removal', 'photo_storage']) {
+    assert.throws(() => parseDeviceHistory({ enabled: true, items: [], [field]: true }));
+  }
+});

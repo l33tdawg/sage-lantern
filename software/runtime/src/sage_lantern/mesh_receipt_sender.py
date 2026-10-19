@@ -297,6 +297,9 @@ class MeshReceiptSender:
         _integer(radio_timestamp, 1, 0xffffffff)
         body, approved = self._load(receipt_id, access_check)
         _check(body["state"] == "queued" and body["attempts"] < 256)
+        def journal_check():
+            _check(approved["issued_at"] <= self._now() < approved["expires_at"])
+            return self._live(self._action(approved, "dispatch"), access_check)
         def check():
             _check(approved["issued_at"] <= self._now() < approved["expires_at"])
             self._authorize(approved, "dispatch", access_check)
@@ -304,7 +307,10 @@ class MeshReceiptSender:
         check()
         prefix = device.get_contacts(authorize=check).unique_prefix(bytes.fromhex(approved["radio_public_key"]))
         stamp = body["timestamp"] or radio_timestamp
-        body, approved = self._put(receipt_id, {**body, "state":"dispatching", "timestamp":stamp, "attempts":body["attempts"]+1}, body["revision"], check)
+        # Fresh policy/contact checks bracket each CAS and RF admission. The
+        # journal's internal access guards still check the live grant and its
+        # own storage epoch without recursively re-reading the contact index.
+        body, approved = self._put(receipt_id, {**body, "state":"dispatching", "timestamp":stamp, "attempts":body["attempts"]+1}, body["revision"], journal_check)
         try:
             check()
             fragments = split_envelope(approved["wire"].encode("ascii"))
@@ -312,8 +318,10 @@ class MeshReceiptSender:
             _check(type(result) is SendReceipt and result.serial_accepted is True and result.delivered is False and result.read is False)
             check()
             index = body["next_fragment"]+1
-            return self._progress(*self._put(receipt_id, {**body, "next_fragment":index, "timestamp":None,
-                                  "state":"serial_accepted" if index == len(fragments) else "queued"}, body["revision"], check))
+            body, approved = self._put(receipt_id, {**body, "next_fragment":index, "timestamp":None,
+                                  "state":"serial_accepted" if index == len(fragments) else "queued"}, body["revision"], journal_check)
+            check()
+            return self._progress(body, approved)
         except Exception:
             self._uncertain = True
             raise

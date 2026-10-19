@@ -61,10 +61,15 @@ class RadioEvents:
                 del self._entries[next(iter(self._entries))]
             self._entries[identifier] = (now, wall, snr)
 
-    def snapshot(self, epoch, *, identity_verified, receiving):
+    def snapshot(self, epoch, *, identity_verified, receiving, repeat=None):
         with self._mutex:
             now, wall = self._current(epoch)
             require(type(identity_verified) is bool and type(receiving) is bool)
+            require(repeat is None or type(repeat) is bool)
+            if identity_verified and repeat is None:
+                repeat = False
+            if not identity_verified:
+                repeat = None
             if not identity_verified or not receiving:
                 self._entries.clear()
             entries = [dict(id=key, dequeued_at_unix_ms=item[1], age_ms=int((now-item[0])*1000),
@@ -74,6 +79,7 @@ class RadioEvents:
             return dict(schema='sage.lantern.radio-events.v1', observed_at_unix_ms=wall,
                 valid_for_ms=2000, window_ms=WINDOW_MS, serial_identity_verified=identity_verified,
                 firmware=FIRMWARE if identity_verified else None, receiving=receiving,
+                repeater=None if repeat is None else dict(enabled=repeat, source='firmware_info'),
                 profile=None, saved_contacts=dict(available=False, count=None),
                 neighbors=dict(available=False, reason='no_rf_neighbor_discovery'),
                 last_heard=dict(source='firmware_dequeued_contact_messages', entries=entries))
@@ -86,11 +92,18 @@ def validate_status(value):
         validate_health(health)
         return value
     require(type(value) is dict and set(value) == {'schema', 'observed_at_unix_ms', 'valid_for_ms',
-        'window_ms', 'serial_identity_verified', 'firmware', 'receiving', 'profile', 'saved_contacts', 'neighbors', 'last_heard'})
+        'window_ms', 'serial_identity_verified', 'firmware', 'receiving', 'repeater', 'profile',
+        'saved_contacts', 'neighbors', 'last_heard'})
     require(value['schema'] == 'sage.lantern.radio-events.v1' and value['valid_for_ms'] == 2000
         and value['window_ms'] == WINDOW_MS and type(value['observed_at_unix_ms']) is int and value['observed_at_unix_ms'] > 0)
     require(type(value['serial_identity_verified']) is bool and type(value['receiving']) is bool
         and (value['firmware'] in SUPPORTED_FIRMWARE if value['serial_identity_verified'] else value['firmware'] is None) and value['profile'] is None)
+    if value['serial_identity_verified']:
+        repeater = value['repeater']
+        require(type(repeater) is dict and set(repeater) == {'enabled', 'source'}
+                and type(repeater['enabled']) is bool and repeater['source'] == 'firmware_info')
+    else:
+        require(value['repeater'] is None)
     require(not value['receiving'] or value['serial_identity_verified'])
     require(value['saved_contacts'] == dict(available=False, count=None)
         and value['neighbors'] == dict(available=False, reason='no_rf_neighbor_discovery'))
@@ -118,8 +131,12 @@ def validate_health(value):
     counters = {'battery_mv', 'uptime_seconds', 'error_flags', 'tx_queue', 'tx_airtime_seconds',
         'rx_airtime_seconds', 'packets_received', 'packets_sent', 'sent_flood', 'sent_direct',
         'received_flood', 'received_direct', 'receive_errors'}
-    require(type(value) is dict and set(value) == counters | {
-        'noise_floor_dbm', 'last_rssi_dbm', 'last_snr_db', 'discovered_nodes'})
+    keys = counters | {'noise_floor_dbm', 'last_rssi_dbm', 'last_snr_db', 'discovered_nodes'}
+    # `bridge` is present only on a firmware that runs a bridge (r6 and later on
+    # Lantern): the lane's own counters, so a lane result the appliance reports is
+    # measured rather than inferred. Absent means the radio has no bridge, which is
+    # not a health failure.
+    require(type(value) is dict and set(value) in (keys, keys | {'bridge'}))
     require(all(type(value[key]) is int and 0 <= value[key] <= 0xffffffff for key in counters))
     require(type(value['noise_floor_dbm']) is int and -32768 <= value['noise_floor_dbm'] <= 32767)
     require(type(value['last_rssi_dbm']) is int and -128 <= value['last_rssi_dbm'] <= 127)
@@ -135,4 +152,25 @@ def validate_health(value):
             and all(character.isprintable() for character in node['name']))
         require(type(node['age_seconds']) in (int, float) and 0 <= node['age_seconds'] < 300
             and node['source'] == 'firmware_advertisement' and node['direct_neighbor_verified'] is False)
+    if 'bridge' in value:
+        validate_bridge(value['bridge'])
+    return value
+
+
+def validate_bridge(value):
+    """The bridge counters, in the wire order the companion reports them.
+
+    Strict like the rest of this document: exactly these fields, bounded, and
+    `running` a real bool, so nothing unvalidated reaches the screen.
+    """
+    fields = {'espnow_tx', 'espnow_tx_announce', 'espnow_tx_unicast', 'espnow_tx_failed',
+        'espnow_tx_done', 'espnow_tx_error', 'espnow_rx', 'espnow_rx_announce', 'espnow_rx_bad',
+        'fastlane_tx', 'mirror_tx', 'fastlane_miss', 'fastlane_fallback', 'peer_unicast_failed',
+        'fastlane_ack_tx', 'rx_to_queue_last_ms', 'rx_to_queue_max_ms', 'inject_to_process_last_ms',
+        'inject_to_process_max_ms', 'dropped_dup', 'dropped_other', 'injected', 'bridge_delay_ms',
+        'peers_known', 'running', 'self_hash'}
+    require(type(value) is dict and set(value) == fields)
+    require(all(type(value[name]) is int and 0 <= value[name] <= 0xffffffff
+        for name in fields if name != 'running'))
+    require(type(value['running']) is bool)
     return value

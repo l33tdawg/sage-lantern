@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Root Unit A automatic suspend runner. Uncertainty retains the sleep fence."""
+"""Root automatic suspend runner. Uncertainty retains the sleep fence.
+
+Two reviewed session profiles share this controller. A/B run the X11 kiosk
+profile (`radxa`, `DISPLAY=:0`, `xset dpms`, kiosk launcher tree). C-F run the
+GNOME/Wayland profile: compositor idle observation, screen-shield blank/unblank
+and the mode supervisor's browser group as the fence anchor. The installed
+`/etc/sage-lantern/session-profile` record selects the profile explicitly; the
+stop set follows it, because a unit that is not installed cannot be stopped.
+"""
 
 import argparse
 import json
@@ -18,20 +26,27 @@ import uuid
 from sage_lantern.idle_suspend import IdleSuspendPolicy
 from sage_lantern.inference_guard import pending_count
 from sage_lantern.power_settings import validate_policy
+from sage_lantern.suspend_session import (
+    WAYLAND_PROFILE, GUARDED_WAYLAND_PROFILE, X11_PROFILE, ConsoleFence, GnomeShield,
+    NativePinShield, MutterIdle, installed_profile,
+    load_wayland_binding,
+)
 from sage_lantern.suspend_io import FENCE, STATUS, model_idle, public_json, publish, read_json
 from sage_lantern.suspend_journal import SuspendJournal
 from sage_lantern.suspend_kiosk import KioskFence, LinuxProcesses, RETAINED_ARGV, load_kiosk_binding
 from sage_lantern.suspend_runtime import SleepCycle
-from sage_lantern.suspend_system import SuspendSystem
+from sage_lantern.suspend_system import (
+    AUTH, CAMERA, DISPLAY, LLM, MODEL_UNITS, VLM, VOICE, WAYLAND_STOP_SERVICES, SuspendSystem,
+)
 
 
-AUTH = "sage-lantern-device-auth.service"
-VOICE = "sage-lantern-voice-loop.service"
-CAMERA = "sage-lantern-camera.service"
-DISPLAY = "sage-lantern-display-power.service"
 UI = "sage-lantern-fleet-admin.service"
-MODEL = "sage-lantern-llm.service"
-MODEL_BASELINE = Path("/run/sage-lantern-model/instance.json")
+MODEL = LLM
+# One reviewed start baseline per resident model unit (D-016: NPU text on 8081,
+# NPU vision on 8082); the profile and its participation rule live in
+# sage_lantern.suspend_system and are never re-derived here.
+MODEL_DIRECTORY = Path("/run/sage-lantern-model")
+MODEL_SLOTS = {LLM: (8081, "/slots"), VLM: (8082, "/slots")}
 INFERENCE_DIRECTORY = Path("/var/lib/sage-lantern/inference")
 AUTH_REPORTS = Path("/var/lib/sage-lantern/device-lock/drain")
 VOICE_INSTANCE = Path("/run/sage-lantern-voice/instance.json")
@@ -43,25 +58,30 @@ SLEEP_GUARD = Path("/etc/systemd/system/systemd-suspend.service.d/90-sage-lanter
 SLEEP_GUARD_TEXT = "[Service]\nExecCondition=/opt/sage-lantern/venv/bin/python /usr/local/libexec/sage-lantern-idle-suspend --sleep-guard\n"
 
 
-def model_started():
-    if os.geteuid() != 0:
+def model_baseline_path(unit):
+    return MODEL_DIRECTORY / (unit + ".json")
+
+
+def model_started(unit):
+    """Record the exact model instance systemd started, for the sleep contract."""
+    if os.geteuid() != 0 or unit not in MODEL_UNITS:
         return 1
-    value = command(["/usr/bin/systemctl", "show", MODEL, "--property=MainPID,InvocationID,ActiveState"])
+    value = command(["/usr/bin/systemctl", "show", unit, "--property=MainPID,InvocationID,ActiveState"])
     fields = dict(line.split("=", 1) for line in value.splitlines())
     if (fields.get("ActiveState") != "activating"
             or re.fullmatch(r"[1-9][0-9]{0,9}", fields.get("MainPID", "")) is None
             or re.fullmatch(r"[0-9a-f]{32}", fields.get("InvocationID", "")) is None):
         return 1
     pid = int(fields["MainPID"])
-    publish(MODEL_BASELINE, dict(version=1, pid=pid, invocation_id=fields["InvocationID"],
+    publish(model_baseline_path(unit), dict(version=1, pid=pid, invocation_id=fields["InvocationID"],
               start_ticks=Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19],
               boot_id=BOOT.read_text().strip()))
     return 0
 
 
-def model_baseline_ready():
-    value = read_json(MODEL_BASELINE, owner_uid=0)
-    pid, invocation = service_identity(MODEL)
+def model_baseline(unit):
+    value = read_json(model_baseline_path(unit), owner_uid=0)
+    pid, invocation = service_identity(unit)
     return (type(value) is dict and set(value) == {"version", "pid", "invocation_id", "start_ticks", "boot_id"}
             and type(value["version"]) is int and value["version"] == 1
             and type(value["pid"]) is int and value["pid"] == pid and value["invocation_id"] == invocation
@@ -69,9 +89,51 @@ def model_baseline_ready():
             and value["start_ticks"] == Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19])
 
 
+def resident_models():
+    """Resident model units of this installation's profile; never a partial set.
+
+    The chat lane is always resident. The reviewed activation lane enables the
+    vision unit, and from then on it must be active with a matching start
+    baseline. An unconfirmed observation yields no units, which refuses sleep.
+    """
+    evidence = SuspendSystem().model_units()
+    return evidence.units if evidence.confirmed is True else ()
+
+
+def voice_lane():
+    """The voice lane is part of this installation's profile only once enabled.
+
+    A shipped worker that was never enabled is not part of the profile, exactly
+    like the second model unit: a missing optional component must not make the
+    appliance unusable or unsleepable. An enabled lane joins the full drain
+    contract, and an enabled unit that is not active is unknown evidence.
+    """
+    evidence = SuspendSystem().voice_lane()
+    return evidence.units if evidence.confirmed is True else ()
+
+
+def model_baseline_ready():
+    units = resident_models()
+    return bool(units) and all(model_baseline(unit) for unit in units)
+
+
+def models_idle():
+    """Every resident model server reports an idle slot (8081 text, 8082 vision)."""
+    units = resident_models()
+    if not units:
+        return False
+    for unit in units:
+        port, path = MODEL_SLOTS[unit]
+        if not model_idle(public_json(port, path)):
+            return False
+    return True
+
+
 def inference_ready():
     if not model_baseline_ready() or pending_count(INFERENCE_DIRECTORY, owner_uid=pwd.getpwnam("sage-lantern").pw_uid) != 0:
         return False
+    if not voice_lane():
+        return True
     environment = command(["/usr/bin/systemctl", "show", VOICE, "--property=Environment", "--value"])
     return "SAGE_LANTERN_INFERENCE_GUARD=" + str(INFERENCE_DIRECTORY) in shlex.split(environment)
 
@@ -103,9 +165,16 @@ def drain_hooks_ready():
         return False
     owner = pwd.getpwnam("sage-lantern").pw_uid
     _, invocation = service_identity(AUTH)
-    report = read_json(AUTH_REPORTS / (invocation + ".json"), owner_uid=owner, limit=512)
+    try:
+        # A missing current-instance receipt (crash between start and the first
+        # publish) must refuse like every other unmet condition, not traceback.
+        report = read_json(AUTH_REPORTS / (invocation + ".json"), owner_uid=owner, limit=512)
+    except Exception:
+        return False
     if not prior_auth_drained(invocation, owner):
         return False
+    if not voice_lane():
+        return True
     voice_pid, voice_invocation = service_identity(VOICE)
     voice = read_json(VOICE_INSTANCE, owner_uid=owner)
     return (type(report) is dict and type(report.get("version")) is int and report["version"] == 1
@@ -182,20 +251,126 @@ def service_identity(service):
     return int(fields["MainPID"]), fields["InvocationID"]
 
 
+class X11Session:
+    """The reviewed A/B profile: radxa's X11 kiosk, xset and the launcher tree."""
+
+    name = X11_PROFILE
+    display_outcome = "x11_dpms"
+
+    def idle_seconds(self):
+        raw = command(["/usr/sbin/runuser", "-u", "radxa", "--", "/usr/bin/env", "DISPLAY=:0",
+                       "XAUTHORITY=/run/user/1000/gdm/Xauthority", "/usr/bin/python3",
+                       "/usr/local/libexec/sage-lantern-display-power", "--query-idle"], timeout=3)
+        if re.fullmatch(r"[0-9]{1,10}", raw) is None or int(raw) > 4294967295:
+            raise ValueError("idle_unavailable")
+        return int(raw) / 1000
+
+    def display_power(self, action):
+        if action not in {"on", "off"}:
+            raise ValueError("invalid_display_action")
+        command(["/usr/sbin/runuser", "-u", "radxa", "--", "/usr/bin/env", "DISPLAY=:0",
+                 "XAUTHORITY=/run/user/1000/gdm/Xauthority", "/usr/bin/xset", "dpms", "force", action],
+                timeout=3)
+
+    def fence(self):
+        binding = load_kiosk_binding()
+        backend = LinuxProcesses()
+        backend.validate_host()
+        table = backend.snapshot()
+        matches = [process for process in table.values()
+                   if process.uid == binding.uid and process.executable == "/usr/bin/bash"
+                   and process.argv in binding.launcher_argv]
+        if len(matches) != 1:
+            raise ValueError("kiosk_launcher_ambiguous")
+        launcher = matches[0]
+        retained = tuple(process for process in table.values() if process.parent == launcher.pid
+                         and process.uid == binding.uid and process.argv == RETAINED_ARGV.get(process.executable))
+        kiosk = KioskFence(launcher_pid=launcher.pid, launcher_start_ticks=launcher.start_ticks,
+                           auth_locked=locked, backend=backend, timeout_seconds=5, retained_session=retained,
+                           binding=binding)
+        if kiosk.preflight() is not True:
+            kiosk.close()
+            raise ValueError("kiosk_inventory_unverified")
+        return kiosk
+
+    def preflight(self):
+        self.idle_seconds()
+
+
+class WaylandSession:
+    """The C-F profile: compositor idle observation and the supervisor's browser group."""
+
+    name = WAYLAND_PROFILE
+
+    def __init__(self, binding, idle, display):
+        self.binding = binding
+        self.idle = idle
+        self.display = display
+        self.display_outcome = "not_attempted"
+
+    def idle_seconds(self):
+        return self.idle.seconds()
+
+    def display_power(self, action):
+        if action not in {"on", "off"}:
+            raise ValueError("invalid_display_action")
+        if action == "off":
+            self.display_outcome = self.display.off()
+        else:
+            self.display.on()
+            self.display_outcome = self.display.outcome
+
+    def fence(self):
+        options = {'require_native_pin': True} if self.name == GUARDED_WAYLAND_PROFILE else {}
+        fence = ConsoleFence(binding=self.binding, auth_locked=locked, **options)
+        if fence.preflight() is not True:
+            fence.close()
+            raise ValueError("console_inventory_unverified")
+        return fence
+
+    def preflight(self):
+        self.display.locks_kiosk()
+        self.display.active()
+
+
+SESSION = None
+
+
+def session():
+    """The installed session profile; never guessed from the running session.
+
+    The instance is cached for the process, not rebuilt per sleep cycle, so the
+    same shield object does serve several cycles. That is why GnomeShield proves
+    ownership against the live session before it takes a blank down instead of
+    trusting a boolean it remembered: a claim left standing by one cycle would
+    otherwise be spent by a later one on a shield that cycle never raised.
+    """
+    global SESSION
+    profile = installed_profile()
+    if SESSION is None or SESSION.name != profile:
+        if profile in (WAYLAND_PROFILE, GUARDED_WAYLAND_PROFILE):
+            binding = load_wayland_binding()
+            display = NativePinShield(binding) if profile == GUARDED_WAYLAND_PROFILE else GnomeShield(binding)
+            SESSION = WaylandSession(binding, MutterIdle(binding), display)
+            SESSION.name = profile
+        else:
+            SESSION = X11Session()
+    return SESSION
+
+
+def suspend_system():
+    """Root observations for the installed profile's stop set."""
+    if installed_profile() in (WAYLAND_PROFILE, GUARDED_WAYLAND_PROFILE):
+        return SuspendSystem(stop_services=WAYLAND_STOP_SERVICES)
+    return SuspendSystem()
+
+
 def idle_seconds():
-    raw = command(["/usr/sbin/runuser", "-u", "radxa", "--", "/usr/bin/env", "DISPLAY=:0",
-                   "XAUTHORITY=/run/user/1000/gdm/Xauthority", "/usr/bin/python3",
-                   "/usr/local/libexec/sage-lantern-display-power", "--query-idle"], timeout=3)
-    if re.fullmatch(r"[0-9]{1,10}", raw) is None or int(raw) > 4294967295:
-        raise ValueError("idle_unavailable")
-    return int(raw) / 1000
+    return session().idle_seconds()
 
 
 def display_power(action):
-    if action not in {"on", "off"}:
-        raise ValueError("invalid_display_action")
-    command(["/usr/sbin/runuser", "-u", "radxa", "--", "/usr/bin/env", "DISPLAY=:0",
-             "XAUTHORITY=/run/user/1000/gdm/Xauthority", "/usr/bin/xset", "dpms", "force", action], timeout=3)
+    session().display_power(action)
 
 
 def power_policy():
@@ -218,52 +393,39 @@ def capability(ready):
 
 
 def kiosk_fence():
-    binding = load_kiosk_binding()
-    backend = LinuxProcesses()
-    backend.validate_host()
-    table = backend.snapshot()
-    matches = [process for process in table.values()
-               if process.uid == binding.uid and process.executable == "/usr/bin/bash"
-               and process.argv in binding.launcher_argv]
-    if len(matches) != 1:
-        raise ValueError("kiosk_launcher_ambiguous")
-    launcher = matches[0]
-    retained = tuple(process for process in table.values() if process.parent == launcher.pid
-                     and process.uid == binding.uid and process.argv == RETAINED_ARGV.get(process.executable))
-    kiosk = KioskFence(launcher_pid=launcher.pid, launcher_start_ticks=launcher.start_ticks,
-                       auth_locked=locked, backend=backend, timeout_seconds=5, retained_session=retained,
-                       binding=binding)
-    if kiosk.preflight() is not True:
-        kiosk.close()
-        raise ValueError("kiosk_inventory_unverified")
-    return kiosk
+    return session().fence()
 
 
 class Appliance:
-    def __init__(self, system, policy, transition_id, kiosk, cancelled=lambda: False, test_wake_after=None):
+    def __init__(self, system, policy, transition_id, kiosk, cancelled=lambda: False, test_wake_after=None,
+                 auxiliary=(CAMERA, UI, DISPLAY)):
         self.system = system
         self.policy = policy
         self.transition_id = transition_id
         self.kiosk = kiosk
         self.cancelled = cancelled
         self.test_wake_after = test_wake_after
+        self.auxiliary = auxiliary
         self.wake_alarm = None
         self.owner = pwd.getpwnam("sage-lantern").pw_uid
         self.auth_pid, self.auth_instance = service_identity(AUTH)
-        self.voice_pid, self.voice_invocation = service_identity(VOICE)
-        self.voice_identity = read_json(VOICE_INSTANCE, owner_uid=self.owner)
-        identity = self.voice_identity
-        if (type(identity) is not dict
-                or set(identity) != {"instance_id", "pid", "start_ticks", "boot_id", "invocation_id"}
-                or type(identity["pid"]) is not int or identity["pid"] != self.voice_pid
-                or identity["invocation_id"] != self.voice_invocation
-                or identity["boot_id"] != BOOT.read_text().strip()
-                or type(identity["instance_id"]) is not str
-                or str(uuid.UUID(identity["instance_id"])) != identity["instance_id"]):
-            raise ValueError("voice_instance_unavailable")
-        ticks = Path(f"/proc/{self.voice_pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
-        if identity["start_ticks"] != ticks:
-            raise ValueError("voice_instance_changed")
+        self.voice = bool(voice_lane())
+        self.voice_pid = self.voice_invocation = self.voice_identity = None
+        if self.voice:
+            self.voice_pid, self.voice_invocation = service_identity(VOICE)
+            self.voice_identity = read_json(VOICE_INSTANCE, owner_uid=self.owner)
+            identity = self.voice_identity
+            if (type(identity) is not dict
+                    or set(identity) != {"instance_id", "pid", "start_ticks", "boot_id", "invocation_id"}
+                    or type(identity["pid"]) is not int or identity["pid"] != self.voice_pid
+                    or identity["invocation_id"] != self.voice_invocation
+                    or identity["boot_id"] != BOOT.read_text().strip()
+                    or type(identity["instance_id"]) is not str
+                    or str(uuid.UUID(identity["instance_id"])) != identity["instance_id"]):
+                raise ValueError("voice_instance_unavailable")
+            ticks = Path(f"/proc/{self.voice_pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+            if identity["start_ticks"] != ticks:
+                raise ValueError("voice_instance_changed")
         self.initial_idle = idle_seconds()
         self.sampled_at = time.monotonic()
         self.submitted = False
@@ -272,7 +434,7 @@ class Appliance:
         self.drained = False
         self.stopped = set()
         publish(AUTHORIZATION.parent / "context.json", dict(transition_id=transition_id,
-                auth_pid=self.auth_pid, auth_instance=self.auth_instance, voice_identity=identity,
+                auth_pid=self.auth_pid, auth_instance=self.auth_instance, voice_identity=self.voice_identity,
                 policy=policy))
 
     def fenced(self):
@@ -300,6 +462,8 @@ class Appliance:
         return auth_receipt_confirmed(value, self.auth_instance) and prior_auth_drained(self.auth_instance, self.owner)
 
     def voice_drained(self):
+        if not self.voice:
+            return True
         value = read_json(VOICE_RECEIPT, owner_uid=self.owner)
         checks = {"http_drained", "http_outcome_known", "session_finalized", "child_groups_absent",
                   "memory_drained", "community_drained", "history_outcome_known", "deadline_met"}
@@ -319,30 +483,34 @@ class Appliance:
         return self.system.inactive_verified(service).confirmed is True
 
     def quiesce(self):
+        def refuse(step):
+            print("quiesce_refused=" + step, flush=True)
+            return False
+
         if not self.auth_inactive() or not self.auth_drained():
-            return False
+            return refuse("auth")
         from sage_lantern.mesh_voice_ipc import managed as mesh_managed, root_control as mesh_control
-        if mesh_managed() and VOICE not in self.stopped:
-            mesh_control("drain", self.transition_id)
-            self.stopped.add(VOICE)
-        if VOICE not in self.stopped:
-            if service_identity(VOICE) != (self.voice_pid, self.voice_invocation):
-                return False
-            publish(VOICE_REQUEST, {**self.voice_identity, "schema": "sage.lantern.voice-drain-request.v1",
-                                    "transition_id": self.transition_id}, mode=0o644)
-        if not self.stop(VOICE) or not self.voice_drained():
-            return False
-        if not all(self.stop(service) for service in (CAMERA, UI, DISPLAY)):
-            return False
+        if self.voice:
+            if mesh_managed() and VOICE not in self.stopped:
+                mesh_control("drain", self.transition_id)
+                self.stopped.add(VOICE)
+            if VOICE not in self.stopped:
+                if service_identity(VOICE) != (self.voice_pid, self.voice_invocation):
+                    return refuse("voice_instance_changed")
+                publish(VOICE_REQUEST, {**self.voice_identity, "schema": "sage.lantern.voice-drain-request.v1",
+                                        "transition_id": self.transition_id}, mode=0o644)
+            if not self.stop(VOICE) or not self.voice_drained():
+                return refuse("voice_drain")
+        if not all(self.stop(service) for service in self.auxiliary):
+            return refuse("auxiliary")
         if self.kiosk.quiesce() is not True:
-            return False
-        display_power("off")
+            return refuse("kiosk:" + str(getattr(self.kiosk, "refusal", "unknown")))
         if not inference_ready():
-            return False
+            return refuse("inference")
         deadline = time.monotonic() + 30
-        while not model_idle(public_json(8081, "/slots")):
+        while not models_idle():
             if time.monotonic() >= deadline:
-                return False
+                return refuse("models_busy")
             time.sleep(0.25)
         self.drained = True
         return True
@@ -352,7 +520,11 @@ class Appliance:
             return False
         current = idle_seconds()
         expected = self.initial_idle + time.monotonic() - self.sampled_at
-        return current >= self.policy["deep_sleep_seconds"] and current >= expected - 1.0
+        # The X11 idle counter is a millisecond clock; the compositor's is
+        # coarser and can lag wall time by seconds (read on C, 30 Sep 2026), so
+        # the growth comparison allows that lag while still refusing a counter
+        # that went backwards (input).
+        return current >= self.policy["deep_sleep_seconds"] and current >= expected - 5.0
 
     def sleep(self):
         if not self.idle_eligible():
@@ -374,6 +546,12 @@ class Appliance:
             if not self.idle_eligible():
                 self.submitted = False
                 return False
+            # The panel blank belongs next to the suspend, after every idle
+            # observation: read on C (30 Sep 2026) the shield perturbs the
+            # compositor's idle evidence, so it must never sit between an
+            # observation and the decision that depends on it.
+            display_power("off")
+            print("display_off=" + str(session().display_outcome), flush=True)
             self.sleep_proof = self.system.suspend_verified()
         finally:
             AUTHORIZATION.unlink(missing_ok=True)
@@ -416,14 +594,22 @@ class Appliance:
         else:
             return False
         from sage_lantern.mesh_voice_ipc import managed as mesh_managed, root_control as mesh_control
-        if mesh_managed():
+        if self.voice and mesh_managed():
             mesh_control("resume", self.transition_id)
-            command(["/usr/bin/systemctl", "start", CAMERA, UI, DISPLAY], timeout=30)
+            command(["/usr/bin/systemctl", "start", *self.auxiliary], timeout=30)
+        elif self.voice:
+            command(["/usr/bin/systemctl", "start", VOICE, *self.auxiliary], timeout=30)
         else:
-            command(["/usr/bin/systemctl", "start", VOICE, CAMERA, UI, DISPLAY], timeout=30)
+            command(["/usr/bin/systemctl", "start", *self.auxiliary], timeout=30)
         if self.kiosk.resume() is not True:
             return False
+        # The panel comes back last, and what it came back to is recorded. A
+        # shield this cycle did not create is preserved rather than dismissed,
+        # so the console may still be behind an operator login: that is a real
+        # reported state, not a successful unblank, and the journal has to say
+        # which one happened.
         display_power("on")
+        print("display_on=" + str(session().display_outcome), flush=True)
         return True
 
 
@@ -431,7 +617,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--sleep-guard", action="store_true")
-    parser.add_argument("--model-started", action="store_true")
+    parser.add_argument("--model-started", metavar="UNIT")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--test-wake-after", type=int, choices=(60,))
     args = parser.parse_args()
@@ -439,19 +625,20 @@ def main():
         parser.error("timed test wake requires --once")
     if args.sleep_guard:
         return 0 if sleep_guard() else 1
-    if args.model_started:
-        return model_started()
+    if args.model_started is not None:
+        return model_started(args.model_started)
     if Path("/run/sage-lantern-deployment.pending").exists():
         raise SystemExit("Deployment recovery is pending")
     if os.geteuid() != 0 or "[deep]" not in Path("/sys/power/mem_sleep").read_text():
         raise SystemExit("Deep suspend prerequisites unavailable")
-    system = SuspendSystem()
+    system = suspend_system()
     if system.verify_stop_guards().confirmed is not True or not guard_loaded():
         raise SystemExit("Sleep service guards unavailable")
     if args.check:
         if not drain_hooks_ready() or not inference_ready():
             raise SystemExit("Sleep drain hooks unavailable")
         power_policy()
+        session().preflight()
         idle_seconds()
         kiosk_fence().close()
         print("Sleep guards, drain hooks and idle observation verified; no suspend requested")
@@ -476,26 +663,28 @@ def main():
                     eligibility.configure(delay_seconds=policy["deep_sleep_seconds"], revision=policy["revision"])
                     capability(True)
                     if eligibility.tick(now=time.monotonic(), idle_seconds=current_idle, locked=current_locked):
-                        if policy != power_policy() or not locked() or not model_idle(public_json(8081, "/slots")):
+                        if policy != power_policy() or not locked() or not models_idle():
                             continue
                         kiosk = kiosk_fence()
                         try:
                             transition_id = str(uuid.uuid4())
                             appliance = Appliance(system, policy, transition_id, kiosk, cancelled=stopped.is_set,
-                                                  test_wake_after=args.test_wake_after)
+                                                  test_wake_after=args.test_wake_after,
+                                                  auxiliary=system.auxiliary_services())
                             result = SleepCycle(journal, appliance, transition_id).run()
                             print("sleep_cycle=" + result.phase.value, flush=True)
                             if args.once:
                                 return 0
                         finally:
                             kiosk.close()
-                except Exception:
+                except Exception as error:
                     capability(False)
                     eligibility.tick()
                     if journal.load().needs_recovery or FENCE.exists() or FENCE.is_symlink():
-                        print("sleep_recovery_required; admission remains fenced", flush=True)
+                        print("sleep_recovery_required; " + type(error).__name__ + ":" + str(error)[:120]
+                              + "; admission remains fenced", flush=True)
                         return 1
-                    print("sleep_deferred; metadata or readiness unavailable", flush=True)
+                    print("sleep_deferred; " + type(error).__name__ + ":" + str(error)[:120], flush=True)
                 stopped.wait(5)
     finally:
         capability(False)

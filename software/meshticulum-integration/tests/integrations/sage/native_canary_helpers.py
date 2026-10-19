@@ -64,7 +64,8 @@ def resource_fixture(key,local,remote,clock,backend_factory=backend):
         peers=[dict(chain_id=remote.chain_id,agent_id=remote.public_key.hex(),radio_public_key='a'*64)])
     resource._config_reader=lambda:copy.deepcopy(resource.config)
     resource.supervisor=SimpleNamespace(phase='active',broker_id=secrets.token_hex(16),_resource=resource,
-        resource_lifecycle_check=lambda:state.live,verified_epoch=lambda:expected_storage_epoch)
+        resource_lifecycle_check=lambda:state.live,verified_epoch=lambda:expected_storage_epoch,
+        admission_epoch=lambda:expected_storage_epoch)
     return SimpleNamespace(state=state,client=client,resource=resource,authority=MeshActionAuthority(),
         clock=clock,key=key,local=local,remote=remote)
 

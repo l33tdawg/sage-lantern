@@ -1,5 +1,10 @@
 # Guarded R7 vision activation and provisioning default
 
+**Superseded 2026-09-29 (D-016):** the serving profile is now NPU text on 8081
++ NPU vision on 8082 (`sage-lantern-vlm.service`); the CPU 4B fallback described
+below is retired for C–F and kept for bench comparison only. This document stays
+as the dated R7 record.
+
 Source review candidate, not deployed. The vision CLI still rejects `--apply`
 before loading inputs. Owner approval for A's model restart and one two-second
 local capture has been relayed; no additional owner approval is being requested.

@@ -1,0 +1,215 @@
+{
+  "profile": "sustained",
+  "max_tokens": 8192,
+  "completed_turns": 7,
+  "requested_turns": 7,
+  "checks": {
+    "turn1_two_paragraphs": true,
+    "turn1_no_bullet_fragments": true,
+    "turn1_not_truncated_by_cap": true,
+    "correction_turn": true,
+    "four_bullets": true,
+    "four_unique_bullets": true,
+    "four_complete_bullets": true,
+    "final_three_paragraphs": true,
+    "final_uses_friday": true,
+    "final_uses_teal": true,
+    "final_uses_two_people": false,
+    "final_retired_values_absent": true,
+    "turn7_nonempty": true,
+    "turn7_no_current_retired_claim": true,
+    "final_no_bullet_fragments": true
+  },
+  "all_checks_pass": false,
+  "turns": [
+    {
+      "turn": 1,
+      "ok": true,
+      "text": "The Harborlight Tool Library operations note is as follows:\n\nThe intake label for new tools is amber, indicating they are high-risk and require immediate attention. High-risk tests necessitate the involvement of two people to ensure thorough evaluation and adherence to safety protocols. Safety reviews are scheduled for Wednesday, emphasizing the importance of compliance with safety standards and the need for meticulous inspection of all tools before use.",
+      "ttft_ms": 11959.027457982302,
+      "total_ms": 11959.06158303842,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 67,
+        "total_tokens": 67
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 67,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 2,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "complete_bullets": 0,
+      "words": 69,
+      "at_cap": false
+    },
+    {
+      "turn": 2,
+      "ok": true,
+      "text": "The Harborlight Tool Library maintains a monthly maintenance routine to ensure all tools are in optimal condition. This includes a thorough inspection of each tool, checking for wear and tear, and verifying that all safety features are functioning correctly. The intake label of amber for high-risk tests remains unchanged, requiring dual-person reviews to maintain safety standards. Safety reviews are scheduled for Wednesday, reinforcing the commitment to regular maintenance and safety checks.",
+      "ttft_ms": 2339.8901659529656,
+      "total_ms": 13670.418165856972,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 352,
+        "completion_tokens": 82,
+        "total_tokens": 434
+      },
+      "timings": {
+        "prompt_n": 352,
+        "prompt_ms": 2236.61,
+        "prompt_per_token_ms": 6.354005681818182,
+        "predicted_n": 82,
+        "predicted_ms": 11369.6,
+        "predicted_per_token_ms": 138.65365853658537
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "complete_bullets": 0,
+      "words": 73,
+      "at_cap": false
+    },
+    {
+      "turn": 3,
+      "ok": true,
+      "text": "The Harborlight Tool Library maintains a monthly maintenance routine to ensure all tools are in optimal condition. This includes a thorough inspection of each tool, checking for wear and tear, and verifying that all safety features are functioning correctly. The intake label for new tools is teal, indicating they are low-risk and require less immediate attention. Safety reviews are scheduled for Friday, reinforcing the commitment to regular maintenance and safety checks.",
+      "ttft_ms": 3349.7002909425646,
+      "total_ms": 14419.911207864061,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 471,
+        "completion_tokens": 81,
+        "total_tokens": 552
+      },
+      "timings": {
+        "prompt_n": 471,
+        "prompt_ms": 3262.57,
+        "prompt_per_token_ms": 6.926900212314226,
+        "predicted_n": 81,
+        "predicted_ms": 11088.9,
+        "predicted_per_token_ms": 136.9
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "complete_bullets": 0,
+      "words": 72,
+      "at_cap": false
+    },
+    {
+      "turn": 4,
+      "ok": true,
+      "text": "- Volunteers are encouraged to use tools with a teal intake label, indicating they are low-risk and require less immediate attention.\n- Safety reviews are scheduled for Friday, ensuring all tools are in optimal condition before use.\n- Dual-person reviews are required for high-risk tests, emphasizing the importance of thorough evaluation.\n- Regular monthly maintenance routines are in place to keep all tools in optimal condition.",
+      "ttft_ms": 15814.969457918778,
+      "total_ms": 15815.011915983632,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 66,
+        "total_tokens": 66
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 66,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 1,
+      "bullets": 4,
+      "unique_bullets": 4,
+      "complete_bullets": 4,
+      "words": 65,
+      "at_cap": false
+    },
+    {
+      "turn": 5,
+      "ok": true,
+      "text": "42",
+      "ttft_ms": 4866.464958060533,
+      "total_ms": 5156.106167007238,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 674,
+        "completion_tokens": 2,
+        "total_tokens": 676
+      },
+      "timings": {
+        "prompt_n": 674,
+        "prompt_ms": 4815.52,
+        "prompt_per_token_ms": 7.1446884272997035,
+        "predicted_n": 2,
+        "predicted_ms": 288.744,
+        "predicted_per_token_ms": 144.372
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "complete_bullets": 0,
+      "words": 1,
+      "at_cap": false
+    },
+    {
+      "turn": 6,
+      "ok": true,
+      "text": "The Harborlight Tool Library is in the process of handing over tools to the next shift. The intake label for these tools is teal, indicating they are low-risk and require less immediate attention.\n\nSafety reviews are scheduled for Friday, ensuring all tools are in optimal condition before use. High-risk tests still require dual-person reviews to maintain safety standards.\n\nA monthly maintenance task involves a thorough inspection of each tool, checking for wear and tear and verifying that all safety features are functioning correctly.",
+      "ttft_ms": 18930.130749940872,
+      "total_ms": 18930.172207998112,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 83,
+        "total_tokens": 83
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 83,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 3,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "complete_bullets": 0,
+      "words": 86,
+      "at_cap": false
+    },
+    {
+      "turn": 7,
+      "ok": true,
+      "text": "The Harborlight Tool Library is in the process of handing over tools with a teal intake label, indicating low-risk and requiring less immediate attention, with safety reviews scheduled for Friday and dual-person reviews for high-risk tests, and a monthly maintenance task involving a thorough inspection of each tool.",
+      "ttft_ms": 18849.522250005975,
+      "total_ms": 27459.76929203607,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 836,
+        "completion_tokens": 56,
+        "total_tokens": 892
+      },
+      "timings": {
+        "prompt_n": 836,
+        "prompt_ms": 6178.85,
+        "prompt_per_token_ms": 7.390968899521532,
+        "predicted_n": 56,
+        "predicted_ms": 8593.79,
+        "predicted_per_token_ms": 153.46053571428573
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "complete_bullets": 0,
+      "words": 51,
+      "at_cap": false
+    }
+  ]
+}

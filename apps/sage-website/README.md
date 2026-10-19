@@ -16,7 +16,11 @@ Public contact: dhillon@sage.ngo. Contact cards open email drafts; the website d
 
 Only `dist/client` is web content. Never upload the workspace, device evidence, keys or source caches. `deploy/30-sage-website.conf` terminates website TLS on a dedicated loopback listener, routed by the existing SNI multiplexer. `deploy/install-release.py` validates a bounded change, backs up configuration and activates a release symlink; failures restore the old configuration.
 
-Production hostname: https://sage.ngo/. The server is the existing SAGE Natter origin. Public DNS was confirmed through Cloudflare and Google resolvers after a stale local negative DNS answer. No DNS or public-domain change was made.
+Primary production hostname: https://sage-foundation.net/. sage.ngo and
+sage-commons.org are secondary: they serve the same pages and every page
+declares sage-foundation.net as its canonical. The server is the existing SAGE
+Natter origin. Public DNS was confirmed through Cloudflare and Google resolvers
+after a stale local negative DNS answer.
 
 Copy and skill provenance is kept in the private `internal-docs/website/` tree,
 outside this repository.

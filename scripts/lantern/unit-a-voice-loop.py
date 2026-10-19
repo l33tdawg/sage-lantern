@@ -30,8 +30,10 @@ from pathlib import Path
 from typing import Any
 
 from sage_lantern import device_access
+from sage_lantern.session_context import SessionContext
 from sage_lantern.active_conversation import ActiveConversation, MAX_INPUT_BYTES
 from sage_lantern.answer_suggestions import validate_suggestions
+from sage_lantern.transcript_repair import repair
 from sage_lantern.inference_metrics import project as project_metrics
 from sage_lantern.orchestrator import VoiceOrchestrator, validated_question
 from sage_lantern.community_service import CommunityError, CommunityService, ROUTES as COMMUNITY_PATHS
@@ -55,6 +57,7 @@ CONTROL_ORIGINS = {"http://127.0.0.1:3100", "http://localhost:3100"}
 CONTROL_HOSTS = {"127.0.0.1:3197", "localhost:3197"}
 MAX_EVENT_BYTES = 1024 * 1024
 REVIEW_PATHS = {"/review/submit", "/review/cancel"}
+QUESTION_PATHS = {"/question/start"}
 REVIEW_SECONDS = 300
 CONVERSATION_PATHS = {"/conversation/state", "/conversation/select"}
 HISTORY_PATHS = {"/history/list", "/history/settings", "/history/delete", "/history/clear", "/history/photo", "/history/context"}
@@ -160,6 +163,27 @@ def lock_required():
 def token_authorized(token):
     try:
         return isinstance(token, str) and bool(token) and device_access.authorized(token)
+    except Exception:
+        return False
+
+
+def capture_session_context(token):
+    """Protected admissions require a broker context; legacy mode has none."""
+    if not lock_required():
+        return None
+    try:
+        context = device_access.session_context(token)
+    except Exception:
+        context = None
+    if not isinstance(context, SessionContext):
+        raise DeviceLocked()
+    return context
+
+
+def context_current(token, context):
+    try:
+        return (isinstance(context, SessionContext) and token_authorized(token)
+                and device_access.session_context(token) == context)
     except Exception:
         return False
 
@@ -343,14 +367,26 @@ class LocalHistory:
         self.prune_media(value)
         return value
 
-    def request(self, action, payload, *, access_check=None):
+    def request(self, action, payload, *, access_check=None, context_selection=None):
         if action == "context":
             if set(payload) != {"query"} or not self.memory:
                 raise ControlError(503, "conversation_memory_unavailable")
+            if access_check is not None and access_check() is not True:
+                raise ControlError(403, "device_locked")
             try:
-                return {"context": self.memory.context(payload["query"])}
+                if context_selection is None:
+                    result = self.memory.context(payload["query"])
+                else:
+                    result = self.memory.context(payload["query"],
+                                                 thread_id=context_selection["thread_id"],
+                                                 selected_items=context_selection["items"])
             except Exception:
                 raise ControlError(503, "conversation_memory_unavailable") from None
+            if access_check is not None and access_check() is not True:
+                raise ControlError(403, "device_locked")
+            return {"context": result}
+        if context_selection is not None:
+            raise ControlError(400, "invalid_history_payload")
         if action in {"list", "clear"}:
             if payload != {}:
                 raise ControlError(400, "invalid_history_payload")
@@ -525,6 +561,7 @@ class VoiceControl:
         self.photo_ready = photo_ready is True and photo_dir is not None
         self.photo_dir = photo_dir
         self.device_token = None
+        self.device_context = None
         self.history_media_check = require_history_media
         self.closing = threading.Event()
         self.message_result = None
@@ -533,11 +570,13 @@ class VoiceControl:
         self.conversation = ActiveConversation()
         self.correction_available = lambda: False
         self.review_available = lambda: False
+        self.typed_available = lambda: False
         self.correction_journal = None
         self.source_session_id = None
         self.community = CommunityService(dictation_available=dictation_available, source_fetch=self.community_source,
                                           mesh_provider=mesh_provider)
         self.community_token = None
+        self.community_context = None
         self.community_epoch = 0
         self.community_cleanup_failed = False
         self.community_check_at = 0
@@ -553,17 +592,23 @@ class VoiceControl:
     def link_device(self, token):
         if lock_required() and not token_authorized(token):
             raise ControlError(403, "device_locked")
+        context = capture_session_context(token)
         with self.lock:
             self.require_open()
-            if self.device_token != token:
+            if self.device_token != token or self.device_context != context:
                 self.conversation.clear()
+                self.completed_source = None
+                self.source_session_id = None
+                self.correction_epoch += 1
             self.device_token = token
+            self.device_context = context
 
     def revoke_device(self, *, clear_community=True):
         with self.lock:
             self.correction_epoch += 1
             self.conversation.clear()
             self.device_token = None
+            self.device_context = None
             self.message_result = None
             self.completed_source = None
             self.source_session_id = None
@@ -571,6 +616,7 @@ class VoiceControl:
                 self.owner["action"] = "cancel"
             if clear_community:
                 self.community_token = None
+                self.community_context = None
                 self.community_epoch += 1
         if clear_community:
             try:
@@ -583,15 +629,17 @@ class VoiceControl:
         if not token_authorized(token):
             self.revoke_device()
             raise ControlError(403, "device_locked")
+        context = capture_session_context(token)
         with self.lock:
             self.require_open()
             if self.community_cleanup_failed:
                 raise ControlError(503, "community_unavailable")
-            changed = self.community_token != token
+            changed = self.community_token != token or self.community_context != context
             if changed:
                 self.community_epoch += 1
                 self.community_token = token
-                if self.source_session_id != hashlib.sha256(token.encode("utf-8")).hexdigest():
+                self.community_context = context
+                if self.source_session_id != hashlib.sha256(token.encode("utf-8")).hexdigest() or self.device_context != context:
                     self.completed_source = None
                     self.source_session_id = None
             epoch = self.community_epoch
@@ -607,7 +655,7 @@ class VoiceControl:
                 current = not self.closing.is_set() and not self.community_cleanup_failed and self.community_epoch == epoch and self.community_token == token
             if not current:
                 return False
-            if not token_authorized(token):
+            if not token_authorized(token) or (context is not None and not context_current(token, context)):
                 self.revoke_device()
                 return False
             with self.lock:
@@ -618,9 +666,10 @@ class VoiceControl:
     def expire_community_access(self):
         with self.lock:
             token = self.community_token
+            context = self.community_context
         if token is not None and time.monotonic() >= self.community_check_at:
             self.community_check_at = time.monotonic() + 0.5
-            if not token_authorized(token):
+            if not token_authorized(token) or (context is not None and not context_current(token, context)):
                 self.revoke_device()
 
     def community_source(self, source_id):
@@ -629,9 +678,11 @@ class VoiceControl:
             source = self.completed_source
             token = self.community_token
             epoch = self.community_epoch
+            context = self.community_context
             if self.closing.is_set() or token is None:
                 raise CommunityError("not_found", 404)
             latest = (source is not None and source["source_id"] == source_id
+                      and self.device_context == context
                       and self.source_session_id == hashlib.sha256(token.encode("utf-8")).hexdigest())
             snapshot = {key: source[key] for key in ("question", "answer", "has_photo")} if latest else None
             history = getattr(self, "protected_history", None)
@@ -639,7 +690,7 @@ class VoiceControl:
             with self.lock:
                 current = (not self.closing.is_set() and not self.community_cleanup_failed
                            and self.community_epoch == epoch and self.community_token == token)
-            if not current or not token_authorized(token):
+            if not current or not token_authorized(token) or (context is not None and not context_current(token, context)):
                 raise CommunityError("device_locked", 403)
         check()
         if snapshot is None:
@@ -675,6 +726,8 @@ class VoiceControl:
                     or owner.get("purpose", "answer") != "answer" or owner["phase"] != "processing"
                     or owner.get("action") == "cancel" or owner.get("device_token") != device_token):
                 return
+            if lock_required() and not context_current(device_token, owner.get('session_context')):
+                return
             self.completed_source = {"source_id": session_id, "question": question,
                                      "answer": answer, "has_photo": owner.get("image_digest") is not None,
                                      "correction_photo": owner.get("correction_photo")}
@@ -691,7 +744,8 @@ class VoiceControl:
                 return []
             snapshot = owner.get('conversation')
             token = owner.get('device_token')
-        if not token_authorized(token):
+            context = owner.get('session_context')
+        if not token_authorized(token) or (lock_required() and not context_current(token, context)):
             self.revoke_device()
             return []
         with self.lock:
@@ -710,12 +764,47 @@ class VoiceControl:
             return {'thread_id': snapshot.thread_id,
                     **({'supersedes': snapshot.supersedes} if snapshot.supersedes else {})}
 
+    def conversation_context_selection(self, token):
+        """Bind inference recall to its frozen branch without accepting client scope."""
+        with self.lock:
+            owner = self.owner
+            if (owner is None or owner.get('phase') != 'processing'
+                    or owner.get('purpose', 'answer') != 'answer'):
+                return None
+            snapshot = owner.get('conversation')
+            context = owner.get('session_context')
+
+        def current():
+            if not token_authorized(token) or (lock_required() and not context_current(token, context)):
+                return False
+            with self.lock:
+                return (not self.closing.is_set() and self.owner is owner
+                        and owner.get('conversation') is snapshot
+                        and owner.get('device_token') == token
+                        and owner.get('phase') == 'processing' and owner.get('action') != 'cancel'
+                        and snapshot is not None and snapshot.revision == self.conversation.revision)
+
+        if not current():
+            raise ControlError(409, 'conversation_changed')
+        selection = {'thread_id': snapshot.thread_id,
+                     'items': [turn.item(snapshot.thread_id) for turn in snapshot.turns]}
+        return selection, current
+
     def conversation_request(self, path, payload, token, history):
         if not token_authorized(token):
             self.revoke_device()
             raise ControlError(403, 'device_locked')
+        context = capture_session_context(token)
         with self.lock:
             self.require_open()
+            if self.device_context != context:
+                if self.owner:
+                    raise DeviceLocked()
+                self.conversation.clear()
+                self.completed_source = None
+                self.source_session_id = None
+                self.correction_epoch += 1
+                self.device_context = context
             epoch = self.correction_epoch
             if path == '/conversation/select' and self.owner:
                 raise ControlError(409, 'voice_busy')
@@ -748,6 +837,7 @@ class VoiceControl:
                     raise ControlError(409, 'voice_busy')
                 self.conversation.restore(token, payload['thread_id'], items)
                 self.device_token = token
+                self.device_context = context
                 self.completed_source = None
                 self.source_session_id = None
                 self.correction_epoch += 1
@@ -770,6 +860,12 @@ class VoiceControl:
                 return self.owner.get("device_token")
         return None
 
+    def session_context_for(self, session_id):
+        with self.lock:
+            if self.owner and self.owner["session_id"] == session_id:
+                return self.owner.get("session_context")
+        return None
+
     def _expire(self):
         if self.message_result and time.monotonic() >= self.message_result["expires"]:
             self.message_result = None
@@ -777,6 +873,13 @@ class VoiceControl:
         if owner and owner["phase"] == "review":
             if time.monotonic() >= owner["review_deadline"]:
                 owner["action"] = "cancel"
+            return
+        if (owner and owner["source"] == "typed" and owner["phase"] in {"queued", "recording"}
+                and time.monotonic() >= owner["limit"]):
+            # A typed question is picked up by the controller immediately; this
+            # is only the safety net that stops a lost session from holding the
+            # device busy forever. The review deadline governs after this.
+            owner["action"] = "cancel"
             return
         if owner and owner["source"] == "touch" and owner["phase"] != "processing" and owner["action"] != "stop":
             now = time.monotonic()
@@ -791,6 +894,121 @@ class VoiceControl:
             if not owner or owner['session_id'] != session_id or owner['action'] == 'cancel':
                 raise ControlError(409, 'session_cancelled')
             if owner['phase'] != 'processing':
+                raise ControlError(409, 'review_unavailable')
+            owner.update(phase='review', action=None, review_id=str(uuid.uuid4()),
+                         review_deadline=time.monotonic() + REVIEW_SECONDS)
+            return owner['review_id']
+
+    def open_typed_question(self, request_id, device_token, image=None, original=None):
+        """Open a question session that will never capture audio.
+
+        A device without a microphone (or without a working capture path) must
+        stay usable: the typing lane opens the same review/submit path the
+        spoken lane uses, so one validated pipeline answers typed text. The
+        session carries no transcript until the review is submitted; the caller
+        never sees another session's text and the device lock still governs it.
+        An attached photo is held exactly as the spoken lane holds it — the
+        question is typed instead of recorded, the image path is identical.
+        """
+        if not token_authorized(device_token):
+            raise ControlError(403, 'device_locked')
+        if self.typed_available() is not True:
+            raise ControlError(503, 'typed_unavailable')
+        if original is not None:
+            self.history_media_check()
+            if image is None:
+                raise ControlError(400, 'original_requires_image')
+            validate_photo(original, original=True)
+        if image is not None:
+            if not self.photo_ready:
+                raise ControlError(503, 'photo_unavailable')
+            validate_photo(image)
+        digest = hashlib.sha256(image).hexdigest() if image is not None else None
+        original_digest = hashlib.sha256(original).hexdigest() if original is not None else None
+        context = capture_session_context(device_token)
+        with self.lock:
+            self.require_open()
+            self._expire()
+            if request_id in self.requests:
+                owner = self.owner
+                if (owner is not None and owner.get('source') == 'typed'
+                        and owner.get('request_id') == request_id
+                        and owner.get('device_token') == device_token
+                        and owner.get('session_context') == context
+                        and owner.get('image_digest') == digest
+                        and owner.get('original_digest') == original_digest):
+                    return 200, self._credentials()
+                raise ControlError(409, 'stale_request')
+            if self.owner:
+                raise ControlError(409, 'voice_busy')
+            now = time.monotonic()
+            if self.device_context != context:
+                self.conversation.clear()
+            self.owner = {
+                "purpose": "answer", "conversation": self.conversation.prepare(device_token),
+                "question": None, "source_id": None, "correction_fingerprint": None,
+                "followup_source": None, "request_id": request_id, "source": "typed",
+                "phase": "uploading" if image is not None else "queued", "action": None,
+                "session_id": str(uuid.uuid4()), "token": secrets.token_urlsafe(32),
+                "lease": now + LEASE_SECONDS, "limit": now + self.max_seconds,
+                "image_digest": digest, "image_path": None,
+                "original_digest": original_digest, "original": original,
+                "device_token": device_token,
+                "session_context": context,
+            }
+            self.device_token = device_token
+            self.device_context = context
+            self.message_result = None
+            self.completed_source = None
+            self.source_session_id = None
+            self.requests[request_id] = self.owner["session_id"]
+            while len(self.requests) > MAX_REQUESTS:
+                self.requests.popitem(last=False)
+            credentials = self._credentials()
+        if image is None:
+            return 201, credentials
+        path = None
+        try:
+            self.photo_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            info = self.photo_dir.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                raise OSError("unsafe photo directory")
+            descriptor, name = tempfile.mkstemp(prefix="photo-", suffix=".jpg", dir=self.photo_dir)
+            path = Path(name)
+            with os.fdopen(descriptor, "wb") as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                stream.write(image)
+            with self.lock:
+                self._expire()
+                if (not self.owner or self.owner["session_id"] != credentials["session_id"]
+                        or self.owner["action"] == "cancel"):
+                    raise ControlError(409, "session_cancelled")
+                self.owner["image_path"] = path
+                self.owner["phase"] = "queued"
+                now = time.monotonic()
+                self.owner["lease"] = now + LEASE_SECONDS
+                self.owner["limit"] = now + self.max_seconds
+            return 201, credentials
+        except BaseException as error:
+            try:
+                if path is not None:
+                    path.unlink(missing_ok=True)
+            finally:
+                self.finish(credentials["session_id"])
+            if isinstance(error, OSError):
+                raise ControlError(503, "photo_storage_unavailable") from None
+            raise
+
+    def begin_typed_review(self, session_id):
+        """Enter the review phase with no transcript; only typed text follows."""
+        with self.lock:
+            self.require_open()
+            self._expire()
+            owner = self.owner
+            if (not owner or owner['session_id'] != session_id
+                    or owner.get('source') != 'typed' or owner['action'] == 'cancel'):
+                raise ControlError(409, 'session_cancelled')
+            if owner['phase'] not in {'queued', 'recording'}:
                 raise ControlError(409, 'review_unavailable')
             owner.update(phase='review', action=None, review_id=str(uuid.uuid4()),
                          review_deadline=time.monotonic() + REVIEW_SECONDS)
@@ -818,6 +1036,8 @@ class VoiceControl:
                     or owner.get('review_id') != payload['review_id']
                     or owner.get('device_token') != device_token):
                 raise ControlError(409, 'review_changed')
+            if lock_required() and not context_current(device_token, owner.get('session_context')):
+                raise DeviceLocked()
             if owner['action'] == 'cancel':
                 if action == 'cancel':
                     return {'session_id': owner['session_id'], 'status': 'cancelling'}
@@ -897,6 +1117,7 @@ class VoiceControl:
         if not token_authorized(device_token):
             raise ControlError(403, 'device_locked')
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        context = capture_session_context(device_token)
         with self.lock:
             self.require_open()
             if payload['request_id'] in self.requests:
@@ -905,6 +1126,7 @@ class VoiceControl:
                 raise ControlError(409, 'processing_busy' if self.owner['phase'] == 'processing' else 'voice_busy')
             source = self.completed_source
             latest = (source is not None and source['source_id'] == payload['source_id']
+                      and self.device_context == context
                       and self.source_session_id == hashlib.sha256(device_token.encode()).hexdigest())
             source = dict(source) if latest and payload['source_kind'] == 'current' else None
             if payload['source_kind'] == 'current' and source is None:
@@ -1016,6 +1238,7 @@ class VoiceControl:
             validate_photo(image)
         digest = hashlib.sha256(image).hexdigest() if image is not None else None
         original_digest = hashlib.sha256(original).hexdigest() if original is not None else None
+        context = capture_session_context(device_token)
         with self.lock:
             self.require_open()
             self._expire()
@@ -1024,6 +1247,8 @@ class VoiceControl:
             if request_id in self.requests:
                 if not self.owner or self.owner["request_id"] != request_id or self.owner["action"] == "cancel":
                     raise ControlError(409, "stale_request")
+                if self.owner.get("session_context") != context:
+                    raise DeviceLocked()
                 if self.owner.get("image_digest") != digest or self.owner.get("original_digest") != original_digest or self.owner.get("device_token") != device_token or self.owner.get("purpose", "answer") != purpose:
                     raise ControlError(409, "request_conflict")
                 if (self.owner.get('question') != question or self.owner.get('source_id') != source_id
@@ -1037,6 +1262,7 @@ class VoiceControl:
                 raise ControlError(409, "voice_busy")
             if followup_source is not None:
                 if (question is None or source_id is not None or image is not None
+                        or self.device_context != context
                         or self.device_token != device_token
                         or self.completed_source is None
                         or self.completed_source.get('source_id') != followup_source
@@ -1046,6 +1272,8 @@ class VoiceControl:
                         or self.conversation.owner != hashlib.sha256(device_token.encode('utf-8')).hexdigest()):
                     raise ControlError(409, 'followup_source_changed')
             now = time.monotonic()
+            if self.device_context != context:
+                self.conversation.clear()
             self.owner = {
                 "purpose": purpose,
                 "conversation": self.conversation.prepare(device_token, replace_session=source_id) if purpose == 'answer' else None,
@@ -1057,8 +1285,10 @@ class VoiceControl:
                 "image_digest": digest, "image_path": None,
                 "original_digest": original_digest, "original": original,
                 "device_token": device_token,
+                "session_context": context,
             }
             self.device_token = device_token
+            self.device_context = context
             self.message_result = None
             self.completed_source = None
             self.source_session_id = None
@@ -1102,6 +1332,23 @@ class VoiceControl:
     def _credentials(self):
         return {"session_id": self.owner["session_id"], "token": self.owner["token"], "lease_seconds": LEASE_SECONDS}
 
+    def confirm_start(self, request_id, session_id, token, *, device_token=None):
+        """Correlate a delayed reply with the current owner; never extend its lease."""
+        with self.lock:
+            self.require_open()
+            self._expire()
+            owner = self.owner
+            if (not owner or owner["source"] != "touch" or owner["session_id"] != session_id
+                    or owner["request_id"] != request_id or not hmac.compare_digest(owner["token"], token)
+                    or owner["action"] is not None or owner["phase"] not in {"queued", "recording"}):
+                raise ControlError(409, "session_mismatch")
+            if (owner.get("device_token") != device_token
+                    or ((lock_required() or owner.get("purpose") == "message") and not token_authorized(device_token))):
+                raise ControlError(403, "device_locked")
+            if lock_required() and not context_current(device_token, owner.get('session_context')):
+                raise DeviceLocked()
+            return {"session_id": session_id, "request_id": request_id, "status": "current"}
+
     def command(self, action: str, session_id: str, token: str):
         with self.lock:
             self._expire()
@@ -1109,10 +1356,14 @@ class VoiceControl:
             if owner is None and action == "cancel" and self.message_result:
                 result = self.message_result
                 if result["session_id"] == session_id and hmac.compare_digest(result["token"], token):
+                    if lock_required() and not context_current(result.get('device_token'), result.get('session_context')):
+                        raise DeviceLocked()
                     result["result"] = {"phase": "cancelled"}
                     return {"session_id": session_id, "status": "cancelled"}
             if not owner or owner["source"] != "touch" or owner["session_id"] != session_id or not hmac.compare_digest(owner["token"], token):
                 raise ControlError(409, "session_mismatch")
+            if lock_required() and not context_current(owner.get('device_token'), owner.get('session_context')):
+                raise DeviceLocked()
             if owner["phase"] == "processing":
                 if owner.get("purpose") == "message" and action == "cancel":
                     owner["action"] = "cancel"
@@ -1137,11 +1388,13 @@ class VoiceControl:
             if self.owner is None and physical_press:
                 if lock_required():
                     try:
-                        admitted = token_authorized(self.device_token) and device_access.device_unlocked()
+                        admitted = (context_current(self.device_token, self.device_context)
+                                    and device_access.device_unlocked())
                     except Exception:
                         admitted = False
                     if not admitted:
                         self.device_token = None
+                        self.device_context = None
                         return None
                 self.message_result = None
                 self.completed_source = None
@@ -1151,6 +1404,7 @@ class VoiceControl:
                     "conversation": self.conversation.prepare(self.device_token),
                     "source": "physical", "phase": "queued", "action": None,
                     "device_token": self.device_token,
+                    "session_context": self.device_context,
                 }
             if self.owner and self.owner["phase"] == "queued":
                 self.owner["phase"] = "recording"
@@ -1179,6 +1433,8 @@ class VoiceControl:
                     or candidate.get("device_token") != device_token
                     or not hmac.compare_digest(candidate["token"], token)):
                 raise ControlError(409, "session_mismatch")
+            if lock_required() and not context_current(device_token, candidate.get('session_context')):
+                raise DeviceLocked()
             if "result" in candidate:
                 return {"session_id": session_id, "purpose": "message", **candidate["result"]}
             phase = "cancelling" if candidate["action"] == "cancel" else "transcribing" if candidate["phase"] == "processing" else candidate["phase"]
@@ -1192,7 +1448,7 @@ class VoiceControl:
                 return
             if owner["action"] == "cancel":
                 result = {"phase": "cancelled"}
-            self.message_result = {key: owner[key] for key in ("session_id", "token", "device_token", "purpose")}
+            self.message_result = {key: owner[key] for key in ("session_id", "token", "device_token", "purpose", "session_context")}
             self.message_result.update(result=result, expires=time.monotonic() + 120)
 
     def source(self, session_id: str):
@@ -1243,25 +1499,31 @@ class VoiceControl:
 
     def image_path(self, session_id):
         with self.lock:
-            if self.owner and self.owner["session_id"] == session_id and self.owner["source"] == "touch" and self.owner["phase"] == "processing":
+            if (self.owner and self.owner["session_id"] == session_id
+                    and self.owner["source"] in {"touch", "typed"} and self.owner["phase"] == "processing"):
                 return self.owner.get("image_path")
         return None
 
     def original_bytes(self, session_id):
         with self.lock:
-            if self.owner and self.owner["session_id"] == session_id and self.owner["source"] == "touch" and self.owner["phase"] == "processing":
+            if (self.owner and self.owner["session_id"] == session_id
+                    and self.owner["source"] in {"touch", "typed"} and self.owner["phase"] == "processing"):
                 return self.owner.get("original")
         return None
 
     def has_photo(self, session_id):
         with self.lock:
-            return bool(self.owner and self.owner["session_id"] == session_id and self.owner["source"] == "touch" and self.owner["phase"] in {"recording", "processing", "review"} and self.owner.get("image_path") is not None)
+            return bool(self.owner and self.owner["session_id"] == session_id
+                        and self.owner["source"] in {"touch", "typed"}
+                        and self.owner["phase"] in {"recording", "processing", "review"}
+                        and self.owner.get("image_path") is not None)
 
     def busy(self):
         with self.lock:
             return self.owner is not None
 
     def clear(self, *, device_token=None):
+        context = capture_session_context(device_token)
         with self.lock:
             self.require_open()
             if self.owner:
@@ -1276,6 +1538,7 @@ class VoiceControl:
                 "session_id": str(uuid.uuid4()), "request_id": None,
                 "source": "clear", "phase": "queued", "action": None,
                 "device_token": device_token,
+                "session_context": context,
             }
             return {"status": "clearing"}
 
@@ -1344,10 +1607,20 @@ class VoiceHandler(BaseHTTPRequestHandler):
         return values[0] if len(values) == 1 else None
 
     def respond(self, status, payload, *, preflight=False):
+        context = getattr(self, "request_session_context", None)
+        if context is not None and status < 400:
+            if not context_current(self.header("X-Lantern-Session"), context):
+                status, payload = 403, {"error": "device_locked"}
+                self.server.control.revoke_device()
+            else:
+                payload = {**payload, "session_context": context.to_dict()}
         body = json.dumps(payload).encode("utf-8")
         access_check = getattr(self, "community_access_check", None) or getattr(self, "history_access_check", None)
         if access_check is not None and not access_check():
             status, body = 403, b'{"error":"device_locked"}'
+        selection_check = getattr(self, "context_selection_check", None)
+        if status < 400 and selection_check is not None and not selection_check():
+            status, body = 409, b'{"error":"conversation_changed"}'
         self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -1365,6 +1638,11 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 session_header = ", X-Lantern-Session" if "x-lantern-session" in {value.strip() for value in requested} else ""
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Lantern-Voice" + session_header)
         self.end_headers()
+        if context is not None and status < 400 and not context_current(self.header("X-Lantern-Session"), context):
+            self.server.control.revoke_device()
+            return
+        if status < 400 and selection_check is not None and not selection_check():
+            return
         self.wfile.write(body)
         if access_check is not None and not access_check():
             self.server.control.revoke_device()
@@ -1387,6 +1665,7 @@ class VoiceHandler(BaseHTTPRequestHandler):
             status = {"ok": True} if lock_required() else {"touch_ready": True, "busy": self.server.control.busy(), "photo_ready": self.server.control.photo_ready}
             status['correction_ready'] = self.server.control.correction_available() is True
             status['review_ready'] = self.server.control.review_available() is True
+            status['typed_ready'] = self.server.control.typed_available() is True
             self.respond(200, status)
         except ControlError as error:
             self.respond(error.status, {"error": error.code})
@@ -1394,7 +1673,7 @@ class VoiceHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         try:
             self.validate(control=True)
-            if self.path not in {"/followup", "/correct", "/correct/reconcile", "/start", "/keepalive", "/stop", "/cancel", "/clear", "/session/link", "/message/status"} | HISTORY_PATHS | COMMUNITY_PATHS | CONVERSATION_PATHS | REVIEW_PATHS:
+            if self.path not in {"/followup", "/correct", "/correct/reconcile", "/start", "/start/confirm", "/keepalive", "/stop", "/cancel", "/clear", "/session/link", "/message/status"} | HISTORY_PATHS | COMMUNITY_PATHS | CONVERSATION_PATHS | REVIEW_PATHS | QUESTION_PATHS:
                 raise ControlError(404, "not_found")
             requested = [value.strip().lower() for value in (self.header("Access-Control-Request-Headers") or "").split(",")]
             if self.header("Access-Control-Request-Method") != "POST" or sorted(requested) not in (["content-type", "x-lantern-voice"], ["content-type", "x-lantern-session", "x-lantern-voice"]):
@@ -1412,19 +1691,27 @@ class VoiceHandler(BaseHTTPRequestHandler):
             if len(self.headers.get_all("X-Lantern-Session", [])) > 1:
                 raise ControlError(400, "invalid_device_session")
             device_token = self.header("X-Lantern-Session")
-            gated = self.path in CONVERSATION_PATHS or self.path in {'/followup', '/correct', '/correct/reconcile'} or self.path in COMMUNITY_PATHS or self.path in REVIEW_PATHS or lock_required()
+            gated = self.path in CONVERSATION_PATHS or self.path in {'/followup', '/correct', '/correct/reconcile'} or self.path in COMMUNITY_PATHS or self.path in REVIEW_PATHS or self.path in QUESTION_PATHS or lock_required()
             if gated and not token_authorized(device_token):
                 if self.path in COMMUNITY_PATHS:
                     self.server.control.revoke_device()
                 raise ControlError(403, "device_locked")
-            if self.path not in {"/followup", "/correct", "/correct/reconcile", "/start", "/keepalive", "/stop", "/cancel", "/clear", "/session/link", "/message/status"} | HISTORY_PATHS | COMMUNITY_PATHS | CONVERSATION_PATHS | REVIEW_PATHS:
+            self.request_session_context = capture_session_context(device_token)
+            if self.path not in {"/followup", "/correct", "/correct/reconcile", "/start", "/start/confirm", "/keepalive", "/stop", "/cancel", "/clear", "/session/link", "/message/status"} | HISTORY_PATHS | COMMUNITY_PATHS | CONVERSATION_PATHS | REVIEW_PATHS | QUESTION_PATHS:
                 raise ControlError(404, "not_found")
             if self.header("X-Lantern-Voice") != "control" or self.header("Content-Type") != "application/json":
                 raise ControlError(400, "control_headers_required")
             length = self.header("Content-Length")
-            limit = 32768 if self.path in COMMUNITY_PATHS or self.path in REVIEW_PATHS or self.path == '/followup' else MAX_PHOTO_BODY if self.path in {"/start", "/correct"} else 65536 if self.path == "/history/context" else 512
+            limit = 32768 if self.path in COMMUNITY_PATHS or self.path in REVIEW_PATHS or self.path == '/followup' else MAX_PHOTO_BODY if self.path in {"/start", "/correct", "/question/start"} else 65536 if self.path == "/history/context" else 512
             if not length or not length.isascii() or not length.isdecimal() or not 1 <= int(length) <= limit:
                 raise ControlError(400, "invalid_length")
+            selected_context = None
+            if self.path == '/history/context':
+                binding = self.server.control.conversation_context_selection(device_token)
+                if binding is not None:
+                    selected_context, self.context_selection_check = binding
+            selection_options = ({"context_selection": selected_context}
+                                 if selected_context is not None else {})
             raw = self.rfile.read(int(length))
             if len(raw) != int(length):
                 raise ControlError(400, "incomplete_body")
@@ -1458,6 +1745,9 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 history = getattr(self.server, "history", None)
                 if history is None:
                     raise ControlError(503, "history_unavailable")
+                selection_check = getattr(self, "context_selection_check", None)
+                if selection_check is not None and not selection_check():
+                    raise ControlError(409, 'conversation_changed')
                 try:
                     if getattr(history, "media_mode", "legacy") == "protected":
                         def history_access():
@@ -1467,9 +1757,10 @@ class VoiceHandler(BaseHTTPRequestHandler):
                         self.history_access_check = history_access
                         if not history_access():
                             raise ControlError(403, "device_locked")
-                        response = history.request(self.path.rsplit("/", 1)[1], payload, access_check=history_access)
+                        response = history.request(self.path.rsplit("/", 1)[1], payload, access_check=history_access,
+                                                   **selection_options)
                     else:
-                        response = history.request(self.path.rsplit("/", 1)[1], payload)
+                        response = history.request(self.path.rsplit("/", 1)[1], payload, **selection_options)
                 except Exception as error:
                     # Only a failed history mutation can leave an unknown outcome.
                     # A definite pre-write ControlError (locked, invalid, missing)
@@ -1487,6 +1778,25 @@ class VoiceHandler(BaseHTTPRequestHandler):
             elif self.path in REVIEW_PATHS:
                 response = self.server.control.review_command(self.path.rsplit('/', 1)[1], payload, device_token)
                 status = 200
+            elif self.path == '/question/start':
+                if (set(payload) not in ({"request_id"}, {"request_id", "image_base64"},
+                                         {"request_id", "image_base64", "original_base64"})
+                        or type(payload["request_id"]) is not str):
+                    raise ControlError(400, "invalid_request")
+                try:
+                    question_request_id = str(uuid.UUID(payload["request_id"]))
+                except ValueError:
+                    raise ControlError(400, "invalid_request") from None
+                typed_image = None
+                typed_original = None
+                if "image_base64" in payload:
+                    if not self.server.control.photo_ready:
+                        raise ControlError(503, "photo_unavailable")
+                    typed_image = decode_photo(payload["image_base64"])
+                    if "original_base64" in payload:
+                        typed_original = decode_photo(payload["original_base64"], original=True)
+                status, response = self.server.control.open_typed_question(
+                    question_request_id, device_token, typed_image, typed_original)
             elif self.path == '/followup':
                 status, response = self.server.control.followup(payload, device_token)
             elif self.path == '/correct':
@@ -1532,6 +1842,17 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 elif len(raw) > 512:
                     raise ControlError(400, "invalid_length")
                 status, response = self.server.control.start(request_id, image, original, device_token=device_token, purpose=purpose)
+            elif self.path == "/start/confirm":
+                if set(payload) != {"request_id", "session_id", "token"} or not all(
+                        isinstance(value, str) and value.isascii() and 1 <= len(value) <= 128 for value in payload.values()):
+                    raise ControlError(400, "invalid_session")
+                try:
+                    if any(str(uuid.UUID(payload[key])) != payload[key] for key in ("request_id", "session_id")):
+                        raise ValueError()
+                except ValueError:
+                    raise ControlError(400, "invalid_session") from None
+                response = self.server.control.confirm_start(**payload, device_token=device_token)
+                status = 200
             else:
                 if set(payload) != {"session_id", "token"} or not all(isinstance(value, str) and value.isascii() and 1 <= len(value) <= 128 for value in payload.values()):
                     raise ControlError(400, "invalid_session")
@@ -1559,6 +1880,7 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 raise ControlError(403, "device_locked")
             self.respond(status, response)
         except DeviceLocked:
+            self.server.control.revoke_device()
             self.respond(403, {"error": "device_locked"})
         except ControlError as error:
             self.respond(error.status, {"error": error.code})
@@ -1620,12 +1942,17 @@ class VoiceLoop:
         self.input_source = None
         self.memory = history_memory
         protected_config = False
+        self.verifier = None
         if getattr(args, "config", None) and args.config.is_file():
             from sage_lantern.config import RuntimeConfig
             config = RuntimeConfig.load(args.config)
             protected_config = getattr(config, "protected_storage", False)
             if type(protected_config) is not bool:
                 raise ValueError("invalid protected storage configuration")
+            if getattr(config, "verify_answers_background", False):
+                from sage_lantern.answer_verification import AnswerVerifier
+                self.verifier = AnswerVerifier(config.verifier_base_url, config.verifier_model,
+                                               timeout_seconds=config.verifier_timeout_seconds)
             if self.memory is None and (protected_config or config.conversation_dir):
                 from sage_lantern.conversation_service import ConversationService
                 self.memory = ConversationService.from_config(config)
@@ -1647,6 +1974,7 @@ class VoiceLoop:
         self.control.correction_journal = self.memory.correction_operation if protected_service else None
         self.control.correction_available = self.correction_available
         self.control.review_available = self.review_available
+        self.control.typed_available = self.typed_available
         self.history_maintenance = 0
         self.history_ticket = None
         self.history_start_failed = None
@@ -1671,8 +1999,18 @@ class VoiceLoop:
         return (self.dictation_available() and callable(getattr(VoiceOrchestrator, 'run_text', None))
                 and callable(self.control.correct) and self.control.correction_journal is not None)
 
+    def typed_available(self):
+        """Typed questions need the control server and the text pipeline only.
+
+        Deliberately independent of audio, the microphone and the review
+        preference: this is the lane a device without a working capture path
+        falls back to, so the appliance never becomes unusable.
+        """
+        return (self.dictation_available()
+                and callable(getattr(VoiceOrchestrator, 'run_text', None)))
+
     def review_available(self):
-        return (getattr(self.args, 'review_before_answer', False) is True
+        return ((getattr(self.args, 'review_before_answer', False) is True or self.typed_available())
                 and self.dictation_available() and callable(getattr(VoiceOrchestrator, 'run_text', None)))
 
     def request_stop(self, *_):
@@ -1689,6 +2027,9 @@ class VoiceLoop:
             if session is None or session[0] != session_id or not token_authorized(session[1]):
                 self.control.revoke_device()
                 raise DeviceLocked()
+            if lock_required() and not context_current(session[1], self.control.session_context_for(session_id)):
+                self.control.revoke_device()
+                raise DeviceLocked()
 
     def write_state(self, phase: str, **values: Any) -> None:
         redacted = False
@@ -1697,10 +2038,15 @@ class VoiceLoop:
             phase == "idle" and self.device_session is None
             and values == {"transcript": "", "response": "", "detail": ""}
         ) else None
+        publication_context = (self.control.device_context if idle_token is not None
+                               else self.control.session_context_for(values.get("session_id")))
 
         def check_publication():
             if idle_token is not None:
                 if not token_authorized(idle_token):
+                    self.control.revoke_device()
+                    raise DeviceLocked()
+                if lock_required() and not context_current(idle_token, publication_context):
                     self.control.revoke_device()
                     raise DeviceLocked()
             else:
@@ -1713,9 +2059,12 @@ class VoiceLoop:
                 redacted = True
                 phase, values = "idle", {"detail": "Device locked.", "transcript": "", "response": ""}
         payload = {"schema": "sage.lantern.voice-state.v1", "observed_at": stamp(), "phase": phase, **values}
+        if not redacted and publication_context is not None:
+            payload["session_context"] = publication_context.to_dict()
         payload["touch_ready"] = self.touch_ready and not redacted
         payload['correction_ready'] = self.correction_available() is True and not redacted
         payload['review_ready'] = self.review_available() is True and not redacted
+        payload['typed_ready'] = self.typed_available() is True and not redacted
         payload["photo_ready"] = self.control.photo_ready and not redacted
         completed_answer = (phase == "complete" and self.device_session is not None
                             and self.device_session[0] == values.get("session_id")
@@ -1790,12 +2139,17 @@ class VoiceLoop:
         process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         self.children[process.pid] = process
         started = time.monotonic()
+        capture_limit = min(30, self.args.max_seconds) if message else self.args.max_seconds
         touch = self.control.source(session_id) == "touch"
         message_ptt_held = False
         try:
             self.write_state("listening", session_id=session_id, transcript="", response="")
             while process.poll() is None:
                 self.require_session_access(session_id)
+                # Release/Stop and recorder exit must not bypass the deadline.
+                if time.monotonic() - started >= capture_limit:
+                    self.control.cancel(session_id)
+                    break
                 if touch:
                     if self.control.action(session_id) in {"stop", "cancel"}:
                         break
@@ -1810,22 +2164,22 @@ class VoiceLoop:
                             break
                 elif self.ptt() != "down":
                     break
-                if time.monotonic() - started >= (min(30, self.args.max_seconds) if message else self.args.max_seconds):
-                    self.control.cancel(session_id)
-                    break
                 time.sleep(0.04)
         finally:
             try:
+                duration = time.monotonic() - started
+                if duration >= capture_limit:
+                    self.control.cancel(session_id)
                 stopped = self.stop_recording(process)
                 if type(process.pid) is int and not self.group_absent(process.pid):
                     self.stop_pipeline(process)
-                duration = time.monotonic() - started
                 detail = (process.stderr.read() if process.stderr else b"").decode(errors="replace").strip()
             finally:
                 if process.stderr:
                     process.stderr.close()
                 self.forget_reaped_group(process)
         valid_audio = False
+        audio_at_limit = False
         try:
             with wave.open(str(path), "rb") as recording:
                 frames = recording.readframes(1)
@@ -1835,11 +2189,15 @@ class VoiceLoop:
                     and recording.getframerate() == 16000
                     and len(frames) == 4
                 )
+                audio_at_limit = recording.getnframes() >= capture_limit * recording.getframerate()
         except (OSError, EOFError, wave.Error):
             pass
         normal_stop = stopped and process.returncode == 1 and not detail and valid_audio
         if process.returncode not in {0, 130, -signal.SIGINT} and not normal_stop:
             raise RuntimeError(f"microphone capture failed: {detail[-300:] or f'recorder exit {process.returncode}'}")
+        if duration >= capture_limit or audio_at_limit:
+            self.control.cancel(session_id)
+            return False
         if touch and self.control.action(session_id) != "stop":
             return False
         return duration >= self.args.min_seconds and valid_audio
@@ -1872,7 +2230,11 @@ class VoiceLoop:
             sentence = re.search(r"[.!?。！？](?:\s|$)", pending)
             if sentence:
                 boundary = max(boundary, sentence.end())
-            if time.monotonic() - pending_since >= 1.2 or len(pending) >= 80:
+            # Bound the delay after real content arrives while retaining word
+            # and sentence batches. This changes publication only, not model
+            # input, validation, completion or the final response.
+            max_wait = 0.12 if published_length == 0 else 0.3
+            if time.monotonic() - pending_since >= max_wait or len(pending) >= 80:
                 boundary = len(pending)
             if boundary:
                 published_length += boundary
@@ -1997,7 +2359,8 @@ class VoiceLoop:
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
                             raise RuntimeError("voice pipeline timed out")
-                        if not selector.select(min(remaining, 0.2)):
+                        publication_wait = 0.05 if pending_since is not None and response.strip() else 0.2
+                        if not selector.select(min(remaining, publication_wait)):
                             publish_pending()
                             continue
                         try:
@@ -2076,6 +2439,48 @@ class VoiceLoop:
             timings_ms=result.get("timings_ms", {}), **warning,
             inference_metrics=project_metrics(result.get("inference_metrics")),
         )
+        self.schedule_verification(session_id, result["transcript"], result["response"],
+                                   validate_suggestions(result.get('follow_up_questions', [])))
+
+    def schedule_verification(self, session_id, question, answer, follow_ups):
+        """Fact-check the finished answer in the background; never delay the answer."""
+        if self.verifier is None or not answer.strip() or self.control.source_photo(session_id):
+            return
+        thread = threading.Thread(target=self.verify_answer,
+                                  args=(session_id, question, answer, follow_ups),
+                                  name="answer-verification", daemon=True)
+        thread.start()
+
+    def verify_answer(self, session_id, question, answer, follow_ups):
+        try:
+            verdict = self.verifier.verify(question, answer)
+        except Exception as error:                       # the checker must never take the loop down
+            print(json.dumps({"event": "answer_verification_failed",
+                              "error": type(error).__name__}), flush=True)
+            return
+        if verdict.status != "corrected" or not verdict.text or verdict.text == answer:
+            print(json.dumps({"event": "answer_verification", "session_id": session_id,
+                              "status": verdict.status, "seconds": round(verdict.seconds, 2)}), flush=True)
+            return
+        if not self.claim_correction(session_id):
+            return
+        try:
+            self.write_state("complete", session_id=session_id, transcript=question,
+                             response=verdict.text, follow_up_questions=follow_ups, detail="")
+        except DeviceLocked:
+            return
+        print(json.dumps({"event": "answer_verification", "session_id": session_id,
+                          "status": "corrected", "seconds": round(verdict.seconds, 2)}), flush=True)
+
+    def claim_correction(self, session_id):
+        """Only a still-current, idle turn of this device session may be rewritten."""
+        with self.control.lock:
+            owner = self.control.owner
+            source = self.control.completed_source
+            session = self.device_session
+            return (not self.stop_requested.is_set() and owner is None
+                    and source is not None and source.get("source_id") == session_id
+                    and session is not None and session[0] == session_id)
 
     @staticmethod
     def stop_pipeline(process):
@@ -2101,6 +2506,11 @@ class VoiceLoop:
         self.write_state('processing', session_id=session_id, transcript='', response='', progress_stage='transcribing')
         try:
             transcript = self.message_transcribe(session_id, audio_path)
+            # The review screen is where the owner checks what was heard, so the
+            # recorded confusions are repaired before it is shown rather than
+            # only after submission. The turn applies the same table again, which
+            # is idempotent, so the two cannot disagree.
+            transcript = repair(transcript).text
             validated_question(transcript)
         except NoSpeechDetected:
             self.write_state('error', session_id=session_id, transcript='', response='', detail='no_spoken_question')
@@ -2110,6 +2520,10 @@ class VoiceLoop:
         self.require_message_access(session_id)
         review_id = self.control.begin_review(session_id, transcript)
         self.write_state('review', session_id=session_id, review_id=review_id, transcript=transcript, response='')
+        return self.await_review(session_id)
+
+    def await_review(self, session_id):
+        """Wait for the reviewed question; a cancel or a lock abandons it."""
         while True:
             self.require_message_access(session_id)
             question = self.control.reviewed_question(session_id)
@@ -2117,11 +2531,25 @@ class VoiceLoop:
                 return question
             self.stop_requested.wait(0.1)
 
+    def run_typed_question(self, session_id):
+        """Open review for a typed question and answer only the submitted text.
+
+        Nothing is captured and nothing is transcribed: the microphone may be
+        absent, broken or already in use. The typed text is validated by the
+        same review command the spoken lane uses before any inference starts.
+        """
+        self.require_message_access(session_id)
+        review_id = self.control.begin_typed_review(session_id)
+        self.write_state('review', session_id=session_id, review_id=review_id, transcript='', response='')
+        return self.await_review(session_id)
+
     def run_session(self, session):
         if session.get("purpose") == "message":
             return self.run_message_session(session)
         session_id = session["session_id"]
-        reviewing = getattr(self.args, 'review_before_answer', False) is True and session.get('question') is None and session['source'] != 'clear'
+        typed = session["source"] == "typed"
+        reviewing = typed or (getattr(self.args, 'review_before_answer', False) is True
+                              and session.get('question') is None and session['source'] != 'clear')
         self.device_session = (session_id, self.control.session_device_token(session_id),
                                lock_required() or session.get('question') is not None or reviewing)
         if session["source"] == "clear":
@@ -2140,35 +2568,47 @@ class VoiceLoop:
         correction_processed = False
         try:
             self.require_session_access(session_id)
-            audio_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if reviewing:
-                metadata = audio_dir.lstat()
-                if (not audio_dir.is_absolute() or not stat.S_ISDIR(metadata.st_mode)
-                        or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700):
-                    raise RuntimeError('unsafe_question_audio_directory')
-            action = self.control.action(session_id)
-            if session.get('question') is not None and action != 'cancel' and self.control.begin_processing(session_id):
+            if typed:
+                question = self.run_typed_question(session_id)
+                self.require_message_access(session_id)
                 self.begin_history_session(session_id)
-                self.process(session_id, audio_path, question=session['question'])
-                correction_processed = True
-                self.control.correction_journal('finish', source_id=session['source_id'],
-                    attempt_id=session['request_id'], session_id=session_id, succeeded=True,
-                    access_check=lambda: token_authorized(self.control.session_device_token(session_id)) is True)
-            elif action not in {"cancel", "stop"} and (self.capture(session_id, audio_path, review=True) if reviewing else self.capture(session_id, audio_path)) and self.control.begin_processing(session_id):
-                if reviewing:
-                    question = self.review_recording(session_id, audio_path)
-                    if question is not None:
-                        self.require_message_access(session_id)
-                        self.begin_history_session(session_id)
-                        self.process(session_id, audio_path, question=question)
-                else:
-                    self.process(session_id, audio_path)
+                self.process(session_id, audio_path, question=question)
             else:
-                self.write_state("idle", detail="Recording cancelled or too short", transcript="", response="")
+                audio_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if reviewing:
+                    metadata = audio_dir.lstat()
+                    if (not audio_dir.is_absolute() or not stat.S_ISDIR(metadata.st_mode)
+                            or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700):
+                        raise RuntimeError('unsafe_question_audio_directory')
+                action = self.control.action(session_id)
+                if session.get('question') is not None and action != 'cancel' and self.control.begin_processing(session_id):
+                    self.begin_history_session(session_id)
+                    self.process(session_id, audio_path, question=session['question'])
+                    correction_processed = True
+                    self.control.correction_journal('finish', source_id=session['source_id'],
+                        attempt_id=session['request_id'], session_id=session_id, succeeded=True,
+                        access_check=lambda: token_authorized(self.control.session_device_token(session_id)) is True)
+                elif action not in {"cancel", "stop"} and (self.capture(session_id, audio_path, review=True) if reviewing else self.capture(session_id, audio_path)) and self.control.begin_processing(session_id):
+                    if reviewing:
+                        question = self.review_recording(session_id, audio_path)
+                        if question is not None:
+                            self.require_message_access(session_id)
+                            self.begin_history_session(session_id)
+                            self.process(session_id, audio_path, question=question)
+                    else:
+                        self.process(session_id, audio_path)
+                else:
+                    self.write_state("idle", detail="Recording cancelled or too short", transcript="", response="")
         except DeviceLocked:
+            self.control.revoke_device()
             self.write_state("idle", **({'session_id': session_id} if reviewing else {}),
                              detail="Question discarded." if reviewing else "Device locked.", transcript="", response="")
         except Exception as exc:
+            # The published state stays redacted for a lock-bound session; the
+            # journal keeps the operator-facing reason so a failed turn can be
+            # diagnosed without weakening what the screen may show.
+            print(json.dumps({"event": "voice_session_error", "session_id": session_id,
+                              "error": type(exc).__name__, "detail": str(exc)[:300]}), flush=True)
             if session.get('question') is not None and not correction_processed:
                 try:
                     self.control.correction_journal('finish', source_id=session['source_id'],

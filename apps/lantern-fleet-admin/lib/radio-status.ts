@@ -9,6 +9,7 @@ export type RadioStatus = {
   schema: 'sage.lantern.radio-events.v1'; observed_at_unix_ms: number;
   valid_for_ms: 2000; window_ms: 60000; serial_identity_verified: boolean;
   firmware: string | null; receiving: boolean; profile: null;
+  repeater: { enabled: boolean; source: 'firmware_info' } | null;
   saved_contacts: { available: false; count: null };
   neighbors: { available: false; reason: 'no_rf_neighbor_discovery' };
   last_heard: { source: 'firmware_dequeued_contact_messages'; entries: RadioTraffic[] };
@@ -63,12 +64,17 @@ export function parseRadioStatus(value: unknown): RadioStatus | undefined {
     const parsed = parseRadioStatus(base);
     return parsed && validHealth(health) ? { ...parsed, health } : undefined;
   }
-  if (!record(value) || !keys(value, 'schema observed_at_unix_ms valid_for_ms window_ms serial_identity_verified firmware receiving profile saved_contacts neighbors last_heard')
+  if (!record(value) || !keys(value, 'schema observed_at_unix_ms valid_for_ms window_ms serial_identity_verified firmware receiving repeater profile saved_contacts neighbors last_heard')
     || value.schema !== 'sage.lantern.radio-events.v1' || !positive(value.observed_at_unix_ms)
     || value.valid_for_ms !== 2000 || value.window_ms !== 60000
     || typeof value.serial_identity_verified !== 'boolean' || typeof value.receiving !== 'boolean'
     || (value.receiving && !value.serial_identity_verified) || value.profile !== null
-    || (value.serial_identity_verified ? !['v1.17.1-d929643', 'v1.17.1-d929643-r1', 'v1.17.1-d929643-r2'].includes(value.firmware as string) : value.firmware !== null)) return undefined;
+    || (value.serial_identity_verified ? !['v1.17.1-d929643', 'v1.17.1-d929643-r1', 'v1.17.1-d929643-r2', 'v1.17.1-d929643-r3', 'v1.17.1-d929643-r4'].includes(value.firmware as string) : value.firmware !== null)) return undefined;
+  if (value.serial_identity_verified) {
+    const repeater = value.repeater;
+    if (!record(repeater) || !keys(repeater, 'enabled source') || typeof repeater.enabled !== 'boolean'
+      || repeater.source !== 'firmware_info') return undefined;
+  } else if (value.repeater !== null) return undefined;
   const saved = value.saved_contacts, neighbors = value.neighbors, heard = value.last_heard;
   if (!record(saved) || !keys(saved, 'available count') || saved.available !== false || saved.count !== null
     || !record(neighbors) || !keys(neighbors, 'available reason') || neighbors.available !== false || neighbors.reason !== 'no_rf_neighbor_discovery'

@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -12,7 +13,7 @@ KIOSK = Path(__file__).resolve().parents[1] / "lantern/sage-lantern-kiosk"
 
 class KioskSleepFenceTests(unittest.TestCase):
     def test_profile_argument_rejects_traversal_and_other_unit_names(self):
-        for profile in ('/home/radxa/.config/sage-lantern/../secrets', '/home/radxa/.config/sage-lantern/unit-c/chromium'):
+        for profile in ('/home/radxa/.config/sage-lantern/../secrets', '/home/radxa/.config/sage-lantern/unit-g/chromium'):
             result = subprocess.run(['bash', str(KIOSK), '--profile-dir', profile], capture_output=True, timeout=2)
             self.assertEqual(result.returncode, 2)
 
@@ -36,6 +37,7 @@ class KioskSleepFenceTests(unittest.TestCase):
         source = source.replace("readonly sleep_fence=/run/sage-lantern-sleep.fenced",
                                 f"readonly sleep_fence='{self.fence}'")
         source = source.replace("/usr/bin/chromium", str(self.browser))
+        source = source.replace("^/home/", "^" + re.escape(str(self.root)) + "/homes/")
         self.fixture = self.root / "kiosk-fixture"
         self.fixture.write_text(source)
         self.process = None
@@ -46,10 +48,10 @@ class KioskSleepFenceTests(unittest.TestCase):
         path.write_text("#!/bin/sh\n" + body)
         path.chmod(0o755)
 
-    def start(self):
+    def start(self, profile=None):
         environment = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin",
                            TEST_LOG=str(self.log), TEST_FENCE=str(self.fence), TEST_ROOT=str(self.root))
-        self.process = subprocess.Popen(["bash", str(self.fixture)], env=environment,
+        self.process = subprocess.Popen(["bash", str(self.fixture)] + ([] if profile is None else ["--profile-dir", profile]), env=environment,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                         start_new_session=True)
 
@@ -65,6 +67,15 @@ class KioskSleepFenceTests(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail("fixture did not reach expected state")
+
+    def test_unit_c_profile_reaches_browser_through_existing_sleep_fence(self):
+        self.fence.touch()
+        self.start(str(self.root / 'homes/operator/.config/sage-lantern/unit-c/chromium'))
+        time.sleep(0.15)
+        self.assertEqual(self.log.read_text(), '')
+        self.assertIsNone(self.process.poll())
+        self.fence.unlink()
+        self.wait_for(lambda: 'chromium' in self.log.read_text())
 
     def test_startup_fence_prevents_display_and_browser_calls(self):
         self.fence.touch()

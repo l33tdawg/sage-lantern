@@ -732,3 +732,22 @@ def test_x11_source_trust_rejects_symlink_or_writable_parent(idle_query, monkeyp
     with pytest.raises(RuntimeError, match='untrusted'):
         runner.check_x11(current.binding)
     MODULE.subprocess.Popen.assert_not_called()
+
+
+@pytest.mark.parametrize('unit', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
+def test_approved_policy_matches_exact_installed_fleet_unit(monkeypatch, unit):
+    binding = KioskBinding('operator', 1001, unit)
+    monkeypatch.setattr(MODULE, '_read_binding_file', lambda path: f'fresh {unit}\n')
+    monkeypatch.setattr(MODULE, 'load_kiosk_binding', lambda: binding)
+    assert MODULE.approved_binding() == binding
+    monkeypatch.setattr(MODULE, 'load_kiosk_binding', lambda: KioskBinding('operator', 1001,
+        'unit-b' if unit != 'unit-b' else 'unit-a'))
+    with pytest.raises(ValueError):
+        MODULE.approved_binding()
+
+
+@pytest.mark.parametrize('policy', ['fresh unit-g\n', 'fresh unit-C\n', 'fresh unit-c', 'legacy unit-c\n'])
+def test_other_or_nonexact_fleet_display_policy_refused(monkeypatch, policy):
+    monkeypatch.setattr(MODULE, '_read_binding_file', lambda path: policy)
+    with pytest.raises(ValueError):
+        MODULE.approved_binding()

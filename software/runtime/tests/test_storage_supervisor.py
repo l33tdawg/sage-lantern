@@ -81,233 +81,6 @@ def capture(supervisor, state):
     return supervisor.acquire(pid=901, uid=1001, epoch=state["epoch"])
 
 
-@pytest.fixture
-def epoch_setup(tmp_path):
-    """Real supervisor/held files; only SDK and service facts are modeled."""
-    directory = tmp_path.resolve() / "epoch-state"
-    directory.mkdir(mode=0o700)
-    state = dict(snapshot=MessageStorageSnapshot("c" * 64, "1"), now=10.0,
-                 events=[], snapshot_hook=None, vault_hook=None, clock_hook=None, clock_reads=0)
-    def snapshot():
-        state['events'].append('snapshot')
-        if state['snapshot_hook'] is not None:
-            state['snapshot_hook']()
-        return state['snapshot']
-    class EpochBackend(Backend):
-        def vault_identity(self):
-            state['events'].append('vault')
-            if state['vault_hook'] is not None:
-                state['vault_hook']()
-            return self.vault
-    backend = EpochBackend()
-    def clock():
-        state['clock_reads'] += 1
-        if state['clock_hook'] is not None:
-            state['clock_hook']()
-        return state['now']
-    supervisor = RootStorageSupervisor(directory, backend=backend, snapshot=snapshot,
-        access_epoch=lambda: 'b' * 32, clock=clock, owner_uid=os.geteuid())
-    supervisor.start()
-    resource = SimpleNamespace(close=lambda timeout: True)
-    supervisor.own_resource(resource)
-    state['events'].clear()
-    try:
-        yield supervisor, backend, state, resource
-    finally:
-        supervisor.close()
-
-
-def test_verified_epoch_supplies_native_callers_fresh_original_epoch(epoch_setup):
-    supervisor, _, state, resource = epoch_setup
-    assert supervisor._resource is resource and supervisor.phase == 'active'
-    assert supervisor.resource_lifecycle_check() is True
-    cache = supervisor._live_cache
-    state['events'].clear()
-    clock_reads = state['clock_reads']
-    for _ in range(2):
-        assert supervisor.verified_epoch() == supervisor._baseline == state['snapshot'].epoch
-    assert state['events'] == ['snapshot', 'vault', 'snapshot', 'vault']
-    assert supervisor._live_cache is cache
-    assert state['clock_reads'] == clock_reads
-    assert supervisor._epoch_observers == set() and not supervisor._epoch_refused
-    assert supervisor._leases == {} and supervisor.phase == 'active'
-
-
-@pytest.mark.parametrize('change', ['epoch', 'vault', 'snapshot-error', 'vault-error'])
-def test_verified_epoch_bypasses_cached_success_and_preserves_services(epoch_setup, change):
-    supervisor, backend, state, _ = epoch_setup
-    assert supervisor.resource_lifecycle_check()
-    if change == 'epoch': state['snapshot'] = MessageStorageSnapshot('c' * 64, '2')
-    elif change == 'vault': backend.vault = (801, 'd' * 32)
-    else:
-        def failed(): raise RuntimeError('unreported callback detail')
-        state['snapshot_hook' if change == 'snapshot-error' else 'vault_hook'] = failed
-    with pytest.raises(StorageSupervisorError, match='^storage_supervisor_unavailable$'):
-        supervisor.verified_epoch()
-    assert supervisor.phase == 'active' and backend.events == ['start_voice']
-    assert supervisor._fd is not None and supervisor._leases == {}
-    assert not supervisor._epoch_observers and supervisor._epoch_refused
-
-
-@pytest.mark.parametrize('boundary', ['snapshot_hook', 'vault_hook'])
-@pytest.mark.parametrize('change', ['resource', 'joined', 'phase', 'broker', 'baseline', 'snapshot-source'])
-def test_verified_epoch_fences_callback_time_state_and_source(epoch_setup, boundary, change):
-    supervisor, _, state, _ = epoch_setup
-    completed = []
-    def mutate():
-        if change == 'resource': supervisor._resource = SimpleNamespace(close=lambda timeout: True)
-        elif change == 'joined': supervisor._resource_joined = True
-        elif change == 'phase': supervisor.phase = 'recovery_required'
-        elif change == 'broker': supervisor.broker_id = 'e' * 32
-        elif change == 'baseline': supervisor._baseline = 'f' * 64 + ':1'
-        else: supervisor._snapshot = lambda: state['snapshot']
-        completed.append(True)
-    state[boundary] = mutate
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-    assert completed == [True] and not supervisor._epoch_observers and supervisor._epoch_refused
-    assert supervisor._leases == {}
-
-
-@pytest.mark.parametrize('boundary', ['snapshot_hook', 'vault_hook'])
-def test_verified_epoch_caught_recursive_callback_cannot_publish(epoch_setup, boundary):
-    supervisor, _, state, _ = epoch_setup
-    caught = []
-    def recurse():
-        with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-        caught.append(True)
-    state[boundary] = recurse
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-    assert caught == [True] and supervisor._epoch_refused and not supervisor._epoch_observers
-    state[boundary] = None
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-
-
-@pytest.mark.parametrize('change', ['owner', 'fence', 'process', 'fd', 'path', 'snapshot', 'vault-reader'])
-def test_verified_epoch_requires_original_owner_and_dependencies(epoch_setup, change):
-    supervisor, backend, state, _ = epoch_setup
-    if change == 'owner':
-        (supervisor.directory / 'owner.lock').unlink()
-        (supervisor.directory / 'owner.lock').touch(mode=0o600)
-    elif change == 'fence': (supervisor.directory / 'fence.json').unlink()
-    elif change == 'process': supervisor._pid += 1
-    elif change == 'fd':
-        os.close(supervisor._fd)
-        supervisor._fd = os.open(supervisor.directory / 'foreign', os.O_CREAT | os.O_RDWR, 0o600)
-    elif change == 'path': supervisor._path_identity = []
-    elif change == 'snapshot': supervisor._snapshot = lambda: state['snapshot']
-    else: backend.vault_identity = lambda: backend.vault
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-    assert state['events'] == [] and not supervisor._epoch_observers
-
-
-def test_verified_epoch_io_releases_lock_and_fences_foreign_shutdown(epoch_setup):
-    supervisor, _, state, _ = epoch_setup
-    observed = []
-    def snapshot():
-        def shutdown():
-            acquired = supervisor._mutex.acquire(blocking=False)
-            observed.append(acquired)
-            if acquired:
-                try: observed.append(supervisor.begin_shutdown(5))
-                finally: supervisor._mutex.release()
-        thread = threading.Thread(target=shutdown)
-        thread.start(); thread.join(1)
-        assert not thread.is_alive()
-    state['snapshot_hook'] = snapshot
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-    assert observed == [True, True] and supervisor.phase == 'stopping'
-    assert supervisor._drain_deadline == 15 and not supervisor._epoch_observers
-
-
-@pytest.mark.parametrize('mode', ['drain', 'shutdown'])
-def test_verified_epoch_supports_only_original_bounded_resource_drain(epoch_setup, mode):
-    supervisor, _, state, resource = epoch_setup
-    observed = []
-    def closed(timeout):
-        observed.append((supervisor.phase, supervisor.verified_epoch()))
-        return True
-    resource.close = closed
-    if mode == 'drain':
-        supervisor.drain(str(uuid.uuid4()), timeout=5)
-        assert observed == [('draining', state['snapshot'].epoch)]
-    else:
-        assert supervisor.begin_shutdown(5)
-        assert supervisor.finish_shutdown(5)
-        assert observed == [('stopping', state['snapshot'].epoch)]
-    assert supervisor._drain_deadline == 15 and supervisor._resource_joined
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-
-
-def test_verified_epoch_refuses_expired_drain_and_midcallback_deadline(epoch_setup):
-    supervisor, _, state, _ = epoch_setup
-    assert supervisor.begin_shutdown(5)
-    state['snapshot_hook'] = lambda: state.update(now=15)
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-    assert supervisor._drain_deadline == 15 and state['events'] == ['snapshot']
-    assert not supervisor._resource_joined and supervisor.phase == 'stopping'
-
-
-@pytest.mark.parametrize('boundary', [1, 3])
-@pytest.mark.parametrize('change', ['resource', 'phase', 'deadline', 'source', 'reentry'])
-def test_verified_epoch_brackets_drain_clock_callbacks(epoch_setup, boundary, change):
-    supervisor, _, state, _ = epoch_setup
-    assert supervisor.begin_shutdown(5)
-    state['clock_reads'] = 0
-    completed = []
-    def mutate():
-        if state['clock_reads'] != boundary: return
-        if change == 'resource': supervisor._resource = SimpleNamespace(close=lambda timeout: True)
-        elif change == 'phase': supervisor.phase = 'active'
-        elif change == 'deadline': supervisor._drain_deadline = 100
-        elif change == 'source': supervisor._snapshot = lambda: state['snapshot']
-        else:
-            with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-        completed.append(True)
-    state['clock_hook'] = mutate
-    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-    assert completed == [True] and supervisor._epoch_refused and not supervisor._epoch_observers
-
-
-@pytest.mark.parametrize('change', ['resource', 'phase', 'source', 'reentry'])
-def test_verified_epoch_fences_actual_probe_model_dump_callback(tmp_path, change):
-    import httpx
-    from sage_lantern.message_contacts import RecipientID
-    from sage_lantern.message_storage import MessageStorageProbe
-    actor = RecipientID('epoch-fixture', 'a' * 64)
-    payload = dict(schema='sage.message-storage.v1', instance_id='c' * 64, agent_id=actor.agent_id,
-        encryption_expected=True, vault_active=True, vault_generation='2', stable=True,
-        canonical_send_idempotency=True, encrypted_send_admission=True)
-    hook = []
-    class Response:
-        def model_dump(self, *, mode):
-            assert mode == 'json'
-            if hook: hook[0]()
-            return payload.copy()
-    with httpx.Client(base_url='http://127.0.0.1:19100', trust_env=False, timeout=2) as transport:
-        client = SimpleNamespace(_client=transport, _identity=SimpleNamespace(agent_id=actor.agent_id),
-            _base_url='http://127.0.0.1:19100', message_storage_status=lambda: Response())
-        probe = MessageStorageProbe(client, actor=actor, endpoint=client._base_url)
-        directory = tmp_path.resolve() / 'probe-state'; directory.mkdir(mode=0o700)
-        supervisor = RootStorageSupervisor(directory, backend=Backend(), snapshot=probe.snapshot,
-            access_epoch=lambda: 'b' * 32, owner_uid=os.geteuid())
-        try:
-            supervisor.start(); supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
-            assert supervisor.verified_epoch() == 'c' * 64 + ':2'
-            completed = []
-            def mutate():
-                if change == 'resource': supervisor._resource = SimpleNamespace(close=lambda timeout: True)
-                elif change == 'phase': supervisor.phase = 'recovery_required'
-                elif change == 'source': supervisor._snapshot = lambda: MessageStorageSnapshot('c' * 64, '2')
-                else:
-                    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-                completed.append(True)
-            hook.append(mutate)
-            with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
-            assert completed == [True] and supervisor._epoch_refused and not supervisor._epoch_observers
-        finally:
-            supervisor.close()
-
-
 @pytest.mark.parametrize("method", ["voice", "resource", "lease"])
 @pytest.mark.parametrize("change_phase", [False, True])
 def test_diagnostic_io_releases_state_lock_and_revalidates(setup, method, change_phase):
@@ -337,6 +110,84 @@ def test_diagnostic_io_releases_state_lock_and_revalidates(setup, method, change
               else supervisor.resource_lifecycle_check())
     assert observed == [True]
     assert result is (not change_phase)
+
+
+def test_admission_checks_reuse_one_verification_per_window(setup):
+    """A dispatch wake makes ~165 admission checks; each one used to pay its own
+    signed snapshot plus two systemctl reads, which saturated the unit's SAGE
+    replay window (unit A 2026-09-19 17:02: 503 Replay window saturated)."""
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    probes, vaults, producers = [], [], []
+    supervisor._snapshot = lambda: probes.append(state["now"]) or state["snapshot"]
+    original_vault, original_producer = backend.vault_identity, backend.producer
+    backend.vault_identity = lambda: vaults.append(state["now"]) or original_vault()
+    backend.producer = lambda *, stopping=False: producers.append(stopping) or original_producer(stopping=stopping)
+    for _ in range(40):
+        assert supervisor.voice_peer(pid=901, uid=1001) is True
+        assert supervisor.check(token, pid=901, uid=1001) is True
+        assert supervisor.admission_epoch() == state["snapshot"].epoch
+        state["now"] += module.LIVE_CHECK_SECONDS / 200
+    assert (len(probes), len(vaults), producers) == (1, 1, [False])
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert (len(probes), len(vaults)) == (2, 2)
+
+
+def test_admission_checks_observe_a_new_vault_within_one_window(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    state["snapshot"] = MessageStorageSnapshot("e" * 64, "2")
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert supervisor.check(token, pid=901, uid=1001) is True
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.voice_peer(pid=901, uid=1001) is False
+    assert supervisor.check(token, pid=901, uid=1001) is False
+    with pytest.raises(StorageSupervisorError):
+        supervisor.admission_epoch()
+
+
+def test_admission_checks_observe_a_new_producer_within_one_window(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    backend.instance = Producer(902, 1001, {"instance_id": str(uuid.uuid4())})
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    state["now"] += module.LIVE_CHECK_SECONDS + 0.001
+    assert supervisor.voice_peer(pid=901, uid=1001) is False
+
+
+def test_reuse_never_outlives_an_in_process_change(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert supervisor.check(token, pid=901, uid=1001) is True
+    supervisor.phase = "recovery_required"
+    assert supervisor.voice_peer(pid=901, uid=1001) is False
+    assert supervisor.check(token, pid=901, uid=1001) is False
+    with pytest.raises(StorageSupervisorError):
+        supervisor.admission_epoch()
+
+
+def test_drain_never_reads_the_reused_live_producer(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    stops = []
+    original = backend.producer
+    backend.producer = lambda *, stopping=False: stops.append(stopping) or original(stopping=stopping)
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert supervisor.voice_peer(pid=901, uid=1001) is True
+    assert stops == [False]
+    backend.running = False
+    assert supervisor.voice_peer(pid=901, uid=1001, draining=True) is False
+    assert stops[-1] is True
 
 
 def test_real_lifetime_order_and_explicit_vault_gate(setup):
@@ -427,6 +278,64 @@ def test_lease_binding_and_expiry_fail_closed(setup, change):
         (supervisor.directory / "fence.json").unlink()
     assert supervisor.check(token, pid=901, uid=1001) is False
     assert "stop_vault" not in backend.events
+
+
+def test_rearm_adopts_a_rotated_epoch_with_nothing_in_flight(setup):
+    """An owner unlock rotates the epoch under a running broker (2026-09-22).
+
+    Every guarded call compares the live pair against the process-start
+    baseline, so without a re-arm `resource_lifecycle_check` - and therefore
+    `active()`, provider construction and every community route - stays False
+    until the daemon restarts. The re-arm is only allowed while nothing can be
+    in flight, and a live lease still pins the pair it was admitted under.
+    """
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    state["snapshot"] = MessageStorageSnapshot("c" * 64, "2")
+    assert supervisor.check(token, pid=901, uid=1001) is False
+    assert supervisor.resource_lifecycle_check() is False
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.finish_capture(token, pid=901, uid=1001)
+    assert supervisor.rearm() is True
+    assert supervisor.resource_lifecycle_check() is True
+    assert supervisor.admission_epoch() == state["snapshot"].epoch
+    rearmed = capture(supervisor, state)
+    assert supervisor.check(rearmed, pid=901, uid=1001)
+    supervisor.finish_capture(rearmed, pid=901, uid=1001)
+    assert supervisor.rearm() is False
+
+
+def test_rearm_refuses_anything_it_cannot_prove_quiescent(setup):
+    supervisor, backend, state = setup
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.start()
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    token = capture(supervisor, state)
+    state["snapshot"] = MessageStorageSnapshot("c" * 64, "2")
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    supervisor.finish_capture(token, pid=901, uid=1001)
+    supervisor.phase = "recovery_required"
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+
+
+def test_rearm_refuses_a_pair_that_moves_while_it_derives(setup):
+    supervisor, backend, state = setup
+    supervisor.start()
+    supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+    baseline = supervisor._baseline
+    reads = iter([MessageStorageSnapshot("c" * 64, "2"), MessageStorageSnapshot("c" * 64, "3")])
+    supervisor._snapshot = lambda: next(reads)
+    with pytest.raises(StorageSupervisorError):
+        supervisor.rearm()
+    assert supervisor._baseline == baseline
 
 
 def test_lock_survival_is_not_new_capture_authority(setup):
@@ -794,3 +703,230 @@ def test_server_shutdown_joins_before_sdk_and_owner_release(setup, failure):
             assert wire._RETAINED_SHUTDOWN[-1][0] is supervisor
     finally:
         del wire._RETAINED_SHUTDOWN[retained:]
+
+
+@pytest.fixture
+def epoch_setup(tmp_path):
+    """Real supervisor/held files; only SDK and service facts are modeled."""
+    directory = tmp_path.resolve() / "epoch-state"
+    directory.mkdir(mode=0o700)
+    state = dict(snapshot=MessageStorageSnapshot("c" * 64, "1"), now=10.0,
+                 events=[], snapshot_hook=None, vault_hook=None, clock_hook=None, clock_reads=0)
+    def snapshot():
+        state['events'].append('snapshot')
+        if state['snapshot_hook'] is not None:
+            state['snapshot_hook']()
+        return state['snapshot']
+    class EpochBackend(Backend):
+        def vault_identity(self):
+            state['events'].append('vault')
+            if state['vault_hook'] is not None:
+                state['vault_hook']()
+            return self.vault
+    backend = EpochBackend()
+    def clock():
+        state['clock_reads'] += 1
+        if state['clock_hook'] is not None:
+            state['clock_hook']()
+        return state['now']
+    supervisor = RootStorageSupervisor(directory, backend=backend, snapshot=snapshot,
+        access_epoch=lambda: 'b' * 32, clock=clock, owner_uid=os.geteuid())
+    supervisor.start()
+    resource = SimpleNamespace(close=lambda timeout: True)
+    supervisor.own_resource(resource)
+    state['events'].clear()
+    try:
+        yield supervisor, backend, state, resource
+    finally:
+        supervisor.close()
+
+
+def test_verified_epoch_supplies_native_callers_fresh_original_epoch(epoch_setup):
+    supervisor, _, state, resource = epoch_setup
+    assert supervisor._resource is resource and supervisor.phase == 'active'
+    assert supervisor.resource_lifecycle_check() is True
+    cache = supervisor._live_cache
+    state['events'].clear()
+    clock_reads = state['clock_reads']
+    for _ in range(2):
+        assert supervisor.verified_epoch() == supervisor._baseline == state['snapshot'].epoch
+    assert state['events'] == ['snapshot', 'vault', 'snapshot', 'vault']
+    assert supervisor._live_cache is cache
+    assert state['clock_reads'] == clock_reads
+    assert supervisor._epoch_observers == set() and not supervisor._epoch_refused
+    assert supervisor._leases == {} and supervisor.phase == 'active'
+
+
+@pytest.mark.parametrize('change', ['epoch', 'vault', 'snapshot-error', 'vault-error'])
+def test_verified_epoch_bypasses_cached_success_and_preserves_services(epoch_setup, change):
+    supervisor, backend, state, _ = epoch_setup
+    assert supervisor.resource_lifecycle_check()
+    if change == 'epoch': state['snapshot'] = MessageStorageSnapshot('c' * 64, '2')
+    elif change == 'vault': backend.vault = (801, 'd' * 32)
+    else:
+        def failed(): raise RuntimeError('unreported callback detail')
+        state['snapshot_hook' if change == 'snapshot-error' else 'vault_hook'] = failed
+    with pytest.raises(StorageSupervisorError, match='^storage_supervisor_unavailable$'):
+        supervisor.verified_epoch()
+    assert supervisor.phase == 'active' and backend.events == ['start_voice']
+    assert supervisor._fd is not None and supervisor._leases == {}
+    assert not supervisor._epoch_observers and supervisor._epoch_refused
+
+
+@pytest.mark.parametrize('boundary', ['snapshot_hook', 'vault_hook'])
+@pytest.mark.parametrize('change', ['resource', 'joined', 'phase', 'broker', 'baseline', 'snapshot-source'])
+def test_verified_epoch_fences_callback_time_state_and_source(epoch_setup, boundary, change):
+    supervisor, _, state, _ = epoch_setup
+    completed = []
+    def mutate():
+        if change == 'resource': supervisor._resource = SimpleNamespace(close=lambda timeout: True)
+        elif change == 'joined': supervisor._resource_joined = True
+        elif change == 'phase': supervisor.phase = 'recovery_required'
+        elif change == 'broker': supervisor.broker_id = 'e' * 32
+        elif change == 'baseline': supervisor._baseline = 'f' * 64 + ':1'
+        else: supervisor._snapshot = lambda: state['snapshot']
+        completed.append(True)
+    state[boundary] = mutate
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+    assert completed == [True] and not supervisor._epoch_observers and supervisor._epoch_refused
+    assert supervisor._leases == {}
+
+
+@pytest.mark.parametrize('boundary', ['snapshot_hook', 'vault_hook'])
+def test_verified_epoch_caught_recursive_callback_cannot_publish(epoch_setup, boundary):
+    supervisor, _, state, _ = epoch_setup
+    caught = []
+    def recurse():
+        with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+        caught.append(True)
+    state[boundary] = recurse
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+    assert caught == [True] and supervisor._epoch_refused and not supervisor._epoch_observers
+    state[boundary] = None
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+
+
+@pytest.mark.parametrize('change', ['owner', 'fence', 'process', 'fd', 'path', 'snapshot', 'vault-reader'])
+def test_verified_epoch_requires_original_owner_and_dependencies(epoch_setup, change):
+    supervisor, backend, state, _ = epoch_setup
+    if change == 'owner':
+        (supervisor.directory / 'owner.lock').unlink()
+        (supervisor.directory / 'owner.lock').touch(mode=0o600)
+    elif change == 'fence': (supervisor.directory / 'fence.json').unlink()
+    elif change == 'process': supervisor._pid += 1
+    elif change == 'fd':
+        os.close(supervisor._fd)
+        supervisor._fd = os.open(supervisor.directory / 'foreign', os.O_CREAT | os.O_RDWR, 0o600)
+    elif change == 'path': supervisor._path_identity = []
+    elif change == 'snapshot': supervisor._snapshot = lambda: state['snapshot']
+    else: backend.vault_identity = lambda: backend.vault
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+    assert state['events'] == [] and not supervisor._epoch_observers
+
+
+def test_verified_epoch_io_releases_lock_and_fences_foreign_shutdown(epoch_setup):
+    supervisor, _, state, _ = epoch_setup
+    observed = []
+    def snapshot():
+        def shutdown():
+            acquired = supervisor._mutex.acquire(blocking=False)
+            observed.append(acquired)
+            if acquired:
+                try: observed.append(supervisor.begin_shutdown(5))
+                finally: supervisor._mutex.release()
+        thread = threading.Thread(target=shutdown)
+        thread.start(); thread.join(1)
+        assert not thread.is_alive()
+    state['snapshot_hook'] = snapshot
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+    assert observed == [True, True] and supervisor.phase == 'stopping'
+    assert supervisor._drain_deadline == 15 and not supervisor._epoch_observers
+
+
+@pytest.mark.parametrize('mode', ['drain', 'shutdown'])
+def test_verified_epoch_supports_only_original_bounded_resource_drain(epoch_setup, mode):
+    supervisor, _, state, resource = epoch_setup
+    observed = []
+    def closed(timeout):
+        observed.append((supervisor.phase, supervisor.verified_epoch()))
+        return True
+    resource.close = closed
+    if mode == 'drain':
+        supervisor.drain(str(uuid.uuid4()), timeout=5)
+        assert observed == [('draining', state['snapshot'].epoch)]
+    else:
+        assert supervisor.begin_shutdown(5)
+        assert supervisor.finish_shutdown(5)
+        assert observed == [('stopping', state['snapshot'].epoch)]
+    assert supervisor._drain_deadline == 15 and supervisor._resource_joined
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+
+
+def test_verified_epoch_refuses_expired_drain_and_midcallback_deadline(epoch_setup):
+    supervisor, _, state, _ = epoch_setup
+    assert supervisor.begin_shutdown(5)
+    state['snapshot_hook'] = lambda: state.update(now=15)
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+    assert supervisor._drain_deadline == 15 and state['events'] == ['snapshot']
+    assert not supervisor._resource_joined and supervisor.phase == 'stopping'
+
+
+@pytest.mark.parametrize('boundary', [1, 3])
+@pytest.mark.parametrize('change', ['resource', 'phase', 'deadline', 'source', 'reentry'])
+def test_verified_epoch_brackets_drain_clock_callbacks(epoch_setup, boundary, change):
+    supervisor, _, state, _ = epoch_setup
+    assert supervisor.begin_shutdown(5)
+    state['clock_reads'] = 0
+    completed = []
+    def mutate():
+        if state['clock_reads'] != boundary: return
+        if change == 'resource': supervisor._resource = SimpleNamespace(close=lambda timeout: True)
+        elif change == 'phase': supervisor.phase = 'active'
+        elif change == 'deadline': supervisor._drain_deadline = 100
+        elif change == 'source': supervisor._snapshot = lambda: state['snapshot']
+        else:
+            with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+        completed.append(True)
+    state['clock_hook'] = mutate
+    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+    assert completed == [True] and supervisor._epoch_refused and not supervisor._epoch_observers
+
+
+@pytest.mark.parametrize('change', ['resource', 'phase', 'source', 'reentry'])
+def test_verified_epoch_fences_actual_probe_model_dump_callback(tmp_path, change):
+    import httpx
+    from sage_lantern.message_contacts import RecipientID
+    from sage_lantern.message_storage import MessageStorageProbe
+    actor = RecipientID('epoch-fixture', 'a' * 64)
+    payload = dict(schema='sage.message-storage.v1', instance_id='c' * 64, agent_id=actor.agent_id,
+        encryption_expected=True, vault_active=True, vault_generation='2', stable=True,
+        canonical_send_idempotency=True, encrypted_send_admission=True)
+    hook = []
+    class Response:
+        def model_dump(self, *, mode):
+            assert mode == 'json'
+            if hook: hook[0]()
+            return payload.copy()
+    with httpx.Client(base_url='http://127.0.0.1:19100', trust_env=False, timeout=2) as transport:
+        client = SimpleNamespace(_client=transport, _identity=SimpleNamespace(agent_id=actor.agent_id),
+            _base_url='http://127.0.0.1:19100', message_storage_status=lambda: Response())
+        probe = MessageStorageProbe(client, actor=actor, endpoint=client._base_url)
+        directory = tmp_path.resolve() / 'probe-state'; directory.mkdir(mode=0o700)
+        supervisor = RootStorageSupervisor(directory, backend=Backend(), snapshot=probe.snapshot,
+            access_epoch=lambda: 'b' * 32, owner_uid=os.geteuid())
+        try:
+            supervisor.start(); supervisor.own_resource(SimpleNamespace(close=lambda timeout: True))
+            assert supervisor.verified_epoch() == 'c' * 64 + ':2'
+            completed = []
+            def mutate():
+                if change == 'resource': supervisor._resource = SimpleNamespace(close=lambda timeout: True)
+                elif change == 'phase': supervisor.phase = 'recovery_required'
+                elif change == 'source': supervisor._snapshot = lambda: MessageStorageSnapshot('c' * 64, '2')
+                else:
+                    with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+                completed.append(True)
+            hook.append(mutate)
+            with pytest.raises(StorageSupervisorError): supervisor.verified_epoch()
+            assert completed == [True] and supervisor._epoch_refused and not supervisor._epoch_observers
+        finally:
+            supervisor.close()

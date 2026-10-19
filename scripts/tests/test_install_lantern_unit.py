@@ -137,6 +137,15 @@ def test_mask_and_prepared_metadata_are_not_a_fresh_target(tmp_path):
     assert metadata.read_text() == "UNIT_ID=unit-b\n"
 
 
+def test_existing_provisioning_profile_is_not_a_fresh_target(tmp_path):
+    profile = tmp_path / "etc/sage/provisioning-profile.yaml"
+    profile.parent.mkdir(parents=True)
+    profile.write_text("schema: sage.provisioning-profile.v1\n")
+    with pytest.raises(SystemExit, match="existing /etc/sage/provisioning-profile.yaml"):
+        run_preflight(tmp_path)
+    assert profile.read_text() == "schema: sage.provisioning-profile.v1\n"
+
+
 @pytest.mark.parametrize("outputs", [("sage-lantern-voice-loop.service loaded active running Voice\n", ""),
                                       ("", "sage-lantern-camera.service masked enabled\n")])
 def test_loaded_or_installed_units_refuse_even_without_disk_artifacts(tmp_path, outputs):

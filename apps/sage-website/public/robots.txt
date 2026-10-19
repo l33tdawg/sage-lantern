@@ -1,0 +1,7 @@
+# SAGE Foundation — public site. Crawling is allowed; the sitemap lists the
+# canonical URLs on sage-foundation.net (the primary domain; sage.ngo and
+# sage-commons.org serve the same pages and declare this host as canonical).
+User-agent: *
+Allow: /
+
+Sitemap: https://sage-foundation.net/sitemap.xml

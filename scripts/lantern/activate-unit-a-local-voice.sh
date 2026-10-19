@@ -3,12 +3,12 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: activate-unit-a-local-voice.sh [--unit-id unit-a|unit-b] [--unit-config FILE] [--dry-run]
-Default unit-a preserves legacy paths. unit-b requires --unit-config.
+Usage: activate-unit-a-local-voice.sh [--unit-id unit-a|unit-b|unit-c|unit-d|unit-e|unit-f] [--unit-config FILE] [--dry-run]
+Default unit-a preserves legacy paths. Units B–F require --unit-config.
 Config is public JSON, never sourced: schema="sage-lantern-voice-activation-v1",
 unit_id, prepared_metadata, inventory, stable_usb_audio, identity_evidence,
 recovery_dir. Metadata/inventory use provision-lantern-unit.sh's existing schemas.
-Evidence must be under a unit-a-provisioning or unit-b-provisioning path component.
+Evidence must be under the matching unit-a-provisioning through unit-f-provisioning path component.
 Dry-run validates supplied public evidence only; no writes, service commands,
 key reads, hardware probes or recovery execution. It is NOT readiness acceptance.
 Staged metadata/inventory paths are allowed only in dry-run. Actual activation
@@ -37,8 +37,8 @@ while (($#)); do
     *) die 'Unknown activation argument.' ;;
   esac
 done
-[[ ${unit_id} == unit-a || ${unit_id} == unit-b ]] || die 'Unsupported unit-id.'
-[[ ${unit_id} != unit-b || -n ${unit_config} ]] || die 'Unit B requires independently prepared per-unit configuration and evidence.'
+[[ ${unit_id} =~ ^unit-[a-f]$ ]] || die 'Unsupported unit-id.'
+[[ ${unit_id} == unit-a || -n ${unit_config} ]] || die 'Non-A units require independently prepared per-unit configuration and evidence.'
 
 readonly state_root=/var/lib/sage-lantern
 readonly marker=${state_root}/LOCAL_VOICE_READY
@@ -114,7 +114,7 @@ try:
         require(str(paths["inventory"]) == "/var/lib/sage-lantern/inventory/unit-inventory.env")
     audio = str(paths["stable_usb_audio"])
     require(re.fullmatch(r"/dev/snd/by-id/usb-[A-Za-z0-9_-]+", audio))
-    require(unit != "unit-b" or "SAGE-LANTERN-A-AUDIO" not in audio)
+    require(unit == "unit-a" or "SAGE-LANTERN-A-AUDIO" not in audio)
     metadata = env(paths["prepared_metadata"])
     require(metadata == {"UNIT_ID": unit, "PROVISIONING_SCHEMA": "sage-lantern-unit-v1"})
     inventory = env(paths["inventory"])

@@ -1,0 +1,67 @@
+{
+  "e12": {
+    "V58_E12_A": {
+      "pass": true,
+      "text": "Subject: Morrowfen Tool Library — Collection Appointment Confirmed\n\nDear members,\n\nThe collection appointment at Morrowfen Tool Library is confirmed for 2 February 2041, from 09:50 to 10:40. Please use the west porch for access. Neri is the coordinator. This appointment is current and you are welcome to attend. No contact method, fee, transport or access-facility information has been supplied."
+    },
+    "V58_E12_B": {
+      "pass": true,
+      "text": "Subject: Morrowfen Tool Library — Collection Appointment Cancelled\n\nDear members,\n\nThe collection appointment at Morrowfen Tool Library on 2nd February 2041, originally scheduled for 09:50–10:40, is cancelled. Please do not attend. No replacement appointment or contact method has been supplied."
+    }
+  },
+  "actions": {
+    "V58_S04_B": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"The linen swatch ring has a small coral clasp.\",\"type\":\"fact\",\"tags\":[\"community:marshlight-swatch-index\"]}}</tool_call>"
+    },
+    "V58_S06_A": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"The practice display uses seven folded teal card stands.\",\"type\":\"fact\",\"tags\":[\"public\"],\"domain\":\"community:fogbank-display-notes\"}}</tool_call>"
+    },
+    "V58_S07_B": {
+      "pass": false,
+      "why": "wrapper",
+      "text": "I have saved the note to your private home:  \n**name:** selected_content  \n**content:** The cobalt loop key is in the narrow birch tray.  \n**type:** fact"
+    },
+    "V58_S08_B": {
+      "pass": false,
+      "why": "wrapper",
+      "text": "I found no grant for community:elmwing-model-rack that is permitted for me to select as a public destination. No write receipt means no save."
+    },
+    "V58_S09_A": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"During the mock trial, the rounded spatula cleared the paste dish in two strokes.\",\"type\":\"fact\",\"tags\":[\"paste-trial\",\"rounded-spatula\"],\"confidence\":0.83}}</tool_call>"
+    },
+    "V58_S09_B": {
+      "pass": false,
+      "why": "wrapper",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"During the mock trial, the rounded spatula cleared the paste dish in two strokes.\",\"type\":\"observation\",\"tags\":[\"paste-trial\",\"rounded-spatula\"],\"confidence\":0.83}}</tool_call>\n\n\n\nu"
+    },
+    "V58_S10_A": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"The paper rotor may lean because its lower clip is heavier.\",\"type\":\"inference\",\"tags\":[\"rotor-balance\"],\"confidence\":0.64}}</tool_call>"
+    },
+    "V58_S10_B": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"The paper rotor may lean because its lower clip is heavier.\",\"type\":\"inference\",\"tags\":[\"rotor-balance\"],\"confidence\":0.93}}</tool_call>"
+    },
+    "V58_S11_A": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_recall\",\"arguments\":{\"query\":\"assembly notes for the mock leaf-shaped shade\",\"scope\":\"local\",\"top_k\":2,\"min_confidence\":0.45}}</tool_call>"
+    },
+    "V58_S12_A": {
+      "pass": true,
+      "why": "ok",
+      "text": "<tool_call>{\"name\":\"sage_remember\",\"arguments\":{\"content\":\"The silver practice token is inside the saffron drawstring pouch.\",\"type\":\"fact\",\"tags\":[\"fictional\"]}}</tool_call>"
+    },
+    "passed": 7,
+    "total": 10
+  },
+  "all_pass": false
+}

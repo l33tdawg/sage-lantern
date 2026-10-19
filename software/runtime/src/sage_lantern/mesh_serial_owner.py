@@ -146,7 +146,21 @@ class SerialScheduler:
                 self._condition.notify_all()
 
     @contextmanager
-    def producer_fence(self, timeout=5):
+    def producer_fence(self, timeout=5, *, contain_on_timeout=True):
+        """Hold the producer lease, or refuse without containing when asked.
+
+        A drain that cannot prove quiescence must contain the scheduler: that is
+        the fail-closed rule above and it stays the default. An ordinary read is
+        a different caller - the mailbox fence waits for the same producers to
+        finish, and a producer holding the serial longer than its timeout means
+        "this listing cannot be proven consistent right now", not "the unit is
+        contained until a restart". Unit A, 2026-09-21: a background dispatch job
+        that overran its deadline held this fence past a mailbox read's timeout,
+        `_contained` latched permanently, and every community route answered 503
+        until the process was restarted. With `contain_on_timeout=False` the read
+        fails with `producer_busy`, admissions stay open and the next request can
+        succeed.
+        """
         deadline = time.monotonic() + _timeout(timeout)
         owner = threading.get_ident()
         live = False
@@ -157,10 +171,12 @@ class SerialScheduler:
             while self._active or self._queue:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    self._contained = True
+                    if contain_on_timeout:
+                        self._contained = True
                     self._fenced = False
                     self._condition.notify_all()
-                    raise SerialOwnerError('producer_drain_timeout')
+                    raise SerialOwnerError(
+                        'producer_drain_timeout' if contain_on_timeout else 'producer_busy')
                 self._condition.wait(remaining)
             live = True
 

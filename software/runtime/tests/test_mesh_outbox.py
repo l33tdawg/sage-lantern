@@ -20,7 +20,7 @@ from sage_lantern.meshcore_contacts import ContactInventory
 from sage_lantern.mesh_outbox import MeshOutbox, MeshOutboxError
 from sage_lantern.message_contacts import RecipientID
 from sage_lantern.message_storage import MessageStorageProbe
-from sage_lantern.workflow_store import WorkflowStore
+from sage_lantern.workflow_store import WorkflowNotFound, WorkflowOutcomeUnknown, WorkflowStore, WorkflowUnavailable
 from test_meshcore_contacts import contact, start, end
 from test_meshcore_transport import client as radio_client, frame, handshake_bytes, KEY as RADIO_SELF
 
@@ -395,6 +395,150 @@ def test_failed_progress_commit_retains_dispatching(setup):
     assert setup.stored()['body']['state'] == 'dispatching'
 
 
+def test_pre_wire_failure_after_the_cas_is_tracked_for_the_retry_driver(setup, monkeypatch):
+    """A CAS that landed and then failed before the wire leaves the row
+    'dispatching': it must be recorded against its window, or nothing requeues
+    it and it blocks provider construction at the next restart (unit A,
+    2026-09-19)."""
+    setup.queue()
+    device = setup.radio()
+    original = setup.outbox._contact
+    denied = {'done': False}
+    def contact(action):
+        stored = setup.stored()
+        if not denied['done'] and stored is not None and stored['body']['state'] == 'dispatching':
+            denied['done'] = True  # one denied contact check after the CAS, then the fence returns
+            raise MeshOutboxError()
+        return original(action)
+    monkeypatch.setattr(setup.outbox, '_contact', contact)
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'dispatching'
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    assert setup.outbox.latching_unknown() is False
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+
+
+def test_lost_cas_ack_is_resolved_from_the_durable_row(setup):
+    """A lost acknowledgement is not an unknown state while the row can be read.
+
+    Landed -> the durable record; not landed -> False; unreadable -> None, which
+    is the only case that may latch (unit A/B, 2026-09-19: a denied dispatch CAS
+    parked a unit until a cold start because the write's fate was never read).
+    """
+    setup.queue()
+    body = setup.stored()['body']
+    proof = setup.outbox._proof(body)
+
+    original = setup.outbox.store
+
+    def resolve(record_or_error):
+        class Store:
+            def get(self, record_id, *, kind, access_check):
+                if isinstance(record_or_error, Exception):
+                    raise record_or_error
+                return record_or_error
+        setup.outbox.store = Store()
+        try:
+            return setup.outbox._resolve_unknown_put(body['message_id'], body['revision'], proof,
+                                                     lambda: True)
+        finally:
+            setup.outbox.store = original
+
+    landed = dict(schema='sage.workflow-journal.v1', agent_id=setup.identity.agent_id,
+                  record_id=body['message_id'], revision=body['revision'] + 1, kind='mesh_outbound',
+                  payload=proof)
+    assert resolve(landed) == landed
+    assert resolve(dict(landed, revision=body['revision'])) is False
+    assert resolve(WorkflowNotFound()) is False
+    assert resolve(WorkflowUnavailable()) is None
+    assert resolve(dict(landed, revision=body['revision'] + 2)) is None
+
+
+def test_lost_dispatch_cas_leaves_a_row_scoped_unknown_not_a_latch(setup, monkeypatch):
+    setup.queue()
+    body = setup.stored()['body']
+    records = {}
+
+    class Store:
+        def get(self, record_id, *, kind, access_check):
+            return records[record_id]
+
+        def put(self, record_id, kind, expected_revision, payload, *, access_check):
+            records[record_id] = dict(schema='sage.workflow-journal.v1', agent_id=setup.identity.agent_id,
+                                      record_id=record_id, revision=expected_revision + 1, kind=kind,
+                                      payload=payload)
+            raise WorkflowOutcomeUnknown()
+
+    monkeypatch.setattr(setup.outbox, 'store', Store())
+    dispatching = {**body, 'state': 'dispatching', 'attempts': 1, 'dispatch_timestamp': 500}
+    with pytest.raises(MeshOutboxError):
+        setup.outbox._put(dispatching, body['revision'], setup.access)
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    assert setup.outbox.latching_unknown() is False
+    setup.now = body['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True  # a lapsed window still latches
+
+
+def test_fence_closed_cas_re_read_keeps_the_row_scoped_unknown(setup, monkeypatch):
+    """Unit B 2026-09-19 07:24: the bounded re-read ran entirely inside a lock.
+
+    Every read is denied while the owner session holds the rotation, so the
+    outbox used to set the fail-closed ``_untracked`` latch and every route
+    answered 503 until a cold start. A queued/dispatching CAS precedes RF: a
+    fence that is still closed must leave the row scoped to its own signed
+    window instead, for the retry driver to judge once access returns.
+    """
+    setup.queue()
+    body = setup.stored()['body']
+
+    class Store:
+        def get(self, record_id, *, kind, access_check):
+            raise WorkflowUnavailable()
+
+        def put(self, record_id, kind, expected_revision, payload, *, access_check):
+            fence['open'] = False  # the owner rotation lands mid-CAS
+            raise WorkflowOutcomeUnknown()
+
+    monkeypatch.setattr(setup.outbox, 'store', Store())
+    monkeypatch.setattr('sage_lantern.mesh_outbox.time.sleep', lambda _seconds: None)
+    fence = {'open': True}
+    dispatching = {**body, 'state': 'dispatching', 'attempts': 1, 'dispatch_timestamp': 500}
+    with pytest.raises(MeshOutboxError):
+        setup.outbox._put(dispatching, body['revision'], lambda: fence['open'])
+    assert setup.outbox._untracked is False
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    assert setup.outbox.latching_unknown() is False
+    # The escalation is unchanged: an unresolved row whose window lapses still
+    # latches for the owner.
+    setup.now = body['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+
+
+def test_fence_open_but_unreadable_cas_re_read_still_latches(setup, monkeypatch):
+    """The fail-closed case is only a fence-open row that cannot be read."""
+    setup.queue()
+    body = setup.stored()['body']
+
+    class Store:
+        def get(self, record_id, *, kind, access_check):
+            raise WorkflowUnavailable()
+
+        def put(self, record_id, kind, expected_revision, payload, *, access_check):
+            raise WorkflowOutcomeUnknown()
+
+    monkeypatch.setattr(setup.outbox, 'store', Store())
+    monkeypatch.setattr('sage_lantern.mesh_outbox.time.sleep', lambda _seconds: None)
+    dispatching = {**body, 'state': 'dispatching', 'attempts': 1, 'dispatch_timestamp': 500}
+    # A direct _put call leaks the store error; the @_admitted callers convert
+    # it to MeshOutboxError. Either way the latch must be set.
+    with pytest.raises((MeshOutboxError, WorkflowOutcomeUnknown)):
+        setup.outbox._put(dispatching, body['revision'], lambda: True)
+    assert setup.outbox._untracked is True
+    assert setup.outbox.latching_unknown() is True
+
+
 @pytest.mark.parametrize('change', ['guard', 'consent', 'expiry'])
 def test_revocation_after_dispatch_commit_stops_rf(setup, change):
     setup.queue()
@@ -412,6 +556,47 @@ def test_revocation_after_dispatch_commit_stops_rf(setup, change):
         setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access)
     assert setup.radios == []
     assert setup.stored()['body']['state'] == 'dispatching'
+
+
+def test_dispatch_bounds_contact_reads_without_caching_between_fragments(setup, monkeypatch):
+    setup.queue()
+    original = setup.outbox.verify_contact
+    contacts = []
+    def verify(action):
+        contacts.append(action.fragment_index)
+        return original(action)
+    monkeypatch.setattr(setup.outbox, 'verify_contact', verify)
+    device = setup.radio()
+    inventory = device.get_contacts(authorize=setup.access)
+    setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500,
+                             access_check=setup.access, inventory=inventory)
+    # Entry, after dispatch CAS, immediate RF admission, after RF, after
+    # progress CAS. Internal journal guards must not expand these five reads.
+    assert len(contacts) == 5
+    setup.contact_allowed = False
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=setup.radio(), radio_timestamp=500,
+                                 access_check=setup.access, inventory=inventory)
+    assert len(setup.radios) == 1
+
+
+@pytest.mark.parametrize('change', ['guard', 'consent', 'expiry'])
+def test_revocation_after_progress_commit_refuses_success(setup, change):
+    setup.queue()
+    device = setup.radio()
+    def revoke(state):
+        if state == 'queued':
+            if change == 'guard':
+                setup.allowed = False
+            elif change == 'consent':
+                setup.contact_allowed = False
+            else:
+                setup.now = 1000
+    setup.after_commit = revoke
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.dispatch_one(MESSAGE, device=device, radio_timestamp=500, access_check=setup.access)
+    assert len(setup.radios) == 1
+    assert setup.stored()['body']['next_fragment'] == 1
 
 
 def test_queue_commit_timeout_reconciles_without_resealing(setup):
@@ -797,6 +982,175 @@ def test_rf_unknown_window_lapse_latches_and_blocks_clean_close(setup):
     assert setup.outbox.latching_unknown() is True
     assert setup.outbox.close(1) is False
     assert setup.stored()['body']['state'] == 'dispatching'
+
+
+def test_an_owner_ends_a_post_wire_unknown_inside_its_window(setup):
+    """The in-window half of the cancel: an admitted attempt the owner stops.
+
+    Unit A, 2026-09-22: six `dispatching` rows with live windows and every
+    community route answering 503, because the operator's lapsed-window rule left
+    nothing able to end any of them. The swap that wrote `dispatching` precedes
+    the radio write, so the fragment may already be on the wire and the runtime's
+    only way to continue is to send it again. Ending the row rewrites nothing:
+    the cursor, attempts and dispatch timestamp stay as the evidence of how far
+    it got, and a late peer receipt still outranks the local decision.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    before = setup.stored()['body']
+    assert setup.now < before['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is False
+    assert setup.outbox.fencing_unknowns() == ()
+    assert setup.outbox.unresolved() == frozenset({MESSAGE})
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=before['revision'],
+                                    decision_binding='owner-cancel-20260922', access_check=setup.access)
+    assert cancelled.state == 'cancelled' and cancelled.revision == before['revision'] + 1
+    after = setup.stored()['body']
+    assert after['retry_binding'] == 'owner-cancel-20260922'
+    assert (after['next_fragment'], after['attempts'], after['dispatch_timestamp']) == \
+           (before['next_fragment'], before['attempts'], before['dispatch_timestamp'])
+    assert after['approved'] == before['approved']
+    assert setup.outbox.unresolved() == frozenset()
+    assert setup.outbox.latching_unknown() is False
+    # The peer's signed word still promotes the row it may already have received.
+    assert ingest(setup, receipt_wire(setup)).state == 'delivered'
+    assert setup.outbox.close(1) is True
+
+
+def test_only_a_lapsed_window_fences_admission_and_it_names_the_row(setup):
+    """The list a refused read points at: nothing in-window, the row once lapsed.
+
+    An unknown inside its window is retryable (owner decision 2026-09-13) and
+    fences nothing, so it must not appear; once the window lapses the row is the
+    fence, and it is the row - by message id - that the journal has to name.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    assert setup.outbox.latching_unknown() is False
+    assert setup.outbox.fencing_unknowns() == ()
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+    assert setup.outbox.fencing_unknowns() == (MESSAGE,)
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=setup.stored()['body']['revision'],
+                                    decision_binding='owner-cancel-20260922', access_check=setup.access)
+    assert cancelled.state == 'cancelled'
+    assert setup.outbox.fencing_unknowns() == () and setup.outbox.latching_unknown() is False
+
+
+def test_owner_cancel_ends_a_lapsed_row_and_clears_its_unknown(setup):
+    """The audited way out of a row whose window lapsed while nobody could act.
+
+    Unit A, 2026-09-21: rows whose approval windows had lapsed refused every
+    provider construction, and the runtime's own retry driver only works inside
+    the window, so nothing but a human could end them. The owner cancel is
+    terminal for the local lifecycle and drops the row-scoped unknown, so the
+    unit comes up instead of latching.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    progress = setup.outbox.inspect(MESSAGE, access_check=setup.access)
+    assert progress.state == 'dispatching'
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    assert setup.outbox.latching_unknown() is True
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=progress.revision,
+                                    decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert cancelled.state == 'cancelled' and cancelled.revision == progress.revision + 1
+    assert setup.stored()['body']['retry_binding'] == 'owner-cancel-20260921'
+    assert setup.outbox.unresolved() == frozenset()
+    assert setup.outbox.latching_unknown() is False
+    # The original approval, wire and text survive untouched.
+    assert setup.outbox.read_sent(MESSAGE, access_check=setup.access).content == 'Synthetic private content'
+    assert setup.outbox.close(1) is True
+    # Terminal: no retry decision, no re-approval and no dispatch can revive it.
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.retry_decision(MESSAGE, expected_revision=cancelled.revision,
+                                    decision_binding='late-retry', access_check=setup.access)
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.reapprove(MESSAGE, expected_revision=cancelled.revision, window_seconds=100,
+                               approval_binding='renewed-approval', consent_binding='consent-1',
+                               access_check=setup.access)
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup)
+    assert setup.stored()['body']['state'] == 'cancelled'
+    assert len(setup.radios) == 1
+
+
+def test_a_cold_instance_cancels_what_another_process_left_dispatching(setup):
+    """The on-unit case: the writer of the unknown is gone, the row is not.
+
+    Unit A holds rows left `dispatching` by processes that no longer exist, so
+    the operator's tool sees a fresh outbox with no in-memory unknown and must
+    still be able to end the row from the durable record alone.
+    """
+    setup.queue()
+    with pytest.raises(MeshOutboxError):
+        dispatch(setup, reply=False)
+    setup.now = setup.stored()['body']['approved']['expires_at']
+    setup.outbox = setup.make()
+    assert setup.outbox.unresolved() == frozenset()
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=2,
+                                    decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert cancelled.state == 'cancelled' and cancelled.revision == 3
+    assert setup.outbox.close(1) is True
+    assert setup.stored()['body']['retry_binding'] == 'owner-cancel-20260921'
+
+
+def test_owner_cancel_refuses_finished_peer_evidence(setup):
+    setup.queue()
+    delivered = ingest(setup, receipt_wire(setup))
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.cancel(MESSAGE, expected_revision=delivered.revision,
+                            decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'delivered'
+
+
+def test_a_peer_receipt_outranks_a_local_cancel(setup):
+    """Cancel stops this unit's work; it does not overrule the peer's signed word."""
+    setup.queue()
+    setup.now = 200
+    cancelled = setup.outbox.cancel(MESSAGE, expected_revision=1,
+                                   decision_binding='owner-cancel-20260921', access_check=setup.access)
+    assert cancelled.state == 'cancelled'
+    assert ingest(setup, receipt_wire(setup)).state == 'delivered'
+    assert setup.stored()['body']['state'] == 'delivered'
+
+
+def test_owner_cancel_needs_the_guard_the_session_and_the_exact_revision(setup):
+    setup.queue()
+    setup.allowed = False
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.cancel(MESSAGE, expected_revision=1, decision_binding='owner-cancel-20260921',
+                            access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'queued'
+    setup.allowed = True
+    for revision in (0, 2):
+        with pytest.raises(MeshOutboxError):
+            setup.outbox.cancel(MESSAGE, expected_revision=revision,
+                                decision_binding='owner-cancel-20260921', access_check=setup.access)
+    recording = setup.outbox.guard
+    setup.outbox.guard = lambda action: False
+    with pytest.raises(MeshOutboxError):
+        setup.outbox.cancel(MESSAGE, expected_revision=1, decision_binding='owner-cancel-20260921',
+                            access_check=setup.access)
+    assert setup.stored()['body']['state'] == 'queued'
+    setup.outbox.guard = recording
+    assert setup.outbox.cancel(MESSAGE, expected_revision=1,
+                               decision_binding='owner-cancel-20260921',
+                               access_check=setup.access).state == 'cancelled'
+    assert any(action.operation == 'cancel' and action.decision_binding == 'owner-cancel-20260921'
+               for action in setup.guard_actions)
+
+
+def test_a_cancelled_row_must_carry_the_decision_that_ended_it(setup):
+    setup.queue()
+    body = setup.stored()['body']
+    setup.outbox._validate({**body, 'state': 'cancelled', 'retry_binding': 'owner-cancel-20260921'},
+                           MESSAGE, body['revision'])
+    with pytest.raises(MeshOutboxError):
+        setup.outbox._validate({**body, 'state': 'cancelled'}, MESSAGE, body['revision'])
 
 
 def test_interrupted_admission_releases_join_but_never_claims_clean(setup):

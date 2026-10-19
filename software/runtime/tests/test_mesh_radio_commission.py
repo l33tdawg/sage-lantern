@@ -151,8 +151,11 @@ def resource_for(config, scheduler):
     return resource
 
 
-def test_real_scheduler_completion_and_exclusive_attempt(request_data, journal):
+@pytest.mark.parametrize('unit', ['unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'])
+def test_real_scheduler_completion_and_exclusive_attempt(request_data, journal, unit):
     config, request, contact = request_data
+    config['unit_id'] = unit
+    request['config_sha256'] = module.sha(module.canonical(config))
     device, stream = client(incoming(request, contact))
     scheduler = SerialScheduler(device, release=lambda: None)
     resource = resource_for(config, scheduler)

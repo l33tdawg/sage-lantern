@@ -175,3 +175,108 @@ permission warning, with no new validation failure.
 The later community source changes, including the eighth drain receipt field,
 were **not** deployed. Another owner physical wake cycle after this correction
 is still required; active inhibition is not itself a physical acceptance test.
+
+## C–F (Wayland) status, 2026-09-30 — adaptation written, staged, not deployed
+
+The reviewed controller describes the **A/B profile**: a GDM **X11** kiosk for the
+`radxa` account, with `lantern-display-power` reading idle seconds over
+`DISPLAY=:0` and a `bash /usr/local/bin/sage-lantern-kiosk` launcher tree for the
+kiosk fence. Read on C (29 Sep 2026), the C–F profile does not match it, and the
+controller therefore cannot observe idle or fence the console there:
+
+- no `radxa` account — uid 1000 is `sage`; `runuser -u radxa` exits 1, which is
+  the first thing `lantern-idle-suspend.py` does to sample idle time;
+- no X11 kiosk session — the session is `systemd --user` + GNOME Shell on Wayland
+  (Xwayland is rootless `:0`), and the console is a Chromium kiosk started
+  directly by `sage-lantern-mode-supervisor`, not by the X11 kiosk launcher, so
+  the reviewed kiosk fence finds no launcher to bind;
+- `sage-lantern-display-power.service` and `sage-lantern-camera.service` are
+  **not-found** on C, and the display-power / idle-suspend helpers are not
+  installed.
+
+That adaptation is now written and unit-verified read-only; nothing has been
+deployed and no cycle has been run. It is **D-018** in `DECISIONS.md`, and it
+consists of:
+
+- `/etc/sage-lantern/session-profile` — a root-owned record naming
+  `x11-kiosk` or `wayland-mutter`; an absent record means the reviewed X11
+  profile, anything else refuses by gate. The C–F installer stages
+  `wayland-mutter`.
+- `sage_lantern.suspend_session` — idle seconds from
+  `org.gnome.Mutter.IdleMonitor.GetIdletime` over the operator's session bus;
+  display blank/unblank through `org.gnome.ScreenSaver.SetActive`. A blank is
+  lowered only when all of these hold: `lock-enabled` is not true, the operator
+  session can be named, that session is not authentication-locked, and no blank
+  is already up. On resume only the blank this cycle confirmed is taken down; a
+  blank or lock it did not create is preserved and reported, never dismissed
+  (`preserved_unowned`, `preserved_preexisting`, `preserved_authentication`,
+  `preserved_session_unverified`, `preserved_session_replaced`). A skipped or
+  preserved blank is not evidence that blank/unblank still works — see the
+  [console-lane activation runbook](CF_CONSOLE_LANE_ACTIVATION.md) and the
+  shield's own coverage in `software/runtime/tests/test_suspend_session.py`;
+- a console fence over the mode supervisor and its browser group: the supervisor
+  (MainPID of the GNOME application scope `app-gnome-sage\x2dlantern\x2dconsole-<pid>.scope`)
+  keeps running while exactly one Chromium child holding the console profile, in
+  its own process group, and all its grouped processes are SIGSTOPped for the
+  cycle and SIGCONTinued after it;
+- a stop set that follows the installed profile: auth, voice and fleet-admin on
+  C–F (no camera, no display-power unit exists there), with the A/B set unchanged;
+- `scripts/lantern/install-cf-idle-suspend-local.py`, which builds, stages as root
+  and checks the bundle against a frozen plan and never deploys or activates.
+
+Read on the live unit (30 Sep 2026), the C–F session layer behaves as designed:
+the Mutter idle query returns milliseconds, `lock-enabled` is false, and the
+signal-free console-fence preflight resolves the supervisor, the single kiosk
+browser and its nine grouped child processes. Two assumptions died on contact
+with the unit and are now recorded in the code: the DRM connector `dpms`
+attribute is read-only (0444) even for root, so kernel sysfs is not a display
+path, and Chromium rewrites `/proc/<pid>/cmdline` into one space-joined entry,
+so the profile match must split it the way the reviewed X11 fence already does.
+The staged bundle verified on C at `/var/lib/lantern-work/cf-sleep-20260930`
+(manifest `46f3cfb7…`, `deployed:false`, `activated:false`).
+
+**The voice lane is optional (D-018 rule 7).** It joins the drain contract only
+once its unit is enabled, like the second model unit: without it the controller
+requires no voice instance, publishes no drain request and starts nothing on
+wake, while an enabled-but-inactive lane still refuses. A missing mesh, radio or
+voice component therefore never stops the console, the on-screen keyboard, the
+device lock or automatic sleep. This was found the hard way: C carries a
+dangling `SAGE_LANTERN_MESH_BROKER=1` from the fleet installer with no mesh
+runtime or `/etc/sage-lantern/mesh-runtime.json` (whose reviewed preparation
+needs a radio fingerprint, and C's radio is declared absent). The C–F voice
+drop-in therefore selects the reviewed non-mesh drain path, and the deployer
+refuses only a unit whose mesh runtime is actually installed.
+
+**Cycled for real on C, 30 Sep 2026.** One reviewed one-shot cycle
+(`--once --test-wake-after 60`) completed: fence → auth stop with a confirmed
+drain → fleet-admin stop → console freeze → suspend → 60-second RTC wake →
+verified resume → services restarted → fence released. Kernel suspend counter 1,
+boot id unchanged, both model units the same instances, console browser resumed
+and answering, `--check` green afterwards. The unit still has no opt-in marker,
+so automatic sleep remains off by choice.
+
+Two configuration facts belong to every C–F unit: the image ships
+`/etc/systemd/sleep.conf.d/00-disable.conf` with `AllowSuspend=no` (the lane
+needs `/etc/systemd/sleep.conf.d/90-sage-lantern.conf` with `AllowSuspend=yes`),
+and a refused attempt leaves `systemd-suspend.service` failed plus
+`suspend.target` active, which must be cleared (`systemctl reset-failed
+systemd-suspend.service`, stop the targets) before the next attempt. The panel
+blank is best-effort on C–F and reported per cycle; the panel is dark during S3
+in any case. The photo-in-flight rehearsal needs the camera and voice lane — no
+CSI camera is fitted on C — so its bench substitute is the model-busy proof, and
+the real photo rehearsal belongs on a unit with the camera fitted.
+
+Two more rules belong to the C–F bundle. The voice sleep drop-in replaces the
+voice `ExecStart`, so it must keep the unit's own capture binding
+(`--config /etc/sage-lantern/lantern.toml --alsa-device <binding>` from
+`/etc/sage-lantern/appliance-bindings.json`): the runtime default is a
+placeholder device, and dropping the binding silently points capture at a
+device that does not exist on the unit. Both installers and
+`plan-fresh-vision.py` generate the same bytes for a given binding, and the
+tests assert that equality. And because the lane installs `AllowSuspend=yes`,
+the operator session must never ask logind to sleep on its own:
+`configure-kiosk-session-settings.py` pins the GNOME power plugin's automatic
+suspend off (see the console-lane activation runbook). Only the controller is a
+reviewed suspend source.
+
+Evidence and the full checklist: [C unit leftovers, 29 Sep 2026](../../work/c-unit-leftovers-20260929/README.md).

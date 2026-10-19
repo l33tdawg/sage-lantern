@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import syslog
 import threading
 import time
 from types import SimpleNamespace
@@ -128,6 +129,90 @@ def test_real_factory_queue_dispatch_mailbox_and_close(factory):
     assert state.runtime.client._client.is_closed
 
 
+def test_a_refused_read_names_the_row_that_fenced_admission(factory, monkeypatch):
+    """A read that cannot pass the fence says why, and which row did it.
+
+    Unit A, 2026-09-22: outbox and inbox answered 503 `community_unavailable`
+    while `/community/status` answered 200, and the journal held no line naming
+    the conjunct or the row - `_read` raised `MeshRuntimeError() from None`, and
+    the fence had to be reconstructed from a separate store scan. A lapsed
+    unknown is the fence, so the row's message id is the fact the record owes.
+    """
+    lines = []
+    monkeypatch.setattr(syslog, "syslog", lambda priority, message: lines.append(json.loads(message)))
+    state = factory
+    state.adopt()
+    identifier = str(uuid.uuid4())
+    # The durable shape the unit held: an unknown whose signed window has
+    # lapsed. The outbox's own latching rules are pinned in the outbox suite.
+    state.runtime.outbox.track_unknown(identifier, int(time.time()) - 1)
+    with pytest.raises(MeshRuntimeError):
+        state.runtime.list_messages(state.context, "outbox")
+    assert state.runtime.admission_fence() == {"layers": ["outbox"], "rows": [identifier]}
+    refusals = [line for line in lines if line.get("operation") == "list_messages"]
+    assert [(line["access_denied"], line["fenced_rows"]) for line in refusals] == \
+           [("admission_unsafe", [identifier])]
+
+
+def test_a_read_refused_by_the_context_guard_names_that_conjunct(factory, monkeypatch):
+    """The other half: a refusal that is not a row still names what refused it.
+
+    The lease-side `authorize_context` denial is what unit A's journals showed
+    next to the fence (2026-09-22), and it is invisible in a plain
+    MeshRuntimeError - so the same record has to carry it, with no row ids.
+    """
+    lines = []
+    monkeypatch.setattr(syslog, "syslog", lambda priority, message: lines.append(json.loads(message)))
+    state = factory
+    state.adopt()
+    state.authorized = False
+    with pytest.raises(MeshRuntimeError):
+        state.runtime.list_messages(state.context, "outbox")
+    refusals = [line for line in lines if line.get("operation") == "list_messages"]
+    assert [(line["access_denied"], line.get("fenced_rows")) for line in refusals] == [("authorize_context", None)]
+    assert state.runtime.admission_fence() is None
+
+
+def test_the_wake_job_marker_carries_the_row_that_fenced_it(factory):
+    """The background wage log names the row, not just the conjunct.
+
+    A dispatch wake refused by an admission fence reports through its own job
+    marker; without the rows the log says `admission_unsafe` and stops there.
+    """
+    state = factory
+    state.adopt()
+    identifier = str(uuid.uuid4())
+    state.runtime.outbox.track_unknown(identifier, int(time.time()) - 1)
+    job = module._BackgroundJob()
+    state.runtime._local.job = job
+    try:
+        assert state.runtime._denied("admission_unsafe") is False
+    finally:
+        del state.runtime._local.job
+    assert (job.access_denied, job.fenced_rows) == ("admission_unsafe", (identifier,))
+
+
+def test_one_an_outbox_read_seeds_the_dispatch_set(factory):
+    """An outbox read marks its queued rows for the wake, without a journal scan.
+
+    Unit A, 2026-09-21: the dispatch wake finds rows from an in-memory set, and
+    a row queued by an earlier process was otherwise only discoverable by a
+    journal scan that costs more than the whole 10 s wake - so the message never
+    left the queue. The owner looking at the outbox is the read that fixes it.
+    """
+    state=factory
+    state.adopt()
+    now=int(time.time())
+    identifier=str(uuid.uuid4())
+    state.runtime.queue_message(state.context,message_id=identifier,recipient=Peer("remote",bytes.fromhex(state.remote.agent_id)),
+        radio_public_key=state.radio,content="Synthetic private message",consent_binding="contact-policy",issued_at=now,expires_at=now+900)
+    state.runtime._queued_rows().discard(identifier)
+    page=state.runtime.list_messages(state.context,"outbox")
+    assert [item.message_id for item in page.items]==[identifier]
+    assert identifier in state.runtime._queued_rows()
+    assert state.runtime.close(timeout=5) is True
+
+
 def test_one_fragment_costs_one_contact_read(factory, monkeypatch):
     """The fenced dispatch hands the row the inventory this operation refreshed.
 
@@ -148,9 +233,17 @@ def test_one_fragment_costs_one_contact_read(factory, monkeypatch):
         reads.append(authorize)
         return original(authorize=authorize)
     monkeypatch.setattr(state.device,"get_contacts",counted)
+    state.requests.clear()
     result=state.runtime.dispatch_one(state.context,identifier,radio_timestamp=now)
     assert result.next_fragment==1 and len(state.transmits)==1
     assert len(reads)==1
+    # Real registry + journal + SDK: nested journal guards previously caused
+    # hundreds of signed HTTP calls per fragment, filling the native replay
+    # cache before delivery. Every workflow call still has two fresh probes.
+    assert len(state.requests) <= 80
+    storage = sum(path == "/v1/messages/storage" for _, path in state.requests)
+    workflows = sum(path.startswith("/v1/workflows/") for _, path in state.requests)
+    assert storage == 2 * workflows
 
 
 def test_real_receive_and_explicit_read_receipt(factory):

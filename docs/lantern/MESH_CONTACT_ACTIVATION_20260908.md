@@ -66,8 +66,10 @@ card/registry state, never automatically retry an uncertain operation.
 4. Each recipient owner explicitly signs its own card with the existing ordinary
    identity via `mesh_contacts.sign_contact_card`, exact chain/full radio key,
    monotonically reviewed revision, expiry and consent. No new identity and no
-   off-device seed export. Cards expire within at most 3600 seconds: renewal is
-   explicit and remains an operational prerequisite, not automatic discovery.
+   off-device seed export. Cards expire within at most 86400 seconds (24 h, the
+   owner's message-approval window; the issuing owner still chooses the TTL):
+   renewal is explicit and remains an operational prerequisite, not automatic
+   discovery.
 5. After verified bootstrap and owner unlock, initialize the existing provider
    through normal authenticated status. Import each peer's signed card through
    the root socket route below. An empty peer list, absent card, expired consent

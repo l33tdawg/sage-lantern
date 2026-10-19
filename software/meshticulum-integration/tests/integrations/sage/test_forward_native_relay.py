@@ -105,7 +105,8 @@ def relay_rig(path, *, scopes=RELAY_SCOPES, limit=LIMITS, approval_change=None, 
                for p in (context.initiator, context.responder)])
     h._config_reader = lambda: copy.deepcopy(h.config)
     h.supervisor = SimpleNamespace(phase='active', broker_id='b' * 32, _resource=h,
-        resource_lifecycle_check=lambda: state.live, verified_epoch=lambda: state.instance_id + ':1')
+        resource_lifecycle_check=lambda: state.live, verified_epoch=lambda: state.instance_id + ':1',
+        admission_epoch=lambda: state.instance_id + ':1')
     r = SimpleNamespace(hardware=h, client=client, state=state, clock=clock, context=context,
         description=description, intention=intention, local=local, inner=inner, sessions=sessions,
         path=path, owner=None, factories=[])

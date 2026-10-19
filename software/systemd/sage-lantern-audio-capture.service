@@ -1,0 +1,17 @@
+[Unit]
+# Applies the reviewed ES8388 capture path for the onboard microphone. The board
+# boots with the capture chain on a differential line input at 0 dB gain, where
+# the microphone is inaudible; this oneshot sets the exact qualified values and
+# verifies them by read-back. It touches no playback control and writes no file.
+Description=SAGE Lantern platform codec capture path (onboard microphone)
+After=sound.target
+ConditionPathExists=/dev/snd/by-path/platform-es8388-sound
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+NoNewPrivileges=true
+ExecStart=/opt/sage-lantern/venv/bin/python -I -B /usr/local/libexec/sage-lantern-set-platform-audio-capture --card rockchipes8388 --wait-seconds 20
+
+[Install]
+WantedBy=multi-user.target

@@ -188,18 +188,26 @@ The personal-SAGE service explicitly overrides `REST_ADDR=127.0.0.1:8080`,
 `SAGE_CMT_RPC_ADDR=tcp://127.0.0.1:26657`, `SAGE_TLS_ADDR=127.0.0.1:8443`
 and the personal-mode `SAGE_CMT_P2P_ADDR=tcp://127.0.0.1:26656`. REST/TLS
 environment overrides take precedence over YAML. The installer requires these
-settings in the matched unit, plus `SAGE_LANTERN_PRIVATE_LISTENERS=1` and the
-`check-lantern-private-config` prestart command. This new SAGE command loads the
-actual YAML with SAGE's own parser and environment precedence without generating
-keys or starting listeners. Missing/default-enabled federation, enabled federation,
-enabled quorum, or non-loopback effective REST/TLS/RPC/personal-P2P addresses fail
-closed. `serve` repeats the same validation on its own config load, avoiding
-reliance on a prestart-only check. Generic SAGE behavior is unchanged without the
-explicit policy. Public federation belongs in a separately configured gateway,
-not this private-ledger service.
+settings in the matched unit, the root-owned mode-0600
+`/etc/sage/provisioning-profile.yaml`, and the `check-private-config` prestart
+command. The profile declares `private_listeners: true`; it replaces the former
+product-specific environment variable and command. The prestart command loads
+the actual YAML with SAGE's own parser and environment precedence without
+generating keys or starting listeners. Missing/default-enabled federation,
+enabled federation, enabled quorum, or non-loopback effective
+REST/TLS/RPC/personal-P2P addresses fail closed. `serve` repeats the same
+validation on its own config load, avoiding reliance on a prestart-only check.
+Public federation belongs in a separately configured gateway, not this
+private-ledger service.
+
+The service keeps `NoNewPrivileges=true` and a capability bounding set containing
+only `CAP_DAC_READ_SEARCH`. That single read capability is required because the
+profile remains root-owned `0600` while SAGE requires the initializing process to
+run as the non-root service account.
 
 An older binary lacks the prestart command and cannot start this unit: the next
-matched SAGE artifact must include these source changes. No binary was rebuilt
-or deployed here. The check does not validate all identity/configuration policy
-or establish encryption. Native acceptance must verify actual listeners, not
-infer isolation from a lock marker or these source tests.
+matched SAGE artifact must include these source changes. The bundle now pins the
+published 11.23.27 binary; no unit was updated or deployed here. The check does
+not validate all identity/configuration policy or establish encryption. Native
+acceptance must verify actual listeners, not infer isolation from a lock marker
+or these source tests.

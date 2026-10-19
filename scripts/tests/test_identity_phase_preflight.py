@@ -22,10 +22,13 @@ class IdentityPreflightTests(unittest.TestCase):
         self.payload = self.root / 'payload'
         self.config = self.root / 'var/lib/sage-lantern/sage-personal/config.yaml'
         self.metadata = self.root / 'etc/sage-lantern/unit.env'
+        self.profile = self.root / 'etc/sage/provisioning-profile.yaml'
         self.binary = self.root / 'opt/sage-lantern/bin/sage-gui'
         files = {self.config: b'quorum: {enabled: false}\nfederation: {enabled: false}\n',
                  self.metadata: b'UNIT_ID=unit-b\nPROVISIONING_SCHEMA=sage-lantern-unit-v1\n',
+                 self.profile: (ROOT / MODULE.PROVISIONING_PROFILE).read_bytes(),
                  self.binary: b'synthetic nonexecutable',
+                 self.payload / MODULE.PROVISIONING_PROFILE: (ROOT / MODULE.PROVISIONING_PROFILE).read_bytes(),
                  self.payload / 'software/bundle/linux-arm64/bin/sage-gui': b'synthetic nonexecutable'}
         for path, data in files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,7 +40,7 @@ class IdentityPreflightTests(unittest.TestCase):
         original = Path.stat
         def synthetic_owner(path, *args, **kwargs):
             info = original(path, *args, **kwargs)
-            if path in (self.metadata, self.binary):
+            if path in (self.metadata, self.profile, self.binary):
                 class Owned:
                     st_uid = 0
                     def __getattr__(self, name):
@@ -53,7 +56,7 @@ class IdentityPreflightTests(unittest.TestCase):
         self.assertEqual(list(self.root.rglob('*.key')), [])
 
     def test_binding_config_and_binary_mismatches(self):
-        for path in (self.config, self.metadata, self.binary):
+        for path in (self.config, self.metadata, self.profile, self.binary):
             with self.subTest(path=path):
                 original = path.read_bytes()
                 path.write_bytes(b'mismatch')

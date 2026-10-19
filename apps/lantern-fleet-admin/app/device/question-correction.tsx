@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import QuestionKeyboard from './question-keyboard';
 import { createQuestionPredictor } from '../../lib/question-prediction';
 import { correctionTextValid, type CorrectionAttempts } from '../../lib/question-correction';
-import { deviceSessionHeaders, getDeviceToken } from '../../lib/device-session';
-import { parseTouchSession } from '../../lib/voice-control';
+import { deviceSessionHeaders, establishedSessionContext, fenceProtectedReply, getDeviceToken } from '../../lib/device-session';
+import { parseTouchSession, replySessionContext } from '../../lib/voice-control';
 import type { PhotoAttachment } from '../../lib/photo-preview';
 import Image from 'next/image';
 import englishWords from '../../lib/keyboard-words.en.json';
@@ -76,6 +76,10 @@ export default function QuestionCorrection({ sourceId, question, photo, historyP
     setConfirmation(null);
     attempted.current = true;
     setPending(true);
+    // The authority this correction is submitted under, captured before the
+    // command leaves. It is a write, so a refusal below reports the submission as
+    // unconfirmed and never replays it.
+    const issuedUnder = establishedSessionContext();
     controller.current = new AbortController();
     const deadline = setTimeout(() => controller.current?.abort(), 5000);
     try {
@@ -86,7 +90,16 @@ export default function QuestionCorrection({ sourceId, question, photo, historyP
         signal: controller.current.signal, cache: 'no-store', credentials: 'omit', redirect: 'error',
       });
       if (!response.ok) throw new Error('Correction refused');
-      const session = parseTouchSession(await response.json());
+      const reply: unknown = await response.json();
+      const session = parseTouchSession(reply);
+      /**
+       * The new session is adopted only when the reply was issued under the
+       * authority this submission was sent under and that authority still holds.
+       * A mismatch leaves the submission unconfirmed: the request has already
+       * gone out, so the honest outcome is the existing "it may have started"
+       * report and a manual check, not a silent second attempt.
+       */
+      if (fenceProtectedReply(issuedUnder, replySessionContext(reply)) !== 'ok') throw new Error('Correction not confirmed');
       if (mounted.current && getDeviceToken() === token && !document.hidden) {
         attempts.confirmed(sourceId);
         submitted(session.session_id, photo);
@@ -104,7 +117,7 @@ export default function QuestionCorrection({ sourceId, question, photo, historyP
       {photo && <Image src={`data:image/jpeg;base64,${photo.preview}`} width={160} height={100} unoptimized alt="Photo kept with your question" />}
       <div hidden={confirmation !== null}>
         <QuestionKeyboard initialText={question} suggestions={suggestions} onChange={(draft) => { setSuggestions(predict(draft)); setValid(correctionTextValid(draft.text)); }}
-          onCancel={close} onSubmit={(text) => void review(text)} canSubmit={ready && valid && !attempted.current} busy={pending} />
+          onCancel={close} onSubmit={(text) => void review(text)} canSubmit={ready && valid && !pending} busy={pending} />
       </div>
       {confirmation && <section className="question-keyboard" aria-label="Confirm new answer">
         <h2>Create a new answer?</h2>

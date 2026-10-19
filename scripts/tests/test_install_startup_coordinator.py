@@ -46,7 +46,9 @@ def test_apply_enables_only_coordinator_without_start(monkeypatch):
     monkeypatch.setattr(installer.subprocess, 'run', lambda command, **kwargs: calls.append(command))
     installer.main()
     assert calls == ['preflight', installer.startup.CONFIG, installer.SERVICE,
-        ['/usr/bin/systemctl', 'daemon-reload'], ['/usr/bin/systemctl', 'enable', 'sage-lantern-startup.service']]
+        ['/usr/bin/systemctl', 'daemon-reload'],
+        ['/usr/bin/systemctl', 'disable', 'sage-lantern-llm.service'],
+        ['/usr/bin/systemctl', 'enable', 'sage-lantern-startup.service']]
 
 
 def test_failed_validation_never_installs(monkeypatch):

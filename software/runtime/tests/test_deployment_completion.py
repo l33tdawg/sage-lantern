@@ -7,6 +7,7 @@ import pytest
 
 import sage_lantern.deployment_drain as module
 from sage_lantern.storage_supervisor import StorageSupervisorError
+from sage_lantern.suspend_system import LLM, VLM
 from test_storage_supervisor import setup
 from test_deployment_drain import drained
 
@@ -122,12 +123,13 @@ def test_explicit_completion_or_retained_recovery(drained, monkeypatch, fault):
     def command(arguments, **kwargs):
         assert journal.load().active and owner._marker.exists()
         actions.append(arguments)
-        if ((fault == "model" and arguments[-1] == completion.LLM)
+        if ((fault == "model" and LLM in arguments)
                 or (fault == "auth" and arguments[-1] == "auth")
                 or (fault == "surfaces" and arguments[-1] == "display")):
             raise RuntimeError("synthetic start failure")
     runner = SimpleNamespace(command=command, model_baseline_ready=lambda: True,
-        model_idle=lambda slots: True, public_json=lambda *args: [], locked=lambda: True,
+        models_idle=lambda: True, resident_models=lambda: (LLM, VLM),
+        locked=lambda: True,
         AUTH="auth", CAMERA="camera", UI="ui", DISPLAY="display",
         display_power=lambda value: None, service_identity=lambda service: (123, "a" * 32))
     active = {"broker_id": "b" * 32, "vault_epoch": "d" * 64 + ":1"}

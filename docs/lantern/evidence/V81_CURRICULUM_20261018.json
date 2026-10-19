@@ -1,0 +1,179 @@
+{
+  "schema": "sage.lantern.v81-curriculum-evidence.v1",
+  "date": "2026-10-18",
+  "scope": "Synthetic development evidence, the public model release and the Unit C V81 deployment. Development panels are not a general-capability or long-form qualification.",
+  "curriculum": {
+    "unique_rows": 2028,
+    "written_rows": 4056,
+    "updates": 2028,
+    "sources": {
+      "labels": 614,
+      "corrections": 380,
+      "v79_6_schema": 285,
+      "v79_8_arithmetic": 170,
+      "v79_2_notice": 22,
+      "v79_clarify": 54,
+      "v46": 503
+    },
+    "sha256": "be3af0b4d771002e9350710aa3fa3b0d85df95acea909e05cb6da8669fd79b44"
+  },
+  "training": {
+    "parent": "V79.6 ten-adapter chain",
+    "rank": 32,
+    "learning_rate": 7e-07,
+    "updates": 2028,
+    "final_reported_loss": 0.007,
+    "adapter_sha256": "eddb21695aec95bb72fca99c67c5430619988cb0e2761fd509f523263e1fe077"
+  },
+  "sealed_v81": {
+    "cases": 64,
+    "stock": 34,
+    "v79_6": 36,
+    "v80": 63,
+    "v81": 64,
+    "families": {
+      "label_unknown": "16/16",
+      "label_defined": "12/12",
+      "cadence_missing": "8/8",
+      "cadence_defined": "4/4",
+      "grounding_missing": "8/8",
+      "correction_value": "8/8",
+      "correction_label": "4/4",
+      "correction_cadence": "2/2",
+      "correction_history": "2/2"
+    },
+    "prompts_sha256": "efba886a54d6cf654aca6e29597247bf41457c8b7e3174cc1169be5f9d35e736",
+    "references_sha256": "f88597f4ceab04bb31f3a48d72c06855da34f3bb549a699a30cb8aef5eb4e606"
+  },
+  "frozen_development": {
+    "fresh64_tool_status": {"stock": "6/24", "v79_6": "21/24", "v80": "17/24", "v81": "21/24"},
+    "v81_raw_failures": ["V58_S03_B", "V58_S13_B", "V58_S16_B"],
+    "stock28": "28/28 semantically (2 calls add model-only metadata)",
+    "E12_A_B": "pass both",
+    "E13_A_B": "raw fails; interval guard handles the published cases",
+    "S03_B": "raw fails; status guard repairs the errored-lookup prose",
+    "E03_A": "raw derails into a 3,869-character inconsistent calculation"
+  },
+  "guard_check": {
+    "V58_S13_B": "guard_save canonicalizes to the authorized private-home save with no domain",
+    "V58_S03_B": "response_guards.status_text repairs to a failed-lookup non-absence answer",
+    "V58_S16_B": "the new canonical_recall guard uses the supplied query and options",
+    "V58_E03_A": "no arithmetic guard; raw derailment remains"
+  },
+  "guarded_v81": {
+    "sealed": "64/64",
+    "fresh64": "24/24",
+    "stock28": "28/28",
+    "E12_A_B": "2/2",
+    "E13_A_B": "2/2",
+    "S03_B": "1/1",
+    "guard_module_sha256": "50835b209594108abfa864c97bb7b9f0f986a13296e9bc516e9ffe0951413972",
+    "response_guards_sha256": "8b226022728a02509cda669fbfb070f1043ed7b7153d6cd207fdccabfb4b78e1",
+    "action_guard_tests": "38/38 pass",
+    "response_guard_tests": "69 pass, 20 subtests pass"
+  },
+  "runtime_guards": {
+    "grounded_longform": {
+      "path": "software/npu/grounded_longform.py",
+      "sha256": "103da4652c24370e36a81a3ebd677e7b8d6a144ae26e3a0eeeb87d64f88641e9",
+      "installed_on_unit_c": "/opt/sage-lantern/npu/token-engine/libexec/grounded_longform.py",
+      "scope": "explicit paragraph count plus explicit fact list, narrow correction and missing-detail forms",
+      "sealed_longform": "20/20",
+      "families": {
+        "grounded": "8/8",
+        "sparse": "4/4",
+        "missing": "4/4",
+        "correction": "4/4"
+      },
+      "device_capture": "work/lantern-v81-longform-20261018/captures/device_v811_guard_longform_final2.jsonl",
+      "device_score": "work/lantern-v81-longform-20261018/captures/score_device_v811_guard_longform_final2.json",
+      "deterministic_latency_ms": "1-41 for composer cases"
+    },
+    "cadence_answer": {
+      "behavior": "asks for a missing check/review interval instead of inventing one",
+      "live_probe": "The check interval isn't specified here. What interval should apply?"
+    },
+    "server_sha256": "674ae3d23f5527518a641ded9b1475e21aeb76bb4de2123b26000e779c251db0",
+    "tests": "69 passed, 20 subtests passed"
+  },
+  "device_deployment": {
+    "unit": "Unit C, RK3588 engineering device",
+    "service": "sage-lantern-llm.service",
+    "service_active": true,
+    "voice_service_active": true,
+    "health": "{\"status\":\"ok\"}",
+    "model_path": "/opt/sage-lantern/npu/models/v81-fused-w8a8-opt1-ctx16384-rk3588.rkllm",
+    "model_sha256": "ac7021b61909b9682ea25f21400c195d477c6ad3d2a595adc7d632808dfa6285",
+    "model_bytes": 3823749236,
+    "quantization": "W8A8 opt1",
+    "context": 16384,
+    "max_new_tokens": 8192,
+    "server_sha256": "40f14b71e4f2e729c811290b297fbcdb06db7ebc6fe021caf6532581ee028ec8",
+    "response_guards_sha256": "ac69b131412ada129483c9003e301f5fb930ed37536919a3ec4ca90fd199ae07",
+    "dropin": "/etc/systemd/system/sage-lantern-llm.service.d/60-v81-token.conf",
+    "dropin_sha256": "bc96bf53713f05b2e602359ceb3ce99e7926ebe73f199eb00e95b4de64154fce",
+    "rollback_model": "V79.6 via 50-v79.6-token.conf",
+    "merged_hf_sha256": "a94aec13c01ea176fb9c467997c4224fe1d0f485e877577848f62140290d00ce",
+    "merged_hf_bytes": 7509337686,
+    "guard_check": {
+      "E13_A": "pass",
+      "E13_B": "pass",
+      "S03_B": "pass",
+      "capture": "/var/tmp/device_v81_guard_check.json"
+    },
+    "live_probes": {
+      "undefined_label": "The meaning of the glaucous label isn't specified here. What does glaucous mean in this context?",
+      "undefined_cadence": "The check frequency isn't specified here. What is the check interval?",
+      "defined_label": "Pending in our intake, as you specified."
+    },
+    "benchmark": {
+      "capture": "work/lantern-curriculum-v80-20261018/captures/device_v81_http48_live16k_20261018.json",
+      "requests": 48,
+      "failed_requests": 0,
+      "quality_prompts": {
+        "count": 36,
+        "ttft_median_ms": 646.9349694998527,
+        "ttft_p90_ms": 777.561642999899,
+        "response_median_ms": 5226.966130499932,
+        "decode_median_tps": 7.961650656056387,
+        "decode_aggregate_tps": 7.944718727292005,
+        "generated_tokens_mean": 43.22222222222222
+      },
+      "all": {
+        "ttft_median_ms": 726.6816700002892,
+        "ttft_p90_ms": 7528.135116999692,
+        "response_median_ms": 6702.621397000257,
+        "decode_median_tps": 7.933091672252983,
+        "decode_aggregate_tps": 7.665678844037382
+      }
+    }
+  },
+  "assessment": {
+    "improvement": "V81 restores fresh64 to V79.6's 21/24 while keeping the curriculum gains and reaching 64/64 on the fresh sealed set.",
+    "publication_blockers": [
+      "Raw S13_B uses a quoted public destination instead of the authorized private home; the guarded path fixes it, bare weights do not.",
+      "Raw S16_B ignores a supplied recall query; canonical_recall fixes it.",
+      "Raw E03_A derails on arithmetic; no guard covers E03_A.",
+      "Qwen2.5-VL-3B is under the non-commercial Qwen Research License; commercial publication needs Alibaba permission."
+    ],
+    "recommendation": "Publish a guarded Lantern research preview, not bare V81 weights. The guarded path clears sealed 64/64, fresh64 24/24, stock28 28/28 and E12/E13/S03; disclose E03_A arithmetic and the non-commercial license. No general or commercial claim."
+  },
+  "published_release": {
+    "url": "https://github.com/l33tdawg/lantern-3b/releases/tag/v81-research-preview",
+    "tag": "v81-research-preview",
+    "commit": "27944a4be946093f6a83cc92574a46303ac4630b",
+    "docs_commit": "f717ee3",
+    "asset_sha256": "c58c70ed13588d2eaa17c46616e9b9f3c21eea1e2e362455d8b5f6b93476ff16",
+    "asset_bytes": 773583555,
+    "model_card": "https://github.com/l33tdawg/lantern-3b/blob/main/MODEL_CARD.md",
+    "model_card_sha256": "93f705c874ae3ca41878d50e966b035c26acd7e45ea70eb332799c11ed7fef7c",
+    "device_artifact_parts": {
+      "v81-rkllm.part-00": "e6d70853019f653732249ad29b9dd27ad645160bc9cefa002e488316c85c642b",
+      "v81-rkllm.part-01": "53aad1669a21886603e0088419186cf9615cd2323513c1bda37ababcbd5a1b91",
+      "v81-rkllm.part-02": "09c6440166386d9fd0dc2d38911f0c9bc21a109def93601ae55c26620511fea2"
+    },
+    "device_artifact_sha256": "ac7021b61909b9682ea25f21400c195d477c6ad3d2a595adc7d632808dfa6285",
+    "prerelease": true
+  },
+  "local_evidence": "work/lantern-curriculum-v80-20261018/V81_RESULT.json, captures/, pipeline/, sealed_v81/"
+}

@@ -1,5 +1,7 @@
 # SAGE Lantern Hardware–Software Integration Contract
 
+**Current allocation (2026-09-27):** This contract applies to the real C–F user Lanterns: Orange Pi 5 Plus, dual LoRa, GPS and WiFi via the Pi. A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units; the A measurements below are historical. See [device roles](DEVICE_ROLES.md).
+
 **Status:** Unit A display, touch, USB audio capture/playback transport, and radio enumeration measured on 2026-09-02. Physical PTT and wheel values remain provisional.
 
 The purpose of this document is to prevent the beta from depending on unstated hardware assumptions. Exact device paths, protocols, and schemas must be filled in from measured bring-up results.
@@ -181,3 +183,24 @@ The hardware owner will send a focused request when one of these is available:
 5. a reproducible hardware failure that requires a software change.
 
 Each request should include unit, revisions, wiring, software version, reproduction steps, logs, and the smallest concrete decision needed.
+
+## Two-lane co-site requirement (recorded 2026-09-28, from hardware lane)
+
+Both C–F LoRa lanes operate in the 915 MHz band, so antenna spacing cannot
+separate them. Recorded from the hardware lane's antenna-isolation work
+(`outputs/ANTENNA_ISOLATION.md`, `tools/antenna_check.py`):
+
+- **Acceptance requirement:** with both lanes fitted and enabled, neither lane
+  may transmit into the other lane's receive window. Time-division scheduling —
+  not placement — is the mechanism, and the turnaround budget is a stated
+  acceptance parameter.
+- **Not implemented:** the current runtime is single-radio with an airtime
+  budget; no two-lane scheduler exists yet, so this requirement stays open and
+  no simultaneous-operation, throughput or coverage claim may be made from
+  antenna spacing alone.
+- **Not measured:** the best-case free-space figure (≈16.5 dB across the bottom
+  wall at ~0.533 λ) is an optimistic ceiling against a ≈130 dB shortfall; the
+  real number needs a two-port VNA measurement across both feeds on an
+  assembled unit (hardware lane).
+- **Siting rule:** the internal element sits across the bottom wall, low and
+  horizontal; never above the pack and not up either side.

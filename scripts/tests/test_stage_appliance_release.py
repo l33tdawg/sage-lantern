@@ -26,7 +26,7 @@ class StageApplianceTests(unittest.TestCase):
         self.output = self.root / "output"
         for row in STAGE.required_sources():
             self.write(self.source / row["path"], (ROOT / row["path"]).read_bytes()
-                       if row["path"] in STAGE.RADIO_PINS or row["path"] in STAGE.MAINTENANCE_PINS else b"reviewed fixture source\n")
+                       if row["path"] in STAGE.RADIO_PINS or row["path"] in STAGE.MAINTENANCE_PINS or row["path"] in STAGE.NPU_SOURCE_PINS else b"reviewed fixture source\n")
         self.write(self.source / "software/runtime/pyproject.toml", b"fixture\n")
         self.write(self.source / "software/runtime/src/sage_lantern/__init__.py", b"__version__ = '0.2.0'\n")
         self.write(self.artifacts / STAGE.SDK_ROOT / "pyproject.toml", b"fixture\n")
@@ -46,7 +46,7 @@ class StageApplianceTests(unittest.TestCase):
         self.write(self.artifacts / STAGE.APP / "node_modules/vinext/package.json", dict(name="vinext", version="1.0.0"))
         self.write(self.artifacts / STAGE.APP / "node_modules/vinext/dist/cli.js", b"fixture\n")
         self.write(self.artifacts / STAGE.APP / "node_modules/@test/linux/package.json", dict(name="@test/linux", version="2.0.0"))
-        files = [STAGE.BINARY, *["software/cache/models/" + name for name in STAGE.MODELS],
+        files = [STAGE.BINARY, *STAGE.NPU_ARTIFACTS, *["software/cache/models/" + name for name in STAGE.MODELS],
                  *["software/cache/sources/" + name for name in STAGE.ARCHIVES],
                  STAGE.WHEELS + "sage_agent_sdk-11.19.10+lantern.20260906-py3-none-any.whl",
                  STAGE.WHEELS + "sage_lantern_runtime-0.2.0-py3-none-any.whl",
@@ -60,6 +60,10 @@ class StageApplianceTests(unittest.TestCase):
                          components={"sage": dict(version="lantern-local.fixture"), "sage-agent-sdk": dict(version="11.19.10+lantern.20260906"),
                                      "lantern-runtime": dict(version="0.2.0")}, files=entries)
         self.write(self.artifacts / STAGE.LOCK, self.lock)
+        pins = patch.object(STAGE, 'NPU_ARTIFACT_PINS', {
+            name: hashlib.sha256(b'fixture artifact\n').hexdigest() for name in STAGE.NPU_ARTIFACTS})
+        pins.start()
+        self.addCleanup(pins.stop)
         matcher = patch.object(STAGE.MANIFEST, "matched")
         self.match = matcher.start()
         self.addCleanup(matcher.stop)
@@ -71,6 +75,12 @@ class StageApplianceTests(unittest.TestCase):
 
     def build(self):
         return STAGE.build(self.source, self.artifacts, self.output, "fixture-1")
+
+    def test_sage_provisioning_profile_travels_as_support_policy(self):
+        name = 'software/config/sage-provisioning-profile.example.yaml'
+        self.assertIn(name, {row['path'] for row in STAGE.required_sources()})
+        self.assertIn(name, STAGE.SUPPORT)
+        self.assertNotIn(name, STAGE.INSTALLERS)
 
     def test_reproducible_complete_inventory_and_destinations(self):
         first = self.build()
@@ -91,6 +101,43 @@ class StageApplianceTests(unittest.TestCase):
         for path in self.output.rglob("*"):
             self.assertEqual(int(path.stat().st_mtime), STAGE.EPOCH)
 
+    def test_npu_cpu_and_embedding_payloads_have_explicit_destinations(self):
+        self.build()
+        rows = {row['path']: row for row in json.loads(
+            (self.output / 'payload/release/destinations.json').read_bytes())['files']}
+        self.assertEqual(rows['software/npu/rkllm_engine.cpp']['operation'], 'offline_build')
+        self.assertEqual(rows['software/npu/rkllm_engine.cpp']['destination'], '/opt/sage-lantern/npu/bin/rkllm_engine')
+        self.assertEqual(rows['software/npu/rkllm_server.py']['destination'], '/opt/sage-lantern/npu/libexec/rkllm_server.py')
+        self.assertEqual(rows['software/npu/vlm_engine.cpp']['operation'], 'offline_build')
+        self.assertEqual(rows['software/npu/vlm_engine.cpp']['destination'], '/opt/sage-lantern/npu/bin/vlm_engine')
+        self.assertEqual(rows['software/npu/vlm_server.py']['destination'], '/opt/sage-lantern/npu/libexec/vlm_server.py')
+        self.assertEqual(rows[STAGE.NPU_ROOT + 'lib/librkllmrt.so']['destination'], '/opt/sage-lantern/npu/lib/librkllmrt.so')
+        self.assertEqual(rows[STAGE.NPU_ROOT + 'lib/librknnrt.so']['destination'], '/opt/sage-lantern/npu/lib/librknnrt.so')
+        self.assertEqual(rows[STAGE.NPU_ROOT + 'include/rkllm.h']['operation'], 'evidence_only')
+        self.assertEqual(rows[STAGE.NPU_ROOT + 'include/rknn_api.h']['operation'], 'evidence_only')
+        self.assertEqual(rows[STAGE.NPU_ROOT + 'models/qwen3.5-0.8b_vision_rk3588.rknn']['destination'],
+                         '/opt/sage-lantern/npu/models/qwen3.5-0.8b_vision_rk3588.rknn')
+        self.assertEqual(rows[STAGE.NPU_ROOT + 'models/qwen3.5-0.8b_w8a8_rk3588.rkllm']['destination'],
+                         '/opt/sage-lantern/npu/models/qwen3.5-0.8b_w8a8_rk3588.rkllm')
+        for name in ('llm', 'llm-cpu', 'vlm', 'embed', 'embed-shim'):
+            unit = 'sage-lantern-' + name + '.service'
+            self.assertEqual(rows['software/systemd/' + unit]['destination'], '/etc/systemd/system/' + unit)
+        self.assertEqual(rows['software/cache/models/nomic-embed-text-v1.5.Q8_0.gguf']['destination'],
+            '/opt/sage-lantern/models/nomic-embed-text-v1.5.Q8_0.gguf')
+        self.assertEqual(rows['scripts/lantern/nomic-shim.py']['destination'], '/opt/sage-lantern/nomic-shim/nomic-shim.py')
+        self.assertIsNone(rows['software/config/sage-personal.example.yaml']['destination'])
+
+    def test_relocking_replaced_npu_model_does_not_bypass_reviewed_artifact(self):
+        name = STAGE.NPU_ROOT + 'models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm'
+        replacement = b'unqualified other model'
+        self.write(self.artifacts / name, replacement)
+        entry = next(entry for entry in self.lock['files'] if entry['path'] == name)
+        entry.update(bytes=len(replacement), sha256=hashlib.sha256(replacement).hexdigest())
+        self.write(self.artifacts / STAGE.LOCK, self.lock)
+        with self.assertRaisesRegex(ValueError, 'unreviewed NPU artifact'):
+            self.build()
+        self.assertFalse(self.output.exists())
+
     def test_missing_exact_source_not_replaced_by_role_filler(self):
         (self.source / "scripts/lantern/install-fleet-appliance-local.py").unlink()
         self.write(self.source / "scripts/other-installer.py", b"not the installer\n")
@@ -100,9 +147,9 @@ class StageApplianceTests(unittest.TestCase):
 
     def test_exact_maintenance_mapping_and_packaged_hash_closure(self):
         expected = {
-            'complete-runtime-maintenance-audio.py': '6a555bc544449054d1a3aac300e040199c364ce58664ec36a265b84a73f5f0d5',
+            'complete-runtime-maintenance-audio.py': '2d44a31392dc4fc0e624ea928c6da7de5e8bb99848ecc4a81ae11f379f51cae9',
             'build-runtime-maintenance-env.py': '05b496ff69d4017faef914816028ecd9b61a10b421f9cfc0638937c1e325454f',
-            'collect-fresh-vision-inputs.py': '6667e23c223e7b7ae33a1e6ca17d4b4978766381fed0cf155e1b32656c16ce49',
+            'collect-fresh-vision-inputs.py': 'caf8a4883dd7761e9eae260f9971cc9ad67d3fb579255988db911dca79c3d2f8',
             'prepare-runtime-maintenance.py': 'd7b07dec5ea29a789a8c312aa6b3bb8e79ad0444d31ea64b7f64d2e776aa44c8',
             'preflight-fresh-native-update.py': '31734f5538fe9e363e0f75cc97d7af2d5560e914c55356ef4538124619691c2d',
             'update-fresh-runtime.py': '202f71b7ea8f213f3eaf922fb51b6f23a3c280872b48f5605c4418f8a284160e',
@@ -123,6 +170,41 @@ class StageApplianceTests(unittest.TestCase):
                 self.assertNotIn(Path(name).name, STAGE.HELPERS)
         for flag in ('deployment_ready', 'activation_authorized', 'signed_authenticity'):
             self.assertFalse(plan[flag])
+
+    def test_console_lane_and_sleep_bundle_tooling_travels_review_only(self):
+        expected = (
+            'scripts/lantern/build-console-bundle-local.py',
+            'scripts/lantern/deploy-staged-console-bundle-local.py',
+            'scripts/lantern/check-console-lane-local.py',
+            'scripts/lantern/rehearse-typed-question-local.py',
+            'scripts/lantern/configure-kiosk-session-settings.py',
+            'scripts/lantern/install-cf-idle-suspend-local.py',
+            'scripts/lantern/deploy-staged-idle-bundle-local.py',
+            'docs/lantern/CF_CONSOLE_LANE_ACTIVATION.md',
+        )
+        manifest = self.build()
+        plan = json.loads((self.output / 'payload/release/destinations.json').read_bytes())
+        entries = {entry['path']: entry for entry in manifest['files']}
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertIn(name, STAGE.SUPPORT)
+                self.assertNotIn(name, STAGE.INSTALLERS)
+                self.assertNotIn(Path(name).name, STAGE.HELPERS)
+                rows = [row for row in plan['files'] if row['path'] == name]
+                self.assertEqual(rows, [dict(path=name, role='support', destination=None,
+                    operation='review_only', destination_mode=None)])
+                self.assertIn(name, entries)
+                self.assertEqual((self.output / 'payload' / name).read_bytes(),
+                                 (self.source / name).read_bytes())
+        # The reviewed local question gate travels as a drop-in for review, and
+        # the app installer never installs it: activation stays per unit.
+        gate = 'software/systemd/sage-lantern-voice-loop.service.d/60-local-question-lane.conf'
+        self.assertIn(gate, entries)
+        gate_rows = [row for row in plan['files'] if row['path'] == gate]
+        self.assertEqual([row['operation'] for row in gate_rows], ['reviewed_copy'])
+        self.assertEqual(gate_rows[0]['destination'],
+                         '/etc/systemd/system/sage-lantern-voice-loop.service.d/60-local-question-lane.conf')
+        self.assertNotIn(gate, (ROOT / 'scripts/lantern/install-fleet-appliance-local.py').read_text())
 
     def test_missing_or_mutated_maintenance_refuses_before_output(self):
         for name in STAGE.MAINTENANCE_PINS:

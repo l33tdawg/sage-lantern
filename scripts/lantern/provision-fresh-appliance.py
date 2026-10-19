@@ -33,14 +33,17 @@ SELF = 'scripts/lantern/provision-fresh-appliance.py'
 APP = 'scripts/lantern/install-fleet-appliance-local.py'
 POSTCOMMISSION = 'scripts/lantern/provision-postcommission-startup.py'
 FRESH_HANDOFF = 'scripts/lantern/handoff-fresh-audio-lifetime.py'
+PROVISIONING_PROFILE = 'software/config/sage-provisioning-profile.example.yaml'
+PROVISIONING_PROFILE_PATH = '/etc/sage/provisioning-profile.yaml'
 POST_PHASES = {'postcommission-handoff': 'handoff', 'postcommission-startup': 'install-startup'}
 POST_OPTIONS = ('startup_dependencies', 'startup_dependencies_sha256', 'startup_expected',
                 'startup_expected_sha256', 'startup_attempt_id', 'apply_postcommission')
 VALUE_OPTIONS = {'--account', '--radio-inventory', '--peer-radio-inventory', '--radio-usb-serial',
                  '--radio-vendor-id', '--radio-product-id', '--radio-stable-path', '--radio-public-fingerprint',
                  '--audio-usb-serial', '--audio-stable-path', '--audio-vendor-id', '--audio-product-id',
-                 '--alsa-device', '--gdm-base-sha256'}
-FLAG_OPTIONS = {'--allow-owner-vault-setup', '--enable-kiosk-autologin'}
+                 '--alsa-device', '--gdm-base-sha256', '--audio-platform-id-path',
+                 '--commissioned-manifest-sha256', '--predecessor-release-root'}
+FLAG_OPTIONS = {'--allow-owner-vault-setup', '--enable-kiosk-autologin', '--radio-absent'}
 
 
 def require(value, reason):
@@ -98,7 +101,11 @@ def app_options(values):
 
 
 def commands(args, payload):
-    require(args.unit_id in {'unit-a', 'unit-b'}, 'explicit unit required')
+    require(args.unit_id in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'}, 'explicit unit required')
+    profile = getattr(args, 'platform_profile', 'debian12')
+    require(profile in {'debian12', 'orangepi5plus-ubuntu26.04'}, 'unsupported platform profile')
+    require(profile == 'debian12' or (args.phase == 'base' and args.unit_id in
+            {'unit-c', 'unit-d', 'unit-e', 'unit-f'}), 'C–F platform profile is base-only on C–F')
     boot_options = ('apply_boot_theme', 'boot_theme_manifest', 'boot_theme_plan')
     if args.phase == 'boot-theme':
         require(not args.app_options and not args.allow_native_build and not args.install_os_packages
@@ -148,12 +155,16 @@ def commands(args, payload):
         if args.phase == 'identity-config':
             require(getattr(args, 'commission_plan', None) and re.fullmatch(r'[0-9a-f]{64}', getattr(args, 'commission_plan_sha256', '') or ''),
                     'reviewed protected configuration plan required')
-        return [['/usr/sbin/runuser', '-u', 'sage-lantern', '--', '/usr/bin/env', '-i',
+        return [['/usr/bin/setpriv', '--reuid', 'sage-lantern', '--regid', 'sage-lantern',
+                 '--init-groups', '--inh-caps', '-all,+dac_read_search',
+                 '--ambient-caps', '-all,+dac_read_search', '--bounding-set', '-all,+dac_read_search',
+                 '/usr/bin/env', '-i',
                  'PATH=/usr/bin:/bin', 'HOME=/var/lib/sage-lantern', 'SAGE_HOME=/var/lib/sage-lantern/sage-personal',
-                 'SAGE_LANTERN_PRIVATE_LISTENERS=1', 'REST_ADDR=127.0.0.1:8080',
+                 'REST_ADDR=127.0.0.1:8080',
                  'SAGE_TLS_ADDR=127.0.0.1:8443', 'SAGE_CMT_RPC_ADDR=tcp://127.0.0.1:26657',
                  'SAGE_CMT_P2P_ADDR=tcp://127.0.0.1:26656', '/opt/sage-lantern/bin/sage-gui',
-                 'init-lantern-private', '--owner-approved-companion-bootstrap', args.unit_id]]
+                 'init-fresh-personal-sage', '--profile', PROVISIONING_PROFILE_PATH,
+                 '--unit', args.unit_id, '--owner-approved-companion-bootstrap']]
     require(not getattr(args, 'owner_approved_companion_bootstrap', False) and not getattr(args, 'identity_config_sha256', None),
             'identity-only options in other phase')
     if args.phase == 'base':
@@ -161,7 +172,8 @@ def commands(args, payload):
         require(args.allow_native_build, 'base phase includes native compilation; explicit approval required')
         bootstrap = '--install' if args.install_os_packages else '--check'
         return [
-            ['/bin/bash', str(payload / 'scripts/bootstrap-lantern-os.sh'), bootstrap],
+            ['/bin/bash', str(payload / 'scripts/bootstrap-lantern-os.sh'),
+             *(['--profile', profile] if profile != 'debian12' else []), bootstrap],
             ['/bin/bash', str(payload / 'scripts/install-lantern-unit.sh')],
             ['/bin/bash', str(payload / 'scripts/provision-lantern-unit.sh'), 'prepare', '--unit-id', args.unit_id],
         ]
@@ -246,6 +258,8 @@ def execute(args, *, run=subprocess.run):
             node_preflight()
         environment = dict(PATH='/usr/sbin:/usr/bin:/sbin:/bin', HOME='/root', LANG='C.UTF-8',
                            PYTHONDONTWRITEBYTECODE='1', PIP_NO_INDEX='1', PIP_DISABLE_PIP_VERSION_CHECK='1')
+        if getattr(args, 'platform_profile', 'debian12') == 'orangepi5plus-ubuntu26.04':
+            environment['PATH'] = '/opt/lantern-python/3.11.16/bin:' + environment['PATH']
         for step in steps:
             require(verify_release(args) == payload, 'release changed between stages')
             if args.phase in POST_PHASES:
@@ -270,12 +284,18 @@ def identity_preflight(args, payload, *, root=Path('/')):
     verifier = helper('identity_manifest', 'scripts/appliance-release-manifest.py')
     config = root / 'var/lib/sage-lantern/sage-personal/config.yaml'
     metadata = root / 'etc/sage-lantern/unit.env'
+    profile = root / PROVISIONING_PROFILE_PATH.lstrip('/')
+    profile_template = payload / PROVISIONING_PROFILE
     binary = root / 'opt/sage-lantern/bin/sage-gui'
-    for path in (config, metadata, binary):
+    for path in (config, metadata, profile, profile_template, binary):
         for component in (path, *path.parents):
             require(not component.is_symlink(), 'identity input symlink')
         info = path.stat()
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not info.st_mode & 0o022, 'unsafe identity input')
+    profile_info = profile.stat()
+    require(profile_info.st_uid == 0 and stat.S_IMODE(profile_info.st_mode) == 0o600
+            and identity_config_bytes(profile) == identity_config_bytes(profile_template),
+            'reviewed root-owned provisioning profile required')
     require(metadata.stat().st_uid == 0 and binary.stat().st_uid == 0, 'operator-owned binding and executable required')
     account = pwd.getpwnam('sage-lantern')
     require(account.pw_uid != 0 and config.stat().st_uid == account.pw_uid and stat.S_IMODE(config.stat().st_mode) == 0o600,
@@ -328,7 +348,8 @@ def commission_preflight(args, payload):
     paths = [entry['path'] for entry in manifest['files'] if entry['role'] == 'sage_manifest']
     require(len(paths) == 1, 'SAGE provenance missing')
     provenance = json.loads(assembler.read(payload / paths[0]), object_pairs_hook=assembler.unique)
-    required = {'cmd/sage-gui/lantern_fresh_init.go', 'cmd/sage-gui/lantern_private_listeners.go',
+    required = {'cmd/sage-gui/fresh_personal_init.go', 'cmd/sage-gui/private_listeners.go',
+                'cmd/sage-gui/provisioning_profile.go',
                 'cmd/sage-gui/private_media_config.go', 'api/rest/private_media_handler.go',
                 'api/rest/workflow_journal_handler.go', 'internal/store/workflow_journal.go'}
     require(provenance.get('schema') == 'sage.lantern.binary-staging.v1'
@@ -343,6 +364,11 @@ COMMISSION_FILES = {'sage.yaml': 'var/lib/sage-lantern/sage-personal/config.yaml
                     'lantern.toml': 'etc/sage-lantern/lantern.toml',
                     'bindings.json': 'etc/sage-lantern/commissioned-bindings.json',
                     'initialized-public.json': 'etc/sage-lantern/initialized-public.json'}
+# The personal SAGE config is written by the running appliance after commissioning
+# (vault unlock and federation bookkeeping). A successor install may accept that
+# one output as evolved when the operator asks explicitly; every other output must
+# still match its recorded digest before anything is replaced.
+EVOLVABLE_COMMISSION_FILES = frozenset({'sage.yaml', 'lantern.toml'})
 PENDING = 'etc/sage-lantern/commissioning.pending.json'
 COMPLETE = 'etc/sage-lantern/commissioning-complete.json'
 
@@ -356,7 +382,7 @@ def sync_directory(path):
 
 
 def commission_binding(args):
-    require(args.unit_id in {'unit-a', 'unit-b'}, 'invalid commission unit')
+    require(args.unit_id in {'unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'}, 'invalid commission unit')
     values = dict(unit_id=args.unit_id, manifest_sha256=args.manifest_sha256,
                   plan_sha256=args.commission_plan_sha256, initial_config_sha256=args.identity_config_sha256)
     require(all(type(values[name]) is str and re.fullmatch(r'[0-9a-f]{64}', values[name])
@@ -407,7 +433,8 @@ def commission_begin(args, prepared, *, root=Path('/')):
     return pending
 
 
-def commission_completion_check(unit_id, manifest_sha256, *, root=Path('/'), owner_uid=0):
+def commission_receipt_binding(unit_id, manifest_sha256, *, root=Path('/'), owner_uid=0):
+    """The completion receipt with its static binding verified, not its outputs."""
     require(not os.path.lexists(root / PENDING), 'commissioning pending; app installation forbidden')
     receipt = commission_json(root / COMPLETE, owner_uid=owner_uid)
     fields = {'schema', 'transaction_id', 'unit_id', 'manifest_sha256', 'plan_sha256', 'initial_config_sha256', 'output_sha256'}
@@ -418,9 +445,26 @@ def commission_completion_check(unit_id, manifest_sha256, *, root=Path('/'), own
                 for name in ('manifest_sha256', 'plan_sha256', 'initial_config_sha256')), 'invalid completion hash')
     outputs = receipt['output_sha256']
     require(type(outputs) is dict and set(outputs) == set(COMMISSION_FILES), 'incomplete output binding')
+    return receipt
+
+
+def commission_output_drift(receipt, *, root=Path('/')):
+    """Recorded commissioning outputs whose bytes have changed since commissioning."""
+    drift = {}
     for name, path in COMMISSION_FILES.items():
-        require(type(outputs[name]) is str and re.fullmatch(r'[0-9a-f]{64}', outputs[name])
-                and hashlib.sha256(identity_config_bytes(root / path)).hexdigest() == outputs[name], 'commission output changed')
+        recorded = receipt['output_sha256'][name]
+        require(type(recorded) is str and re.fullmatch(r'[0-9a-f]{64}', recorded), 'invalid completion hash: ' + name)
+        observed = hashlib.sha256(identity_config_bytes(root / path)).hexdigest()
+        if observed != recorded:
+            drift[name] = observed
+    return drift
+
+
+def commission_completion_check(unit_id, manifest_sha256, *, root=Path('/'), owner_uid=0, accept_evolved=frozenset()):
+    require(set(accept_evolved) <= EVOLVABLE_COMMISSION_FILES, 'unreviewed evolvable commissioning output')
+    receipt = commission_receipt_binding(unit_id, manifest_sha256, root=root, owner_uid=owner_uid)
+    for name in sorted(commission_output_drift(receipt, root=root)):
+        require(name in accept_evolved, 'commission output changed: ' + name)
     require(not os.path.lexists(root / PENDING), 'commissioning became pending')
     return receipt
 
@@ -517,7 +561,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, help='Canonical OUTPUT containing payload and manifest.json')
     parser.add_argument('--manifest-sha256', required=True, help='Independently reviewed exact manifest hash')
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'), required=True)
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'), required=True)
     parser.add_argument('--phase', choices=('base', 'identity', 'identity-config', 'app', 'startup-helpers', 'boot-theme', *POST_PHASES), required=True)
     parser.add_argument('--apply-boot-theme', action='store_true')
     parser.add_argument('--boot-theme-manifest')
@@ -535,6 +579,8 @@ def main(argv=None):
     parser.add_argument('--execute', action='store_true', help='Explicitly execute target steps; default validates/plans only')
     parser.add_argument('--allow-native-build', action='store_true')
     parser.add_argument('--install-os-packages', action='store_true', help='Authorize bootstrap apt package/index changes; base phase only')
+    parser.add_argument('--platform-profile', choices=('debian12', 'orangepi5plus-ubuntu26.04'), default='debian12',
+                        help='Explicit base platform; C–F Ubuntu uses separately verified Python 3.11.16')
     parser.add_argument('app_options', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:

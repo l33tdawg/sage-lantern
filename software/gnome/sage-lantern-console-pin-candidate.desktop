@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SAGE Lantern Console
+Exec=python3 /usr/local/libexec/sage-lantern-mode-supervisor --require-native-pin
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications
+OnlyShowIn=GNOME;

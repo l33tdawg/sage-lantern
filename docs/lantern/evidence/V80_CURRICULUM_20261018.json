@@ -1,0 +1,87 @@
+{
+  "schema": "sage.lantern.v80-curriculum-evidence.v1",
+  "date": "2026-10-18",
+  "scope": "Host-only synthetic development evidence for the owner-funded broader English curriculum. Not device, release, production or general qualification.",
+  "owner_decision": "Fund the broader verified English curriculum rather than ship V79.6 behind a notice.",
+  "curriculum": {
+    "label_grounding_rows": 614,
+    "correction_rows": 380,
+    "new_rows": 994,
+    "mixed_unique_rows": 1726,
+    "written_rows": 3452,
+    "updates": 1726,
+    "max_approx_tokens": 1544,
+    "sha256": "1c0d1a206ffbb857fab5f59251f2550ebb47d44a96ac5371fc9333fcee7cfa09",
+    "label_breakdown": {
+      "label_unknown": 224,
+      "label_defined": 150,
+      "cadence_missing": 76,
+      "cadence_defined": 30,
+      "grounding_missing": 90,
+      "grounding_defined": 40,
+      "grounding_general": 4
+    },
+    "correction_breakdown": {
+      "value": 105,
+      "label": 80,
+      "cadence": 66,
+      "assistant_error": 58,
+      "ambiguity": 25,
+      "noop": 25,
+      "history": 21
+    },
+    "preservation": {
+      "v79_6_schema": 285,
+      "v79_2_notice": 34,
+      "v79_clarify": 64,
+      "v79_8_arithmetic": 190,
+      "v46_english_sample": 201
+    },
+    "leakage": "No exact or 12-word shingle match between the new family rows and frozen fresh64/screen17/stock28 prompts. Preservation rows retain the known V79.6 request-template overlap."
+  },
+  "candidates": {
+    "v80": {
+      "training": "rank 16, scale 16, LR 1e-6, 1726 updates",
+      "adapter_sha256": "368d80cbbd8ee796445f0519b1090b849e3c37279d40e3b7b4d2bc9d7981e91d"
+    },
+    "v80_1_repair": {
+      "training": "rank 8, scale 8, LR 5e-7, 736 updates",
+      "adapter_sha256": "68a2d1fff555a9b3ab7e6c26211f21d795a6a33bb937df0d242e379dc7785f4b",
+      "result": "Fixed the S04_B trailing-prose call and the E03_A 3.3k-character derailment, but traded S03_A and did not improve the aggregate."
+    }
+  },
+  "sealed_64": {
+    "stock": 33,
+    "v79_6": 36,
+    "v80": 63,
+    "v80_1": 63,
+    "v80_families": {
+      "label_unknown": "16/16",
+      "label_defined": "7/8",
+      "cadence_missing": "8/8",
+      "cadence_defined": "4/4",
+      "grounding_missing": "8/8",
+      "correction_value": "8/8",
+      "correction_label": "6/6",
+      "correction_cadence": "4/4",
+      "correction_history": "2/2"
+    },
+    "remaining_failure": "SEAL_LABEL_DEFINED_03: a definition supplied in the same turn was ignored and the model asked for it again."
+  },
+  "frozen_development": {
+    "fresh64_tool_status": {"stock": "6/24", "v79_6": "21/24", "v80": "17/24", "v80_1": "17/24"},
+    "v80_raw_failures": ["V58_S01_B", "V58_S02_B", "V58_S03_B", "V58_S04_B", "V58_S05_A", "V58_S05_B", "V58_S07_B"],
+    "v80_1_raw_failures": ["V58_S01_B", "V58_S02_B", "V58_S03_A", "V58_S03_B", "V58_S05_A", "V58_S05_B", "V58_S07_B"],
+    "stock28": {"stock": "0/28", "v79_6": "28/28", "v80": "28/28", "v80_1": "28/28"},
+    "E12_A_B": "V80 and V80.1 pass both; V79.6 passes B only; stock passes A only.",
+    "E13_A_B": "Raw model fails all arms; the interval guard handles the published cases.",
+    "S03_B": "Raw model fails all arms; the status guard is the designed repair."
+  },
+  "assessment": {
+    "curriculum_effect": "Unknown labels 5/16 -> 16/16, missing cadence 0/8 -> 8/8, grounding 6/8 -> 8/8, all correction families perfect on the sealed set.",
+    "raw_regressions": "V80 loses four fresh64 cases versus V79.6: flat tool-call arguments, trailing prose after a valid call, and status/absence prose. The action/status guards cover the flat wrapping, prose replacement and failed-lookup status, but are not yet integrated at the SAGE/OpenClaw dispatcher.",
+    "release_decision": "Do not export or promote V80/V80.1 yet. The curriculum increment succeeded; next is guarded-path integration plus a higher-capacity balanced English/arithmetic/action pass.",
+    "no_claim": "No device, performance, release or production claim is made for V80."
+  },
+  "local_evidence": "work/lantern-curriculum-v80-20261018/RESULT.json, captures/, pipeline/, labels/, corrections/, sealed/"
+}

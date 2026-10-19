@@ -27,14 +27,14 @@ import uuid
 
 from .mesh_envelope import OpenedEnvelope
 from .mesh_inbox import INBOX_SCHEMA, MeshInbox, inbox_id
-from .mesh_outbox import SCHEMA as OUTBOX_SCHEMA, MeshOutbox, SentMessage
+from .mesh_outbox import SCHEMAS as OUTBOX_SCHEMAS, MeshOutbox, SentMessage
 from .message_contacts import RecipientID
 from .workflow_store import MAX_RECORDS, WorkflowStore
 
 
 MAX_ITEMS = 20
 _STATES = {'queued': 'queued', 'dispatching': 'unknown', 'awaiting_receipt': 'sent',
-           'delivered': 'delivered', 'read': 'read'}
+           'delivered': 'delivered', 'read': 'read', 'cancelled': 'cancelled'}
 
 
 class MailboxError(RuntimeError):
@@ -139,7 +139,7 @@ class MeshMailbox:
         if box == 'inbox':
             return record['kind'] == 'mesh_inbound' and type(payload) is dict and payload.get('schema') == INBOX_SCHEMA
         return (record['kind'] == 'mesh_outbound' and type(payload) is dict
-                and type(payload.get('body')) is dict and payload['body'].get('schema') == OUTBOX_SCHEMA)
+                and type(payload.get('body')) is dict and payload['body'].get('schema') in OUTBOX_SCHEMAS)
 
     def _item(self, record, box, check):
         check()
@@ -157,7 +157,8 @@ class MeshMailbox:
             if opened.kind != 'message':
                 return None
             sender, recipient = _peer(opened.sender), _peer(opened.recipient)
-            message_id, text, issued_at = opened.message_id, opened.content, opened.issued_at
+            message_id, text = opened.message_id, opened.content
+            issued_at = opened.logical_issued_at if opened.logical_issued_at is not None else opened.issued_at
             state, workflow_state = 'unknown', 'received'
         else:
             sent = self.outbox.read_sent(local_id, access_check=check)

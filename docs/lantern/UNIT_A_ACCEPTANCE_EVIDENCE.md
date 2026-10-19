@@ -1,5 +1,7 @@
 # SAGE Lantern Unit A Acceptance Evidence
 
+**Historical endpoint evidence:** Since 2026-09-27, A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units. Their native SAGE stores are deleted and endpoint services retired. C–F are the real dual-LoRa/GPS/WiFi Orange Pi user devices. See [device roles](DEVICE_ROLES.md).
+
 Use this file for the first canonical Unit A acceptance run. Replace `Pending` only with measured or directly observed evidence.
 
 ## Fresh Unit A status — 2026-09-07

@@ -1,0 +1,24 @@
+[Unit]
+Description=SAGE Lantern root authority for the mandatory GNOME PIN session (candidate)
+After=systemd-logind.service sage-lantern-device-auth.service
+ConditionPathExists=/etc/sage-lantern/desktop-pin-activation.json
+
+[Service]
+Type=simple
+User=root
+Group=sage
+ExecStart=/opt/sage-lantern/venv/bin/python -I -B /usr/local/libexec/sage-lantern-guarded-session-authority --policy /etc/sage-lantern/desktop-launch-policy.json
+Restart=no
+# Deliberate: stopping the authority revokes the guard, preserving a live Shell.
+# Never stop/restart this unit as an application recovery procedure.
+KillMode=process
+SendSIGKILL=no
+TimeoutStopSec=5
+RuntimeDirectory=sage-lantern-desktop
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=true
+StandardOutput=null
+StandardError=null

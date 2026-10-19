@@ -52,7 +52,28 @@ test('sharp display preview is separate from the bounded inference upload', () =
   assert.match(screen, /displayedPhoto.preview/);
   const talk = readFileSync(new URL('../app/device/talk.tsx', import.meta.url), 'utf8');
   assert.match(talk, /original_base64: photo.preview/);
-  assert.match(talk, /history\?\.photo_saving_supported === true && history.enabled && history.photos_enabled === true/);
+  // The policy is read out of a protected reply, so that reply's own admission
+  // context is judged before a single flag of it is used — in both lanes. The
+  // reply carries the policy of the epoch that admitted it, so a rotation this
+  // client has not caught up with must not decide how many original bytes travel.
+  assert.equal((talk.match(/history\.photo_saving_supported === true && history\.enabled && history\.photos_enabled === true/g) || []).length, 2);
+  assert.equal((talk.match(/replySessionContext\(listing\)/g) || []).length, 2);
+  assert.ok(talk.indexOf('replySessionContext(listing)') < talk.indexOf('parseDeviceHistory(listing)'),
+    'the photo policy reply is fenced before it is parsed');
+});
+
+test('a typed question carries the same photo instead of silently dropping it', () => {
+  const talk = readFileSync(new URL('../app/device/talk.tsx', import.meta.url), 'utf8');
+  const screen = readFileSync(new URL('../app/device/screen.tsx', import.meta.url), 'utf8');
+  // The typed lane posts the attachment to question/start with the same
+  // retention rule the spoken lane uses, and refuses when the photo backend is
+  // unavailable rather than answering without it.
+  assert.match(talk, /voiceCommand\('question\/start', \{[\s\S]*image_base64: photo\.image/);
+  assert.match(talk, /const photoForType = !photo \|\| status\?\.voice\.photo_ready === true/);
+  assert.match(talk, /cannot attach a photo to a typed question/);
+  assert.match(talk, /onTypedSession\?\.\(opened\.session_id, photo\)/);
+  // The review keeps the preview for the typed session it was attached to.
+  assert.match(screen, /onTypedSession=\{\(sessionId, attachment\) => \{ setQuestionHandoff\(null\); setPhotoStart\(undefined\); setSessionPhoto\(attachment \? \{ sessionId, \.\.\.attachment \} : undefined\)/);
 });
 
 test('photo start is consumed once and cancelled on unmount, not retried by polling', () => {

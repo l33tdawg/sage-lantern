@@ -28,9 +28,9 @@ RADIO_PINS = {
     "scripts/lantern/request-broker-contact.py": "103344d9abbd4104a58ce87b18ca74a59498b73e4e310ca90ae28a3432fcee85",
 }
 MAINTENANCE_PINS = {
-    "scripts/lantern/complete-runtime-maintenance-audio.py": "6a555bc544449054d1a3aac300e040199c364ce58664ec36a265b84a73f5f0d5",
+    "scripts/lantern/complete-runtime-maintenance-audio.py": "2d44a31392dc4fc0e624ea928c6da7de5e8bb99848ecc4a81ae11f379f51cae9",
     "scripts/lantern/build-runtime-maintenance-env.py": "05b496ff69d4017faef914816028ecd9b61a10b421f9cfc0638937c1e325454f",
-    "scripts/lantern/collect-fresh-vision-inputs.py": "6667e23c223e7b7ae33a1e6ca17d4b4978766381fed0cf155e1b32656c16ce49",
+    "scripts/lantern/collect-fresh-vision-inputs.py": "caf8a4883dd7761e9eae260f9971cc9ad67d3fb579255988db911dca79c3d2f8",
     "scripts/lantern/prepare-runtime-maintenance.py": "d7b07dec5ea29a789a8c312aa6b3bb8e79ad0444d31ea64b7f64d2e776aa44c8",
     "scripts/lantern/preflight-fresh-native-update.py": "31734f5538fe9e363e0f75cc97d7af2d5560e914c55356ef4538124619691c2d",
     "scripts/lantern/update-fresh-runtime.py": "202f71b7ea8f213f3eaf922fb51b6f23a3c280872b48f5605c4418f8a284160e",
@@ -41,12 +41,14 @@ INSTALLERS = (
     "scripts/bootstrap-lantern-os.sh", "scripts/install-lantern-unit.sh",
     "scripts/provision-lantern-unit.sh", "scripts/lantern/install-fleet-appliance-local.py",
     "scripts/lantern/install-boot-theme.py", "scripts/lantern/install-idle-suspend-local.py",
+    "scripts/lantern/install-platform-audio-capture-local.sh",
     "scripts/lantern/install-camera-local.sh", "scripts/lantern/install-display-power-local.sh",
     "scripts/lantern/install-vision-local.sh", "scripts/lantern/install-unit-a-private-access.sh",
     "scripts/lantern/install-fleet-admin-local.sh",
     "scripts/lantern/install-startup-coordinator.py",
     "scripts/lantern/provision-postcommission-startup.py",
     "scripts/lantern/install-fresh-startup-helpers.py",
+    "scripts/lantern/install-npu-payload.py",
     "scripts/lantern/activate-fresh-display.py",
 )
 SUPPORT = (
@@ -66,8 +68,32 @@ SUPPORT = (
     "scripts/lantern/startup-coordinator.py", "scripts/lantern/startup-audio-adapter.py",
     "scripts/lantern/recover-cross-boot-audio.py", "scripts/lantern/collect-cross-boot-audio-pins.py",
     "software/systemd/sage-lantern-startup.service",
+    "software/config/sage-personal.example.yaml",
+    "software/config/sage-provisioning-profile.example.yaml",
+    # The console lane (D-019) travels as reviewed support payload: the local
+    # bundle builder/deployer/checker and the typed-question rehearsal are the
+    # per-unit lane, and the activation runbook is the reviewed procedure that
+    # applies the kiosk session settings to a live operator session (the tool
+    # refuses an account with no running session, so it cannot be an image
+    # provisioning phase).
+    "scripts/lantern/build-console-bundle-local.py",
+    "scripts/lantern/deploy-staged-console-bundle-local.py",
+    "scripts/lantern/check-console-lane-local.py",
+    "scripts/lantern/rehearse-typed-question-local.py",
+    "scripts/lantern/configure-kiosk-session-settings.py",
+    "docs/lantern/CF_CONSOLE_LANE_ACTIVATION.md",
+    # The C-F sleep bundle pair (the A/B installer stays in INSTALLERS): the
+    # D/E/F runbook stages and deploys each unit's sleep bundle with these.
+    "scripts/lantern/install-cf-idle-suspend-local.py",
+    "scripts/lantern/deploy-staged-idle-bundle-local.py",
+    # Per-unit OS crash protection; explicit apply does not restart Lantern.
+    "scripts/lantern/configure-crash-privacy.py",
+    "docs/lantern/CRASH_PRIVACY.md",
+    "scripts/lantern/configure-kiosk-privileges.py",
+    "docs/lantern/KIOSK_OPERATOR_BOUNDARY.md",
 )
 HELPERS = {
+    "wait-auth-native.py": "libexec/sage-lantern-wait-auth-native",
     "request-broker-contact.py": "libexec/sage-lantern-request-broker-contact",
     "unit-a-device-auth.py": "libexec/sage-lantern-device-auth",
     "unit-a-voice-loop.py": "libexec/sage-lantern-voice-loop",
@@ -83,16 +109,59 @@ HELPERS = {
     "lantern-display-power.py": "libexec/sage-lantern-display-power",
     "lantern-display-session.py": "libexec/sage-lantern-display-session",
     "lantern-idle-suspend.py": "libexec/sage-lantern-idle-suspend",
+    "set-platform-audio-capture.py": "libexec/sage-lantern-set-platform-audio-capture",
+    "cf-mode-supervisor.py": "libexec/sage-lantern-mode-supervisor",
+    "cf-output-mode.py": "libexec/sage-lantern-output-mode",
+    "cf-desktop-mode.sh": "bin/sage-lantern-desktop-mode",
     "sage-lantern-kiosk": "bin/sage-lantern-kiosk",
     "sage-lantern-session": "bin/sage-lantern-session",
 }
 UNITS = tuple("sage-lantern-" + name + ".service" for name in (
-    "camera", "device-auth", "display-power", "idle-suspend", "llm", "personal-sage",
+    "audio-capture", "camera", "device-auth", "display-power", "idle-suspend", "llm", "llm-cpu", "vlm", "embed", "embed-shim", "personal-sage",
     "ptt", "runtime", "status", "voice-loop", "mesh-runtime", "gateway-evidence"))
-MODELS = ("ggml-base.bin", "qwen3.5-4b-q4_k_m.gguf", "mmproj-BF16.gguf", "en_US-lessac-medium.onnx", "en_US-lessac-medium.onnx.json")
+MODELS = ("ggml-base.bin", "qwen3.5-4b-q4_k_m.gguf", "mmproj-BF16.gguf", "en_US-lessac-medium.onnx", "en_US-lessac-medium.onnx.json", "nomic-embed-text-v1.5.Q8_0.gguf")
 ARCHIVES = ("llama.cpp-b9637.tar.gz", "whisper.cpp-v1.8.6.tar.gz")
 BASE_WHEEL_PREFIXES = ("numpy-1.26.4-", "piper_tts-1.4.2-", "pynacl-1.6.2-", "cryptography-46.0.3-",
                        "PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.")
+
+NPU_ROOT = "software/bundle/linux-arm64/npu/"
+NPU_ARTIFACTS = {
+    NPU_ROOT + "lib/librkllmrt.so": "/opt/sage-lantern/npu/lib/librkllmrt.so",
+    NPU_ROOT + "lib/librknnrt.so": "/opt/sage-lantern/npu/lib/librknnrt.so",
+    NPU_ROOT + "include/rkllm.h": None,
+    NPU_ROOT + "include/rknn_api.h": None,
+    NPU_ROOT + "include/rknn_matmul_api.h": None,
+    NPU_ROOT + "include/rknn_custom_op.h": None,
+    NPU_ROOT + "models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm":
+        "/opt/sage-lantern/npu/models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm",
+    NPU_ROOT + "models/qwen3.5-0.8b_vision_rk3588.rknn":
+        "/opt/sage-lantern/npu/models/qwen3.5-0.8b_vision_rk3588.rknn",
+    NPU_ROOT + "models/qwen3.5-0.8b_w8a8_rk3588.rkllm":
+        "/opt/sage-lantern/npu/models/qwen3.5-0.8b_w8a8_rk3588.rkllm",
+}
+NPU_ARTIFACT_PINS = {
+    NPU_ROOT + "lib/librkllmrt.so": "6a9e4fc5324c68921c3a900340361e107af7599fe34dc8fa7759b2c5ae22a6e6",
+    NPU_ROOT + "lib/librknnrt.so": "d31fc19c85b85f6091b2bd0f6af9d962d5264a4e410bfb536402ec92bac738e8",
+    NPU_ROOT + "include/rkllm.h": "80596a578f7f8e70df6eda1c2cbead3bfced14623a190258f2bd009a3d1f72cf",
+    NPU_ROOT + "include/rknn_api.h": "340f16c14bc86d41bc5a64251bd1e747dd50899a4438d08707b48d8de384165a",
+    NPU_ROOT + "include/rknn_matmul_api.h": "597524096b298e4220608cf684ed3209b6a7ff515b1b469679e5d813f2f1a6da",
+    NPU_ROOT + "include/rknn_custom_op.h": "af5983da0ca244ca31dc3162aa683322b0285531196c7a770f29cd2e3b8ccaa6",
+    NPU_ROOT + "models/lantern-native5-2b-w8a8-opt0-rk3588.rkllm":
+        "d3721fc8104b39aba7fc39c272806015a947074dbba7da00091a1747e73c1c3a",
+    # Runtime-matched Qwen3.5-0.8B VL pair (rkllm-toolkit 1.3.0). The toolkit
+    # generation must match the installed rkllm runtime (1.3.0) — a 1.2.3-era
+    # conversion is rejected at runtime by design. See D-016.
+    NPU_ROOT + "models/qwen3.5-0.8b_vision_rk3588.rknn":
+        "e96a3f016163e7cf7ae516ed9878ccad7c576c658d71a60333f5cb154680fd81",
+    NPU_ROOT + "models/qwen3.5-0.8b_w8a8_rk3588.rkllm":
+        "ba85edac97e8f4ed2cdf0d94a3744b5609385b4706c45677f55cdaeb465ce054",
+}
+NPU_SOURCE_PINS = {
+    "software/npu/rkllm_engine.cpp": "408eb358080dca83e533fb8e4b819c2792242e443fb0e6227ee3bf5e6a8e3cfc",
+    "software/npu/rkllm_server.py": "674ae3d23f5527518a641ded9b1475e21aeb76bb4de2123b26000e779c251db0",
+    "software/npu/vlm_engine.cpp": "e4912a4cb6849d8247ec983361709e96d88497393caeedff2942f62b4322c4a5",
+    "software/npu/vlm_server.py": "9fdc82afa2014b629e428b3e72cc5114a8de15263f6d6140f0860b6b39712f58",
+}
 
 
 def mapping(path, role, destination=None, operation="review_only"):
@@ -104,6 +173,11 @@ def mapping(path, role, destination=None, operation="review_only"):
 
 def required_sources():
     rows = [mapping(name, "installer") for name in INSTALLERS]
+    rows += [mapping("software/npu/rkllm_engine.cpp", "support", "/opt/sage-lantern/npu/bin/rkllm_engine", "offline_build"),
+             mapping("software/npu/rkllm_server.py", "support", "/opt/sage-lantern/npu/libexec/rkllm_server.py", "copy"),
+             mapping("software/npu/vlm_engine.cpp", "support", "/opt/sage-lantern/npu/bin/vlm_engine", "offline_build"),
+             mapping("software/npu/vlm_server.py", "support", "/opt/sage-lantern/npu/libexec/vlm_server.py", "copy"),
+             mapping("scripts/lantern/nomic-shim.py", "support", "/opt/sage-lantern/nomic-shim/nomic-shim.py", "copy")]
     rows += [mapping(name, "support") for name in SUPPORT]
     rows += [mapping(name, "support") for name in MAINTENANCE_PINS]
     static_names = ('startup-coordinator.py', 'startup-audio-adapter.py', 'recover-cross-boot-audio.py',
@@ -116,6 +190,12 @@ def required_sources():
     rows += [mapping("software/systemd/" + name, "systemd", "/etc/systemd/system/" + name, "reviewed_copy") for name in UNITS]
     rows += [mapping("software/systemd/sage-lantern-voice-loop.service.d/40-mesh-broker.conf", "dropin",
                      "/etc/systemd/system/sage-lantern-voice-loop.service.d/40-mesh-broker.conf", "reviewed_copy")]
+    # The local question lane (D-019) travels in the payload for review but is
+    # never installed by the app installer: it is an activation for a unit whose
+    # mesh runtime is absent, applied by the console lane deployer, which refuses
+    # a mesh-managed unit by name.
+    rows += [mapping("software/systemd/sage-lantern-voice-loop.service.d/60-local-question-lane.conf", "dropin",
+                     "/etc/systemd/system/sage-lantern-voice-loop.service.d/60-local-question-lane.conf", "reviewed_copy")]
     rows += [mapping(RADIO_JOURNAL, "dropin", "/etc/systemd/system/sage-lantern-mesh-runtime.service.d/25-radio-commission-journal.conf", "reviewed_copy")]
     rows += [mapping("software/config/lantern.example.toml", "config_template", "/etc/sage-lantern/lantern.toml", "template")]
     rows += [mapping(APP + "deploy/" + name, "support") for name in (
@@ -135,7 +215,9 @@ def module_names(root, prefix, package, extras):
     directory = root / prefix / "src" / package
     MANIFEST.no_links(directory)
     names = sorted(path for path in directory.iterdir() if path.name != "__pycache__")
-    require(1 <= len(names) <= 128 and all(path.suffix == ".py" and path.is_file() for path in names), "module tree must contain only direct Python source files")
+    # The 18 October policy-wheel rebuild brought the runtime past its original
+    # 128-module bound. Keep the same bounded inventory as the runtime builder.
+    require(1 <= len(names) <= 160 and all(path.suffix == ".py" and path.is_file() for path in names), "module tree must contain only direct Python source files")
     require(directory / "__init__.py" in names, "missing package initializer")
     return [prefix + "/" + name for name in extras] + [path.relative_to(root).as_posix() for path in names]
 
@@ -233,6 +315,8 @@ def ui_inventory(root, source):
 
 
 def inputs(source, artifacts):
+    for name, expected in NPU_SOURCE_PINS.items():
+        require(MANIFEST.file_hash(source / name)[0]["sha256"] == expected, "unreviewed NPU source")
     for name, expected in MAINTENANCE_PINS.items():
         details, _ = MANIFEST.file_hash(source / name)
         require(details['sha256'] == expected, 'unreviewed maintenance companion')
@@ -250,14 +334,16 @@ def inputs(source, artifacts):
     for entry in lock["files"]:
         name = MANIFEST.safe_name(entry["path"])
         require(name not in locked, "duplicate locked artifact")
-        allowed = name == BINARY or name in {"software/cache/models/" + value for value in MODELS}
+        allowed = name in NPU_ARTIFACTS or name == BINARY or name in {"software/cache/models/" + value for value in MODELS}
         allowed |= name in {"software/cache/sources/" + value for value in ARCHIVES}
         allowed |= name.startswith(WHEELS) and "/" not in name.removeprefix(WHEELS) and name.endswith(".whl")
         require(allowed, "unselected legacy/extra stack artifact: " + name)
         details, _ = MANIFEST.file_hash(artifacts / name)
         require(details["sha256"] == entry["sha256"] and details["bytes"] == entry["bytes"], "locked artifact mismatch")
+        if name in NPU_ARTIFACT_PINS:
+            require(details["sha256"] == NPU_ARTIFACT_PINS[name], "unreviewed NPU artifact")
         locked[name] = entry
-    mandatory = {BINARY} | {"software/cache/models/" + value for value in MODELS} | {"software/cache/sources/" + value for value in ARCHIVES}
+    mandatory = {BINARY, *NPU_ARTIFACTS} | {"software/cache/models/" + value for value in MODELS} | {"software/cache/sources/" + value for value in ARCHIVES}
     require(mandatory <= set(locked), "missing required base installer artifacts")
     for prefix in BASE_WHEEL_PREFIXES:
         require(sum(name.startswith(WHEELS + prefix) for name in locked) == 1, "missing/ambiguous required base wheel: " + prefix)
@@ -284,6 +370,9 @@ def inputs(source, artifacts):
             destination, operation = "/opt/sage-lantern/venv", "wheel_install"
         elif name.startswith(WHEELS):
             destination, operation = "/opt/sage-lantern/venv", "wheel_install"
+        elif name in NPU_ARTIFACTS:
+            destination = NPU_ARTIFACTS[name]
+            operation = "copy" if destination else "evidence_only"
         elif name.startswith("software/cache/models/"):
             destination, operation = "/opt/sage-lantern/models/" + Path(name).name, "copy"
         elif name.startswith("software/cache/sources/"):

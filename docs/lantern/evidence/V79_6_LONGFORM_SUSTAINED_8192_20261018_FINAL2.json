@@ -1,0 +1,204 @@
+{
+  "profile": "sustained",
+  "max_tokens": 8192,
+  "completed_turns": 7,
+  "requested_turns": 7,
+  "checks": {
+    "turn1_two_paragraphs": true,
+    "turn1_not_truncated_by_cap": true,
+    "correction_turn": true,
+    "four_bullets": true,
+    "four_unique_bullets": true,
+    "final_three_paragraphs": true,
+    "final_uses_friday": true,
+    "final_uses_teal": true,
+    "final_uses_two_people": true,
+    "final_retired_values_absent": true,
+    "turn7_nonempty": true
+  },
+  "all_checks_pass": true,
+  "turns": [
+    {
+      "turn": 1,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note: - **Intake Label:** Amber\n- **High-Risk Tests:** Two people required\n- **Safety Review:** Wednesday\n\nThe Harborlight Tool Library operates with an intake label of amber, indicating high-risk activities. For high-risk tests, two people are required to ensure safety and accuracy. Safety reviews are scheduled for Wednesday, ensuring all tools are up to date and ready for use.",
+      "ttft_ms": 13817.095167003572,
+      "total_ms": 13817.181667080149,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 62,
+        "total_tokens": 62
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 62,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 2,
+      "bullets": 2,
+      "unique_bullets": 2,
+      "words": 62,
+      "at_cap": false
+    },
+    {
+      "turn": 2,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note: - **Intake Label:** Amber\n- **High-Risk Tests:** Two people required\n- **Safety Review:** Wednesday\n\nThe Harborlight Tool Library operates with an intake label of amber, indicating high-risk activities. For high-risk tests, two people are required to ensure safety and accuracy. Safety reviews are scheduled for Wednesday. Additionally, a monthly maintenance routine is in place to ensure all tools are functioning properly and up to date. This routine includes checking for wear and tear, updating software, and performing any necessary repairs or replacements to maintain optimal performance and safety standards.",
+      "ttft_ms": 3390.554500045255,
+      "total_ms": 21557.294541038573,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 298,
+        "completion_tokens": 122,
+        "total_tokens": 420
+      },
+      "timings": {
+        "prompt_n": 298,
+        "prompt_ms": 3351.79,
+        "prompt_per_token_ms": 11.24761744966443,
+        "predicted_n": 122,
+        "predicted_ms": 18133.7,
+        "predicted_per_token_ms": 148.63688524590165
+      },
+      "paragraphs": 2,
+      "bullets": 2,
+      "unique_bullets": 2,
+      "words": 94,
+      "at_cap": false
+    },
+    {
+      "turn": 3,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note: - **Intake Label:** Teal\n- **High-Risk Tests:** Two people required\n- **Safety Review:** Friday\n\nThe Harborlight Tool Library operates with an intake label of teal, indicating high-risk activities. For high-risk tests, two people are required to ensure safety and accuracy. Safety reviews are scheduled for Friday, ensuring all tools are up to date and ready for use.",
+      "ttft_ms": 4745.171749964356,
+      "total_ms": 18347.56266581826,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 457,
+        "completion_tokens": 87,
+        "total_tokens": 544
+      },
+      "timings": {
+        "prompt_n": 457,
+        "prompt_ms": 4695.76,
+        "prompt_per_token_ms": 10.275185995623632,
+        "predicted_n": 87,
+        "predicted_ms": 13579.1,
+        "predicted_per_token_ms": 156.0816091954023
+      },
+      "paragraphs": 2,
+      "bullets": 2,
+      "unique_bullets": 2,
+      "words": 62,
+      "at_cap": false
+    },
+    {
+      "turn": 4,
+      "ok": true,
+      "text": "- **Intake Label:** Teal\n- **High-Risk Tests:** Two people required\n- **Safety Review:** Friday\n- **Volunteers:** Use caution and follow safety protocols",
+      "ttft_ms": 11882.60587491095,
+      "total_ms": 11882.644249824807,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 22,
+        "total_tokens": 22
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 22,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 1,
+      "bullets": 4,
+      "unique_bullets": 4,
+      "words": 19,
+      "at_cap": false
+    },
+    {
+      "turn": 5,
+      "ok": true,
+      "text": "42",
+      "ttft_ms": 6174.625624902546,
+      "total_ms": 6499.623290961608,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 628,
+        "completion_tokens": 2,
+        "total_tokens": 630
+      },
+      "timings": {
+        "prompt_n": 628,
+        "prompt_ms": 6123.52,
+        "prompt_per_token_ms": 9.750828025477707,
+        "predicted_n": 2,
+        "predicted_ms": 326.756,
+        "predicted_per_token_ms": 163.378
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 1,
+      "at_cap": false
+    },
+    {
+      "turn": 6,
+      "ok": true,
+      "text": "Harborlight Tool Library operations note: - **Intake Label:** Teal\n- **High-Risk Tests:** Two people required\n- **Safety Review:** Friday The Harborlight Tool Library operates with an intake label of teal, indicating high-risk activities.\n\nFor high-risk tests, two people are required to ensure safety and accuracy. Safety reviews are scheduled for Friday, ensuring all tools are up to date and ready for use.\n\nAdditionally, a monthly maintenance routine is in place to ensure all tools are functioning properly and up to date. This routine includes checking for wear and tear, updating software, and performing any necessary repairs or replacements to maintain optimal performance and safety standards.",
+      "ttft_ms": 30554.316041059792,
+      "total_ms": 30554.381833178923,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 105,
+        "total_tokens": 105
+      },
+      "timings": {
+        "prompt_n": 0,
+        "prompt_ms": 0.0,
+        "prompt_per_token_ms": 0.0,
+        "predicted_n": 105,
+        "predicted_ms": 0.0,
+        "predicted_per_token_ms": 0.0
+      },
+      "paragraphs": 3,
+      "bullets": 2,
+      "unique_bullets": 2,
+      "words": 105,
+      "at_cap": false
+    },
+    {
+      "turn": 7,
+      "ok": true,
+      "text": "The Harborlight Tool Library operates with a teal intake label, high-risk tests require two people, safety reviews are on Friday, and a monthly maintenance routine checks tools for wear and tear, software updates, and repairs.",
+      "ttft_ms": 9321.505875093862,
+      "total_ms": 16820.24083309807,
+      "finish_reason": null,
+      "usage": {
+        "prompt_tokens": 829,
+        "completion_tokens": 43,
+        "total_tokens": 872
+      },
+      "timings": {
+        "prompt_n": 829,
+        "prompt_ms": 9235.56,
+        "prompt_per_token_ms": 11.140603136308805,
+        "predicted_n": 43,
+        "predicted_ms": 7484.17,
+        "predicted_per_token_ms": 174.05046511627907
+      },
+      "paragraphs": 1,
+      "bullets": 0,
+      "unique_bullets": 0,
+      "words": 36,
+      "at_cap": false
+    }
+  ]
+}

@@ -11,6 +11,32 @@ from sage_lantern import device_access as access
 
 
 class DeviceAccessTests(unittest.TestCase):
+    def test_session_context_is_live_strict_and_token_authorized(self):
+        value = {"schema": "sage.lantern.session-context.v1", "epoch": "a" * 32, "session_ref": "b" * 64}
+        transport = Mock(return_value=(200, json.dumps(value).encode()))
+        with patch.object(access, "_marker_state", return_value=True):
+            self.assertEqual(access.session_context("T" * 43, transport=transport).to_dict(), value)
+        transport.assert_called_once_with("POST", "/session-context", b'{"token":"' + b"T" * 43 + b'"}')
+        for marker in (False, None):
+            transport.reset_mock()
+            with patch.object(access, "_marker_state", return_value=marker):
+                self.assertIsNone(access.session_context("T" * 43, transport=transport))
+            transport.assert_not_called()
+        with patch.object(access, "_marker_state", side_effect=[True, False]):
+            self.assertIsNone(access.session_context("T" * 43, transport=transport))
+
+    def test_session_context_rejects_untrusted_wire_fields_without_coercion(self):
+        base = {"schema": "sage.lantern.session-context.v1", "epoch": "a" * 32, "session_ref": "b" * 64}
+        invalid = [json.dumps({**base, **change}).encode() for change in (
+            {"epoch": "A" * 32}, {"epoch": None}, {"session_ref": "b" * 63},
+            {"session_ref": True}, {"token": "secret"}, {"schema": "other"})]
+        invalid += [b'null', b'x' * 257, b'{"schema":"duplicate","schema":"duplicate"}']
+        with patch.object(access, "_marker_state", return_value=True):
+            for raw in invalid:
+                self.assertIsNone(access.session_context("T" * 43, transport=lambda *args: (200, raw)))
+            self.assertIsNone(access.session_context("T" * 43, transport=lambda *args: (401, json.dumps(base).encode())))
+            self.assertIsNone(access.session_context("bad-token", transport=Mock(side_effect=AssertionError())))
+
     def test_access_epoch_exact_protected_snapshot(self):
         value = {"schema": "sage.lantern.access-epoch.v1", "locked": False, "epoch": "a" * 32}
         transport = Mock(return_value=(200, json.dumps(value).encode()))

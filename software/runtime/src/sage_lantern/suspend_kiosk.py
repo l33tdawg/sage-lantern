@@ -47,7 +47,7 @@ class KioskBinding:
         if (type(self.account) is not str or not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", self.account)
                 or self.account in {"root", "sage-lantern", "nobody"}
                 or type(self.uid) is not int or self.uid <= 0
-                or self.unit_id not in {None, "unit-a", "unit-b"}
+                or self.unit_id not in {None, "unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"}
                 or (self.unit_id is None and (self.account, self.uid) != ("radxa", 1000))):
             raise ValueError("invalid kiosk binding")
 
@@ -100,7 +100,7 @@ def load_kiosk_binding():
     if (type(plan) is not dict or plan.get("schema") != "sage.lantern.unit-plan.v1"
             or type(receipt) is not dict or receipt.get("schema") != "sage.lantern.fresh-app-install.v1"
             or receipt.get("installed") is not True or receipt.get("lock_required") is not True
-            or plan.get("unit_id") not in {"unit-a", "unit-b"}
+            or plan.get("unit_id") not in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"}
             or receipt.get("unit_id") != plan["unit_id"]):
         raise ValueError("installed kiosk binding mismatch")
     metadata = _read_binding_file(root / "unit.env")
@@ -123,6 +123,7 @@ class Process:
     executable: str
     argv: tuple[str, ...]
     state: str
+    pgid: int = 0
 
 
 def _trusted_file(path):
@@ -141,11 +142,11 @@ class LinuxProcesses:
     def __init__(self, max_processes=4096):
         self.max_processes = max_processes
 
-    def validate_host(self):
+    def validate_host(self, executables=(LAUNCHER, "/usr/bin/bash")):
         if os.geteuid() != 0 or not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
             raise RuntimeError("root and Linux pidfds required")
-        _trusted_file(Path(LAUNCHER))
-        _trusted_file(Path("/usr/bin/bash"))
+        for executable in executables:
+            _trusted_file(Path(executable))
 
     def fence_state(self):
         parent = FENCE.parent.lstat()
@@ -179,7 +180,7 @@ class LinuxProcesses:
             if len(data) > 32768:
                 raise RuntimeError("oversize process arguments")
             argv = tuple(part.decode("utf-8", errors="strict") for part in data.rstrip(b"\0").split(b"\0"))
-        return Process(pid, int(fields[1]), int(fields[19]), uid, executable, argv, fields[0])
+        return Process(pid, int(fields[1]), int(fields[19]), uid, executable, argv, fields[0], int(fields[2]))
 
     def snapshot(self):
         result = {}
@@ -201,8 +202,10 @@ class LinuxProcesses:
         descriptor = os.pidfd_open(process.pid)
         try:
             current = self.read(process.pid)
-            if (current.parent, current.start_ticks, current.uid, current.executable, current.argv) != (
-                    process.parent, process.start_ticks, process.uid, process.executable, process.argv):
+            if (current.parent, current.start_ticks, current.uid, current.pgid,
+                    current.executable, current.argv) != (
+                    process.parent, process.start_ticks, process.uid, process.pgid,
+                    process.executable, process.argv):
                 raise RuntimeError("process changed while acquiring pidfd")
             _trusted_file(Path(process.executable))
             return descriptor

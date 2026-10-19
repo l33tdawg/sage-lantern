@@ -46,11 +46,13 @@ import uuid
 from sage_sdk import AgentIdentity, SageClient
 
 from .airtime_budget import AirtimeLedger, AirtimePolicy
+from .mesh_custodian import CustodianError, MeshCustodian
 from .mesh_contact_registry import MeshContactRegistry
 from .mesh_envelope import Peer
+from .mesh_fragments import split_envelope
 from .mesh_inbox import MeshInbox
 from .mesh_mailbox import MeshMailbox
-from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
+from .mesh_outbox import MeshOutbox, OutboxAction, SCHEMAS as OUTBOX_SCHEMAS
 from .mesh_receipt_sender import MeshReceiptSender, ReceiptAction, ReceiptPermit, SCHEMA as RECEIPT_SCHEMA
 from .mesh_receiver import MeshReceiver
 from .mesh_serial_owner import SerialScheduler, SerialOwnerError
@@ -59,6 +61,7 @@ from .public_mesh_provider import (PublicMeshProvider, PublicMeshRejected, FRAME
                                    PUBLIC_BURST, PUBLIC_POLL_INTERVAL)
 from .message_contacts import RecipientID
 from .message_storage import MessageStorageProbe
+from .community_messaging import MessagingUnavailable
 from .workflow_store import WorkflowStore
 
 
@@ -86,6 +89,11 @@ CAPTURE_RESERVE_SECONDS = 5.0
 ADMISSION_REFUSAL_CODES = ("producer_admission_fenced", "producer_queue_full")
 BACKGROUND_RETRY_MIN_SECONDS = 0.5
 BACKGROUND_RETRY_MAX_SECONDS = 5.0
+# Storage refusals repay several signed reads on each wake. The node's shared
+# replay window needs time to drain; restarting a worker must not reset this
+# cooldown. A successful wake inside the recovery window does not erase it.
+STORAGE_RETRY_SECONDS = (5.0, 10.0, 20.0, 40.0, 60.0)
+STORAGE_RECOVERY_SECONDS = 60.0
 # Fragments of one message sent per background wake. Wakes alternate with the
 # receive path and sleep `interval` between them, so one fragment per wake made a
 # multi-fragment message cost a wake - at least two seconds of pacing - for every
@@ -96,8 +104,20 @@ DISPATCH_BURST = 4
 # Stop bursting this far before the job deadline, so a fragment is never started
 # that the wake cannot finish. A fragment cut off mid-flight is an unknown
 # outcome, and while the outbox makes it retryable inside the row's window it is
-# still evidence we would rather not manufacture.
-DISPATCH_RESERVE_SECONDS = 1.0
+# still evidence we would rather not manufacture. The reserve has to cover the
+# fragment's own cost, not a scheduling margin: on the commissioned long-range
+# profile one fragment measured ~9.6 s (unit A 2026-09-22, dispatch_one elapsed
+# 9,9xx ms against a 10 s wake), so the old 1 s reserve started a fragment the
+# wake could not finish - the job died post-wire (wire_frames: 1), the row's
+# outcome became unknown and the unit refused every authorized route until the
+# next cold start.
+DISPATCH_RESERVE_SECONDS = 12.0
+# Floor for the background wake budget. A wake must be able to hold one fragment
+# plus the inventory read it pays before the burst; request operations keep the
+# operator-reviewed config value. Kept under the 60 s validation ceiling.
+BACKGROUND_JOB_SECONDS = 20.0
+HANDOVER_BURST = 4
+HANDOVER_RETRY_SECONDS = 300.0
 # Retry cadence for a message row whose fragment reached the wire and was never
 # acknowledged. Owner decision 2026-09-13: that outcome is retryable inside the
 # row's own 24-hour window, escalated only once the window lapses. One attempt
@@ -204,7 +224,7 @@ def _failure_code(error):
 
 
 def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_frames=0,
-                           access_denied=None, event="mesh_operation_failed"):
+                           access_denied=None, fenced_rows=(), event="mesh_operation_failed"):
     """Bounded diagnostics only: no payloads, text, keys or peer identities."""
     try:
         import syslog
@@ -222,6 +242,12 @@ def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_fr
                        frames=_failure_frames(error, 12))
         if access_denied is not None:
             payload['access_denied'] = access_denied
+        if fenced_rows:
+            # The row whose unknown outcome fences admission, by message id: the
+            # one fact a refused read needs and could never state (unit A,
+            # 2026-09-22 - every community route answered 503 while the journal
+            # named neither the fence nor the row that set it).
+            payload['fenced_rows'] = [str(identifier) for identifier in fenced_rows][:8]
         if causes:
             payload['causes'] = causes
         syslog.syslog(syslog.LOG_ERR, json.dumps(payload))
@@ -229,9 +255,9 @@ def _log_operation_failure(error, operation, *, provably_pre_wire=False, wire_fr
         return
 
 
-def _log_background_failure(error, operation, provably_pre_wire, wire_frames, access_denied=None):
+def _log_background_failure(error, operation, provably_pre_wire, wire_frames, access_denied=None, fenced_rows=()):
     _log_operation_failure(error, operation, provably_pre_wire=provably_pre_wire,
-                           wire_frames=wire_frames, access_denied=access_denied,
+                           wire_frames=wire_frames, access_denied=access_denied, fenced_rows=fenced_rows,
                            event="mesh_background_failure")
 
 
@@ -262,13 +288,19 @@ class _BackgroundJob:
     fragment: unit A 2026-09-13 17:50 lost a dispatch five masks deep in a plain
     MeshOutboxError whose innermost cause was RegistryError, which cannot be told
     apart from a contact or store failure without the condition itself.
+
+    fenced_rows carries the message ids of the outbox rows whose unknown outcome
+    is what refused it, when the refusal was `admission_unsafe`: an admission
+    fence is the one refusal whose cause is a durable row rather than a condition
+    of this process (unit A, 2026-09-22).
     """
 
-    __slots__ = ("radio_action", "access_denied")
+    __slots__ = ("radio_action", "access_denied", "fenced_rows")
 
     def __init__(self):
         self.radio_action = threading.Event()
         self.access_denied = None
+        self.fenced_rows = ()
 
 
 @dataclass(frozen=True)
@@ -279,6 +311,9 @@ class MeshRuntimeConfig:
     receiver_slot: str
     operation_timeout: float = 10
     airtime: AirtimePolicy | None = None
+    # None disables store-and-forward custody; a non-empty tuple of
+    # "chain_id:radio-public-key" strings enables it for those depositors only.
+    custody: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, repr=False)
@@ -293,6 +328,35 @@ class MeshUserContext:
 class MeshReceiveContext:
     actor: RecipientID
     epoch: str
+
+
+class _StorageRefusalBackoff:
+    """Pace work only; never authorize it or cache an epoch/storage verdict."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self._lock = threading.Lock()
+        self._attempt = 0
+        self._last = None
+        self._until = 0.0
+
+    def failed(self, error):
+        if not any(isinstance(cause, MessagingUnavailable)
+                   for cause in (error, *_masked_causes(error))):
+            return
+        with self._lock:
+            self._last = self.clock()
+            self._until = self._last + STORAGE_RETRY_SECONDS[self._attempt]
+            self._attempt = min(self._attempt + 1, len(STORAGE_RETRY_SECONDS) - 1)
+
+    def remaining(self):
+        with self._lock:
+            return max(0.0, self._until - self.clock())
+
+    def succeeded(self):
+        with self._lock:
+            if self._last is not None and self.clock() - self._last >= STORAGE_RECOVERY_SECONDS:
+                self._attempt, self._last, self._until = 0, None, 0.0
 
 
 class MeshRuntime:
@@ -310,6 +374,9 @@ class MeshRuntime:
             _require(type(config.operation_timeout) in (int, float) and math.isfinite(config.operation_timeout)
                      and 0 < config.operation_timeout <= 30)
             _require(config.airtime is None or type(config.airtime) is AirtimePolicy)
+            _require(config.custody is None or (type(config.custody) is tuple
+                     and 1 <= len(config.custody) <= 64
+                     and all(type(item) is str for item in config.custody)))
             _require(isinstance(config.identity_path, Path) and config.identity_path.is_absolute())
             _require(type(config.receiver_slot) is str and str(uuid.UUID(config.receiver_slot)) == config.receiver_slot
                      and uuid.UUID(config.receiver_slot).int != 0)
@@ -328,10 +395,13 @@ class MeshRuntime:
             service._stop = threading.Event()
             service._condition = threading.Condition()
             service._readers = 0
+            service._denial = threading.local()
+            service._fence_snapshot = None
             service._poller = None
             service._receive_stop = threading.Event()
             service._background_receive = False
             service._receive_pausing = False
+            service._storage_refusals = _StorageRefusalBackoff()
             service._uncertain = False
             service._closed = False
             service._public_mesh = None
@@ -341,6 +411,11 @@ class MeshRuntime:
             service._airtime_deferrals = 0
             service._close_mutex = threading.Lock()
             service.store = WorkflowStore(client, storage=probe)
+            try:
+                service._custodian = None if config.custody is None else MeshCustodian(
+                    service.store, access_check=service._access, depositors=config.custody)
+            except CustodianError:
+                raise ValueError("invalid_custody_policy") from None
             def initialize(device):
                 service._local.mode = "initialize"
                 try:
@@ -352,7 +427,8 @@ class MeshRuntime:
                     service.outbox = MeshOutbox(service.store, identity, sender=peer, guard=service._outbox_guard,
                                                verify_contact=service._contact, clock=lambda: int(time.time()))
                     service.inbox = MeshInbox(service.store, recipient=peer, recipient_signing_key=identity._signing_key,
-                        resolve_peer=service._resolve, access_check=service._access, storage_check=service._access)
+                        resolve_peer=service._resolve, access_check=service._access, storage_check=service._access,
+                        custody=getattr(service, "_custodian", None))
                     service.receipts = MeshReceiptSender(service.store, identity, inbox=service.inbox, sender=peer,
                         guard=lambda action: service._access(), policy=service._receipt_permit, verify_contact=service._contact)
                     service.receiver = MeshReceiver(service.store, device, slot_id=config.receiver_slot,
@@ -380,6 +456,7 @@ class MeshRuntime:
             raise MeshRuntimeError() from None
 
     def admission_safe(self):
+        fence = {"layers": [], "rows": []}
         for name in ("receipts", "outbox", "receiver", "inbox"):
             target = getattr(self, name, None)
             if target is None:
@@ -392,7 +469,28 @@ class MeshRuntime:
             unknown = latching() is True if callable(latching) else bool(getattr(target, "_uncertain", False))
             if unknown:
                 self._uncertain = True
+                fence["layers"].append(name)
+                rows = getattr(target, "fencing_unknowns", None)
+                if callable(rows):
+                    fence["rows"].extend(rows())
+        self._fence_snapshot = fence if fence["layers"] else None
         return not self._uncertain and not self._closed and not self._stop.is_set()
+
+    def admission_fence(self):
+        """Which layer, and which outbox rows, fence admission: bounded, no payloads.
+
+        `_access` refuses with a bare False and `_read` used to raise
+        `MeshRuntimeError() from None`, so a refused community route left the
+        journal naming neither the conjunct nor the row behind it (unit A,
+        2026-09-22: six `dispatching` rows and every mailbox read answering 503).
+        The snapshot is refreshed by every admission check, and it *names the
+        row* whenever the fence is a durable outbox row rather than a condition
+        of this process.
+        """
+        fence = getattr(self, "_fence_snapshot", None)
+        if not fence:
+            return None
+        return {"layers": sorted(set(fence["layers"])), "rows": sorted({str(item) for item in fence["rows"]})}
 
     def _radio_written(self):
         """Command frames this runtime's radio has begun writing, or None."""
@@ -461,10 +559,20 @@ class MeshRuntime:
         The marker belongs to the job, not to the thread: _context clears the
         thread-local state as it unwinds, so by the time the worker logs the
         failure the only surviving record is the one held by the job itself.
+        The refusal also goes to a thread-local that _context does not clear, so
+        a mailbox read - which runs in the caller's thread, not a job - can name
+        its own conjunct when it logs the failure.
         """
         job = getattr(self._local, "job", None)
         if type(job) is _BackgroundJob:
             job.access_denied = reason
+            if reason == "admission_unsafe":
+                self.admission_safe()
+                fence = self.admission_fence() or {}
+                job.fenced_rows = tuple(fence.get("rows") or ())
+        denial = getattr(self, "_denial", None)
+        if denial is not None:
+            denial.reason = reason
         return False
 
     def _capture_storage(self):
@@ -611,14 +719,10 @@ class MeshRuntime:
         if type(context) is MeshReceiveContext:
             operation = self._local.operation
             if operation == "background_dispatch" and action.operation in ("dispatch", "retry"):
-                # A retry decision re-queues a row whose fragment already reached
-                # the wire, so it carries the same weight as the dispatch itself:
-                # the peer card must still be the live consented one.
-                card = self.registry.resolve(action.radio_public_key, access_check=self._access)
-                binding = hashlib.sha256(json.dumps(asdict(card), ensure_ascii=True, sort_keys=True,
-                    separators=(",", ":"), allow_nan=False).encode()).hexdigest()
-                if binding != action.consent_binding:
-                    return False
+                # Full recipient consent is checked by _contact at each
+                # dispatch/retry boundary. This guard is also called inside
+                # journal operations and must remain a live grant check.
+                pass
             elif operation != "receive" or action.operation != "receipt":
                 return False
             return self._authorize_context(context, operation, action) is True
@@ -630,6 +734,12 @@ class MeshRuntime:
         card = self.registry.resolve(action.radio_public_key, access_check=self._access)
         peer = getattr(action, "original_sender", None) or action.recipient
         _require(card.recipient == RecipientID(peer.chain_id, peer.public_key.hex()))
+        if (type(getattr(self._local, "context", None)) is MeshReceiveContext
+                and self._local.operation == "background_dispatch"
+                and type(action) is OutboxAction and action.operation in ("dispatch", "retry")):
+            binding = hashlib.sha256(json.dumps(asdict(card), ensure_ascii=True, sort_keys=True,
+                separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+            _require(binding == action.consent_binding)
         return card
 
     def _resolve(self, message):
@@ -696,7 +806,11 @@ class MeshRuntime:
         deadline = time.monotonic() + self.config.operation_timeout
         remaining = deadline - time.monotonic()
         _require(remaining > 0)
-        with self.coordinator.producer_fence(timeout=remaining) as lease:
+        # A read fence refuses when the serial owner is busy; it must not contain
+        # the runtime for it. Containment is the drain's rule (MeshRuntime.close
+        # takes the default), and one slow background job must not turn every
+        # route into a 503 until a restart.
+        with self.coordinator.producer_fence(timeout=remaining, contain_on_timeout=False) as lease:
             yield lease
 
     def put_contact(self, context, card, *, known_actor):
@@ -947,12 +1061,25 @@ class MeshRuntime:
                 with self._airtime_reservation(device) as allowed:
                     if not allowed:
                         return
-                    self.receipts.dispatch_one(approved["receipt_id"], device=device,
+                    progress = self.receipts.dispatch_one(approved["receipt_id"], device=device,
                         radio_timestamp=int(time.time()), access_check=self._access)
+                if progress.state == "queued":
+                    # A known incomplete receipt needs another dispatch wake;
+                    # the idle journal-scan interval must not pace its fragments.
+                    self._next_scan_at = 0.0
                 return
-            if row["kind"] != "mesh_outbound" or row["payload"].get("body", {}).get("schema") != OUTBOX_SCHEMA:
+            if row["kind"] != "mesh_outbound" or row["payload"].get("body", {}).get("schema") not in OUTBOX_SCHEMAS:
                 continue
             body = self.outbox._verified(row)
+            if body["state"] == "dispatching":
+                # Adopt a durable 'dispatching' row the construction scan let
+                # through (in-window unknowns are retryable, owner decision
+                # 2026-09-13). Recording it here hands it to the retry driver on
+                # this same wake; a lapsed window is never adopted and keeps its
+                # own fail-closed handling.
+                if body["approved"]["issued_at"] <= int(time.time()) < body["approved"]["expires_at"]:
+                    self.outbox.track_unknown(body["message_id"], body["approved"]["expires_at"])
+                continue
             if body["state"] != "queued" or not body["approved"]["issued_at"] <= int(time.time()) < body["approved"]["expires_at"]:
                 continue
             self._queued_rows().add(body["message_id"])
@@ -960,6 +1087,7 @@ class MeshRuntime:
             if progress is None or progress.state != "queued":
                 self._queued_rows().discard(body["message_id"])
             return
+        self._handover_custody(device)
 
     def _queued_rows(self):
         """Message ids known to be queued, so a wake need not scan the journal."""
@@ -1002,9 +1130,13 @@ class MeshRuntime:
         it at the top of this job and each fragment spends it here.
         """
         deadline = getattr(self._local, "background_deadline", None)
+        progress = None
         for _ in range(DISPATCH_BURST):
             if deadline is not None and time.monotonic() >= deadline - DISPATCH_RESERVE_SECONDS:
-                return None
+                # Keep a row that just advanced queued for the next wake. Losing
+                # that progress here forces another full journal scan interval
+                # between fragments, even though the next fragment is ready.
+                return progress
             with self._airtime_reservation(device) as allowed:
                 if not allowed:
                     # Deferral uses the same "not now" signal as the deadline:
@@ -1020,6 +1152,58 @@ class MeshRuntime:
             if progress.state != "queued" or progress.next_fragment >= progress.fragment_count:
                 return progress
         return progress
+
+    def _handover_custody(self, device):
+        """Hand one held deposit to a present recipient, bounded per wake.
+
+        Presence is a contact in the inventory this wake just read, nothing
+        stronger. The inner sealed envelope is sent exactly as its original
+        sender would have sent it, so the recipient's existing signature check
+        and (sender, message_id) dedupe apply unchanged. Sending fragments is
+        not delivery: the copy stays held until its TTL or an explicit
+        confirmation, and the recipient's own receipt goes to the original
+        sender.
+        """
+        custodian = getattr(self, "_custodian", None)
+        inventory = getattr(self._local, "inventory", None)
+        if custodian is None or inventory is None or self._access() is not True:
+            return False
+        now = int(time.time())
+        deadline = getattr(self._local, "background_deadline", None)
+        for contact in inventory.contacts:
+            prefix = contact.public_key[:6]
+            try:
+                pending = custodian.handover_for(prefix, now=now, min_interval=HANDOVER_RETRY_SECONDS)
+            except CustodianError:
+                return False
+            if not pending:
+                continue
+            try:
+                target = inventory.unique_prefix(contact.public_key)
+            except Exception:
+                continue
+            deposit, next_index, _ = pending[0]
+            try:
+                fragments = split_envelope(deposit.envelope_wire.encode("ascii"))
+            except Exception:
+                return False
+            index = next_index
+            while index < len(fragments) and index - next_index < HANDOVER_BURST:
+                if deadline is not None and time.monotonic() >= deadline - DISPATCH_RESERVE_SECONDS:
+                    break
+                with self._airtime_reservation(device) as allowed:
+                    if not allowed:
+                        return True
+                    device.send_text(recipient_prefix=target, text=fragments[index],
+                                     timestamp=int(time.time()), authorize=self._access)
+                index += 1
+            try:
+                custodian.note_handover(prefix, deposit.message_digest, next_index=index,
+                                        complete=index >= len(fragments), now=int(time.time()))
+            except CustodianError:
+                return False
+            return True
+        return False
 
     def _retry_state(self):
         state = getattr(self, "_retry_pending", None)
@@ -1095,6 +1279,12 @@ class MeshRuntime:
                 continue
             approved = body["approved"]
             if body["state"] != "dispatching":
+                # The durable row answered the lost write by observation: a
+                # landed CAS is queued again, or the row has already moved past
+                # dispatch. Either way no retry decision is owed, and keeping
+                # the row-scoped unknown would latch the unit when its window
+                # lapses even though nothing is unresolved (unit B, 2026-09-19).
+                outbox.resolve_unknown(identifier)
                 state["next"].pop(identifier, None)
                 state["attempts"].pop(identifier, None)
                 continue
@@ -1129,7 +1319,13 @@ class MeshRuntime:
             self._receive_stop = threading.Event()
             stop = self._receive_stop
             gateway = self._public_gateway
-            job_timeout = gateway.operation_timeout if gateway is not None else self.config.operation_timeout
+            # A wake whose budget cannot hold one fragment does not pace
+            # dispatch, it manufactures unknown outcomes: the burst starts the
+            # fragment and the job deadline cuts it off post-wire. The messaging
+            # path therefore floors the background budget at one fragment plus
+            # slack; the public-gateway path keeps its own reviewed timeout.
+            job_timeout = (gateway.operation_timeout if gateway is not None
+                           else max(self.config.operation_timeout, BACKGROUND_JOB_SECONDS))
             _require(type(job_timeout) in (int, float) and math.isfinite(job_timeout) and 0 < job_timeout <= 60)
             def invoke(device, operation, job):
                 _require(not stop.is_set() and not self._stop.is_set())
@@ -1180,6 +1376,13 @@ class MeshRuntime:
                 backoff = BACKGROUND_RETRY_MIN_SECONDS
                 refusals = 0
                 while not stop.is_set() and not self._stop.is_set():
+                    # Check before grant creation: repaying a grant/job can
+                    # issue several storage reads. Every new worker shares this
+                    # runtime-owned deadline, including after masked failures.
+                    delay = self._storage_refusals.remaining()
+                    if delay:
+                        stop.wait(delay)
+                        continue
                     future = None
                     operation = None
                     job = _BackgroundJob()
@@ -1201,9 +1404,22 @@ class MeshRuntime:
                         future = self._submit(lambda device: invoke(device, operation, job))
                         future.result(timeout=job_timeout)
                     except Exception as error:
+                        # A masked storage failure may be post-dequeue or an
+                        # unknown CAS. Delay later work without changing any of
+                        # the existing retirement/uncertainty classifications.
+                        self._storage_refusals.failed(error)
                         current = self._radio_written()
-                        refusal = (isinstance(error, SerialOwnerError)
-                                   and (error.args[0] if error.args else None) in ADMISSION_REFUSAL_CODES)
+                        # A refused storage read is a refusal like any other: the
+                        # node answered "not now" before this job touched a lease,
+                        # a dequeue or the radio, so the right answer is the same
+                        # bounded retry. Unit A 2026-09-22 14:13 is what the
+                        # alternative costs - the local node's replay window
+                        # saturated, its own 503 reached the probe, and the
+                        # flattened MeshLeaseUncertain latched the unit until a
+                        # cold start while the node was healthy throughout.
+                        refusal = (isinstance(error, MessagingUnavailable)
+                                   or (isinstance(error, SerialOwnerError)
+                                       and (error.args[0] if error.args else None) in ADMISSION_REFUSAL_CODES))
                         # A refusal admits nothing. A timeout is only pre-wire when
                         # the job's own destructive-action marker is unset and the
                         # transport is intact; an unacknowledged capture lease stays
@@ -1218,7 +1434,7 @@ class MeshRuntime:
                         if not refusal or refusals <= 2 or refusals % 32 == 0:
                             _log_background_failure(error, operation, pre_wire,
                                 None if type(written) is not int or type(current) is not int else current - written,
-                                job.access_denied)
+                                job.access_denied, job.fenced_rows)
                         if (refusal and pre_wire and not self._closed
                                 and not self._stop.is_set() and self.admission_safe()):
                             # A refusal admitted nothing at all - the coordinator
@@ -1269,6 +1485,7 @@ class MeshRuntime:
                         # rotated capture epoch takes.
                         break
                     index += 1
+                    self._storage_refusals.succeeded()
                     backoff = BACKGROUND_RETRY_MIN_SECONDS
                     self._recovered_at = None
                     public_active = self._public_active()
@@ -1339,6 +1556,8 @@ class MeshRuntime:
             poller = self._poller
             if poller is not None and poller.is_alive():
                 return True
+            if self._storage_refusals.remaining():
+                return False
             if not self.admission_safe():
                 return False
             first = poller is None and not self._background_receive
@@ -1376,10 +1595,22 @@ class MeshRuntime:
         with self._condition:
             _require(not self._stop.is_set() and not self._closed)
             self._readers += 1
+        denial = getattr(self, "_denial", None)
+        if denial is not None:
+            denial.reason = None
         try:
             with self._context(context, operation):
                 return callback()
-        except Exception:
+        except Exception as error:
+            # A refused read leaves a trace of its own: without this the journal
+            # carried neither the operation, the conjunct that refused it, nor
+            # the row whose unknown outcome fences admission (unit A,
+            # 2026-09-22 - every mailbox read answered 503 while the cause was
+            # hidden behind `raise MeshRuntimeError() from None`).
+            self.admission_safe()
+            fence = self.admission_fence() or {}
+            _log_operation_failure(error, operation, access_denied=getattr(denial, "reason", None),
+                                   fenced_rows=tuple(fence.get("rows") or ()))
             raise MeshRuntimeError() from None
         finally:
             with self._condition:
@@ -1387,7 +1618,18 @@ class MeshRuntime:
                 self._condition.notify_all()
 
     def list_messages(self, context, box, *, limit=20):
-        return self._read(context, "list_messages", lambda: self.mailbox.list_messages(box, limit=limit, access_check=self._access))
+        page = self._read(context, "list_messages", lambda: self.mailbox.list_messages(box, limit=limit, access_check=self._access))
+        if box == "outbox":
+            # The dispatch wake finds rows from memory, and a row queued by an
+            # earlier process is otherwise only discoverable by a journal scan
+            # that costs more than the whole wake (unit A, 2026-09-21: the scan
+            # died on the 10 s job budget and the message never left the queue).
+            # An outbox read is the owner looking at exactly those rows, so it
+            # seeds the set the wake dispatches from.
+            for item in page.items:
+                if item.workflow_state == "queued":
+                    self._queued_rows().add(item.local_id)
+        return page
 
     def open_message(self, context, identifier):
         return self._read(context, "open_message", lambda: self.mailbox.open_message(identifier, access_check=self._access))
@@ -1428,7 +1670,7 @@ class MeshRuntime:
                         if row["kind"] != "mesh_outbound":
                             continue
                         body = row["payload"].get("body", {})
-                        if body.get("schema") == OUTBOX_SCHEMA:
+                        if body.get("schema") in OUTBOX_SCHEMAS:
                             _require(self.outbox._verified(row)["state"] != "dispatching")
                         elif body.get("schema") == RECEIPT_SCHEMA:
                             _require(self.receipts._verified(row)[0]["state"] != "dispatching")

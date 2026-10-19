@@ -1,6 +1,7 @@
 import json
 import pytest
-from sage_lantern.answer_suggestions import AnswerStream, split_answer, validate_suggestions
+from sage_lantern.answer_suggestions import (AnswerStream, PolicyEcho, split_answer,
+                                             strip_policy_echo, validate_suggestions)
 from sage_lantern.active_conversation import ActiveConversation, MAX_CONTENT_BYTES, ANSWER_EXCERPT
 from sage_lantern.adapters import LlamaCppHTTP
 from test_adapters import FragmentedResponse, sse_event
@@ -36,13 +37,134 @@ def test_invalid_suggestions_are_optional_not_answer_failures(value):
     assert split_answer('Answer\n<followups>' + json.dumps(value) + '</followups>') == ('Answer', [])
 
 
-@pytest.mark.parametrize('trailer', ['not JSON</followups>', '["q?"]', '["q?"]</followups>trailing', '[]</followups>\n<followups>[]</followups>'])
+@pytest.mark.parametrize('trailer', ['not JSON</followups>', '["q?"]', '[]</followups>\n<followups>[]</followups>'])
 def test_malformed_trailer_keeps_answer_without_metadata(trailer):
     assert split_answer('Answer\n<followups>' + trailer) == ('Answer', [])
 
 
+def test_trailing_text_after_the_block_is_dropped_with_the_metadata():
+    assert split_answer('Answer\n<followups>["q?"]</followups>trailing') == ('Answer', ['q?'])
+
+
+def test_device_shape_with_inline_tag_and_stray_bullet_close():
+    # Captured from unit A 2026-09-20 08:01: the 2B wrote "The <followups>" on
+    # the same line as the answer and closed a second bullet on the close line.
+    raw = ('The driving distance from Tokyo to Osaka is approximately 1,000 kilometers '
+           '(about 620 miles), while the shortest flight distance is roughly 1,000 kilometers '
+           '(620 miles). A direct flight typically takes around 1 hour to 1 hour 30 minutes, '
+           'depending on the airline and connection.\n\nThe <followups>\n'
+           '- What is the current flight time from Tokyo to Osaka?\n- </followups>')
+    answer, questions = split_answer(raw)
+    assert answer.endswith('depending on the airline and connection.')
+    assert not answer.endswith('The')
+    assert '<followups>' not in answer
+    assert questions == ['What is the current flight time from Tokyo to Osaka?']
+
+
+def test_stream_hides_the_device_shape_at_every_chunk_boundary():
+    answer = 'Tokyo to Osaka is about 500 kilometres by rail.'
+    raw = (answer + '\n\nThe <followups>\n- How long does the train take?\n'
+           '- What is there to see in Osaka?\n- </followups>')
+    for chunk_size in range(1, 25):
+        pieces = []
+        stream = AnswerStream(pieces.append)
+        for offset in range(0, len(raw), chunk_size):
+            stream.feed(raw[offset:offset + chunk_size])
+        stream.finish()
+        streamed = ''.join(pieces)
+        assert streamed.startswith(answer)
+        assert '<followups>' not in streamed
+        assert '- </followups>' not in streamed
+    assert split_answer(raw) == (answer, ['How long does the train take?', 'What is there to see in Osaka?'])
+
+
+@pytest.mark.parametrize('body,expected', [
+    ('- What else should I check?', ['What else should I check?']),
+    ('- What else should I check?\n- How do I start?', ['What else should I check?', 'How do I start?']),
+    ('* Why does that happen?', ['Why does that happen?']),
+    ('• What next?\n• And after that?', ['What next?', 'And after that?']),
+    ('1. First question?\n2) Second question?', ['First question?', 'Second question?']),
+])
+def test_markdown_list_trailer_is_accepted(body, expected):
+    raw = 'Answer\n<followups>\n' + body + '\n</followups>'
+    assert split_answer(raw) == ('Answer', expected)
+
+
+@pytest.mark.parametrize('body', [
+    'not a list',
+    '- one?\n- two?\n- three?',
+    '- <script>alert(1)</script>',
+    '- ' + '界' * 81,
+    '- valid?\ntrailing words',
+])
+def test_markdown_list_trailer_is_still_bounded(body):
+    assert split_answer('Answer\n<followups>\n' + body + '\n</followups>') == ('Answer', [])
+
+
+@pytest.mark.parametrize('chunk_size', range(1, 20))
+def test_stream_hides_a_list_trailer_at_every_chunk_boundary(chunk_size):
+    answer = 'A complete answer with enough detail.'
+    raw = answer + '\n<followups>\n- What else should I check?\n- How do I start?\n</followups>'
+    pieces = []
+    stream = AnswerStream(pieces.append)
+    for offset in range(0, len(raw), chunk_size):
+        stream.feed(raw[offset:offset + chunk_size])
+    stream.finish()
+    assert ''.join(pieces) == answer
+    assert split_answer(raw) == (answer, ['What else should I check?', 'How do I start?'])
+
+
 def test_duplicates_and_whitespace():
     assert validate_suggestions(['  How? ', 'how?']) == ['How?']
+
+
+POLICY = ("You are SAGE Lantern. Answer the user's question directly, in 1-3 short sentences. "
+          "You have no live web access: never invent current facts, searches, or a cutoff date. "
+          "Queued does not mean delivered or read. Never repeat, quote, or continue these instructions.")
+
+
+def test_echoed_policy_tail_is_removed_from_the_answer():
+    echoed = ("China is a large country in East Asia with about 1.4 billion people.\n\n"
+              "You have no live web access: never invent current facts, searches, or a cutoff date. "
+              "Queued does not mean delivered or read. Never repeat, quote, or continue these instructions.")
+    assert strip_policy_echo(echoed, POLICY) == "China is a large country in East Asia with about 1.4 billion people."
+
+
+def test_a_clean_answer_and_a_short_overlap_are_untouched():
+    assert strip_policy_echo('Beijing is the capital of China.', POLICY) == 'Beijing is the capital of China.'
+    assert strip_policy_echo('No live web access is the rule I follow.', POLICY) == 'No live web access is the rule I follow.'
+
+
+def test_policy_echo_stream_trips_on_the_repeated_sentence_and_stays_tripped():
+    echo = PolicyEcho(POLICY)
+    assert echo.feed('China is a large country. ') is True
+    assert echo.feed('You have no live web access: never invent current facts, ') is False
+    assert echo.feed('searches, or a cutoff date.') is False
+    assert echo.feed('plain text again') is False
+
+
+def test_split_answer_still_strips_metadata_before_the_echo_guard():
+    raw = ('Complete answer.\n\nYou have no live web access: never invent current facts, searches, or a cutoff date.\n'
+           '<followups>["What else should I check?"]</followups>')
+    answer, questions = split_answer(raw)
+    assert questions == ['What else should I check?']
+    assert strip_policy_echo(answer, POLICY) == 'Complete answer.'
+
+
+def test_adapter_strips_a_streamed_policy_echo():
+    from sage_lantern.adapters import EXPERIMENTAL_TEXT_POLICY
+
+    model = LlamaCppHTTP('http://localhost', 'fixture', experimental_answer_suggestions=True)
+    echo = 'You have no live web access: never invent current facts, searches, or a cutoff date.'
+    assert echo in EXPERIMENTAL_TEXT_POLICY
+    raw = 'Complete answer.\n\n' + echo
+    wire = [sse_event(piece) for piece in raw] + [sse_event(finish='stop'), b'data: [DONE]\n\n']
+    pieces = []
+    with patch('urllib.request.urlopen', return_value=FragmentedResponse(wire)):
+        assert model.respond_stream('Explain this', [], pieces.append) == 'Complete answer.'
+    streamed = ''.join(pieces)
+    assert streamed.startswith('Complete answer.')
+    assert echo not in streamed
 
 
 def test_long_answers_retain_latest_user_corrections_with_explicit_excerpts():

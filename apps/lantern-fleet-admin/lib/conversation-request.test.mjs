@@ -1,15 +1,26 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { conversationRequest } from './conversation-threads.ts';
-import { DeviceSessionError, setDeviceToken } from './device-session.ts';
+import { DeviceSessionError, observeSessionContext, parseSessionContext, setDeviceToken } from './device-session.ts';
 import { HistoryCache } from './history-cache.ts';
 
 const originalFetch = globalThis.fetch;
 const originalDocument = globalThis.document;
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const history = { enabled: true, items: [] };
-const ok = () => new Response(JSON.stringify(history));
-beforeEach(() => { globalThis.document = { hidden: false }; setDeviceToken('a'.repeat(43)); });
+/**
+ * The authority a locked device is operating under.
+ *
+ * A locked device stamps every successful protected reply, and its client knows
+ * the authority from a validated status reading. Both halves are modelled here:
+ * a test that fabricated a locked device whose replies carry no stamp would be
+ * testing a device that does not exist.
+ */
+const STAMP = { schema: 'sage.lantern.session-context.v1', epoch: 'a'.repeat(32), session_ref: 'b'.repeat(64) };
+const OTHER = { schema: 'sage.lantern.session-context.v1', epoch: 'c'.repeat(32), session_ref: 'b'.repeat(64) };
+const establish = (reading = STAMP) => observeSessionContext(parseSessionContext(reading));
+const ok = () => new Response(JSON.stringify({ ...history, session_context: STAMP }));
+beforeEach(() => { globalThis.document = { hidden: false }; setDeviceToken('a'.repeat(43)); establish(); });
 afterEach(() => { setDeviceToken(null); globalThis.fetch = originalFetch; globalThis.document = originalDocument; });
 
 test('busy history read retries without flashing a cache error or duplicating a concurrent read', async (context) => {
@@ -67,7 +78,7 @@ test('selection and non-transient errors are never replayed', async () => {
 test('lock, visibility loss and session replacement cancel a queued retry', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });
   for (const reason of ['abort', 'hidden', 'session']) {
-    document.hidden = false; setDeviceToken('a'.repeat(43));
+    document.hidden = false; setDeviceToken('a'.repeat(43)); establish();
     let calls = 0; const controller = new AbortController();
     globalThis.fetch = async () => { calls++; return new Response('{}', { status: 503 }); };
     const pending = conversationRequest('history/list', {}, controller.signal);
@@ -95,4 +106,25 @@ test('retries stay inside the original ten-second history deadline', async (cont
   context.mock.timers.tick(9500); await settle();
   context.mock.timers.tick(500); await rejected;
   assert.equal(calls, 1);
+});
+
+test('a history read that outlived its authority is refused rather than adopted', async () => {
+  // Correctly issued under A, then the epoch moves while the reply is in flight:
+  // the body is true when it was written and obsolete when it lands.
+  globalThis.fetch = async () => {
+    establish(OTHER);
+    return new Response(JSON.stringify({ ...history, session_context: STAMP }));
+  };
+  await assert.rejects(conversationRequest('history/list'), (error) => error instanceof DeviceSessionError);
+  // The positive control: the same request, the same stamped reply, nothing
+  // moving underneath it. The read is adopted, and the stamp does not travel on
+  // into the state the parsers and caches hold.
+  establish();
+  globalThis.fetch = async () => new Response(JSON.stringify({ ...history, session_context: STAMP }));
+  assert.deepEqual(await conversationRequest('history/list'), history);
+});
+
+test('a locked device reply with no stamp is refused, not read as legacy', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify(history));
+  await assert.rejects(conversationRequest('conversation/state'), (error) => error instanceof DeviceSessionError);
 });

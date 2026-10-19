@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo 'Usage: install-fleet-admin-local.sh [--unit-id unit-a|unit-b] [--radio-evidence FILE] [--dry-run [--metadata FILE]]'
+  echo 'Usage: install-fleet-admin-local.sh [--unit-id unit-a|unit-b|unit-c|unit-d|unit-e|unit-f] [--radio-evidence FILE] [--dry-run [--metadata FILE]]'
   echo 'Dry-run validates public bindings only. Live Unit B and guarded-appliance updates are not supported here.'
 }
 unit_id=unit-a
@@ -22,7 +22,7 @@ while (($#)); do
     *) usage >&2; exit 2 ;;
   esac
 done
-[[ $unit_id == unit-a || $unit_id == unit-b ]] || exit 2
+[[ $unit_id =~ ^unit-[a-f]$ ]] || exit 2
 [[ $dry_run == 1 || $seen_metadata == 0 ]] || { echo 'Alternate metadata is dry-run only.' >&2; exit 2; }
 if (( ! dry_run )); then
   [[ $unit_id == unit-a ]] || { echo 'Unit B requires the unfinished fresh secure appliance installer; no changes made.' >&2; exit 2; }

@@ -29,7 +29,8 @@ not enrollment, proximity, owner identity, RF delivery, or mutual consent proof.
 
 ## Renewal without hourly root operations
 
-Separate short cryptographic card validity (existing maximum 3600 seconds) from
+Separate short cryptographic card validity (maximum 86400 seconds / 24 h since
+2026-09-13; it was 3600 seconds) from
 an explicit owner-approved durable relationship. A later root renewal service may
 issue fresh bounded cards for that exact peer under a finite owner-selected grant
 with allowed scopes, grant revision, expiry and renewal budget. It must stop on

@@ -1,18 +1,27 @@
 # SAGE Commons canonical product terminology
 
 **Status:** CANDIDATE normative  
-**Last updated:** 2026-08-11  
+**Last updated:** 2026-09-21  
 **Licence:** Apache-2.0
 
 ## Product and infrastructure names
 
 | Name | Canonical meaning | Authority boundary |
 |---|---|---|
-| **SAGE Commons** | The overall mission, governed public knowledge network, ecosystem and community programme | Not one device, operator or company |
+| **SAGE Commons** | The commons fabric: the core mesh technology and governed public network — MeshCore for transport plus SAGE running the public chain, with the contracts that make them one interoperable, community-owned commons — that community networks, services and devices join | Not the mission itself; not one device, operator or company |
 | **SAGE Lantern** | Portable local-first personal AI device with sovereign personal SAGE plus bounded public proposer/query/cache functions | Proposer/query client only; never a public validator |
 | **Knowledge Point** | A physical or institutionally operated station/facility for research, publishing, caching, synchronization, local services and support | Facility ownership does not grant public consensus power |
 | **SAGE Lamplighter** | Untrusted offline super-seed and field-service system that carries verified knowledge/model/runtime packs between connected and disconnected locations | Transport/custody only; never release signer, knowledge authority, Root or validator |
 | **SAGE Lightbearer** | Stable public-service node/profile serving the Commons from cloud, datacenter or suitable Knowledge Point infrastructure | Service responsibility only; no automatic validator power or Foundation ownership |
+
+## The Commons fabric and the Lantern's place in it
+
+**Owner direction, 2026-09-21.** This corrects the earlier wording of this table and of decision D-009 ("the overall mission, governed public knowledge network, ecosystem and community programme"), which described the Commons as the programme surrounding the device rather than as the fabric the device joins.
+
+- **The Commons is the fabric.** Core mesh technology — MeshCore for transport, SAGE with the public chain for governed knowledge — plus the protocols and contracts that let independent community networks, services and devices interoperate as one commons. It is a network layer that communities and their institutions hold, not a platform one operator runs.
+- **The Lantern is the first deployment on the fabric.** Each Lantern carries its own sovereign private SAGE (its own private chain) and joins the Commons as a proposer/query client. It is never a public validator (D-013).
+- **The Foundation is the steward, not the owner of the fabric** — trademarks, releases, the public specification process and shared infrastructure, once constituted.
+- **Knowledge travels over the fabric; it is not the fabric.** "Shared knowledge network" describes what the Commons carries, not what it is.
 
 ## Lightbearer profiles
 

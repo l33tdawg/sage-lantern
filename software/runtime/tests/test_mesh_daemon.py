@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -13,9 +14,13 @@ import pytest
 import sage_lantern.mesh_daemon as module
 
 from sage_lantern.mesh_daemon import HardwareRuntime, MeshDaemon, SCHEMA, device_policy, validate_config
+from sage_lantern.mesh_usb_opener import USBOpenError
 from sage_lantern.mesh_voice_ipc import MeshIPCError, MeshVoiceFacade, receive, send
 from sage_lantern.mesh_community import MeshRequestAccess
-from sage_lantern.mesh_contacts import verify_contact_card
+from sage_lantern.mesh_contacts import sign_contact_card, verify_contact_card
+from sage_lantern.mesh_envelope import Peer
+from sage_lantern.mesh_outbox import MeshOutbox
+from sage_lantern.meshcore_transport import MeshCoreError
 from test_mesh_runtime import factory
 
 
@@ -31,6 +36,10 @@ def configuration(state):
 class Supervisor:
     phase = "active"
     broker_id = "b" * 32
+    # The synthetic node answers one instance id and one vault generation
+    # (test_mesh_runtime.factory), so this is the epoch the real broker would
+    # have verified inside its window.
+    epoch = "d" * 64 + ":1"
     def __init__(self):
         self.alive = True
         self.resource = None
@@ -38,6 +47,10 @@ class Supervisor:
         return self.alive and (pid, uid) == (901, 1001) and broker_id in (None, self.broker_id) and (self.phase == "active" or draining)
     def resource_lifecycle_check(self):
         return self.alive and self.phase in ("active", "draining")
+    def admission_epoch(self):
+        if not (self.alive and self.phase in ("active", "draining", "stopping")):
+            raise MeshIPCError()
+        return self.epoch
     def resource_drain(self, timeout):
         return self.phase == "draining" and self.resource.close(timeout)
 
@@ -188,6 +201,63 @@ def test_real_sdk_factory_provider_queue_and_read(runtime):
     assert state.released is True
 
 
+def test_a_cancelled_row_lets_the_runtime_start_and_a_lapsed_one_does_not(runtime):
+    """Reconcile's two halves, on the rows that actually held unit A down.
+
+    A row left `dispatching` whose approval window has lapsed still refuses
+    construction - that fail-closed behaviour is what unit A ran into, and it
+    is not being relaxed. What changes is that the owner can end that row: a
+    cancelled row is a decision, not an unresolved outcome, so the next
+    runtime reconciles it and comes up.
+
+    The rows here are written through MeshOutbox itself under a synthetic clock,
+    so every proof is genuine and no signature is fabricated for the test.
+    """
+    state, supervisor, resource, config, opened = runtime
+    store = state.runtime.store
+    identifier = str(uuid.uuid4())
+    peer = Peer('remote', bytes.fromhex(state.remote.agent_id))
+    card = sign_contact_card(state.remote, chain_id='remote', radio_public_key=state.radio.hex(),
+                             display_name='Synthetic peer', revision=1, issued_at=100, expires_at=1000,
+                             now=150, findable=True, messaging_allowed=True)
+    outbox = MeshOutbox(store, state.identity, sender=Peer('local', bytes.fromhex(state.identity.agent_id)),
+                        guard=lambda action: True,
+                        verify_contact=lambda action: verify_contact_card(card, now=150), clock=lambda: 150)
+    outbox.queue(message_id=identifier, recipient=peer, radio_public_key=state.radio,
+                 content='Synthetic held message', approval_binding='a' * 64, consent_binding='b' * 64,
+                 issued_at=100, expires_at=200, access_check=lambda: True)
+    body = outbox._verified(store.get(identifier, kind='mesh_outbound', access_check=lambda: True))
+    dispatching = outbox._put({**body, 'state': 'dispatching', 'dispatch_timestamp': 150, 'attempts': 1},
+                              body['revision'], lambda: True)
+
+    def build():
+        class Opener:
+            def __init__(self, *, policy, startup_fence, journals_reconciled):
+                self.fence, self.reconciled = startup_fence, journals_reconciled
+            def open(self, **kwargs):
+                with self.fence() as check:
+                    assert check() is True and self.reconciled() is True
+                    opened.append(kwargs)
+                    return state.scheduler
+        return HardwareRuntime(supervisor, config, state.identity, state.runtime.store.storage,
+            identity_path=Path('/proc/self/fd/12345'), config_reader=lambda: copy.deepcopy(config),
+            opener_factory=Opener, epoch_reader=lambda: 'e' * 32, lock_marker_check=lambda: True)
+
+    # The lapsed window still refuses, and it still latches the unit closed.
+    refusing = build()
+    with pytest.raises(Exception):
+        refusing.invoke('ready', {}, lambda: True)
+    assert refusing._uncertain is True and refusing.active() is False and opened == []
+
+    # The owner ends the row; the next runtime reconciles it and serves.
+    cancelled = outbox.cancel(identifier, expected_revision=dispatching['revision'],
+                              decision_binding='owner-cancel-20260921', access_check=lambda: True)
+    assert cancelled.state == 'cancelled'
+    accepting = build()
+    assert accepting.invoke('ready', {}, lambda: True) is True
+    assert len(opened) == 1
+
+
 def test_radio_unknown_journal_blocks_new_runtime(runtime, monkeypatch):
     import sage_lantern.mesh_radio_commission as commission
     state, supervisor, previous, config, opened = runtime
@@ -230,6 +300,20 @@ def test_exact_device_policy_no_broad_serial_group(factory):
     assert "*" not in policy and "char-" not in policy
 
 
+def test_custody_config_is_optional_strict_and_requires_a_depositor(factory):
+    value = configuration(factory)
+    validate_config(value)  # no custody key: unchanged
+    value["messaging_enabled"] = True
+    value["custody"] = {"enabled": True, "depositors": ["peer-chain:" + "ab" * 32]}
+    validate_config(value)
+    for broken in ({"enabled": True, "depositors": []},
+                   {"enabled": True, "depositors": ["not-a-source"]},
+                   {"enabled": "yes", "depositors": ["peer-chain:" + "ab" * 32]},
+                   {"enabled": False, "depositors": [], "extra": 1}):
+        with pytest.raises((MeshIPCError, ValueError)):
+            validate_config({**value, "custody": broken})
+
+
 def test_unresolved_receive_blocks_first_open_and_retry(runtime):
     state, supervisor, resource, config, opened = runtime
     row = state.rows[config["receiver_slot"]]
@@ -239,6 +323,95 @@ def test_unresolved_receive_blocks_first_open_and_retry(runtime):
             resource.invoke("ready", {}, lambda: True)
     assert opened == [] and resource._uncertain
     assert resource.close(1) is False
+
+
+def flaky_resource(factory, monkeypatch, outcomes, *, mutate=None):
+    """Build a HardwareRuntime whose opener replays `outcomes` in order.
+
+    Each entry is an exception to raise, or None to succeed. `opened` records
+    one entry per physical open attempt, so a test can prove how many times the
+    radio was actually touched. `mutate(index, state, supervisor)` runs before a
+    planned failure is raised.
+    """
+    import sage_lantern.mesh_radio_commission as commission
+    monkeypatch.setattr(commission, 'no_unknown', lambda: True)
+    state = factory
+    state.adopt()
+    supervisor = Supervisor()
+    config = configuration(state)
+    opened = []
+    plan = list(outcomes)
+    class Opener:
+        def __init__(self, *, policy, startup_fence, journals_reconciled):
+            self.fence, self.reconciled = startup_fence, journals_reconciled
+            assert policy.allow_initial_open is True and policy.acknowledge_possible_reset is True
+        def open(self, **kwargs):
+            with self.fence() as check:
+                assert check() is True and self.reconciled() is True
+                opened.append(kwargs)
+                failure = plan.pop(0) if plan else None
+                if failure is not None:
+                    if mutate is not None:
+                        mutate(len(opened), state, supervisor)
+                    raise failure
+                return state.scheduler
+    resource = HardwareRuntime(supervisor, config, state.identity, state.runtime.store.storage,
+        identity_path=Path("/proc/self/fd/12345"),
+        config_reader=lambda: copy.deepcopy(config), opener_factory=Opener, epoch_reader=lambda: "e" * 32,
+        lock_marker_check=lambda: True)
+    supervisor.resource = resource
+    return state, supervisor, resource, opened
+
+
+@pytest.mark.parametrize("error,retryable", [
+    (MeshCoreError("serial_unavailable"), True),
+    (MeshCoreError("send_unconfirmed", outcome_unknown=True), False),
+    (OSError("no such device"), True),
+    (MeshIPCError(), False),
+    (USBOpenError("initial_open_not_approved"), False),
+])
+def test_only_a_pre_wire_open_failure_is_retryable(error, retryable):
+    assert module.retryable_radio_open(error) is retryable
+
+
+def test_one_flaky_pre_wire_open_is_retried_in_the_same_construction(factory, monkeypatch):
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("serial_unavailable"), None])
+    assert resource.invoke("ready", {}, lambda: True) is True
+    assert len(opened) == 2 and resource._provider is not None
+    assert resource.active() and not resource._uncertain and resource._attempted
+    assert resource.invoke("contacts", {}, lambda: True) is not None
+    assert len(opened) == 2
+
+
+def test_an_exhausted_open_retry_stays_fail_closed_and_single_attempted(factory, monkeypatch):
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("serial_unavailable") for _ in range(module.RADIO_OPEN_ATTEMPTS)])
+    with pytest.raises(MeshCoreError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == module.RADIO_OPEN_ATTEMPTS
+    assert resource._uncertain and not resource.active() and state.transmits == []
+    with pytest.raises(MeshIPCError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == module.RADIO_OPEN_ATTEMPTS
+
+
+def test_a_post_wire_open_failure_is_never_retried(factory, monkeypatch):
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("send_unconfirmed", outcome_unknown=True), None])
+    with pytest.raises(MeshCoreError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == 1 and resource._uncertain and not resource.active()
+
+
+def test_open_retry_stops_when_the_lifecycle_leaves_active(factory, monkeypatch):
+    def leave_active(index, state, supervisor):
+        supervisor.phase = "draining"
+    state, supervisor, resource, opened = flaky_resource(factory, monkeypatch,
+        [MeshCoreError("serial_unavailable"), None], mutate=leave_active)
+    with pytest.raises(MeshCoreError):
+        resource.invoke("ready", {}, lambda: True)
+    assert len(opened) == 1 and resource._uncertain and state.transmits == []
 
 
 def test_admitted_root_lease_survives_user_lock_but_not_owner_loss(runtime):
@@ -253,6 +426,24 @@ def test_admitted_root_lease_survives_user_lock_but_not_owner_loss(runtime):
     assert lease.check() is False
     lease.close()
     assert lease.check() is False
+
+
+def test_capture_lease_check_issues_no_signed_snapshot_per_check(runtime):
+    """The per-admission epoch comparison rides the broker's bounded window.
+
+    Each check used to issue its own signed /v1/messages/storage request; a
+    dispatch wake makes ~165 of them inside a 10 s radio budget, and the unit's
+    SAGE node fails its whole signed surface closed once 10,000 signatures land
+    inside five minutes (unit A 2026-09-19 17:02: 54 `503 Replay window
+    saturated` answers, A->B dispatch dead).
+    """
+    state, supervisor, resource, config, opened = runtime
+    lease = resource.capture_lease(resource.consent())
+    probes = [path for _, path in state.requests].count("/v1/messages/storage")
+    for _ in range(20):
+        assert lease.check() is True
+    assert [path for _, path in state.requests].count("/v1/messages/storage") == probes
+    lease.close()
 
 
 def test_bad_method_or_arguments_never_opens_usb(runtime):
@@ -334,6 +525,36 @@ def test_real_socket_facade_to_real_sdk_and_synthetic_radio(runtime):
         assert not state.transmits
         supervisor.phase = "draining"
         assert facade.close(3) is True
+    finally:
+        for worker in workers:
+            worker.join(3)
+            assert not worker.is_alive()
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+def test_ipc_waits_for_queued_work_and_rechecks_authority(runtime, monkeypatch, revoke):
+    state, supervisor, resource, config, opened = runtime
+    daemon = MeshDaemon(supervisor, resource, epoch_reader=lambda: "e" * 32)
+    connector, workers = socket_connector(daemon)
+    facade = MeshVoiceFacade(connector=connector, epoch_reader=lambda: "e" * 32)
+    allowed = [True]
+    original = resource.invoke
+    def queued(*args, **kwargs):
+        # A whole background job can legitimately hold the serial queue longer
+        # than the old five-second socket read timeout, without any new action.
+        time.sleep(5.2)
+        if revoke:
+            allowed[0] = False
+        return original(*args, **kwargs)
+    monkeypatch.setattr(resource, "invoke", queued)
+    try:
+        if revoke:
+            with pytest.raises(MeshIPCError):
+                facade.ready(access_check=lambda: allowed[0])
+            assert not opened
+        else:
+            assert facade.ready(access_check=lambda: allowed[0]) is True
+        assert not state.transmits
     finally:
         for worker in workers:
             worker.join(3)
@@ -422,8 +643,15 @@ def test_background_capture_uses_owned_root_lease_and_drains(runtime):
     config["messaging_enabled"] = True
     assert resource.invoke("ready", {}, lambda: True) is True
     deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and state.runtime.config.receiver_slot not in state.rows:
+    # Seeing the initial row is not proof that capture admission completed.
+    # Drain after a completed empty receive, whose durable state is idle.
+    while time.monotonic() < deadline:
+        row = state.rows.get(state.runtime.config.receiver_slot, {})
+        if row.get("revision", 0) >= 3 and row["payload"]["state"] == "idle":
+            break
         time.sleep(0.01)
+    assert row.get("revision", 0) >= 3 and row["payload"]["state"] == "idle"
+    state.scheduler.submit(lambda device: None).result(timeout=2)
     assert resource._provider._runtime._poller is not None
     worker = resource._provider._runtime._poller
     supervisor.phase = "draining"
@@ -448,6 +676,29 @@ def test_authenticated_ready_leaves_rearm_to_supervisor_and_preserves_unknown(co
     count = len(calls)
     _supervisor_tick(resource, original)
     assert provider._runtime._poller is None and len(calls) == count
+
+
+def test_supervisor_rearms_cleanly_paused_background_not_unknown(runtime):
+    state, supervisor, resource, config, opened = runtime
+    config["messaging_enabled"] = True
+    assert resource.invoke("ready", {}, lambda: True) is True
+    provider = resource._provider
+    assert provider.pause_receiving(timeout=2) is True
+    assert resource.invoke("ready", {}, lambda: True) is True
+    # Re-admission belongs to the supervisor; an authenticated request no
+    # longer restarts the worker synchronously on its own critical path.
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        worker = provider._runtime._poller
+        if worker is not None and worker.is_alive():
+            break
+        time.sleep(0.01)
+    assert provider._runtime._poller.is_alive()
+    assert provider.pause_receiving(timeout=2) is True
+    provider._runtime._uncertain = True
+    with pytest.raises(Exception):
+        resource.invoke("ready", {}, lambda: True)
+    assert provider._runtime._poller is None
 
 
 @pytest.mark.parametrize("damage", [None, "symlink", "hardlink", "wrong_actor", "mode"])
@@ -705,3 +956,73 @@ def test_lost_acquisition_return_after_token_issue_remains_unknown(runtime):
         assert len(issued)==1 and issued[0].check() is True and not state.transmits
     finally:
         for lease in issued:lease.close()
+
+# --- provider refusals: audible, and not a permanent latch -------------------
+#
+# Unit A answered 503 `mesh_ipc_unavailable` on every community route for a day
+# after one provider start failed, and the journal could not say why: active()
+# folds four conditions into one bool and resource_lifecycle_check() swallows
+# its own exceptions. The next three tests pin the two properties that fix it -
+# a refusal carries its conjuncts into the journal, and a refusal raised before
+# the radio loop wrote nothing does not latch the unit.
+
+def refusal_log(monkeypatch):
+    written = []
+
+    def syslog(_priority, message):
+        written.append(json.loads(message))
+
+    monkeypatch.setitem(sys.modules, 'syslog', SimpleNamespace(
+        LOG_ERR=3, LOG_WARNING=4, LOG_INFO=6, syslog=syslog))
+    return written
+
+
+def test_a_pre_wire_refusal_names_its_conjuncts_and_does_not_latch(runtime, monkeypatch):
+    state, supervisor, resource, config, opened = runtime
+    written = refusal_log(monkeypatch)
+    def guard():
+        # True at the provider entry and through the receiver read, false the
+        # moment the provider marks itself initializing: the shape of a session
+        # or epoch moving between two checks in the same request. (A call
+        # counter cannot express this - the store calls the guard itself.)
+        return not resource._initializing
+
+    with pytest.raises(MeshIPCError):
+        resource.provider(guard)
+    refusals = [row for row in written if row['event'] == 'mesh_provider_refused']
+    assert refusals and refusals[-1]['stage'] == 'reconcile-entry'
+    assert refusals[-1]['guard'] is False
+    assert refusals[-1]['attempted'] is True and refusals[-1]['wire_started'] is False
+    # Nothing reached the radio, so the attempt is cleared and the next request
+    # may try again instead of every route answering 503 until a restart.
+    assert resource._attempted is False and resource._initializing is False
+    provider = resource.provider(lambda: True)
+    assert provider is not None and resource._provider is provider
+    assert opened, 'the retry never opened the radio'
+
+
+def test_a_refusal_reports_the_supervisor_facts(runtime, monkeypatch):
+    state, supervisor, resource, config, opened = runtime
+    written = refusal_log(monkeypatch)
+    supervisor.alive = False
+    with pytest.raises(MeshIPCError):
+        resource.provider(lambda: True)
+    row = [entry for entry in written if entry['event'] == 'mesh_provider_refused'][-1]
+    assert row['stage'] == 'provider-entry'
+    assert row['active'] is False and row['resource_lifecycle'] is False
+    assert row['supervisor_phase'] == 'active' and row['uncertain'] is False
+    assert resource._attempted is False
+
+
+def test_an_unknown_capture_state_stays_closed_and_is_never_cleared(runtime, monkeypatch):
+    state, supervisor, resource, config, opened = runtime
+    written = refusal_log(monkeypatch)
+    resource._uncertain = True
+    for _ in range(2):
+        with pytest.raises(MeshIPCError):
+            resource.provider(lambda: True)
+    assert resource._uncertain is True
+    assert resource.active() is False
+    assert resource._provider is None
+    row = [entry for entry in written if entry['event'] == 'mesh_provider_refused'][-1]
+    assert row['uncertain'] is True and row['active'] is False

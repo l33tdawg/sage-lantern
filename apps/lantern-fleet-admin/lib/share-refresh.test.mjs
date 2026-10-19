@@ -1,13 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { setDeviceToken } from './device-session.ts';
+import { observeSessionContext, parseSessionContext, setDeviceToken } from './device-session.ts';
 import { parseShareObservation, ShareRefreshRequest, shareRefreshRequest } from './share-refresh.ts';
 
 const id = 'mesh-public:11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const observation = { id, request_id: requestId, state: 'pending', created_at: '2026-09-08T01:00:00Z', observed_status: 'committed', trust_basis: 'pinned_gateway', acceptance_available: false, consensus_verified: false, cache_eligible: false };
 const response = (body) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+/**
+ * The authority a locked device is operating under.
+ *
+ * A locked device stamps every successful protected reply, and its client knows
+ * the authority from a validated status reading. Both halves are modelled here:
+ * a test that fabricated a locked device whose replies carry no stamp would be
+ * testing a device that does not exist.
+ */
+const stamp = { schema: 'sage.lantern.session-context.v1', epoch: 'a'.repeat(32), session_ref: 'b'.repeat(64) };
+const establish = () => observeSessionContext(parseSessionContext(stamp));
 
 test('observation contract binds both IDs and preserves gateway versus direct trust', () => {
   assert.deepEqual(parseShareObservation(observation, id, requestId), observation);
@@ -21,12 +31,13 @@ test('observation contract binds both IDs and preserves gateway versus direct tr
 
 test('explicit update queues once then inspects same ID; no proposal submission', async (context) => {
   setDeviceToken('a'.repeat(43));
+  establish();
   context.after(() => setDeviceToken(null));
   const calls = [];
   context.mock.method(globalThis, 'fetch', async (url, options) => {
     const body = JSON.parse(options.body);
     calls.push({ url, body });
-    return response({ ...observation, request_id: body.request_id,
+    return response({ ...observation, request_id: body.request_id, session_context: stamp,
       state: url.endsWith('/refresh') ? 'queued' : 'pending', observed_status: url.endsWith('/refresh') ? null : 'committed' });
   });
   const attempt = new ShareRefreshRequest(id);
@@ -48,12 +59,13 @@ test('explicit update queues once then inspects same ID; no proposal submission'
 
 test('lost response retains ID and uncertainty even after successful inspection', async (context) => {
   setDeviceToken('a'.repeat(43));
+  establish();
   context.after(() => setDeviceToken(null));
   const calls = [];
   context.mock.method(globalThis, 'fetch', async (url, options) => {
     calls.push(url);
     if (url.endsWith('/refresh')) throw new Error('response lost');
-    return response({ ...observation, request_id: JSON.parse(options.body).request_id });
+    return response({ ...observation, request_id: JSON.parse(options.body).request_id, session_context: stamp });
   });
   const attempt = new ShareRefreshRequest(id);
   const signal = new AbortController().signal;
@@ -68,6 +80,7 @@ test('lost response retains ID and uncertainty even after successful inspection'
 
 test('lock, cancellation and concurrent clicks do not publish or retry late results', async (context) => {
   setDeviceToken('a'.repeat(43));
+  establish();
   context.after(() => setDeviceToken(null));
   let release;
   const calls = [];
@@ -95,7 +108,10 @@ test('share UI keeps explicit consent, inspection and list reload distinct', () 
   assert.match(source, /Request updated status/);
   assert.match(source, /Check status request/);
   assert.match(source, /Reload saved submissions/);
-  assert.match(source, /statusRequests = useRef\(new Map/);
+  // The request map is render-visible — each row renders its own request — so it
+  // is state, not a ref. A ref read during render is not a dependency React
+  // tracks, and reading one there is what the react-hooks/refs rule forbids.
+  assert.match(source, /\[statusRequests, setStatusRequests\] = useState\(new Map<string, ShareRefreshRequest>\(\)\)/);
   assert.match(source, /activeRequest\.current\?\.abort\(\)/);
   assert.match(source, /listRequest\.current\?\.abort\(\)/);
   assert.match(source, /document\.removeEventListener\('visibilitychange', hide\)/);
@@ -105,18 +121,23 @@ test('share UI keeps explicit consent, inspection and list reload distinct', () 
 
 test('navigation retains request identity; new owner session must inspect afresh', async (context) => {
   setDeviceToken('a'.repeat(43));
+  establish();
   context.after(() => setDeviceToken(null));
   const identifier = 'mesh-public:' + crypto.randomUUID();
   const calls = [];
   context.mock.method(globalThis, 'fetch', async (url, options) => {
     const body = JSON.parse(options.body);
     calls.push(url);
-    return response({ ...observation, id: identifier, request_id: body.request_id });
+    return response({ ...observation, id: identifier, request_id: body.request_id, session_context: stamp });
   });
   const original = shareRefreshRequest(identifier);
   await original.run('refresh', new AbortController().signal);
   assert.equal(shareRefreshRequest(identifier), original);
   setDeviceToken('b'.repeat(43));
+  // A replaced token resets the observed authority, so the new owner's writes are
+  // admitted under a reading this client has to take again before it can judge
+  // their replies.
+  establish();
   const rebound = shareRefreshRequest(identifier);
   assert.notEqual(rebound, original);
   assert.equal(rebound.requestId, original.requestId);

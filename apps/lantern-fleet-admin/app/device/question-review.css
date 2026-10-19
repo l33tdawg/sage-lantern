@@ -4,14 +4,14 @@
 .question-review header > p { margin: 8px 0 20px; font-size: 18px; }
 .question-review-text { font-size: clamp(24px, 3vw, 34px); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; padding: 20px; border: 1px solid #89b6db; border-radius: 16px; background: #14283b; }
 .question-review-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.question-review-actions button { min-height: 52px; flex: 1; font-size: 19px; padding: 10px 16px; }
+.question-review-actions button { min-height: 72px; flex: 1; font-size: 19px; padding: 10px 16px; }
 .question-review-actions .question-review-submit { background: var(--device-accent, #f0cd67); color: #202417; }
 .question-review button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .question-review-editing { width: min(100%, 1024px); padding: 16px 24px; }
 .question-review-editing header { display: none; }
 .question-review-editing .question-key-row button { max-width: none; }
 .question-review-editing .question-suggestions { min-height: 32px; }
-.question-review-editing .question-suggestions button { min-height: 40px; font-size: 20px; }
+.question-review-editing .question-suggestions button { min-height: 72px; font-size: 20px; }
 @media (max-width: 540px) { .question-review { padding: 16px; } .question-review-actions button { flex-basis: calc(50% - 12px); } }
 @media (max-height: 500px) {
   .question-review-editing { padding-block: 10px; }

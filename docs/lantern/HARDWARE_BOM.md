@@ -1,5 +1,15 @@
 # SAGE Lantern Hardware Bill of Materials and Arrival Status
 
+**Current device use cases (2026-09-27):** A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units; C–F are real Orange Pi 5 Plus user Lanterns with one LoRa baseline radio, GPS and WiFi. Earlier dual-radio notes are historical bench work. [Device roles](DEVICE_ROLES.md) controls allocation; this dated BOM remains historical.
+
+> **Superseded for the fleet build (2026-09-21).** This file records ordering and
+> arrival state as of 11 September 2026 as seen from this repository. It mixes
+> the A/B test-unit build with the early C/D orders and is **not** the live source
+> of truth for the enclosure programme. The hardware workstream owns the C–F bill
+> of materials and build status in its own `BOM.md` and `BUILD_STATUS.md`, and
+> that record supersedes this one for the fleet. Kept here as the A/B bring-up
+> record and order history.
+
 **Status date:** 2026-09-11 (exact 6.25-inch display and SX1262 board orders; CARBO 20 identified)  
 **Build quantity:** Two beta units  
 **Rule:** `Received` means physically reported/confirmed, not merely ordered.
@@ -10,12 +20,24 @@
 |---:|---|---|---|
 | 4 | 6.25-inch capacitive touch display, 720×1560, optical bonding toughened glass, HDMI, IPS, 5-point touch | Ordered; awaiting delivery | Exact pasted order description supersedes the earlier approximate 6.5-inch wording. Matches Waveshare 6.25inch 720x1560 LCD, SKU 26757. Earlier delivery estimate: next week. |
 | 4 | SX1262 LoRaWAN Node Module Expansion Board for Raspberry Pi, with magnetic CB antenna, frequency-band/GNSS options | Ordered; awaiting delivery | Matches Waveshare SX1262 LoRaWAN/GNSS HAT family. Selected frequency band and basic/GNSS option not supplied. Separate from A/B's Heltec USB MeshCore companions. |
-| Not stated | NITECORE CARBO 20, 20,000 mAh USB-C power bank | Owner identified intended pack; order/receipt not stated | Manufacturer: 128 × 48 × 29 mm, 320 g ±5 g, 65 W single-port input/output; simultaneous outputs 15 W total. This is CARBO 20, not CARBO 20000. |
+| Not stated | NITECORE NB10000 Gen 2, 10,000 mAh USB-C power bank | Owner confirmed 2026-09-29 | **Corrected 2026-09-29: the owner confirms the NB10000 Gen 2.** The earlier "CARBO 20 / 20,000 mAh / 65 W" identification in this row was wrong. Recorded output: 5 V/3 A on USB-A (15 W); USB-C PD is the same ~15–18 W class. Light-duty only — it cannot supply the Orange Pi 5 Plus's 5 V/4 A (20 W), with or without a buck. The 121.9 × 59 × 10.6 mm pack envelope used by the enclosure work matches this pack. |
 
 These additions do not imply four complete electronics sets or four purchased
 battery packs. Existing A/B inventory remains below. The old exclusion of raw
 SX1262 Raspberry Pi HATs is superseded for the newly confirmed order; SPI/GPIO
 host integration and radio software compatibility remain to be qualified.
+
+**Power correction 2026-09-29:** the Lenovo-compatible 65 W USB-C PD PSUs below
+are **A/B (Radxa) bench supplies only**. Orange Pi 5 Plus (C–F) power does not
+negotiate PD — its Type-C power port is a fixed 5 V input — so C–F need a
+5 V/4 A path: a fixed 5 V/4 A USB-C supply, or a 12/20 V PD source (a Lenovo/MacBook
+brick — add a PD trigger unless the buck negotiates — or the UGREEN 130 W/20,000 mAh
+pack) through a 5 V/≥4 A buck converter, or
+a bench PSU at 5.1 V/5 A (power port or 40-pin 5 V pins, vendor wiki §2.17).
+See the D-006 amendment in [DECISIONS.md](DECISIONS.md) and
+[C_RESETS_20260929.md](../../work/unit-c-boot-20260928/C_RESETS_20260929.md).
+The hardware workstream's own `BOM.md` / `BUILD_STATUS.md` remains the live C–F
+record.
 
 Primary references checked 2026-09-11: [display](https://www.waveshare.com/product/6.25inch-720x1560-lcd.htm), [display dimensions](https://www.waveshare.com/wiki/6.25inch_720x1560_LCD), [radio options](https://www.waveshare.com/product/raspberry-pi/sx1262-lorawan-hat.htm), [CARBO 20](https://www.nitecore.com/product/carbo20).
 Full corrected handoff: [hardware list](../../work/hardware-list-ableman-20260911/HARDWARE_LIST.md).

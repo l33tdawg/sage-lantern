@@ -5,8 +5,9 @@ import tempfile
 import unittest
 
 from sage_lantern.suspend_system import (
-    BUSCTL, CGROUP, COUNTER, FENCE, LLM, MAX_OUTPUT, SLEEP_UNITS, STOP_SERVICES,
-    SYSTEMCTL, SuspendSystem, _list_directories, _read_file,
+    BUSCTL, CAMERA, CGROUP, COUNTER, DISPLAY, FENCE, FLEET_ADMIN, LLM, MAX_OUTPUT, SLEEP_UNITS,
+    STOP_SERVICES, SYSTEMCTL, VLM, VOICE, WAYLAND_STOP_SERVICES, SuspendSystem,
+    _list_directories, _read_file,
 )
 
 
@@ -20,7 +21,10 @@ class FakeSystem:
             unit: dict(LoadState="loaded", ActiveState="inactive", Job="")
             for unit in SLEEP_UNITS
         }
-        self.units[LLM] = dict(LoadState="loaded", ActiveState="active", Job="", MainPID="123")
+        self.units[LLM] = dict(LoadState="loaded", ActiveState="active", Job="", MainPID="123",
+                               UnitFileState="enabled")
+        self.units[VLM] = dict(LoadState="loaded", ActiveState="active", Job="", MainPID="456",
+                               UnitFileState="enabled")
         for unit in STOP_SERVICES:
             self.units[unit] = dict(
                 LoadState="loaded", ActiveState="active", Job="",
@@ -113,6 +117,30 @@ class SuspendSystemTests(unittest.TestCase):
     def test_all_guarded_units(self):
         self.assertTrue(self.system.verify_stop_guards().confirmed)
         self.assertEqual({argv[-1] for argv, _ in self.fake.calls if argv[0] == SYSTEMCTL}, STOP_SERVICES)
+
+    def test_resident_model_units_are_reviewed_order_and_vision_joins_when_enabled(self):
+        result = self.system.model_units()
+        self.assertTrue(result.confirmed)
+        self.assertEqual(result.units, (LLM, VLM))
+        self.fake.units[VLM].update(UnitFileState="disabled", ActiveState="inactive", MainPID="0")
+        self.assertEqual(self.system.model_units().units, (LLM,))
+        self.fake.units[VLM].update(LoadState="not-found", UnitFileState="")
+        self.assertEqual(self.system.model_units().units, (LLM,))
+
+    def test_enabled_vision_unit_must_be_active_for_stop_and_suspend(self):
+        self.fake.units[VLM].update(ActiveState="inactive", MainPID="0")
+        self.assertFalse(self.system.stop_verified(SERVICE).confirmed)
+        self.assertFalse(self.system.suspend_verified().confirmed)
+        self.assertFalse(any(argv[1] == "stop" for argv, _ in self.fake.calls))
+        self.assertFalse(any(argv[1] == "start" for argv, _ in self.fake.calls))
+
+    def test_disabled_or_unshipped_vision_unit_is_not_part_of_the_profile(self):
+        for update in (dict(UnitFileState="disabled", ActiveState="inactive", MainPID="0"),
+                       dict(LoadState="not-found", UnitFileState="", ActiveState="inactive", MainPID="0")):
+            with self.subTest(update=update):
+                fake = FakeSystem()
+                fake.units[VLM].update(update)
+                self.assertTrue(fake.adapter().suspend_verified().confirmed)
 
     def test_public_idle_probe_has_no_mutations_and_is_not_resume(self):
         result = self.system.verify_sleep_idle()
@@ -297,7 +325,8 @@ class SuspendSystemTests(unittest.TestCase):
 
     def test_active_suspend_service_or_llm_changed_not_resume_proof(self):
         for unit, key, value in (("systemd-suspend.service", "ActiveState", "active"),
-                                 (LLM, "MainPID", "456"), (LLM, "ActiveState", "inactive")):
+                                 (LLM, "MainPID", "456"), (LLM, "ActiveState", "inactive"),
+                                 (VLM, "MainPID", "789"), (VLM, "ActiveState", "inactive")):
             fake = FakeSystem()
             fake.after_sleep = lambda: fake.units[unit].update({key: value})
             self.assertFalse(fake.adapter().suspend_verified().confirmed)
@@ -328,6 +357,49 @@ class SuspendSystemTests(unittest.TestCase):
         for timeout in (True, 0, -1, 91, float("nan"), float("inf")):
             with self.assertRaises(ValueError):
                 self.fake.adapter(timeout_seconds=timeout)
+
+
+class StopSetProfileTests(unittest.TestCase):
+    """C-F runs no camera and no X11 display-power unit; the stop set follows."""
+
+    def setUp(self):
+        self.fake = FakeSystem()
+        self.system = self.fake.adapter(stop_services=WAYLAND_STOP_SERVICES)
+
+    def test_cf_profile_guards_only_the_workers_the_unit_runs(self):
+        self.assertTrue(self.system.verify_stop_guards().confirmed)
+        self.assertEqual({argv[-1] for argv, _ in self.fake.calls if argv[0] == SYSTEMCTL},
+                         WAYLAND_STOP_SERVICES)
+        self.assertEqual(self.system.auxiliary_services(), (FLEET_ADMIN,))
+
+    def test_cf_profile_never_stops_a_worker_it_does_not_own(self):
+        for service in (CAMERA, DISPLAY):
+            with self.subTest(service=service):
+                self.assertFalse(self.system.stop_verified(service).confirmed)
+                self.assertFalse(self.system.inactive_verified(service).confirmed)
+
+    def test_reviewed_profile_keeps_the_auxiliary_order(self):
+        self.assertEqual(self.system.stop_services, WAYLAND_STOP_SERVICES)
+        self.assertEqual(FakeSystem().adapter().auxiliary_services(),
+                         (CAMERA, FLEET_ADMIN, DISPLAY))
+
+    def test_voice_lane_joins_the_contract_only_once_enabled(self):
+        for state, expected in (("enabled", (VOICE,)), ("enabled-runtime", (VOICE,)),
+                                ("disabled", ()), ("static", ()), ("", ())):
+            with self.subTest(state=state):
+                self.fake.units[VOICE] = dict(LoadState="loaded", ActiveState="inactive", Job="",
+                                              UnitFileState=state)
+                self.assertEqual(self.system.voice_lane().units, expected)
+        self.fake.units[VOICE] = dict(LoadState="not-found", ActiveState="inactive", Job="",
+                                      UnitFileState="")
+        self.assertEqual(self.system.voice_lane().units, ())
+        self.assertTrue(self.system.voice_lane().confirmed)
+
+    def test_unreviewed_stop_sets_are_refused(self):
+        for value in (frozenset(), frozenset({FLEET_ADMIN}), STOP_SERVICES | {"sage-lantern-runtime.service"},
+                      {"sage-lantern-camera.service"}, None, STOP_SERVICES - {VOICE}, {"not-a-service"}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.fake.adapter(stop_services=value)
 
 
 class SafeFileTests(unittest.TestCase):

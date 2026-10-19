@@ -33,14 +33,16 @@ from .community_service import CommunityMeshProvider
 from .device_access import access_epoch, device_locked, MARKER, _marker_state
 from .mesh_community import MeshReceiveConsent, MeshRequestAccess, MeshLeaseRefused
 from .mesh_envelope import Peer
-from .mesh_outbox import MeshOutbox, SCHEMA as OUTBOX_SCHEMA
+from .mesh_outbox import MeshOutbox, SCHEMAS as OUTBOX_SCHEMAS
 from .mesh_inbox import MeshInbox
+from .mesh_custodian import STATUS_SCHEMA as CUSTODY_STATUS_SCHEMA, MeshCustodian, valid_source
 from .mesh_receipt_sender import MeshReceiptSender, SCHEMA as RECEIPT_SCHEMA
 from .mesh_receiver import SCHEMA as RECEIVER_SCHEMA, _validate as validate_receiver
 from .mesh_runtime import MeshRuntimeConfig
 from .mesh_serial_owner import RadioBinding
 from .mesh_usb_opener import InitialUSBOpener, USBStartupPolicy
 from .mesh_voice_ipc import CONFIG, SOCKET, MeshIPCError, card, peer, receive, require, send
+from .meshcore_transport import MeshCoreError
 from .message_contacts import RecipientID
 from .message_storage import MessageStorageProbe
 from .storage_supervisor import RootStorageSupervisor, RootVoiceBackend
@@ -54,6 +56,19 @@ STATE = Path("/var/lib/sage-lantern-mesh-supervisor")
 REQUEST = Path("/run/sage-lantern-mesh-control/voice-drain-request.json")
 START = Path("/run/sage-lantern-mesh-control/voice-start-authorized.json")
 SCHEMA = "sage.lantern.mesh-runtime.v1"
+
+
+class ProviderRefused(MeshIPCError):
+    """The provider was refused, and nothing was written.
+
+    Distinct from every other start failure on purpose: a refusal means a
+    precondition moved (session, epoch, unlock guard) and the request may be
+    tried again, while anything else can have left an unknown outcome behind
+    and must hold the unit closed. The supervisor used to fold both into
+    ``MeshIPCError`` and set ``_uncertain`` for either, which is how one
+    transient refusal turned unit A's every community route into a 503 until
+    the process restarted (2026-09-21).
+    """
 # Locked units still announce so a peer keeps a real measurement. Bounded,
 # zero-hop and location-free; the firmware location policy still suppresses it
 # and the client's own advertisement throttle prevents duplicates.
@@ -64,6 +79,27 @@ BEACON_SECONDS = 60.0
 # answered 503 on every route until a process restart, 2026-09-18).
 BACKGROUND_SUPERVISOR_SECONDS = 1.0
 BACKGROUND_SUPERVISOR_MAX_SECONDS = 30.0
+# A construction whose radio open fails before any command byte reached the
+# radio leaves no session, no wire state and no lock: the transport classifies
+# the failure `outcome_unknown=False` and does not poison itself, and the
+# opener's own failure path closes the descriptor and every lock it held. One
+# flaky handshake is therefore retryable, and without a bounded retry it pinned
+# every community route until the next cold start (unit A 2026-09-19 16:14:07:
+# the first construction after a cold start failed at
+# `mesh_usb_opener -> meshcore_transport.handshake`). Each attempt uses a fresh
+# single-use opener under a freshly checked startup fence, so the unit's own
+# quiescence/epoch reconciliation gate is re-proved for every physical open.
+# A policy refusal, a fence refusal, a poisoned device or any post-wire failure
+# stays single-shot and fail-closed.
+RADIO_OPEN_ATTEMPTS = 3
+RADIO_OPEN_RETRY_SECONDS = 0.35
+
+
+def retryable_radio_open(error):
+    """Only a pre-wire transport failure or a raw device error is retryable."""
+    if isinstance(error, MeshCoreError):
+        return error.outcome_unknown is False
+    return isinstance(error, OSError)
 
 
 def load_config(path=CONFIG):
@@ -78,7 +114,7 @@ def load_config(path=CONFIG):
 
 
 def validate_config(value):
-    require(type(value) is dict and set(value) - {"public_mesh", "public_gateway", "delivery_receipts_enabled", "airtime"} == {"schema", "unit_id", "voice_uid", "endpoint", "chain_id",
+    require(type(value) is dict and set(value) - {"public_mesh", "public_gateway", "delivery_receipts_enabled", "airtime", "custody"} == {"schema", "unit_id", "voice_uid", "endpoint", "chain_id",
         "identity_file", "agent_id", "receiver_slot", "radio", "peers", "approve_initial_open", "acknowledge_reset",
         "messaging_enabled", "receive_while_locked", "dispatch_enabled", "dispatch_while_locked"})
     require(value["schema"] == SCHEMA and type(value["voice_uid"]) is int and value["voice_uid"] > 0)
@@ -103,6 +139,13 @@ def validate_config(value):
     if "airtime" in value:
         from .airtime_budget import policy_from_settings
         policy_from_settings(value["airtime"])
+    if "custody" in value:
+        custody = value["custody"]
+        require(type(custody) is dict and set(custody) == {"enabled", "depositors"})
+        require(type(custody["enabled"]) is bool)
+        require(type(custody["depositors"]) is list and len(custody["depositors"]) <= 64
+                and all(valid_source(item) is True for item in custody["depositors"]))
+        require(not custody["enabled"] or (custody["depositors"] and value["messaging_enabled"]))
     require(value["approve_initial_open"] and value["acknowledge_reset"])
     require(type(value["peers"]) is list and len(value["peers"]) <= 256)
     seen = set()
@@ -182,6 +225,9 @@ class HardwareRuntime:
         self._forward_children = None
         self._forward_radio = None
         self._forward_admitted = False
+        # Set once the radio open loop is entered. A refusal raised before this
+        # point wrote nothing, so it must not latch the unit (see provider()).
+        self._wire_started = False
         self._reconciled = None
         self._closing = False
         self._background_stop = threading.Event()
@@ -235,6 +281,32 @@ class HardwareRuntime:
         return (self.active() and owner == self.actor and type(radio_key) is bytes
                 and dict(chain_id=contact.chain_id, agent_id=contact.agent_id, radio_public_key=radio_key.hex()) in self.config["peers"])
 
+    def rearm_storage(self, guard):
+        """Adopt the storage epoch an authenticated request is running under.
+
+        A fresh owner unlock rotates the vault epoch under a running daemon.
+        Every guarded call then compares the live pair against the epoch this
+        process captured when its broker started, so `active()` - which folds
+        `resource_lifecycle_check` - reads False, provider construction is
+        refused and every community route answers 503 until the daemon restarts.
+        This is the request-path half of that fix: the caller has already
+        authenticated its session (epoch plus voice peer, or the owner token),
+        and the broker refuses to move the baseline unless nothing can be in
+        flight. It never raises and never decides admission - a refusal here
+        leaves the caller's own guards exactly as they were.
+        """
+        try:
+            if self._closed or self._uncertain or not self.configured() or guard() is not True:
+                return False
+            if self.supervisor.rearm() is not True:
+                return False
+        except Exception:
+            return False
+        import syslog
+        syslog.syslog(syslog.LOG_WARNING, json.dumps(dict(event="storage_rearm",
+            epoch=self.supervisor._baseline, phase=self.supervisor.phase)))
+        return True
+
     def import_contact(self, request, *, broker_id, epoch_reader):
         from .mesh_contacts import MAX_CARD_BYTES, verify_contact_card
         require(type(request) is dict and set(request) == {"op", "broker_id", "epoch", "config_sha256", "card_sha256", "card"}
@@ -267,8 +339,22 @@ class HardwareRuntime:
         finally:
             self._mutex.release()
 
+    def custody_stats(self, guard):
+        """Counts-only custody view. No deposit wire, source or recipient key."""
+        settings = self.config.get("custody")
+        if not settings or not settings["enabled"]:
+            return dict(schema=CUSTODY_STATUS_SCHEMA, enabled=False, held=0, bytes=0,
+                        recipients=0, oldest_expires_at=None, delivered=0, depositors=0)
+        store = WorkflowStore(self.probe.client, storage=self.probe)
+        custodian = MeshCustodian(store, access_check=guard,
+                                  depositors=tuple(settings["depositors"]))
+        result = custodian.stats()
+        require(guard() and self.active())
+        return result
+
     def reconcile(self, guard):
-        require(self._initializing and self._coordinator is None and self.active() and guard())
+        if not (self._initializing and self._coordinator is None and self.active() and guard()):
+            self._refuse_provider("reconcile-entry", guard)
         store = WorkflowStore(self.probe.client, storage=self.probe)
         epoch = self.probe.snapshot().epoch
         outbox = MeshOutbox(store, self.identity, sender=Peer(self.actor.chain_id, bytes.fromhex(self.actor.agent_id)),
@@ -280,8 +366,28 @@ class HardwareRuntime:
         for row in store.scan(limit=50, max_records=4096, access_check=guard):
             if row["kind"] == "mesh_outbound":
                 schema = row["payload"].get("body", {}).get("schema")
-                if schema == OUTBOX_SCHEMA:
-                    require(outbox._verified(row)["state"] != "dispatching")
+                if schema in OUTBOX_SCHEMAS:
+                    body = outbox._verified(row)
+                    if body["state"] == "dispatching":
+                        # An unknown dispatch outcome inside the row's own signed
+                        # window is retryable (owner decision 2026-09-13): the
+                        # runtime adopts the row on its first scan and the retry
+                        # driver requeues it, so construction proceeds instead of
+                        # refusing every route until an operator intervenes. A
+                        # lapsed window still refuses right here.
+                        require(body["approved"]["issued_at"] <= int(time.time())
+                                < body["approved"]["expires_at"])
+                    elif body["state"] == "cancelled":
+                        # An owner cancel is the audited resolution of a row that
+                        # never became confirmed evidence (owner decision
+                        # 2026-09-21). It is terminal and nothing here adopts it
+                        # as an unknown, so construction proceeds and the unit's
+                        # community routes come up instead of refusing forever on
+                        # a window that lapsed while nobody could act on it. The
+                        # decision binding travels with the row; a row that claims
+                        # cancellation without one is not an owner decision and is
+                        # refused.
+                        require(body["retry_binding"] != "")
                 elif schema == RECEIPT_SCHEMA:
                     require(receipts._verified(row)[0]["state"] != "dispatching")
                 elif schema == "sage.lantern.mesh-read-consent.v1":
@@ -338,16 +444,54 @@ class HardwareRuntime:
             finally:
                 os.close(descriptor)
 
+    def _provider_facts(self, guard):
+        """The individual conjuncts behind a provider/liveness refusal.
+
+        ``active()`` folds four conditions into one bool and
+        ``resource_lifecycle_check`` swallows its own exceptions, so a refusal
+        on its own is undiagnosable from the journal. Each fact is read
+        defensively: a diagnostic must never raise the thing it is describing.
+        """
+        def safely(call):
+            try:
+                return bool(call())
+            except Exception:
+                return None
+        return {"guard": safely(guard), "active": safely(self.active),
+                "initializing": bool(self._initializing),
+                "coordinator": self._coordinator is not None,
+                "attempted": bool(self._attempted),
+                "wire_started": bool(self._wire_started),
+                "uncertain": bool(self._uncertain),
+                "closed": bool(self._closed),
+                "configured": safely(self.configured),
+                "supervisor_phase": getattr(self.supervisor, "phase", None),
+                "resource_lifecycle": safely(self.supervisor.resource_lifecycle_check)}
+
+    def _refuse_provider(self, stage, guard):
+        """Refuse a provider start, loudly and with the facts that refused it."""
+        import syslog
+        syslog.syslog(syslog.LOG_ERR, json.dumps(dict(
+            event="mesh_provider_refused", stage=stage, **self._provider_facts(guard))))
+        raise ProviderRefused()
+
     def provider(self, guard):
         require(getattr(self, "_forward_radio", None) is None)
-        require(guard() and self.active())
+        # Fail-closed, but say which conjunct closed. Unit A answered 503 on
+        # every community route for a day with `mesh_ipc_unavailable` and no
+        # journal line naming the reason: the guard, the supervisor's
+        # resource-lifecycle check and the configured() marker all return a
+        # bare False, so a refusal has to carry its facts out with it.
+        if not (guard() and self.active()):
+            self._refuse_provider("provider-entry", guard)
         if self._provider is not None:
             # A retired worker is restarted by the supervisor thread, never
             # here: a request must not wait on a join, and a failed pause used to
             # leave the runtime pausing (every route 503) until a process
             # restart. This request proceeds against the runtime as it stands.
             return self._provider
-        require(not self._attempted)
+        if self._attempted:
+            self._refuse_provider("provider-retry-after-refusal", guard)
         store = WorkflowStore(self.probe.client, storage=self.probe)
         try:
             receiver = store.get(self.config['receiver_slot'], kind='mesh_inbound', access_check=guard)
@@ -376,10 +520,27 @@ class HardwareRuntime:
                 return (self._initializing and self._reconciled is not None and self.active() and guard()
                         and self.probe.snapshot().epoch == self._reconciled)
             policy = USBStartupPolicy(True, True, "quiescent_startup")
-            opener = self._opener_factory(policy=policy, startup_fence=startup_fence, journals_reconciled=reconciled)
             radio = dict(self.config["radio"])
             radio["public_key"] = bytes.fromhex(radio["public_key"])
-            coordinator = opener.open(binding=RadioBinding(unit_id=self.config["unit_id"], **radio), lock_directory=STATE / "serial", timeout=3)
+            binding = RadioBinding(unit_id=self.config["unit_id"], **radio)
+            coordinator = None
+            self._wire_started = True
+            for attempt in range(1, RADIO_OPEN_ATTEMPTS + 1):
+                opener = self._opener_factory(policy=policy, startup_fence=startup_fence, journals_reconciled=reconciled)
+                try:
+                    coordinator = opener.open(binding=binding, lock_directory=STATE / "serial", timeout=3)
+                    break
+                except Exception as error:
+                    if attempt == RADIO_OPEN_ATTEMPTS or not retryable_radio_open(error):
+                        raise
+                    if not (guard() and self.active() and reconciled()):
+                        raise
+                    import syslog
+                    syslog.syslog(syslog.LOG_WARNING, json.dumps(dict(event="radio_open_retry",
+                        attempt=attempt, error=str(error),
+                        outcome_unknown=bool(getattr(error, "outcome_unknown", False)))))
+                    time.sleep(RADIO_OPEN_RETRY_SECONDS)
+            require(coordinator is not None)
             self._coordinator = coordinator
             require(guard() and self.active())
             def observe(event):
@@ -394,8 +555,11 @@ class HardwareRuntime:
             if "airtime" in self.config:
                 from .airtime_budget import policy_from_settings
                 airtime = policy_from_settings(self.config["airtime"])
+            custody = None
+            if "custody" in self.config and self.config["custody"]["enabled"]:
+                custody = tuple(self.config["custody"]["depositors"])
             config = MeshRuntimeConfig(self.config["endpoint"], self.config["chain_id"], self.identity_path,
-                                       self.config["receiver_slot"], 10, airtime)
+                                       self.config["receiver_slot"], 10, airtime, custody)
             self._provider = self._provider_factory(config, coordinator=coordinator, activation_check=self.active,
                 verify_binding=self.binding, storage_lifecycle_check=self.supervisor.resource_lifecycle_check)
             from .mesh_read_root import RootReadReceipts
@@ -412,6 +576,14 @@ class HardwareRuntime:
                 self._gateway = GatewayRoot(self, self._gateway_identity)
             self.resume_background(guard)
             return self._provider
+        except ProviderRefused:
+            # A refusal wrote nothing, so the next request may try again
+            # instead of every route answering 503 until a restart. This is the
+            # only start failure that is retryable: an unknown capture state
+            # (_uncertain) or anything raised after the radio loop is entered
+            # stays closed until an operator intervenes.
+            self._attempted = False
+            raise
         except Exception:
             self._uncertain = True
             raise
@@ -553,9 +725,17 @@ class HardwareRuntime:
                 return {"finished": True}
             require(value["op"] == "check")
             try:
+                # The epoch comparison rides the broker's own bounded
+                # verification instead of a signed snapshot per admission
+                # check: a 10 s dispatch wake makes ~165 of these, and a signed
+                # request each saturated the local SAGE node's replay window
+                # (503 Replay window saturated) on unit A 2026-09-19 17:02. The
+                # check is still fail-closed: any refusal, phase change or moved
+                # epoch inside the window denies the capture (see
+                # LIVE_CHECK_SECONDS).
                 allowed = (not ended and time.monotonic() < deadline and self.supervisor is supervisor
                     and supervisor.broker_id == broker and supervisor.resource_lifecycle_check() is True
-                    and self.probe.snapshot().epoch == epoch and time.monotonic() < deadline)
+                    and supervisor.admission_epoch() == epoch and time.monotonic() < deadline)
             except Exception:
                 allowed = False
             return {"allowed": allowed}
@@ -575,6 +755,9 @@ class HardwareRuntime:
     def invoke(self, method, arguments, guard, *, request_binding=None, background_check=None):
         require(self._mutex.acquire(blocking=False))
         try:
+            if method == 'custody_status':
+                require(arguments == {} and guard() and self.active())
+                return self.custody_stats(guard)
             if method in ('radio_status', 'contacts'):
                 require(arguments == {} and guard() and self.active())
                 self.release_failed_health_radio(guard)
@@ -628,7 +811,8 @@ class HardwareRuntime:
                 worker = None if self._provider is None else self._provider._runtime._poller
                 receiving = (identity and worker is not None and worker.is_alive()
                     and device._receive_observer is self._radio_observer)
-                result = self._radio_events.snapshot(epoch, identity_verified=identity, receiving=receiving)
+                result = self._radio_events.snapshot(epoch, identity_verified=identity, receiving=receiving,
+                    repeat=device._identity.repeat if identity else None)
                 if identity:
                     result['firmware'] = device._identity.firmware
                     result['health'] = coordinator.submit(lambda radio: radio.health(
@@ -791,11 +975,13 @@ class MeshDaemon:
                 broker_id=self.supervisor.broker_id, epoch_reader=self._epoch)})
             return
         if request.get("op") == "owner-contact-route":
+            self.resource.rearm_storage(lambda: self._epoch() is not None)
             self._owner_contacts.handle(connection, request, resource=self.resource,
                 supervisor=self.supervisor, uid=uid)
             return
         if request.get("op") == "import-contact":
             require(uid == 0)
+            self.resource.rearm_storage(lambda: self._epoch() is not None)
             send(connection, {"result": self.resource.import_contact(request,
                 broker_id=self.supervisor.broker_id, epoch_reader=self._epoch)})
             return
@@ -867,6 +1053,11 @@ class MeshDaemon:
                     failed.set()
                     return False
         require(guard())
+        # The request is authenticated (session epoch plus the voice peer's own
+        # challenge). If an owner unlock rotated the storage epoch since this
+        # broker started, adopt it now instead of refusing every guarded call
+        # until the process restarts.
+        self.resource.rearm_storage(guard)
         if request["method"] in ("render_challenge", "rendered"):
             binding = hashlib.sha256(json.dumps([request["broker_id"], pid, uid, epoch], separators=(",", ":")).encode()).hexdigest()
             def background_check():

@@ -1,0 +1,80 @@
+{
+  "schema": "sage.lantern.settlement-fault-replay.v1",
+  "generated_at": "2026-10-19T02:16:51.781882Z",
+  "scope": "source contract only; no native owner, device or service",
+  "cases": [
+    {
+      "case": "normal",
+      "ok": true,
+      "status": "settled",
+      "record_state": "settled",
+      "revision": 1
+    },
+    {
+      "case": "create_failure_before_replace",
+      "ok": true,
+      "status": "uncertain",
+      "record_state": null
+    },
+    {
+      "case": "create_failure_after_replace",
+      "ok": true,
+      "status": "uncertain",
+      "record_state": "attempted"
+    },
+    {
+      "case": "cas_failure_before_replace",
+      "ok": true,
+      "status": "uncertain",
+      "record_state": "attempted"
+    },
+    {
+      "case": "cas_failure_after_replace",
+      "ok": true,
+      "status": "uncertain",
+      "retry": "settled",
+      "record_state": "settled"
+    },
+    {
+      "case": "cas_conflict",
+      "ok": true,
+      "status": "uncertain",
+      "record_state": "attempted"
+    },
+    {
+      "case": "duplicate_settle",
+      "ok": true,
+      "status": "settled",
+      "first": "settled",
+      "second": "settled",
+      "revision": 1,
+      "record_state": "settled"
+    },
+    {
+      "case": "different_proof",
+      "ok": true,
+      "status": "uncertain",
+      "second": "uncertain",
+      "record_state": "settled"
+    },
+    {
+      "case": "new_boot_full_evidence",
+      "ok": true,
+      "status": "settled",
+      "record_state": "settled"
+    },
+    {
+      "case": "no_child_identity",
+      "ok": true,
+      "status": "uncertain",
+      "reason": "obligation_missing_child_identity"
+    },
+    {
+      "case": "unavailable_backend",
+      "ok": true,
+      "status": "uncertain",
+      "reason": "no_qualified_journal_backend"
+    }
+  ],
+  "passed": true
+}

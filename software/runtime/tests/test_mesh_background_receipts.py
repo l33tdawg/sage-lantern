@@ -8,6 +8,7 @@ from sage_lantern.mesh_community import MeshRequestAccess
 from sage_lantern.mesh_envelope import Peer, open_envelope
 from sage_lantern.mesh_fragments import FragmentAssembler
 from sage_lantern.mesh_inbox import inbox_id
+from sage_lantern.mesh_runtime import MeshRuntimeError
 from sage_lantern.mesh_read_root import RootReadReceipts
 from sage_lantern.community_service import CommunityService
 from sage_lantern.mesh_daemon import MeshDaemon
@@ -50,7 +51,10 @@ def pending_receipt(background):
     root.close(timeout=1)
 
 
-def test_worker_sends_consented_receipt_after_http_guard_closed(pending_receipt):
+def test_worker_sends_consented_receipt_after_http_guard_closed(pending_receipt, monkeypatch):
+    # Exercise the production scan interval: all fragments still complete
+    # before even one idle scan interval, without bypassing receipt policy.
+    monkeypatch.setattr("sage_lantern.mesh_runtime.DISPATCH_SCAN_SECONDS", 30.0)
     state = pending_receipt
     state.stop_after = lambda: state.rows[state.receipt_id]["payload"]["body"]["state"] == "serial_accepted"
     state.start()
@@ -103,11 +107,9 @@ def test_uncertain_receipt_dispatch_is_not_retried(pending_receipt, monkeypatch)
     wait_until(lambda: state.runtime._receive_stop.is_set())
     state.provider.pause_receiving(timeout=5)
     assert len(attempted) == 1 and state.rows[state.receipt_id]["payload"]["body"]["state"] == "dispatching"
-    finished = state.finished
-    state.stop_after = lambda: state.finished >= finished + 3
-    state.start()
-    wait_until(lambda: state.runtime._receive_stop.is_set())
-    state.provider.pause_receiving(timeout=5)
+    # An uncertain receipt prevents the next worker from being admitted at all.
+    with pytest.raises(MeshRuntimeError):
+        state.start()
     assert len(attempted) == 1 and state.service.close(timeout=5) is False
 
 

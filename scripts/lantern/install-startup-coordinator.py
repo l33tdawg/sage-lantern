@@ -3,7 +3,9 @@
 Requires the matched runtime and recovery adapter already installed. Config is
 operator-supplied, not synthesized from whatever happens to be on the device.
 Existing destinations are refused. Partial installs are retained for inspection.
-No voice/model units, commissioning inputs, keys or fences are modified.
+The coordinator owns model startup: installation disables the model's independent
+boot enablement without stopping it. Unit definitions, commissioning inputs,
+keys and fences are unchanged.
 """
 
 import argparse
@@ -87,6 +89,10 @@ def main():
         exclusive(startup.CONFIG, config_raw)
         exclusive(SERVICE, service_raw)
         subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], check=True, timeout=30, env=startup.ENV)
+        # ColdBrokerBootstrap requires the model to be inactive when the
+        # coordinator collects its inputs, then starts it in the proper order.
+        subprocess.run(['/usr/bin/systemctl', 'disable', 'sage-lantern-llm.service'],
+                       check=True, timeout=30, env=startup.ENV)
         subprocess.run(['/usr/bin/systemctl', 'enable', SERVICE.name], check=True, timeout=30, env=startup.ENV)
     print(json.dumps({'installed': args.apply, 'started': False, 'crossboot_acceptance': False}))
 

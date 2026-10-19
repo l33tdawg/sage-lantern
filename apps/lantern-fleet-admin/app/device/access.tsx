@@ -202,10 +202,10 @@ export default function DeviceAccessBoundary({ enabled }: { enabled: boolean }) 
     } finally { if (mounted.current) setAuthenticating(false); }
   };
 
-  if (!enabled) return <DeviceScreen />;
+  if (!enabled) return <DeviceScreen homeEnabled />;
   let content;
   if (unlocked && profile?.setup_required) content = <main className="device-screen"><DeviceNameScreen profile={profile} saved={(value) => { if (getDeviceToken()) setProfile(value); }} close={lock} /></main>;
-  else if (unlocked && profile) content = <DeviceScreen onLock={lock} profile={profile} onProfileChange={setProfile} />;
+  else if (unlocked && profile) content = <DeviceScreen homeEnabled onLock={lock} profile={profile} onProfileChange={setProfile} />;
   else if (waking) content = <main className="device-screen device-lock-wait"><h1 role="status">Waking…</h1></main>;
   else if (sleeping) content = <main className="device-screen device-sleep"><button aria-label="Device locked. Tap to wake"><LockIcon /><span>Device locked</span><span>Tap to wake</span></button></main>;
   else if (securing) content = <main className="device-screen device-lock-wait"><h1>Locking…</h1><p role="status">{lockError ? 'Securing your Lantern. Please wait.' : 'Closing your session.'}</p></main>;

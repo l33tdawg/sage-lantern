@@ -147,7 +147,7 @@ def generated_config(raw, unit_id, sage_yaml, runtime_toml, quotas):
     fields = {"schema", "unit_id", "chain_id", "root_id", "private_agent_id", "public_agent_id",
               "local_enrollment_committed", "public_enrolled", "vault_initialized", "ready", "provisioned"}
     require(type(identity) is dict and set(identity) == fields and identity["schema"] == "sage.lantern.initialized.v1"
-            and identity["unit_id"] == unit_id and unit_id in {"unit-a", "unit-b"}, "initializer binding mismatch")
+            and identity["unit_id"] == unit_id and unit_id in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"}, "initializer binding mismatch")
     require(all(identity[name] is False for name in ("local_enrollment_committed", "public_enrolled", "vault_initialized", "ready", "provisioned")),
             "initializer made unsupported readiness claim")
     identities = [identity[name] for name in ("root_id", "private_agent_id", "public_agent_id")]
@@ -219,7 +219,7 @@ def capabilities(args):
 
 
 def assemble(args):
-    require(args.unit_id in {"unit-a", "unit-b"}, "unsupported unit")
+    require(args.unit_id in {"unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"}, "unsupported unit")
     require(args.operator_approved, "explicit operator approval required")
     chain = args.chain_id
     require(type(chain) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", chain) is not None, "invalid chain binding")
@@ -279,7 +279,7 @@ def assemble(args):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--unit-id", choices=("unit-a", "unit-b"), required=True)
+    result.add_argument("--unit-id", choices=("unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f"), required=True)
     result.add_argument("--operator-approved", action="store_true")
     for name in ("chain-id", "sage-yaml", "runtime-toml", "inventory", "public-identity", "staging-root"):
         result.add_argument("--" + name, required=True)

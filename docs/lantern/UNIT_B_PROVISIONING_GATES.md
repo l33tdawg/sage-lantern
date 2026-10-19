@@ -1,5 +1,7 @@
 # Unit B provisioning gates
 
+**Historical endpoint plan, superseded 2026-09-27:** A/B now serve single-LoRa Lamplighter/admin/knowledge/repeater roles. Their native personal SAGE stores are deleted and old endpoint services inhibited. Endpoint acceptance now belongs on C–F. Use [device roles](DEVICE_ROLES.md) and [the current task map](SAGE_TASKS_20260927.md); do not resume the A-before-B gate below.
+
 Updated read-only critical-path audit, 2026-09-07. Scope: finish Unit A locally,
 freeze a deliberately matched release, provision B independently, then measure
 two-radio delivery. No live device operation, secret inspection, key read,
@@ -252,6 +254,12 @@ latency or reboot failures:
 | `scripts/lantern/plan-fresh-vision.py` model candidate | `--parallel 1` | Source candidate; does not change the active unit |
 | September 5 baseline versus current A fresh launch | Explicit single slot versus reported automatic four slots | Parent-reported runtime comparison; not independently probed by this audit |
 
+Note 2026-09-29 (D-016): the planner now targets the NPU vision lane
+(`npu-text-8081-npu-vision-8082`) and no longer emits a llama.cpp CPU model
+candidate, so the `--parallel 1` rows above describe the retired CPU fallback
+source rather than the current vision path. A/B analysis using those rows remains
+historical.
+
 The base unit retains `--ctx-size 4096 --threads 6`, but its omitted parallel
 argument delegates slot selection to the installed server. Do not infer that all
 llama.cpp versions default to four, or infer effective argv from a template.
@@ -319,12 +327,14 @@ parent's verified compressed OS-image hash and separate NVMe boot acceptance.
      --owner-approved-companion-bootstrap
    ```
 
-   Explicit authorized `--execute` invokes native `init-lantern-private` as
-   `sage-lantern`, creating independent Root/Companion/public keys and private
-   genesis. It binds the actual generated chain to protected config. No keys are
-   passed on argv, copied from A or derived from the chosen device name. The
-   public key is not public enrollment. The identity-only phase is insufficient
-   for the app's commissioning-completion gate.
+   Explicit authorized `--execute` invokes native `init-fresh-personal-sage
+   --profile /etc/sage/provisioning-profile.yaml --unit unit-b
+   --owner-approved-companion-bootstrap` as `sage-lantern`, creating independent
+   Root/Companion/public keys and private genesis. It binds the actual generated
+   chain to protected config. No keys are passed on argv, copied from A or
+   derived from the chosen device name. The public key is not public enrollment.
+   The identity-only phase is insufficient for the app's commissioning-completion
+   gate.
 4. **Install the locked app.** Use the same runner with `--phase app`, the same
    release arguments, and the complete B-specific `--account`, radio inventory,
    radio serial/VID/PID/stable-path/fingerprint, audio serial/VID/PID/stable-path

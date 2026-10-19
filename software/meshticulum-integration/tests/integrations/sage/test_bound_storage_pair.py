@@ -207,7 +207,9 @@ def test_independent_native_supervisor_check_remains_required_before_storage_io(
         bind(); before = copy.deepcopy(r.state.rows); requests = []
         r.client._client.event_hooks['response'].append(lambda response: requests.append(True))
         if drift == 'lifecycle': r.supervisor.resource_lifecycle_check = lambda: False
-        else: r.supervisor.verified_epoch = lambda: 'f' * 64 + ':1'
+        else:
+            r.supervisor.verified_epoch = lambda: 'f' * 64 + ':1'
+            r.supervisor.admission_epoch = lambda: 'f' * 64 + ':1'
         with pytest.raises(ForwardNativeProviderError): provider._storage_check()
         assert not requests and r.state.rows == before and source.closed
 

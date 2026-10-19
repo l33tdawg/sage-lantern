@@ -25,7 +25,7 @@ import uuid
 
 SOCKET = '/run/sage-lantern-mesh-control/broker.sock'
 SERVICES = tuple('sage-lantern-' + name + '.service' for name in (
-    'voice-loop', 'mesh-runtime', 'llm', 'device-auth', 'idle-suspend',
+    'voice-loop', 'mesh-runtime', 'llm', 'llm-cpu', 'vlm', 'device-auth', 'idle-suspend',
     'fleet-admin', 'status', 'camera', 'display-power'))
 FIELDS = ('LoadState', 'ActiveState', 'SubState', 'MainPID', 'InvocationID', 'Job',
           'ControlGroup', 'FragmentPath', 'DropInPaths', 'NeedDaemonReload')
@@ -142,8 +142,8 @@ def broker_active():
         return {key: member for key, member in value.items() if key != 'nonce'}
 
 
-def observe(module, planner_pin, unit, binary_sha, *, capture_approved=False):
-    require(re.fullmatch('[0-9a-f]{64}', binary_sha) is not None)
+def observe(module, planner_pin, unit, engine_sha, *, capture_approved=False):
+    require(re.fullmatch('[0-9a-f]{64}', engine_sha) is not None)
     require(type(capture_approved) is bool)
     blockers = ['positive_history_and_broker_drain_not_observed',
                 'changed_voice_dropin_requires_reviewed_audio_recommissioning',
@@ -167,13 +167,16 @@ def observe(module, planner_pin, unit, binary_sha, *, capture_approved=False):
     if candidate is not None:
         pins['plan_sha256'] = sha(json.dumps(candidate, sort_keys=True, separators=(',', ':')).encode())
         artifacts = candidate['evidence_requirements']
-        for label in ('model', 'projector', 'binary'):
-            def artifact(label=label):
-                item = artifacts[label]
-                pin, _ = public_file(item['path'], limit=8 * 1024**3)
-                require(pin['sha256'] == (binary_sha if label == 'binary' else item['sha256']))
-                return pin
-            pins[label] = check(label + '_pin_rejected', artifact)
+        if candidate.get('serving_profile') != 'npu-text-8081-npu-vision-8082':
+            blockers.append('unsupported_serving_profile')
+        else:
+            for label in ('npu_model', 'vision_encoder', 'vision_llm', 'engine'):
+                def artifact(label=label):
+                    item = artifacts[label]
+                    pin, _ = public_file(item['path'], limit=8 * 1024**3)
+                    require(pin['sha256'] == (engine_sha if label == 'engine' else item['sha256']))
+                    return pin
+                pins[label] = check(label + '_pin_rejected', artifact)
     before = check('service_observation_unavailable', lambda: {name: service(name) for name in SERVICES})
     active = check('live_broker_proof_unavailable', broker_active)
     after = check('service_recheck_unavailable', lambda: {name: service(name) for name in SERVICES})
@@ -181,6 +184,13 @@ def observe(module, planner_pin, unit, binary_sha, *, capture_approved=False):
     if before is None or before != after:
         blockers.append('service_identity_changed_or_unobserved')
     if after is not None:
+        for name in ('sage-lantern-llm.service', 'sage-lantern-vlm.service'):
+            if (after[name]['LoadState'] != 'loaded' or after[name]['ActiveState'] != 'active'
+                    or after[name]['NeedDaemonReload'] != 'no'):
+                blockers.append('model_service_unavailable:' + name)
+        retired = after['sage-lantern-llm-cpu.service']
+        if retired['LoadState'] != 'loaded' or retired['ActiveState'] not in ('inactive', 'failed'):
+            blockers.append('retired_cpu_vision_active:sage-lantern-llm-cpu.service')
         if after['sage-lantern-idle-suspend.service']['LoadState'] != 'loaded':
             blockers.append('warm_deployment_idle_controller_unavailable')
         for name, value in after.items():
@@ -216,8 +226,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--planner', type=Path, required=True)
     parser.add_argument('--planner-sha256', required=True)
-    parser.add_argument('--llama-sha256', required=True)
-    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b'), required=True)
+    parser.add_argument('--vision-engine-sha256', required=True)
+    parser.add_argument('--unit-id', choices=('unit-a', 'unit-b', 'unit-c', 'unit-d', 'unit-e', 'unit-f'), required=True)
     parser.add_argument('--capture-approved', action='store_true')
     args = parser.parse_args(argv)
     require(os.geteuid() == 0 and sys.platform == 'linux')
@@ -226,7 +236,8 @@ def main(argv=None):
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(180)
     module, pin = planner(args.planner, args.planner_sha256)
-    result = observe(module, pin, args.unit_id, args.llama_sha256, capture_approved=args.capture_approved)
+    result = observe(module, pin, args.unit_id, args.vision_engine_sha256,
+                     capture_approved=args.capture_approved)
     print(json.dumps(result, sort_keys=True))
     signal.alarm(0)
     return 2 if result['blockers'] else 0

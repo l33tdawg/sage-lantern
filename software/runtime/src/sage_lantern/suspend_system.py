@@ -9,7 +9,7 @@ automatic service restart, PIN handling or journal clearing here.
 Requires systemctl, busctl, cgroup v2 at /sys/fs/cgroup and the kernel success counter
 at /sys/power/suspend_stats/success. Missing/inaccessible facilities fail closed.
 A synchronous systemctl start is NOT proof: exactly one kernel success increment,
-quiescent sleep units and unchanged active LLM MainPID are also required. The
+quiescent sleep units and unchanged active model MainPIDs are also required. The
 counter is global; correlation depends on the parent's exclusive sleep fence.
 The command timeout bounds awake monotonic time, not time spent suspended.
 Timed-out systemctl clients are killed, but their submitted jobs may persist.
@@ -45,17 +45,34 @@ from collections.abc import Callable
 
 SYSTEMCTL = "/usr/bin/systemctl"
 BUSCTL = "/usr/bin/busctl"
-STOP_SERVICES = frozenset({
-    "sage-lantern-device-auth.service", "sage-lantern-voice-loop.service",
-    "sage-lantern-camera.service", "sage-lantern-display-power.service",
-    "sage-lantern-fleet-admin.service",
-})
+AUTH = "sage-lantern-device-auth.service"
+VOICE = "sage-lantern-voice-loop.service"
+CAMERA = "sage-lantern-camera.service"
+DISPLAY = "sage-lantern-display-power.service"
+FLEET_ADMIN = "sage-lantern-fleet-admin.service"
+# Auxiliary workers in the reviewed stop/start order (A/B: X11 display power and
+# camera). A unit that is not installed cannot be stopped, so a profile may only
+# remove workers from this set, never add one.
+AUXILIARY_SERVICES = (CAMERA, FLEET_ADMIN, DISPLAY)
+STOP_SERVICES = frozenset({AUTH, VOICE, *AUXILIARY_SERVICES})
+# C-F runs no camera unit and no X11 display-power unit (read on C, 29 Sep 2026:
+# both are not-found there), and the console is fenced as a process group instead
+# of a service. The C-F profile therefore stops the three workers it runs.
+WAYLAND_STOP_SERVICES = frozenset({AUTH, VOICE, FLEET_ADMIN})
 SLEEP_UNITS = (
     "sleep.target", "suspend.target", "hibernate.target", "hybrid-sleep.target",
     "suspend-then-hibernate.target", "systemd-suspend.service", "systemd-hibernate.service",
     "systemd-hybrid-sleep.service", "systemd-suspend-then-hibernate.service",
 )
 LLM = "sage-lantern-llm.service"
+VLM = "sage-lantern-vlm.service"
+# Resident model units in reviewed order (D-016: NPU text on 8081, NPU vision on
+# 8082 in the same OpenAI-shaped contract). The chat lane is mandatory: the
+# appliance is only sleepable while it is resident. A shipped second model unit
+# joins the residency contract once the reviewed activation lane has enabled it —
+# an enabled unit that is not active is unknown evidence and refuses the call,
+# while a unit that was never enabled is not part of this installation's profile.
+MODEL_UNITS = (LLM, VLM)
 IDLE_SUSPEND = "sage-lantern-idle-suspend.service"
 DEPLOYMENT_FENCE = "/run/sage-lantern-deployment.pending"
 CGROUP = Path("/sys/fs/cgroup")
@@ -70,6 +87,7 @@ class SystemEvidence:
     reason: str
     before_success: int | None = None
     after_success: int | None = None
+    units: tuple = ()
 
 
 class _SleepBusy(Exception):
@@ -153,9 +171,12 @@ class SuspendSystem:
                  list_directories: Callable = _list_directories,
                  clock: Callable = time.monotonic, uid: Callable = os.geteuid,
                  platform: Callable = lambda: sys.platform, timeout_seconds: float = 30,
-                 sleep: Callable = time.sleep):
+                 sleep: Callable = time.sleep, stop_services=STOP_SERVICES):
         if type(timeout_seconds) not in (int, float) or not 1 <= timeout_seconds <= 90:
             raise ValueError("invalid_timeout")
+        if (type(stop_services) is not frozenset or not stop_services <= STOP_SERVICES
+                or not {AUTH, VOICE} <= stop_services):
+            raise ValueError("invalid_stop_services")
         self.run = run
         self.read_file = read_file
         self.list_directories = list_directories
@@ -164,7 +185,12 @@ class SuspendSystem:
         self.uid = uid
         self.platform = platform
         self.timeout = timeout_seconds
+        self.stop_services = stop_services
         self._lock = threading.Lock()
+
+    def auxiliary_services(self):
+        """Workers this installation stops before sleep and starts after wake."""
+        return tuple(service for service in AUXILIARY_SERVICES if service in self.stop_services)
 
     def _remaining(self, deadline):
         remaining = deadline - self.clock()
@@ -198,12 +224,56 @@ class SuspendSystem:
     def _no_job(value):
         return value in ("", "0")
 
-    def _llm_pid(self, deadline):
-        value = self._show(LLM, deadline, ("LoadState", "ActiveState", "Job", "MainPID"))
-        if (value["LoadState"] != "loaded" or value["ActiveState"] != "active"
-                or not self._no_job(value["Job"]) or not re.fullmatch(r"[1-9][0-9]{0,9}", value["MainPID"])):
-            raise ValueError
-        return value["MainPID"]
+    def _model_units(self, deadline):
+        """Resident model units of this installation's profile, fail closed."""
+        units = []
+        for unit in MODEL_UNITS:
+            value = self._show(unit, deadline, ("LoadState", "UnitFileState"))
+            if unit != LLM:
+                if value["LoadState"] == "not-found":
+                    continue
+                if value["UnitFileState"] not in ("enabled", "enabled-runtime"):
+                    continue
+            units.append(unit)
+        return tuple(units)
+
+    def _model_pids(self, deadline, *, skip=None):
+        """Every resident model instance must be loaded, active and job-free."""
+        pids = {}
+        for unit in self._model_units(deadline):
+            if unit == skip:
+                continue
+            value = self._show(unit, deadline, ("LoadState", "ActiveState", "Job", "MainPID"))
+            if (value["LoadState"] != "loaded" or value["ActiveState"] != "active"
+                    or not self._no_job(value["Job"]) or not re.fullmatch(r"[1-9][0-9]{0,9}", value["MainPID"])):
+                raise ValueError
+            pids[unit] = value["MainPID"]
+        return pids
+
+    def model_units(self) -> SystemEvidence:
+        """Read-only observation of the resident model set for the parent."""
+        def observe(deadline):
+            return SystemEvidence(True, "model_units_verified", units=self._model_units(deadline))
+        return self._perform(observe)
+
+    def _voice_unit(self, deadline):
+        """The voice lane joins the drain contract only once it was enabled.
+
+        Same rule as the second model unit: a shipped worker that was never
+        enabled is not part of this installation's profile, and a missing
+        optional component must not make the appliance unusable or unsleepable.
+        An enabled unit that is not active is unknown evidence and refuses.
+        """
+        value = self._show(VOICE, deadline, ("LoadState", "UnitFileState"))
+        if value["LoadState"] == "not-found":
+            return None
+        return VOICE if value["UnitFileState"] in ("enabled", "enabled-runtime") else None
+
+    def voice_lane(self) -> SystemEvidence:
+        def observe(deadline):
+            unit = self._voice_unit(deadline)
+            return SystemEvidence(True, "voice_lane_verified", units=(unit,) if unit else ())
+        return self._perform(observe)
 
     def _service(self, service, deadline):
         value = self._show(service, deadline, ("LoadState", "ActiveState", "Job", "ControlGroup", "KillMode", "Slice"))
@@ -241,7 +311,7 @@ class SuspendSystem:
 
     def verify_stop_guards(self) -> SystemEvidence:
         def verify(deadline):
-            for service in sorted(STOP_SERVICES):
+            for service in sorted(self.stop_services):
                 self._service(service, deadline)
             return SystemEvidence(True, "guards_verified")
         return self._perform(verify)
@@ -320,7 +390,7 @@ class SuspendSystem:
 
     def deployment_stop_verified(self, service, *, expected_pid, expected_invocation):
         """Stop an exact active idle/model invocation; never a generic unit stop."""
-        if (service not in (IDLE_SUSPEND, LLM) or type(expected_pid) is not int
+        if (service not in (IDLE_SUSPEND, *MODEL_UNITS) or type(expected_pid) is not int
                 or expected_pid <= 0 or type(expected_invocation) is not str
                 or re.fullmatch(r"[0-9a-f]{32}", expected_invocation) is None):
             return SystemEvidence(False, "invalid_deployment_identity")
@@ -333,14 +403,17 @@ class SuspendSystem:
                     or before["InvocationID"] != expected_invocation or not before["ControlGroup"]):
                 raise ValueError
             group = self._cgroup(before["ControlGroup"])
-            model_pid = self._llm_pid(deadline) if service == IDLE_SUSPEND else None
+            # The stop target itself is excluded; every other resident model unit must
+            # come through the stop unchanged.
+            skip = service if service in MODEL_UNITS else None
+            model_pids = self._model_pids(deadline, skip=skip)
             self._guard(service, deadline, DEPLOYMENT_FENCE if service == IDLE_SUSPEND else FENCE)
             self._command(["stop", service], deadline)
             after = self._deployment_service(service, deadline)
             self._deployment_empty(service, after, group, deadline)
             if after["InvocationID"] not in ("", expected_invocation):
                 raise ValueError
-            if model_pid is not None and self._llm_pid(deadline) != model_pid:
+            if model_pids and self._model_pids(deadline, skip=skip) != model_pids:
                 raise ValueError
             self._sleep_idle(deadline)
             if not hasattr(self, "_deployment_stops"):
@@ -368,14 +441,14 @@ class SuspendSystem:
 
     def deployment_inactive_verified(self, service):
         """Read-only cgroup verification after model shutdown, without an active-LLM assumption."""
-        if service not in STOP_SERVICES | {IDLE_SUSPEND, LLM}:
+        if service not in self.stop_services | {IDLE_SUSPEND, *MODEL_UNITS}:
             return SystemEvidence(False, "service_not_allowed")
 
         def verify(deadline):
             self.read_file(CGROUP / "cgroup.controllers", 8192)
             self._guard(service, deadline, DEPLOYMENT_FENCE if service == IDLE_SUSPEND else FENCE)
             value = self._deployment_service(service, deadline)
-            if service in (IDLE_SUSPEND, LLM):
+            if service in (IDLE_SUSPEND, *MODEL_UNITS):
                 prior, group = self._deployment_stops[service]
                 if value != prior:
                     raise ValueError
@@ -396,11 +469,11 @@ class SuspendSystem:
         return self._verify_service(service, stop_requested=False)
 
     def _verify_service(self, service, *, stop_requested):
-        if type(service) is not str or service not in STOP_SERVICES:
+        if type(service) is not str or service not in self.stop_services:
             return SystemEvidence(False, "service_not_allowed")
 
         def stop(deadline):
-            llm_pid = self._llm_pid(deadline)
+            model_pids = self._model_pids(deadline)
             self.read_file(CGROUP / "cgroup.controllers", 8192)
             before = self._service(service, deadline)
             if not self._no_job(before["Job"]) or before["ActiveState"] not in ("active", "inactive", "failed"):
@@ -422,7 +495,7 @@ class SuspendSystem:
             if after["ControlGroup"]:
                 self._empty_tree(self._cgroup(after["ControlGroup"]), deadline)
             final = self._service(service, deadline)
-            if final != after or self._llm_pid(deadline) != llm_pid:
+            if final != after or self._model_pids(deadline) != model_pids:
                 raise ValueError
             return SystemEvidence(True, "stopped_verified" if stop_requested else "inactive_verified")
         return self._perform(stop)
@@ -435,7 +508,7 @@ class SuspendSystem:
 
     def suspend_verified(self) -> SystemEvidence:
         def suspend(deadline):
-            llm_pid = self._llm_pid(deadline)
+            model_pids = self._model_pids(deadline)
             self._sleep_idle(deadline)
             before = self._counter()
             self._command(["start", "suspend.target"], deadline)
@@ -444,7 +517,7 @@ class SuspendSystem:
                 return SystemEvidence(False, "unknown", before, after)
             self._wait_sleep_idle(deadline)
             after = self._counter()
-            if after != before + 1 or self._llm_pid(deadline) != llm_pid:
+            if after != before + 1 or self._model_pids(deadline) != model_pids:
                 return SystemEvidence(False, "unknown", before, after)
             return SystemEvidence(True, "resumed_verified", before, after)
         return self._perform(suspend)

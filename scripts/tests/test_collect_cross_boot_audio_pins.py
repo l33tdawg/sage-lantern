@@ -99,6 +99,21 @@ def test_npu_server_argv_refuses_unpinned_or_malformed(mutate):
         MODULE.model_argv(system, HELPER)
 
 
+def test_npu_swap_supersedes_the_llama_cpp_baseline_once():
+    model = {'FragmentPath': '/etc/systemd/system/sage-lantern-llm.service', 'DropInPaths': ''}
+    retained = {'/etc/systemd/system/sage-lantern-llm.service': 'a' * 64,
+                '/opt/sage-lantern/llama.cpp/llama-server': 'b' * 64,
+                '/opt/sage-lantern/models/qwen3.5-4b-q4_k_m.gguf': 'c' * 64}
+    helper = SimpleNamespace(file_hash=lambda name: 'd' * 64)
+    files = MODULE.model_files(helper, NPU_ARGV, model, retained)
+    assert set(files) == {model['FragmentPath'], NPU_ARGV[1], NPU_ARGV[NPU_ARGV.index('--engine') + 1],
+                          NPU_ARGV[NPU_ARGV.index('--model') + 1]}
+    with pytest.raises(ValueError):
+        MODULE.model_files(helper, NPU_ARGV, model, {**retained, '/tmp/evil': 'e' * 64})
+    with pytest.raises(ValueError):
+        MODULE.model_files(helper, NPU_ARGV, model, {})
+
+
 @pytest.mark.parametrize('fault', [None, 'wheel_hash', 'installed_changed', 'extra_source', 'missing_source'])
 def test_runtime_must_match_exact_wheel_not_host(tmp_path, monkeypatch, fault):
     package = tmp_path / 'sage_lantern'
@@ -302,3 +317,69 @@ def test_collected_bootstrap_exact_optional_journal(monkeypatch, mode):
     else:
         with pytest.raises(Exception):
             MODULE.bootstrap_inventory(helper, system)
+
+
+def test_inventory_ignores_only_exact_idle_receiver_revision():
+    import copy
+    slot = '11111111-1111-4111-8111-111111111111'
+    row = dict(record_id=slot, kind='mesh_inbound', revision=7, payload=dict(
+        schema='sage.lantern.mesh-receiver.v1', state='idle', operation_id=None, raw_frame=None))
+    later = dict(row, revision=11)
+    original = copy.deepcopy(row)
+    assert MODULE.comparable_inventory([row], {'receiver_slot': slot}) == MODULE.comparable_inventory([later], {'receiver_slot': slot})
+    assert row == original
+    assert MODULE.comparable_inventory([row], {'receiver_slot': 'other'}) != MODULE.comparable_inventory([later], {'receiver_slot': 'other'})
+    for state in ('receiving', 'captured', 'interrupted'):
+        pending = dict(row, payload={**row['payload'], 'state': state})
+        assert MODULE.comparable_inventory([pending], {'receiver_slot': slot}) != MODULE.comparable_inventory([dict(pending, revision=11)], {'receiver_slot': slot})
+    message = dict(row, payload={'schema': 'message', 'content': 'retained'})
+    assert MODULE.comparable_inventory([message], {'receiver_slot': slot}) != MODULE.comparable_inventory([dict(message, revision=11)], {'receiver_slot': slot})
+    malformed = dict(row, payload={**row['payload'], 'raw_frame': 'private'})
+    with pytest.raises(Exception):
+        MODULE.comparable_inventory([malformed], {'receiver_slot': slot})
+
+
+def test_cold_scan_hash_is_accepted_by_actual_recovery_reconcile(monkeypatch):
+    import os
+    from sage_lantern import device_access, mesh_daemon, message_storage, workflow_store
+    import sage_sdk
+    spec = importlib.util.spec_from_file_location('cold_hash_recovery',
+        Path(__file__).resolve().parents[1] / 'lantern/recover-cross-boot-audio.py')
+    recovery = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(recovery)
+    slot = '11111111-1111-4111-8111-111111111111'
+    rows = [dict(record_id=slot, kind='mesh_inbound', revision=37, payload=dict(
+        schema='sage.lantern.mesh-receiver.v1', state='idle', operation_id=None, raw_frame=None))]
+    actor = dict(chain_id='test', agent_id='a' * 64)
+    config = dict(actor, endpoint='http://127.0.0.1:8080', receiver_slot=slot)
+    canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+    helper = SimpleNamespace(sha=HELPER.sha, canonical=canonical)
+    class Client:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    class Probe:
+        def __init__(self, *args, **kwargs): pass
+        def snapshot(self): return SimpleNamespace(epoch='vault:2')
+    class Store:
+        def __init__(self, *args, **kwargs): pass
+        def scan(self, *, access_check, **kwargs):
+            assert access_check() is True
+            return rows
+    monkeypatch.setattr(sage_sdk, 'SageClient', Client)
+    monkeypatch.setattr(message_storage, 'MessageStorageProbe', Probe)
+    monkeypatch.setattr(workflow_store, 'WorkflowStore', Store)
+    monkeypatch.setattr(device_access, 'access_epoch', lambda: 'owner')
+    monkeypatch.setattr(mesh_daemon, 'load_config', lambda: config)
+    monkeypatch.setattr(mesh_daemon, 'load_identity', lambda config: (object(), os.open(os.devnull, os.O_RDONLY)))
+    expected = dict(actor=actor)
+    inspect = lambda *args: dict(sha256=HELPER.sha(canonical(rows)))
+    backend = SimpleNamespace(current=lambda: None, expected=expected, inspect_inventory=inspect)
+    epoch, digest = MODULE._signed_scan(helper, backend, expected, inspection=inspect, normalize_idle=False)
+    expected.update(storage_epoch=epoch, workflow_sha256=digest)
+    assert recovery.Recovery.reconcile(backend)['sha256'] == digest
+    _, live_digest = MODULE._signed_scan(helper, backend, expected, inspection=inspect)
+    assert live_digest != digest
+    expected['workflow_sha256'] = live_digest
+    with pytest.raises(ValueError):
+        recovery.Recovery.reconcile(backend)

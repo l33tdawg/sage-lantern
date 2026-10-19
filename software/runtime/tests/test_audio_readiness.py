@@ -18,6 +18,16 @@ def waveform():
     return array.array("h", [200, -200] * 32000).tobytes()
 
 
+def observed_snapshot(**overrides):
+    """A capture-contract-shaped snapshot: the admission binding covers these."""
+    observed = dict(unit_id="unit-a", audio={"card": "bound"},
+                    inputs={path: "a" * 64 for path in module.contract_inputs()},
+                    code={"loop": "b" * 64},
+                    services={"sage-lantern-llm.service": {"ActiveState": "active"}})
+    observed.update(overrides)
+    return observed
+
+
 @pytest.mark.parametrize("raw", [b"", bytes(module.BYTE_COUNT), waveform()[:-2], waveform() + b"xx",
     array.array("h", [32767, -32768] * 32000).tobytes(), array.array("h", [100] * 64000).tobytes()])
 def test_incomplete_silent_clipped_or_constant_capture_refuses(raw):
@@ -32,14 +42,14 @@ def test_only_aggregate_sample_statistics_leave_capture():
 
 @pytest.mark.parametrize("fault", [None, "expired", "future", "boot", "config", "runtime", "usb", "pending", "marker", "capture"])
 def test_status_and_start_guard_reject_stale_or_changed_evidence(monkeypatch, fault):
-    observed = dict(unit_id="unit-a", audio={"card": "bound"}, boot_id="boot", inputs={"config": "a" * 64}, services={"sage": "invocation", "sage-lantern-llm.service": {"ActiveState": "active"}}, hardware={"inode": 1})
+    observed = observed_snapshot(boot_id="boot", services={"sage": "invocation", "sage-lantern-llm.service": {"ActiveState": "active"}}, hardware={"inode": 1})
     receipt = dict(schema="sage.lantern.audio-capture.v1", snapshot=observed, captured_at=100,
         expires_at=100 + module.TTL, capture=module.samples(waveform()))
     current = json.loads(json.dumps(observed))
     if fault == "boot":
         current["boot_id"] = "new"
     elif fault == "config":
-        current["inputs"]["config"] = "b" * 64
+        current["inputs"][module.contract_inputs()[0]] = "b" * 64
     elif fault == "runtime":
         current["services"]["sage"] = "new"
     elif fault == "usb":
@@ -102,13 +112,67 @@ def test_commissioning_allows_only_verified_inactive_model(monkeypatch, fault):
 
 @pytest.mark.parametrize("active", [True, False])
 def test_normal_admission_still_requires_active_model(monkeypatch, active):
-    observed = dict(unit_id="unit-a", audio={}, inputs={},
-                    services={"sage-lantern-llm.service": {"ActiveState": "active" if active else "inactive"}})
+    observed = observed_snapshot(audio={},
+                                 services={"sage-lantern-llm.service": {"ActiveState": "active" if active else "inactive"}})
     monkeypatch.setattr(module, "snapshot", lambda: observed)
     monkeypatch.setattr(module, "commissioned_receipt", lambda: {"binding": module.commissioned_binding(observed)})
     monkeypatch.setattr(module.os.path, "lexists", lambda path: False)
     assert module.admission_verified() is active
     assert module.admission_verified(commissioning=True) is True
+
+
+def test_admission_binds_the_capture_contract_and_only_records_reviewed_code():
+    contract, recorded = module.evidence_files(
+        helper="/usr/local/libexec/sage-lantern-voice-loop",
+        unit="/etc/systemd/system/sage-lantern-voice-loop.service",
+        dropins=["/etc/systemd/system/sage-lantern-voice-loop.service.d/90-sage-lantern-sleep.conf"],
+        sources=["/opt/sage-lantern/venv/lib/python3.11/site-packages/sage_lantern/audio_readiness.py"])
+    assert contract == ("/etc/sage-lantern/appliance-bindings.json", "/etc/sage-lantern/audio-capture-alsa.conf",
+                         "/etc/sage-lantern/lantern.toml", "/usr/bin/arecord")
+    assert recorded == ("/etc/systemd/system/sage-lantern-voice-loop.service",
+                        "/etc/systemd/system/sage-lantern-voice-loop.service.d/90-sage-lantern-sleep.conf",
+                        "/opt/sage-lantern/venv/lib/python3.11/site-packages/sage_lantern/audio_readiness.py",
+                        "/usr/local/libexec/sage-lantern-voice-loop")
+
+
+@pytest.mark.parametrize("changed,admitted", [("code", True), ("inputs", False)])
+def test_reviewed_code_churn_never_invalidates_the_physical_capture_proof(monkeypatch, changed, admitted):
+    """A reviewed question-loop or package change must not force a re-commission.
+
+    The capture contract (device, ALSA config, voice config, recorder) stays
+    binding: a change there still refuses admission.
+    """
+    observed = observed_snapshot(unit_id="unit-c")
+    current = json.loads(json.dumps(observed))
+    if changed == "inputs":
+        current["inputs"][module.contract_inputs()[0]] = "c" * 64
+    else:
+        current["code"]["loop"] = "c" * 64
+    monkeypatch.setattr(module, "snapshot", lambda: current)
+    monkeypatch.setattr(module, "commissioned_receipt", lambda: {"binding": module.commissioned_binding(observed)})
+    monkeypatch.setattr(module.os.path, "lexists", lambda path: False)
+    assert module.admission_verified() is admitted
+
+
+def test_a_binding_minted_before_the_contract_split_is_still_honoured(monkeypatch):
+    """Already-commissioned units are not forced through a re-capture.
+
+    The strict rule recorded every file in `inputs`; those bindings are
+    satisfied when the capture contract still matches, even though reviewed
+    code (which the old binding also covered) has changed since.
+    """
+    observed = observed_snapshot(unit_id="unit-c")
+    stored = dict(module.commissioned_binding(observed),
+                  inputs={**observed["inputs"], **observed["code"],
+                          "/usr/local/libexec/sage-lantern-voice-loop": "d" * 64})
+    monkeypatch.setattr(module, "snapshot", lambda: observed)
+    monkeypatch.setattr(module, "commissioned_receipt", lambda: {"binding": stored})
+    monkeypatch.setattr(module.os.path, "lexists", lambda path: False)
+    assert module.admission_verified() is True
+    stored["inputs"][module.contract_inputs()[0]] = "e" * 64
+    assert module.admission_verified() is False
+    del stored["inputs"][module.contract_inputs()[1]]
+    assert module.admission_verified() is False
 
 
 @pytest.mark.parametrize("fault", [None, "pin", "existing", "capture", "changed", "sleep", "running", "final_check"])
@@ -270,6 +334,52 @@ def test_card_capture_node_and_usb_are_the_same_bound_device(tmp_path, monkeypat
     if fault is None:
         result = module.hardware(audio)
         assert result["card_id"] == "Audio" and len(result["nodes"]) == 2
+    else:
+        with pytest.raises(RuntimeError):
+            module.hardware(audio)
+
+
+@pytest.mark.parametrize("fault", [None, "card", "id_path", "pcm_type", "other_platform"])
+def test_platform_codec_capture_is_bound_to_the_reviewed_platform_device(tmp_path, monkeypatch, fault):
+    def mapped(path):
+        return tmp_path / str(path).lstrip("/")
+    control = mapped("/dev/snd/controlC3")
+    pcm = mapped("/dev/snd/pcmC3D0c")
+    control.parent.mkdir(parents=True)
+    control.touch()
+    pcm.touch()
+    stable = mapped("/dev/snd/by-path/platform-es8388-sound")
+    stable.parent.mkdir(parents=True)
+    stable.symlink_to(control)
+    card = mapped("/proc/asound/card3/id")
+    card.parent.mkdir(parents=True)
+    card.write_text("Other" if fault == "card" else "rockchipes8388")
+    platform = mapped("/sys/devices/platform/es8388-sound")
+    (platform / "sound").mkdir(parents=True)
+    for number in (9, 10):
+        path = mapped(f"/sys/dev/char/116:{number}/device")
+        path.parent.mkdir(parents=True)
+        if fault == "other_platform" and number == 10:
+            other = mapped("/sys/devices/platform/hdmi0-sound")
+            (other / "sound").mkdir(parents=True)
+            path.symlink_to(other / "sound")
+        else:
+            path.symlink_to(platform / "sound")
+    original = Path.lstat
+    def lstat(path):
+        if path in (control, pcm):
+            return SimpleNamespace(st_mode=stat.S_IFREG if fault == "pcm_type" and path == pcm else stat.S_IFCHR,
+                st_dev=1, st_ino=2 if path == control else 3, st_rdev=os.makedev(116, 10 if path == control else 9))
+        return original(path)
+    monkeypatch.setattr(Path, "lstat", lstat)
+    monkeypatch.setattr(module, "Path", mapped)
+    audio = dict(source="platform", platform_device="es8388-sound",
+        id_path="platform-other" if fault == "id_path" else "platform-es8388-sound",
+        stable_path="/dev/snd/by-path/platform-es8388-sound", alsa_device="hw:CARD=rockchipes8388,DEV=0")
+    if fault is None:
+        result = module.hardware(audio)
+        assert result["card_id"] == "rockchipes8388" and result["platform_path"].endswith("es8388-sound")
+        assert len(result["nodes"]) == 2
     else:
         with pytest.raises(RuntimeError):
             module.hardware(audio)

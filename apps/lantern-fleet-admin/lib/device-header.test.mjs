@@ -38,5 +38,12 @@ test('the menu opens from any screen, not only the home screen', () => {
 test('the wordmark starts a new chat only on the home screen', () => {
   assert.match(screen, /if \(page === 'main' && !correction\) void clearAnswer\(\);/);
   assert.match(screen, /else goBack\(\);/);
-  assert.match(header, /aria-label=\{home \? 'New chat; keep saved conversations' : 'Back to your Lantern home screen'\}/);
+  // `main` is the Chat screen and still starts a new chat — but only in a build
+  // without the Home 2a screen. Once Home exists the wordmark is a destination
+  // from every screen, and New chat becomes its own explicit action in the
+  // conversation drawer, so the Chat screen is not a dead end.
+  assert.match(header, /aria-label=\{home \? 'New chat; keep saved conversations' : atHome \? 'Lantern home' : 'Back to your Lantern home screen'\}/);
+  assert.match(header, /const home = page === 'main' && wordmarkStartsChat;/);
+  assert.match(screen, /wordmarkStartsChat=\{!homeEnabled\}/);
+  assert.match(screen, /className="device-new-chat"/);
 });

@@ -1,0 +1,38 @@
+{
+  "E13_A_stream": {
+    "pass": true,
+    "events": 3,
+    "text": "Line X can have 45–49 units, which normalizes to 270–294 units per hour. Line Y can have 42–48 units, which normalizes to 252–288 units per hour. The observed leader is Line X. Neither line is guaranteed to have the higher true count: the intervals overlap from 45 to 48, so either true count can exceed the other. There is no guaranteed nonzero gap. These are fixed error bounds, not probabilities, and the rates do not forecast a future hour or establish a causal difference."
+  },
+  "S03_B_stream_failed_lookup": {
+    "pass": true,
+    "events": 3,
+    "text": "The lookup failed and returned an error. A failed lookup does not establish absence; it does not prove that no matching memory exists."
+  },
+  "S12_B_stream_private_owner": {
+    "pass": true,
+    "events": 3,
+    "text": "I can't save to Talven's private memory because no trusted grant is present in routing.private_grants. I made no write."
+  },
+  "receipt_status_stream_committed": {
+    "pass": true,
+    "events": 3,
+    "text": "The save is committed; completion is established."
+  },
+  "receipt_status_stream_pending": {
+    "pass": true,
+    "events": 3,
+    "text": "The save is pending; completion is not established."
+  },
+  "receipt_status_stream_failed": {
+    "pass": true,
+    "events": 3,
+    "text": "The save failed; completion is not established."
+  },
+  "new_save_question_reached_engine": {
+    "pass": true,
+    "events": 30,
+    "text": "I have remembered that the new launch code is bluebird. The previous content about the first launch code being amber is no longer correct."
+  },
+  "all_pass": true
+}

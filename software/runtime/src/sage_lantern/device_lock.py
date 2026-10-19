@@ -434,6 +434,24 @@ class DeviceLock:
 
     def unlock(self, pin):
         """Verify a PIN and issue a hashed, inactive 30-second activation ticket."""
+        return self._verify_pin(pin, issue_ticket=True)
+
+    def verify_pin(self, pin):
+        """Verify for a separate trusted surface without issuing browser access.
+
+        Uses the same durable attempt budget, verifier mutex and lock-generation
+        fence as unlock(). The single AuthBroker must serialize upstream vault
+        operations and enforce setup/cleanup policy before granting that surface.
+        """
+        return self._verify_pin(pin, issue_ticket=False)
+
+    def session_seconds(self):
+        with self._mutex:
+            if self._closed:
+                raise DeviceLockError("unavailable")
+            return self._session_seconds
+
+    def _verify_pin(self, pin, *, issue_ticket):
         with self._mutex:
             generation = self._generation
             self._consume_attempt()
@@ -458,6 +476,8 @@ class DeviceLock:
                 if generation != self._generation:
                     raise DeviceLockError("unlock_cancelled")
                 now = self._now()
+                if not issue_ticket:
+                    return True
                 if len(self._pending) >= 256:
                     raise DeviceLockError("unavailable")
                 token = secrets.token_urlsafe(32)

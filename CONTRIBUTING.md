@@ -6,7 +6,7 @@ SAGE Commons is being developed in the open under Apache-2.0. Contributions to c
 
 1. Read [`docs/MASTER_TECHNICAL_PRD.md`](docs/MASTER_TECHNICAL_PRD.md) and [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md).
 2. Check [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md) before treating an unresolved choice as settled.
-3. Keep [`docs/TERMINOLOGY.md`](docs/TERMINOLOGY.md) intact: SAGE Commons is the mission/network/programme; SAGE Lantern is the portable device; Knowledge Point is the physical station; SAGE Lamplighter is the offline super-seed; SAGE Lightbearer is a stable public-service profile whose validator authority is separately governed.
+3. Keep [`docs/TERMINOLOGY.md`](docs/TERMINOLOGY.md) intact: SAGE Commons is the fabric — core mesh technology plus the governed public network that community networks, services and devices join; SAGE Lantern is the first deployment on it, and the portable device; Knowledge Point is the physical station; SAGE Lamplighter is the offline super-seed; SAGE Lightbearer is a stable public-service profile whose validator authority is separately governed.
 4. Never weaken private-by-default operation, user publication consent, personal/public authority separation, validator independence, cryptographic verification or honest offline status reporting.
 
 ## Change expectations

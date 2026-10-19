@@ -132,7 +132,7 @@ class SuspendTransition:
         if (type(acknowledgement) is not Acknowledgement
                 or acknowledgement.request is not request
                 or acknowledgement.outcome is not Outcome.CONFIRMED):
-            raise SuspendTransitionError("gate_unconfirmed")
+            raise SuspendTransitionError("gate_unconfirmed:" + gate.value)
 
     def _checkpoint(self, phase: Phase, *, prepared: bool = False, completed: bool = False) -> None:
         self._snapshot = replace(self._snapshot, phase=phase,

@@ -6,6 +6,7 @@ readonly SCRIPT_NAME="$(basename "$0")"
 
 mode="check"
 skip_update=false
+profile=debian12
 
 readonly -a REQUIRED_PACKAGES=(
   python3
@@ -13,6 +14,7 @@ readonly -a REQUIRED_PACKAGES=(
   python3-yaml
   build-essential
   cmake
+  libopencv-dev
   tar
   ca-certificates
   libstdc++6
@@ -24,9 +26,11 @@ readonly -a REQUIRED_PACKAGES=(
 
 usage() {
   cat <<EOF
-Usage: ${SCRIPT_NAME} [--check | --install | --dry-run] [--skip-update]
+Usage: ${SCRIPT_NAME} [--check | --install | --dry-run] [--skip-update] [--profile PROFILE]
 
 Prepare an already-booted Radxa ROCK 5B+ running Debian Bookworm ARM64.
+An explicit orangepi5plus-ubuntu26.04 profile supports C–F's reviewed base
+with isolated Python 3.11.16 at /opt/lantern-python/3.11.16.
 
   --check        Report readiness without changing the system (default).
   --install      Install missing prerequisite packages. Run as root.
@@ -67,6 +71,11 @@ while (($#)); do
     --skip-update)
       skip_update=true
       ;;
+    --profile)
+      shift
+      profile="${1:-}"
+      [[ "$profile" == debian12 || "$profile" == orangepi5plus-ubuntu26.04 ]] || die 'unsupported platform profile'
+      ;;
     -h|--help)
       usage
       exit 0
@@ -94,12 +103,40 @@ os_like="${ID_LIKE:-}"
 os_codename="${VERSION_CODENAME:-}"
 os_version="${VERSION_ID:-}"
 
-if [[ "${os_id}" != "debian" && " ${os_like} " != *" debian "* ]]; then
-  die "expected Debian or a Debian-derived image; found ID=${os_id}"
-fi
+board_model="$(tr -d '\000' </proc/device-tree/model 2>/dev/null || true)"
 
-if [[ "${os_codename}" != "bookworm" && "${os_version}" != "12" && "${os_version}" != 12.* ]]; then
+validate_platform() {
+if [[ "$profile" == orangepi5plus-ubuntu26.04 ]]; then
+  [[ "$os_id" == ubuntu && "$os_version" == 26.04 && "$os_codename" == resolute ]] || die 'C–F profile requires Ubuntu 26.04 resolute'
+  [[ "$board_model" == 'Orange Pi 5 Plus' ]] || die 'C–F profile requires Orange Pi 5 Plus'
+  [[ "$(uname -r)" == 6.1.115-vendor-rk35xx ]] || die 'C–F profile requires reviewed vendor kernel 6.1.115-vendor-rk35xx'
+elif [[ "${os_id}" != "debian" && " ${os_like} " != *" debian "* ]]; then
+  die "expected Debian or a Debian-derived image; found ID=${os_id}"
+elif [[ "${os_codename}" != "bookworm" && "${os_version}" != "12" && "${os_version}" != 12.* ]]; then
   die "expected Debian Bookworm/12; found VERSION_ID=${os_version:-unknown} VERSION_CODENAME=${os_codename:-unknown}"
+fi
+}
+validate_platform
+
+if [[ "$profile" == orangepi5plus-ubuntu26.04 ]]; then
+  # Check the separately built interpreter before apt or the fresh installer.
+  # Never redirect /usr/bin/python3 or admit an arbitrary interpreter path.
+  /usr/bin/python3 - <<'CF_RUNTIME_PY'
+import os, stat, subprocess
+from pathlib import Path
+p = Path('/opt/lantern-python/3.11.16/bin/python3.11')
+for component in (p, *p.parents):
+    s = component.lstat()
+    if stat.S_ISLNK(s.st_mode) or s.st_uid != 0 or s.st_mode & 0o022:
+        raise SystemExit('C–F runtime must have root-owned, non-writable, unlinked components')
+subprocess.run([str(p), '-I', '-c',
+    'import sys,ssl,sqlite3,ctypes,bz2,lzma,zlib,venv,ensurepip; '
+    'assert sys.version_info[:3] == (3,11,16); '
+    'assert ssl.create_default_context().get_ca_certs()'], check=True, timeout=20)
+if Path('/opt/lantern-python/3.11.16/bin/python3').resolve() != p:
+    raise SystemExit('unexpected C–F python3 executable')
+CF_RUNTIME_PY
+  export PATH="/opt/lantern-python/3.11.16/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 fi
 
 printf 'Platform: %s; OS: %s; architecture: %s\n' \
@@ -108,7 +145,7 @@ printf 'Platform: %s; OS: %s; architecture: %s\n' \
 if [[ -r /proc/device-tree/model ]]; then
   board_model="$(tr -d '\000' </proc/device-tree/model)"
   printf 'Board: %s\n' "${board_model}"
-  if [[ "${board_model,,}" != *"rock 5b"* ]]; then
+  if [[ "$profile" == debian12 && "${board_model,,}" != *"rock 5b"* ]]; then
     printf 'WARNING: device-tree model does not identify a ROCK 5B/5B+: %s\n' "${board_model}" >&2
   fi
 else
