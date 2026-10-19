@@ -3,6 +3,42 @@
 This is the current handoff for a fresh session. The SAGE task index points
 here for detail; it does not replace the individual task records.
 
+## Pick up here
+
+The public surface is now in place. `l33tdawg/sage-lantern` is public, with the
+README header, Foundation mission, project-family table, hardware/build/boot
+docs, maps catalog and release assets. The profile README and the GitHub Pages
+hub both link to this repository. The product repo links to `lantern-3b` and the
+model repo links back.
+
+The open PR stack is stale and needs one decision before it can move:
+
+- PR 3, `codex/transport-qualification-20261014`, contains PR 1 and is the only
+  live branch. PR 1 and PR 2 are superseded by it.
+- PR 3 is 152 commits behind main and conflicts on 28 files. A test merge in a
+  temporary worktree resolved the file conflicts and reached 112 passing tests,
+  then stopped on a real semantic conflict: PR 3's `verified_epoch` probes fresh
+  on every call, while main's replay-window regression test expects one
+  snapshot and one vault check per window.
+- Decide whether main keeps the cached per-window contract or PR 3's
+  fresh-probe contract wins and the regression guard is updated. Do not merge
+  PR 3 until that is settled. No merge was pushed.
+
+Hardware and device waits:
+
+- The product radio baseline is one LoRa radio per unit. Meshticulum carries
+  messages and resource transfers over that single half-duplex radio. Extra
+  radios are bench comparison inventory only.
+- Flint has the open questions on the correct DSI panel adapter, the physical
+  Orange Pi count and the 30-to-22 IMX519 CSI adapter.
+- The GNSS antenna is still disconnected. No fix exists. The physical panel,
+  touch, CEREBRUM, Sky View and sleep/wake checks still need a person at C.
+
+The settlement-owner source milestone is complete in
+`software/security/desktop_loader_candidate/`. Next is wiring it into the actual
+launch authority and repeating the native fault replay on C. Nothing is
+installed or accepted.
+
 ## Unit C is live
 
 | Service | State |
@@ -189,13 +225,18 @@ labels or a different base, not more self-generated pairs.
 
 ## Next order
 
-1. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
+1. Decide the `verified_epoch` contract, then close PR 1 and PR 2 as superseded
+   and finish or abandon the PR 3 rebase.
+2. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
-   Return to Portrait.
-2. Connect the GNSS antenna for the live-fix and physical panel acceptance
-   pass. Run one install from physical SD/USB media when a card is available.
-3. Continue C-native and conversation-product acceptance.
-4. Resume weights only with independent preference labels or a different base.
+   Return to Portrait. Run one physical SD/USB map install when a card is
+   available.
+3. Wire the settlement owner into the native launch authority and repeat the
+   native fault replay on C.
+4. Resolve the panel/CSI adapters and physical board count with Flint; bring up
+   one G/H unit.
+5. Continue conversation-product acceptance.
+6. Resume weights only with independent preference labels or a different base.
 
 ## Guardrails
 
