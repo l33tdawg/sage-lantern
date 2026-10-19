@@ -45,8 +45,11 @@ panel/touch/thermal acceptance. The two ROCK 5B 8 GB boards remain the A/B
 Meshticulum relay units. D-028 records this. The four AC005 adapters already
 ordered are exactly right; remaining ROCK-unit gaps are two 16 GB boards,
 two coolers, two more DSI panels (four total), four **256 GB** NVMe drives and
-four IMX415 cameras. LoRa HAT procurement is deferred — spare HATs are in hand
-and they are cheap/readily available later. Flint is checking whether the
+four **16 MP AF IMX519 cameras** (owner label `IMX519-7B`; IMX519-78 family).
+The IMX519 is a Pi libcamera module; the ROCK 5B+ has no official driver/overlay
+and needs a CSI adapter plus a driver port. IMX415 remains the supported
+alternative if we switch. LoRa HAT procurement is deferred — spare HATs are in
+hand and they are cheap/readily available later. Flint is checking whether the
 camera order was already placed.
 
 - The product radio baseline is one LoRa radio per unit. Meshticulum carries
@@ -131,9 +134,16 @@ Hardware reconciliation on 19 October found two adapter problems:
 `hardware/RECONCILIATION_20261019.md`. Radxa's 5B/5B+ interface page lists 41
 numbered DSI positions while the 8HD accessory page specifies a 39-pin
 board-side cable. AC012 is 39-to-40 for the Radxa 8HD, not for the Waveshare
-22-pin panel. The correct panel adapter is unresolved. The Orange Pi 5 Plus CSI
-connector is a 30-pin mezzanine and the IMX519 is a 22-pin camera, so it needs a
-30-to-22 adapter with I2C level shifting. Unit C is confirmed as an Orange Pi 5
+22-pin panel. The correct panel adapter is **AC005** (39P 0.3 mm to 15P
+1.0 mm). Camera update (19 October): the owner identifies the module as a
+**16 MP autofocus IMX519** (label `IMX519-7B`; Waveshare `IMX519-78` family),
+not the Radxa IMX415. It is a Pi libcamera module; the ROCK 5B+ has no official
+in-tree IMX519 driver/overlay, and Arducam's community reports the 5B+ path is
+not supported by the existing overlays. Plan on a driver/overlay port plus a
+CSI adapter; IMX415 remains the low-risk supported alternative. The Orange Pi
+5 Plus CSI connector is a 30-pin mezzanine and the IMX519 is a 22-pin camera,
+so C-F also need a 30-to-22 adapter with I2C level shifting. Unit C is
+confirmed as an Orange Pi 5
 Plus with 8 cores, 15 GiB, a Netac 256 GB NVMe, USB audio, a C270 and an open
 GNSS receiver.
 
@@ -253,8 +263,8 @@ requests, 0 task notices and 0 unfinished claims; reply watermark
   SAGE, ASR/voice, router and streaming acceptance remain.
 - **7c72ccdf** — Mail/domain: owner password-manager, contact, redirect and
   Cloudflare decisions remain.
-- **92680e1c** — G/H hardware: panel adapter, 5V lead, IMX415 modules and
-  connector checks remain.
+- **92680e1c** — G/H hardware: AC005/panel path, 5V lead, and the IMX519-7B
+  camera driver/adapter port remain; IMX415 is the supported alternative.
 - **178dfca7** — Public knowledge plane: OPEN-COM-003 export schema, public
   domain/cache and content scale remain.
 - **30741772** — Trust root: signed root-update channel and rotation drill.

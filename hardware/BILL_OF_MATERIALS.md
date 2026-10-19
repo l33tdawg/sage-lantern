@@ -52,7 +52,8 @@ LoRa HAT procurement is deferred — spare HATs are in hand.
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
-| 4 | 16 MP IMX519 camera module | Bought, last recorded in transit | The Orange Pi CSI connector is a 30-pin mezzanine, and IMX519 is a 22-pin camera. A 30-to-22 adapter with I2C level shifting is required. Receipt and integration are unknown. |
+| 4 | Waveshare 16 MP AF IMX519 camera (owner label `IMX519-7B`; `IMX519-78` family) | Bought, last recorded in transit | IMX519 is a Raspberry Pi libcamera module. The ROCK 5B+ has no official in-kernel driver/overlay; a CSI adapter and a driver/overlay port are required. This is not the Radxa IMX415. Receipt and capture are unknown. |
+| 4 | Radxa Camera 4K, IMX415 | Alternative, not ordered | Radxa-supported camera path on the ROCK 5B+; keep as the low-risk fallback if the IMX519 port stalls. |
 | 1 per G/H unit | Radxa Camera 4K, IMX415 | Selected | Conditional on a real ROCK 5B+ bring-up. Quantity ordered or received is unknown. |
 
 A selected camera or a kernel overlay reference is not proof of capture.

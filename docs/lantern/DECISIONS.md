@@ -653,6 +653,16 @@ re-opens before any enclosure cut.
 [HARDWARE_BOM.md](HARDWARE_BOM.md), the G/H hardware task, and the hardware
 workstream via Flint.
 
+**Amendment 2026-10-19 (owner):** the camera in hand/ordered is a **16 MP
+autofocus IMX519 module** (owner label `IMX519-7B`; Waveshare lists the
+`IMX519-78 16MP AF` in the same family), not the Radxa Camera 4K IMX415. The
+IMX519 is a Raspberry Pi libcamera camera: the ROCK 5B+ has no official
+in-kernel IMX519 driver/overlay, and Arducam's community reports the 5B+ path
+is not supported by the existing overlays. Treat the ROCK camera path as a
+driver + CSI adapter porting task. The IMX415 remains the low-risk
+Radxa-supported alternative. Do not claim camera acceptance for either until
+capture is proven on a physical 5B+.
+
 ## D-022 — Docked desktop requires a login
 
 **Decision (owner, 2026-10-01):** entering the landscape desk mode **requires
