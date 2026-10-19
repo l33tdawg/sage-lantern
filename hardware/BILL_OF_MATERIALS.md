@@ -24,8 +24,8 @@ and **unknown** means the records do not settle it.
 
 The main fleet is therefore **4 x ROCK 5B+ (2 x 12 GB + 2 x 16 GB) plus
 2 x Orange Pi bench units**; the two ROCK 5B 8 GB boards remain the A/B
-Meshticulum relay units. The remaining gap list (16 GB boards, coolers,
-panels, 256 GB NVMe and cameras) is in
+Meshticulum relay units. The remaining gap list (16 GB boards, DSI panels and
+256 GB NVMe) is in
 [`SESSION_HANDOFF_20261019.md`](../docs/lantern/SESSION_HANDOFF_20261019.md).
 LoRa HAT procurement is deferred — spare HATs are in hand.
 
@@ -77,7 +77,7 @@ describe the old bezel chamber as fitted hardware.
 | Product power | External USB-C, bring your own | Direction | The Orange Pi needs a fixed 5 V at 4 A or more. No battery or charge pigtail ships. |
 | 3 | Fixed 5 V bench adapter for C-F | Paid and ordered, last state To Ship | Two are WNB-0504000 5 V/4 A. The third model needs confirmation. Receipt and load tests are unknown. |
 | 4 | Nitecore NB10000 Gen 2 | Historical bench stock | 5 V/3 A, external only. Not a qualified 20 W product supply. |
-| 2 | Radxa heatsink 6240B, MPN AE013B | Ordered 9 October | Delivered revision and mounted thermal clearance are unknown. |
+| 4 | Radxa heatsink 6240B, MPN AE013B | 2 ordered 9 October; 2 more ordered from RS Malaysia 19 October (MYR56.92) | Delivered revision and mounted thermal clearance are unknown. |
 | 4 | Aluminium case and 30 mm fan kit | Receipt-confirmed stock | Compatibility with the later housing revision must be checked. |
 | 4 | Netac 256 GB NVMe, M.2 2280 | Owned | C-F storage. Exact series and installed state are unknown. |
 | 2 | Netac 512 GB NVMe, M.2 2280 | Owned | A/B bench inventory. |

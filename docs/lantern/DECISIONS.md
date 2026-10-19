@@ -871,9 +871,10 @@ programme. Buying four 16 GB boards is unnecessary for this fleet.
 
 **Consequence:** Order **two** 16 GB boards, not four. The four AC005 adapters
 already ordered are exactly right for four ROCK units; only two more DSI panels
-are needed (four total), plus two coolers, four **256 GB** NVMe drives and four
-IMX415 cameras for the ROCK units. LoRa HAT procurement is deferred: the owner
-has spare HATs in hand and they are cheap/readily available later. The 12 GB
+are needed (four total), plus two coolers (ordered from RS on 19 October),
+four **256 GB** NVMe drives and four IMX415 cameras for the ROCK units. LoRa
+HAT procurement is deferred: the owner has spare HATs in hand and they are
+cheap/readily available later. The 12 GB
 pair stays labelled as the floor-spec regression pair. Orange Pi panel/camera
 results remain bench evidence only. The product platform remains ROCK; the
 January bake-off is no longer a product-platform decision.

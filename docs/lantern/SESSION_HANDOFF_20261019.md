@@ -43,8 +43,10 @@ not a requirement. The Orange Pi units no longer need internal DSI/CSI
 routing, internal 5 V panel power, final enclosure fit or final
 panel/touch/thermal acceptance. The two ROCK 5B 8 GB boards remain the A/B
 Meshticulum relay units. D-028 records this. The four AC005 adapters already
-ordered are exactly right; remaining ROCK-unit gaps are two 16 GB boards,
-two coolers, two more DSI panels (four total) and four **256 GB** NVMe drives.
+ordered are exactly right. The two extra 6240B coolers were ordered from RS
+Malaysia on 19 October (MYR56.92); the RS order with the four AC005 totals
+MYR95.32. Remaining ROCK-unit gaps are two 16 GB boards, two more DSI panels
+(four total) and four **256 GB** NVMe drives.
 The owner ordered four **Radxa Camera 4K IMX415** modules from Arace at RM205
 each (RM820 subtotal) and confirmed the order on 19 October. The IMX519-7B
 modules remain bench/experimental only. LoRa HAT procurement is deferred —
@@ -262,8 +264,9 @@ requests, 0 task notices and 0 unfinished claims; reply watermark
   SAGE, ASR/voice, router and streaming acceptance remain.
 - **7c72ccdf** — Mail/domain: owner password-manager, contact, redirect and
   Cloudflare decisions remain.
-- **92680e1c** — G/H hardware: AC005/panel path, 5V lead, and the four IMX415
-  cameras ordered from Arace; IMX519-7B is bench-only.
+- **92680e1c** — G/H hardware: AC005 and coolers ordered from RS, four IMX415
+  cameras ordered from Arace; DSI panel path and 16 GB boards remain;
+  IMX519-7B is bench-only.
 - **178dfca7** — Public knowledge plane: OPEN-COM-003 export schema, public
   domain/cache and content scale remain.
 - **30741772** — Trust root: signed root-update channel and rotation drill.
