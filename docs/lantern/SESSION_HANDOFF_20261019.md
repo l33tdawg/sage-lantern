@@ -35,6 +35,11 @@ SHA-256 `bc65fdec…`. The pack manager selected it for a Kuala Lumpur view and
 the page rendered at 1560×720 on C. Penang remains the preferred pack when the
 view is inside its smaller bbox.
 
+The **Klang Valley metro pack** is built and installed: z0–13, 282 planned
+tiles, 10,755,117 bytes, SHA-256 `a87385b5…`. A Kuala Lumpur view at z12
+selected Klang Valley over Malaysia and rendered street detail. Unit C's map
+directory now holds three packs totalling 31 MB.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.
@@ -116,8 +121,8 @@ labels or a different base, not more self-generated pairs.
 1. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait.
-2. Build the Klang Valley metro pack (z13/14) and the Singapore/Johor pair
-   through the installed pack manager; then rehearse an SD/USB sideload.
+2. Build the Singapore/Johor pair through the installed pack manager, then
+   rehearse an SD/USB sideload on C.
 3. Continue C-native and conversation-product acceptance.
 4. Resume weights only with independent preference labels or a different base.
 

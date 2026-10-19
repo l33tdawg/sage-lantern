@@ -30,6 +30,7 @@ world view independent of the regional pack's bbox.
 | Penang | `100.20,5.20,100.50,5.50` | 0–13 | 2,766,338 | 90 |
 | Malaysia | `99.6,0.85,119.3,7.4` | 0–11 | 18,793,137 | 5,970 |
 | Malaysia | `99.6,0.85,119.3,7.4` | 0–12 | 44,260,241 | 21,023 |
+| Klang Valley | `101.30,2.90,101.90,3.50` | 0–13 | 10,755,117 | 282 |
 | World base | global | 0–6 | about 425,000 | n/a (GeoJSON) |
 
 The z0–11 Malaysia build is the country-tier pack: 18.8 MB for 5,970 tiles,
@@ -54,8 +55,8 @@ plausibly ask for:
 1. **Malaysia** — country tier, z0–11. Build from the current Geofabrik
    Malaysia–Singapore–Brunei extract. Built and installed 19 October 2026.
 2. **Penang** — metro tier, z0–13. Already built and installed.
-3. **Klang Valley** — metro tier, z0–13/14 (Kuala Lumpur, Putrajaya, Selangor
-   core).
+3. **Klang Valley** — metro tier, z0–13 (Kuala Lumpur, Putrajaya, Selangor
+   core). Built and installed 19 October 2026.
 4. **Singapore** — country/city tier, z0–12, so the Johor crossing has context
    on both sides.
 5. **Johor Bahru** — metro tier, z0–13, paired with Singapore.
