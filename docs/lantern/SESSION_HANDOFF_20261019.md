@@ -67,6 +67,24 @@ the firmer bezel 199/199, and the back cover 89/89; the V2 collar and gasket
 trials are still open. C-F Orange Pi physical count needs reconciliation, and
 the G/H boards were owner-reported arrived by 9 October but are not brought up.
 
+Hardware reconciliation on 19 October found two adapter problems:
+`hardware/RECONCILIATION_20261019.md`. Radxa's 5B/5B+ interface page lists 41
+numbered DSI positions while the 8HD accessory page specifies a 39-pin
+board-side cable. AC012 is 39-to-40 for the Radxa 8HD, not for the Waveshare
+22-pin panel. The correct panel adapter is unresolved. The Orange Pi 5 Plus CSI
+connector is a 30-pin mezzanine and the IMX519 is a 22-pin camera, so it needs a
+30-to-22 adapter with I2C level shifting. Unit C is confirmed as an Orange Pi 5
+Plus with 8 cores, 15 GiB, a Netac 256 GB NVMe, USB audio, a C270 and an open
+GNSS receiver.
+
+C-native: the disabled settlement contract is now in
+`software/security/desktop_loader_candidate/lifecycle_settlement.py`, with
+11 source tests. It binds settlement to the launch UUID and exact owned
+resources, requires a terminal pidfd or child observation, and returns
+`uncertain` for missing, extra, non-terminal or digest-mismatched evidence.
+Nothing is installed on C. The native owner, durable store, real probes and
+fault replays remain open.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.

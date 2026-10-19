@@ -27,7 +27,7 @@ and **unknown** means the records do not settle it.
 |---:|---|---|---|
 | 4 | Waveshare 6.25-inch HDMI capacitive touch panel, 720x1560, SKU 26757 | In hand | The C-F bench panel. It is not the final product panel. |
 | 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | Ordered | G/H panel. Last merchant state was awaiting shipment on 30 September. Arrival and working display are unknown. |
-| 2 | Radxa FPC adapter cable AC012 | Identified | Purchase and receipt are not established. |
+| 2 | Radxa FPC adapter cable AC012 | Identified, likely wrong for this panel | AC012 is a 39-pin to 40-pin cable for the Radxa Display 8 HD. The Waveshare 6.25-inch DSI panel is 22-pin or 15-pin. The correct adapter is unresolved. |
 | 2 | 15-pin 1.0 mm FPC and PH2.0 four-pin power lead, about 200 mm | Part of the panel package | The recorded plan uses the AC012 DSI path and the included lead to header 5 V/GND. This is a proposed route, not a proven harness. |
 
 ## Radio and GNSS
@@ -44,7 +44,7 @@ and **unknown** means the records do not settle it.
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
-| 4 | 16 MP IMX519 camera module | Bought, last recorded in transit | The Orange Pi CSI path is unverified. Receipt and working integration are unknown. |
+| 4 | 16 MP IMX519 camera module | Bought, last recorded in transit | The Orange Pi CSI connector is a 30-pin mezzanine, and IMX519 is a 22-pin camera. A 30-to-22 adapter with I2C level shifting is required. Receipt and integration are unknown. |
 | 1 per G/H unit | Radxa Camera 4K, IMX415 | Selected | Conditional on a real ROCK 5B+ bring-up. Quantity ordered or received is unknown. |
 
 A selected camera or a kernel overlay reference is not proof of capture.
