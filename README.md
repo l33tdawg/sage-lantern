@@ -61,7 +61,8 @@ SAGE Foundation is an initiative in formation. It exists to steward the
 mission, not to own the commons: it holds releases, the signing trust root and
 public reporting, and it is designed to hand them on. It is not a registered
 entity, holds no funds on anyone's behalf, and this site does not take payments
-or device orders.
+or device orders. It does not hold private knowledge, the commons itself or the
+MeshCore standard; each shared item records its own licence.
 
 The mission is to democratise intelligence: help people learn, create and solve
 problems regardless of income or connectivity. That means local AI that works
@@ -70,11 +71,13 @@ during outages, and a public knowledge commons built from deliberate, reviewed
 contributions. Private knowledge stays on the owner's device unless they choose
 to share it.
 
-Read more at [sage-foundation.net](https://sage-foundation.net/), the
-[Foundation page](https://sage-foundation.net/foundation/),
-[SAGE Commons](https://sage-foundation.net/commons/) or
-[Lantern hardware](https://sage-foundation.net/hardware/). To talk about the
-mission, a build or a community pilot, write to
+Read more at [sage-foundation.net](https://sage-foundation.net/). The
+[Foundation page](https://sage-foundation.net/foundation/#limits) sets out what
+it holds and what it does not, with the
+[ownership table](https://sage-foundation.net/foundation/#ownership) beside it.
+[SAGE Commons](https://sage-foundation.net/commons/) explains how the parts fit,
+and [Lantern hardware](https://sage-foundation.net/hardware/) covers the device
+programme. To talk about the mission, a build or a community pilot, write to
 [dhillon@sage.ngo](mailto:dhillon@sage.ngo).
 
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
