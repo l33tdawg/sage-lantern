@@ -40,6 +40,8 @@ running the 3B chat model in production; the 2B remains its rollback.
 
 Lantern consumes the SAGE SDK and Meshticulum. Neither depends on Lantern. The
 model weights live in [lantern-3b](https://github.com/l33tdawg/lantern-3b).
+See [project family and repository boundaries](docs/PROJECT_FAMILY.md) for the
+ownership detail.
 
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
 physical hold-to-talk control, an outward camera for visual questions and a

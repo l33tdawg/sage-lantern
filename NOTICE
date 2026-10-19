@@ -9,3 +9,14 @@ artifacts retain their respective upstream licences. Their inclusion in a build,
 bundle or distribution pack does not relicense them under Apache-2.0. Release
 artifacts MUST include the generated attribution and licence inventory described
 in docs/OPEN_SOURCE_POLICY.md.
+
+Map data and map packs
+
+Map data © OpenStreetMap contributors, available under the Open Database
+License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/
+
+Vector tiles are produced with OpenMapTiles, © OpenMapTiles, CC-BY 4.0.
+The world overview uses Natural Earth 1:110m, which is public domain.
+
+Map packs under maps/ and the maps-* releases are separate data distributions
+under those terms. The Apache-2.0 licence above does not replace them.

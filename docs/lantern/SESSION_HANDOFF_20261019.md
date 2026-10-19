@@ -149,7 +149,7 @@ labels or a different base, not more self-generated pairs.
 - Never expose gpsd or the map server on the LAN; both are loopback-only.
 - Never return coordinates without a fresh mode 2/3 fix; no replay/no-fix
   position claims.
-- Keep the `sage-lantern` monorepo private; the model-only repo is the public
-  boundary.
+- The public `sage-lantern` repository is now the product's public boundary.
+  Keep owner credentials, private notes and internal-only material out of it.
 - Do not deploy a model adapter unless it clears the open panel and the full
   168-prompt regression.
