@@ -52,9 +52,8 @@ LoRa HAT procurement is deferred — spare HATs are in hand.
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
-| 4 | Waveshare 16 MP AF IMX519 camera (owner label `IMX519-7B`; `IMX519-78` family) | Bought, last recorded in transit | IMX519 is a Raspberry Pi libcamera module. The ROCK 5B+ has no official in-kernel driver/overlay; a CSI adapter and a driver/overlay port are required. This is not the Radxa IMX415. Receipt and capture are unknown. |
-| 4 | Radxa Camera 4K, IMX415 | Alternative, not ordered | Radxa-supported camera path on the ROCK 5B+; keep as the low-risk fallback if the IMX519 port stalls. |
-| 1 per G/H unit | Radxa Camera 4K, IMX415 | Selected | Conditional on a real ROCK 5B+ bring-up. Quantity ordered or received is unknown. |
+| 4 | Waveshare 16 MP AF IMX519 camera (owner label `IMX519-7B`; `IMX519-78` family) | Bought, last recorded in transit | Bench/experimental only. IMX519 is a Raspberry Pi libcamera module; the ROCK 5B+ has no official driver/overlay. Not the product camera. |
+| 4 | Radxa Camera 4K, IMX415 (SKU AS001) | 4 in Arace cart, RM205 each / RM820 subtotal; checkout pending | Radxa-supported product camera path on the ROCK 5B+; owner directed this for the four ROCK units on 19 October. |
 
 A selected camera or a kernel overlay reference is not proof of capture.
 

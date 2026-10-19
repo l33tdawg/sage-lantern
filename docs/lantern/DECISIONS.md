@@ -663,6 +663,13 @@ driver + CSI adapter porting task. The IMX415 remains the low-risk
 Radxa-supported alternative. Do not claim camera acceptance for either until
 capture is proven on a physical 5B+.
 
+**Amendment 2026-10-19 (later, owner):** after reviewing the IMX519 porting
+risk, the owner directed the four ROCK units to use the **Radxa Camera 4K
+(IMX415)**. Four modules are in the Arace cart at RM205 each (RM820 subtotal),
+checkout pending. The IMX519-7B modules remain bench/experimental and are not
+the product camera. This restores the original IMX415 product path; the
+IMX519 driver port is no longer on the critical path.
+
 ## D-022 — Docked desktop requires a login
 
 **Decision (owner, 2026-10-01):** entering the landscape desk mode **requires
