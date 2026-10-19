@@ -170,7 +170,10 @@ helix, place C with sky view, unlock the `sage` session on tty2, then check
 the 1560x720 landscape panel at all four corners and centre, Back/drawer,
 CEREBRUM, Maps, GNSS Sky View, Return to Portrait/D-022, and one sleep/wake
 and reboot cycle. The compositor currently sits at the GDM greeter on tty1;
-the `sage` Wayland session on tty2 is online but inactive.
+the `sage` Wayland session on tty2 is online but inactive. Every DRM
+connector now reports disconnected (`card0-HDMI-A-1`, `card0-HDMI-A-2` and
+`card0-DP-1`), so the panel must be physically attached and powered before
+acceptance can start.
 
 ## Map shipping design
 
