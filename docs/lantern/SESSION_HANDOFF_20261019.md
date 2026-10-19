@@ -251,10 +251,12 @@ labels or a different base, not more self-generated pairs.
 
 ## Task board
 
-14 assigned open tasks remain: one index record, **267c5475** (replacing
-14fab869), and 13 engineering workstreams. The inbox is clear — 0 pending
-requests, 0 task notices and 0 unfinished claims; reply watermark
-`2026-10-19T01:38:14.498Z`.
+14 assigned open tasks remain: one index record, **f96255e5** (replacing
+71276d72), and 13 engineering workstreams. **bc68398e** replaces the stale
+G/H hardware task 92680e1c. The inbox is clear — 0 pending requests, 0 task
+notices and 0 unfinished claims; last checked `2026-10-19T12:40:46Z`, reply
+watermark `2026-10-19T01:38:14.498Z`. Flint has the final procurement state
+as `msg-fcd279b3`.
 
 - **4c25d4a3** — Lantern/SAGE desktop mode: physical panel, touch, CEREBRUM
   and landscape acceptance still open.
@@ -269,9 +271,10 @@ requests, 0 task notices and 0 unfinished claims; reply watermark
   SAGE, ASR/voice, router and streaming acceptance remain.
 - **7c72ccdf** — Mail/domain: owner password-manager, contact, redirect and
   Cloudflare decisions remain.
-- **92680e1c** — G/H hardware: AC005 and coolers ordered from RS, four IMX415
-  cameras ordered from Arace; DSI panel path and 16 GB boards remain;
-  IMX519-7B is bench-only.
+- **bc68398e** — ROCK 5B+ fleet bring-up: 2 × 16 GB boards (RS 1000144782,
+  ETA 23 Oct) and 2 × 6.25" panels (Waveshare 261019-122830-E0) ordered;
+  AC005, coolers and four IMX415 cameras in; NVMe spares in hand. Build,
+  DSI overlay, camera, thermal and physical acceptance remain.
 - **178dfca7** — Public knowledge plane: OPEN-COM-003 export schema, public
   domain/cache and content scale remain.
 - **30741772** — Trust root: signed root-update channel and rotation drill.
