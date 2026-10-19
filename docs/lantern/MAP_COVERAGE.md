@@ -130,8 +130,9 @@ Transport choice matters more than the catalog format:
 - **Removable media** carries the same pair when the unit is offline.
 - **Meshticulum** can route the transfer through a node with an uplink, so the
   bytes take an IP path. The catalog itself is small enough for a radio link.
-  An RF-only hop is the last resort: at the measured 2 kB/s, a 10 MB pack takes
-  about 90 minutes and has to be scheduled around other traffic.
+  An RF-only hop is the last resort. Around 90 minutes for a 10 MB pack is a
+  planning extrapolation from the measured 2 kB/s, not an accepted map-transfer
+  result, and it has to be scheduled around other traffic.
 
 The catalog and manifests are not signed yet. The SHA-256 check catches
 corruption and a swapped asset; it does not establish who published it. Signed

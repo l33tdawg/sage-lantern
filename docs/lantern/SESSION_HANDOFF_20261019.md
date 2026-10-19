@@ -57,6 +57,16 @@ installs a pack. The catalog is small enough to advertise over a radio link;
 the bytes should take HTTPS, a LAN peer or removable media. A Meshticulum node
 with an uplink can carry the transfer over IP.
 
+Public documentation added on 19 October: `hardware/` (overview, BOM and the
+STL folder), `docs/build/` (build, assembly and software), `docs/boot/` (boot,
+first boot and recovery), `docs/index.md`, and `assets/` for the README
+visuals. Wick reviewed the map copy: use "Lantern Offline Maps", decimal MB,
+bounding-box coverage, checksum not signature, and HTTPS/LAN/USB before radio.
+Flint supplied the current hardware state: the ROCK 5B+ tub finished 263/263,
+the firmer bezel 199/199, and the back cover 89/89; the V2 collar and gasket
+trials are still open. C-F Orange Pi physical count needs reconciliation, and
+the G/H boards were owner-reported arrived by 9 October but are not brought up.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.

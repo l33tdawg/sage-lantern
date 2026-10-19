@@ -1,77 +1,108 @@
 # Lantern bill of materials
 
-This is a public summary, not a purchasing list. The hardware workstream holds
-the live C-F BOM and build status. Prices and supplier details are left out
-unless they are already public.
+This is the public status summary as of 19 October 2026. It comes from the
+hardware workstream's build records. Those records are more recent than
+[`HARDWARE_BOM.md`](../docs/lantern/HARDWARE_BOM.md), which remains the A/B
+bring-up history.
 
-Status terms: **owned** means already in hand, **bought** means paid for but not
-necessarily inspected, **decided** means the choice is made but the part may
-not be ordered, **pending** means still unresolved, and **unverified** means the
-part is present but has not passed its test.
+No prices, supplier contacts or order-account details are published. A status
+of "arrived" means the owner reported arrival; it is not an electrical or
+mechanical qualification.
 
-## A and B: Lamplighter units
+Status terms: **owned** means in hand, **ordered** means paid but not confirmed
+received, **selected** means the choice is made but purchasing is not confirmed,
+and **unknown** means the records do not settle it.
 
-| Qty | Part | Status | Notes |
-|---:|---|---|---|
-| 2 | Radxa ROCK 5B, 8 GB | Owned, unverified in this record | Base model, not the 5B+. |
-| 2 | Radxa Heatsink 6240B V2.0 | Owned, unverified | Confirm the V2.0 marking and fit. |
-| 2 | Netac 512 GB M.2 2280 NVMe | Owned, unverified | Record the exact model and firmware at bring-up. |
-| 2 | Lenovo-compatible 65 W USB-C PD supply | Owned, unverified | Bench power only. |
-| 2 | UGREEN 130 W, 20,000 mAh USB-C power bank | Owned, unverified | Bench power only. |
-| 2 | Waveshare ESP32-S3-AUDIO-Board | Ordered, receipt not confirmed in the dated BOM | Dual microphone, AEC and speaker frontend. |
-| 2 | Waveshare 3.5-inch HDMI LCD (E) | Owned, unverified | Dashboard screen. |
-| 2 | Waveshare USB 3.2 Gen1 HUB HAT | Owned, unverified | Used as a cabled hub, not a Pi header stack. |
-| 2 | Heltec WiFi LoRa 32 V4, ESP32-S3 and SX1262 | Owned, unverified | Single LoRa companion. Record the regional variant. |
-| 2 | 16 mm momentary PTT button | Ordered, receipt not confirmed | Validate the action and wiring. |
-| 2 | KY-040 rotary encoder | Ordered, receipt not confirmed | Final wheel may be printed. |
-| 1 | Logitech C270 camera | Owned, single-frame capture tested | Prototype camera for Unit A. |
-| assorted | Dupont leads, 6-pin cables, USB-A to USB-C data cables | Owned, unverified | Confirm data capability, not just charging. |
-
-The A/B order history and receipt procedure remain in
-[`HARDWARE_BOM.md`](../docs/lantern/HARDWARE_BOM.md).
-
-## C, D, E and F: user Lanterns
+## Compute
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
-| 4 | Orange Pi 5 Plus, 16 GB | Bought | 256 GB NVMe per unit. |
-| 4 | 256 GB NVMe | Bought | Exact model to be recorded per unit. |
-| 4 | Waveshare 6.25-inch 720x1560 HDMI panel with USB touch | Bought | Bench panel, not the final product panel. |
-| 4 | Waveshare SX1262 LoRaWAN/GNSS HAT | Bought | Carries the L76K GNSS receiver. |
-| 4 | GNSS antenna | Bought | Connected on C. The antenna is open and there is no fix yet. |
-| 4 | LoRa antenna, 915 MHz | Bought | Confirm the regional band per unit. |
-| 3 | Display or panel adapters | Bought, unverified | Three units were bought. A meter test is required before C runs heavy model loads. |
-| 4 | IMX519 camera module | Ordered, not qualified | The Orange Pi CSI path is unverified. A USB camera remains the working prototype path. Final C-F camera choice is open. |
-| 4 | Fixed 5 V/4 A power path | Pending per unit | Fixed supply, PD trigger with buck, or bench supply. |
-| 4 | Audio capture path | Installed on C | ES8388 platform codec. Physical quiet and noisy capture acceptance remains open. |
+| 2 | Radxa ROCK 5B, 8 GB | Owned | The A/B test boards. The earlier note that A/B were Orange Pi was corrected. |
+| 4 | Orange Pi 5 Plus, 16 GB | Planned | Two extra boards were ordered in September, but the records conflate the original pair with A/B. Count the physical boards before describing four as received. |
+| 2 | Radxa ROCK 5B+, 12 GB | Ordered 30 September, owner-reported arrived by 9 October | Electrical bring-up and qualification are not established. |
 
-The panel and camera research, including the connector problem, is in
-[`CF_INTERNAL_PANEL_CAMERA_RESEARCH.md`](../docs/lantern/CF_INTERNAL_PANEL_CAMERA_RESEARCH.md).
-
-## G and H: ROCK 5B+ units
+## Display
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
-| 2 | Radxa ROCK 5B+ 12 GB | Bought | Amazon order, owner completed. Build not started. |
-| 2 | 6.25-inch 720x1560 panel | Decided | Retained from the earlier panel choice. |
-| 2 | IMX415 camera | Decided, not confirmed bought | FPC and adapter path pending. |
-| 2 | Panel adapter FPC | Pending | Connector pitch and pin count to be confirmed on the physical board. |
-| 2 | Panel 5 V lead | Pending | Internal regulator path. |
-| 2 | Camera FPC and adapter | Pending | Confirm against the ROCK 5B+ CSI path. |
+| 4 | Waveshare 6.25-inch HDMI capacitive touch panel, 720x1560, SKU 26757 | In hand | The C-F bench panel. It is not the final product panel. |
+| 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | Ordered | G/H panel. Last merchant state was awaiting shipment on 30 September. Arrival and working display are unknown. |
+| 2 | Radxa FPC adapter cable AC012 | Identified | Purchase and receipt are not established. |
+| 2 | 15-pin 1.0 mm FPC and PH2.0 four-pin power lead, about 200 mm | Part of the panel package | The recorded plan uses the AC012 DSI path and the included lead to header 5 V/GND. This is a proposed route, not a proven harness. |
 
-The G/H power path can use a common USB-C PD charger. That is the reason the
-ROCK board was chosen for those units.
+## Radio and GNSS
 
-## Still missing or unconfirmed
+| Qty | Part | Status | Notes |
+|---:|---|---|---|
+| 4 | Waveshare SX1262 LoRaWAN HAT, 915 MHz and GNSS, SKU 24654 | In hand | Count and unit assignment still want a bench check. |
+| 6 | Seeed XIAO ESP32S3 with Wio-SX1262 Meshtastic kit, MPN 102010611 | Ordered | Covers C-H. Receipt, flashing and in-shell RF qualification are unknown. |
+| 2 | Heltec LoRa 32 V4 bench modules | Owned | Older bench inventory. The six-unit Heltec order was cancelled. Do not treat the Heltec pin map as qualified for the XIAO. |
+| 4 | 915 MHz SMA-male whip antenna | Owned | Confirm fit and connector reach. |
+| 1 | TAN1216Q23 GNSS SMA-male helix antenna | Owned | Three more GNSS antennas are unresolved. Active, passive and bias matching still needs confirmation. |
 
-- A current, complete C-F BOM from the hardware workstream, including exact
-  SKUs and quantities for adapters and cameras.
-- The final enclosure parts, fasteners and print files.
-- Meter results for the C-F power adapters.
-- Physical connector confirmation for the panel and camera on each board
-  revision.
-- A real GNSS fix and antenna qualification.
+## Camera
 
-Do not treat this table as a final purchasing decision. When the live BOM
-arrives, it replaces this summary rather than sitting beside it as a second
-source of truth.
+| Qty | Part | Status | Notes |
+|---:|---|---|---|
+| 4 | 16 MP IMX519 camera module | Bought, last recorded in transit | The Orange Pi CSI path is unverified. Receipt and working integration are unknown. |
+| 1 per G/H unit | Radxa Camera 4K, IMX415 | Selected | Conditional on a real ROCK 5B+ bring-up. Quantity ordered or received is unknown. |
+
+A selected camera or a kernel overlay reference is not proof of capture.
+
+## Audio and controls
+
+| Qty | Part | Status | Notes |
+|---:|---|---|---|
+| 4 | DIYMORE ICS-43434 I2S microphone module, 16.5 x 12.3 x 1.6 mm | Ordered | Arrival and capture qualification are unknown. |
+| 10 | RS PRO PAS6D1M1CES4-5 push-button switch, stock 2099089 | Ordered 1 October | Confirmed as PTT switches. Delivery count and debounce qualification are unknown. |
+| 0 | Speaker | Not specified | Do not fit a generic speaker until the audio path is confirmed. |
+| 0 | Rotary encoder | Unknown | Model and procurement are unresolved. |
+
+The selected microphone mechanical approach is an internal sealed can with a
+short acoustic tube. The generator currently has `MIC_FITTED=False`. Do not
+describe the old bezel chamber as fitted hardware.
+
+## Power, cooling and storage
+
+| Qty | Part | Status | Notes |
+|---:|---|---|---|
+| Product power | External USB-C, bring your own | Direction | The Orange Pi needs a fixed 5 V at 4 A or more. No battery or charge pigtail ships. |
+| 3 | Fixed 5 V bench adapter for C-F | Paid and ordered, last state To Ship | Two are WNB-0504000 5 V/4 A. The third model needs confirmation. Receipt and load tests are unknown. |
+| 4 | Nitecore NB10000 Gen 2 | Historical bench stock | 5 V/3 A, external only. Not a qualified 20 W product supply. |
+| 2 | Radxa heatsink 6240B, MPN AE013B | Ordered 9 October | Delivered revision and mounted thermal clearance are unknown. |
+| 4 | Aluminium case and 30 mm fan kit | Receipt-confirmed stock | Compatibility with the later housing revision must be checked. |
+| 4 | Netac 256 GB NVMe, M.2 2280 | Owned | C-F storage. Exact series and installed state are unknown. |
+| 2 | Netac 512 GB NVMe, M.2 2280 | Owned | A/B bench inventory. |
+
+## Antennas, cables and small parts
+
+- Four 15 cm left-to-left HDMI cables, one 20 cm flat HDMI fit-test cable,
+  right-angle adapters and short USB-A to USB-C leads are in stock.
+- Existing cable stock is not proof of the final plug direction, service loop
+  or internal panel route.
+- Heat inserts, screws and nuts are recorded in older receipt records. The old
+  screw-fastened bezel quantities are not the current snap-bezel BOM.
+
+## Printable parts
+
+The mechanical workstream has real printable files and print results. They are
+not copied into this repository yet. The list and status are in
+[`stl/README.md`](stl/README.md).
+
+## Builder gates still open
+
+- Count the actual ROCK DSI connector. The records disagree between 39, 40 and
+  41 pins. Verify the AC012 contacts, pitch, lane route and the panel overlay.
+- Identify the Orange Pi CSI connector and net map. The earlier 15-pin
+  Raspberry Pi assumption was withdrawn.
+- Bring up the IMX415 on the actual ROCK 5B+ with the matching ribbon and
+  overlay, and demonstrate capture.
+- Verify the primary HAT 40-pin mapping, the 2x20 female ribbon, pigtail reach,
+  GNSS bias and XIAO-specific firmware.
+- Measure the PTT face, thickness, terminals and wires. The current 20 x 20 x
+  2.5 mm face is an assumption.
+- Verify cooler, NVMe, plug and cable clearances, board retention, bezel
+  closure and loaded stand stability.
+
+None of this establishes a finished product, a runtime figure, a thermal limit
+or a field result.

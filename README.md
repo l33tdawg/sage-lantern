@@ -36,11 +36,13 @@ ahead of the January 2027 launch plan, so the device work and map packs can be
 reviewed and used now. Opening the repository does not change the device's
 acceptance status.
 
-Current device allocation: **A/B are single-LoRa Lamplighter, admin, knowledge
-delivery and repeater support units with dashboard screens. C/D/E/F are the real user Lanterns: Orange
-Pi 5 Plus, dual LoRa, GPS and WiFi via the Pi.** See the [device-role map](docs/lantern/DEVICE_ROLES.md)
+Current device allocation: **A/B are single-LoRa Lamplighter, administration,
+knowledge delivery and repeater support units with dashboard screens. C–F are
+the current bench and acceptance Lanterns: Orange Pi 5 Plus, one LoRa baseline
+radio, an optional second radio, GPS and WiFi via the Pi. G/H are the next user
+units on the ROCK 5B+.** See the [device-role map](docs/lantern/DEVICE_ROLES.md)
 for verified readiness and remaining integration work. Unit C is the first unit
-running the 3B chat model in production; the 2B remains its rollback.
+running the 3B chat model as its live device lane; V79.6 remains the rollback.
 
 ## What we're building
 
@@ -92,15 +94,15 @@ it holds and what it does not, with the
 [SAGE Commons](https://sage-foundation.net/commons/) explains how the parts fit,
 and [Lantern hardware](https://sage-foundation.net/hardware/) covers the device
 programme. To talk about the mission, a build or a community pilot, write to
-[dhillon@sage.ngo](mailto:dhillon@sage.ngo).
+[dhillon@sage-foundation.net](mailto:dhillon@sage-foundation.net).
 
 ![Community use concept](assets/connectivity.jpg)
 
 <p align="center"><em>AI illustration of the mission. Not a photograph of a deployed pilot.</em></p>
 
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
-physical hold-to-talk control, an outward camera for visual questions and a
-10,000 mAh USB-C pack in a serviceable tray, running local intelligence on an
+physical hold-to-talk control, an outward camera for visual questions and an
+external USB-C supply chosen by the owner, running local intelligence on an
 Orange Pi 5 Plus (RK3588) platform. Ask a question, explore an idea, or work
 through a problem with the model running on the device itself.
 
@@ -121,9 +123,10 @@ stays personal, and anything shared is reviewed before it travels.
 ![Penang offline map running on Unit C](assets/maps-penang.jpg)
 
 The device ships with a Natural Earth world overview. Detailed regions arrive
-as separate packs, each with a manifest and a SHA-256. Five are published now:
-Penang, Malaysia, Klang Valley, Singapore and Johor Bahru. The catalog is
-machine-readable, and the installer verifies every byte before a pack lands.
+as separate packs, each with a manifest and a SHA-256. Five selected regional
+areas are published now: Penang, Malaysia, Klang Valley, Singapore and Johor
+Bahru. The catalog is machine-readable, and the installer checks every byte
+before a pack lands.
 
 [Browse the map packs](maps/README.md) · [Download the release](https://github.com/l33tdawg/sage-lantern/releases/tag/maps-20261019)
 
@@ -177,17 +180,17 @@ that way.
 - **Two test units (A and B) are built and running.** Local voice, on-device
   answers, camera capture, the touchscreen interface and the radio foundation
   are under active integration and validation. The fleet build in flight is
-  C–F, and no part has been printed yet: first-article prints and a measured
-  tolerance report come before locked hardware choices or any fleet date.
-- **Unit C runs the 3B chat model in production.** V79.6 is live on Unit C's
-  loopback chat port through the RKLLM token engine and response guards. It
-  measures 625 ms median TTFT and 7.82 tok/s decode against 670 ms and 8.03
-  tok/s for stock, with 28/28 wrapped action prompts and the measured English
-  failures fixed. The device export is 16k context (RKLLM toolkit cap); the
-  host model remains 32k. The live service currently serves 16k context /
-  8192 output; long-form requests are buffered and paragraph counts are
-  normalized, while exact bullet and retired-value handling remain open. The
-  2B service remains the rollback. See
+  C–H. The ROCK 5B+ tub, firmer bezel and back cover have been printed and
+  accepted as mechanical trials. No complete unit has passed electrical,
+  thermal or field acceptance, and the gasket and antenna-collar trials remain
+  open.
+- **Unit C runs the V81 3B chat model.** The device artifact is the RK3588
+  W8A8 opt1 export with 16k context and 8k output, served on loopback port
+  8081 through the RKLLM token engine and response guards. The 48-request
+  streaming run measured 726.7 ms median TTFT and 7.93 tok/s median decode on
+  one unit; the 36 quality prompts measured 646.9 ms and 7.96 tok/s. Those are
+  latency figures, not a correctness or thermal claim. V79.6 remains the
+  rollback. See
   [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md).
 - **Meshticulum 1.0.0-alpha is public; Lantern messaging is not yet a verified
   end-to-end service.** The protocol/transport project is released at
@@ -229,7 +232,7 @@ as the current source of truth for what is proven and what is still open.
 | [`software/runtime/`](software/runtime/) | Device runtime: local voice loop, mesh/LoRa broker and transport, SAGE vault integration, storage-supervisor lifecycle, audio readiness, device lock and community services |
 | [`software/npu/`](software/npu/) | RKLLM text and vision engines, HTTP servers, response guards and the Unit C 3B deployment notes |
 | [`apps/lantern-fleet-admin/`](apps/lantern-fleet-admin/) | Device touchscreen UI and local fleet-admin console (Next.js/React): ask-and-answer flow, history, messages, camera, sharing, settings and read-only operator views |
-| [`apps/sage-website/`](apps/sage-website/) | Public [sage.ngo](https://sage.ngo/) site — mission, hardware and programme copy, exported as static files |
+| [`apps/sage-website/`](apps/sage-website/) | Public site at [sage-foundation.net](https://sage-foundation.net/), with sage.ngo and sage-commons.org forwarding; mission, hardware and programme copy exported as static files |
 | [`firmware/`](firmware/) | Espressif audio-bridge project and the MeshCore companion-radio patch series used by the units |
 | [`scripts/lantern/`](scripts/lantern/) | Provisioning, installers, update and recovery tooling, evidence capture and acceptance runners |
 | [`docs/lantern/`](docs/lantern/) | Device PRD, hardware BOM and contract, bring-up and validation, protocol notes, acceptance evidence, delivery backlog |
@@ -295,7 +298,7 @@ Start with these, then follow the links inside them:
 
 - [`docs/lantern/PRD.md`](docs/lantern/PRD.md) — product intent, scope and acceptance criteria.
 - [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md) — current device gate, verified state and open work.
-- [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md) — V79.6 3B production deployment, device timings, guards, rollback and known limits.
+- [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md) — V81 3B production deployment, device timings, guards, rollback and known limits.
 - [`docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — the hardware/software ownership boundary.
 - [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) — the A/B test-unit parts list and order history as of 11 September 2026. Superseded for the C–F fleet build, which the hardware workstream records in its own bill of materials and build status; kept here as the bring-up record.
 - [`docs/lantern/BRINGUP_AND_VALIDATION.md`](docs/lantern/BRINGUP_AND_VALIDATION.md) — staged assembly, test procedure and evidence checklist.
@@ -307,27 +310,19 @@ Start with these, then follow the links inside them:
 
 ## Direction and roadmap
 
-The project's public plan, as published on the website:
+## Direction
 
-| Stage | Target | Status |
-| --- | --- | --- |
-| Now | Build and prove the prototypes end to end | In development |
-| Next | First-article prints and a measured tolerance report for the C–F fleet | Gates every hardware decision and date |
-| 1 January 2027 | Public launch announcement and campaign | Repositories opened 19 October 2026; announcement target 1 January 2027 |
-| 1 February 2027 | Campaign live, and the first backers can place orders | Target; receiving entity and checkout still to settle |
-| Next, with funding | A supported 20–30 unit community pilot | Proposed first stage |
-
-These are targets and proposals, not completed milestones. Progress is reported
-as evidence rather than announcements. An earlier "six complete demonstration
-Lanterns in December 2026" target has been withdrawn: the fleet is C–F, nothing
-has been printed yet, and no fleet date is being worked to until the first
-article is measured.
+This repository is public now. Device launch, campaign and order dates are
+separate decisions and are not announced here. The current work is to qualify
+C-F and bring up the first G/H unit. The next hardware gate is the remaining
+first-article prints and a measured tolerance report. A supported community
+pilot remains a proposal.
 
 ## Contact
 
 SAGE Foundation is an initiative in formation, and Lantern is in development.
 To talk about the mission, the hardware or a community pilot, write to
-<dhillon@sage.ngo>.
+<dhillon@sage-foundation.net>.
 
 ## Contributing, security and licence
 

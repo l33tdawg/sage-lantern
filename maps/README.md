@@ -1,20 +1,22 @@
 # Offline maps for SAGE Lantern
 
-Lantern ships with a world overview that works without a network. Detailed
+**Lantern Offline Maps** provides regional OpenStreetMap packs for SAGE Lantern.
+The device ships with a world overview that works without a network. Detailed
 streets arrive as separate packs, because a planet of street-level data does
-not fit on the device. Each pack covers one country or city, carries a
+not fit on the device. Each pack covers a selected regional area, carries a
 manifest, and is checked against its SHA-256 before installation.
 
-| Pack | ID | Coverage | Zoom | Size |
+| Pack | ID | Bounding box | Zoom | Size |
 |---|---|---|---|---|
-| Penang | `penang` | `100.20,5.20,100.50,5.50` | 0-13 | 2,766,338 B |
-| Malaysia | `malaysia-z11` | `99.6,0.85,119.3,7.4` | 0-11 | 18,793,137 B |
-| Klang Valley | `klang-valley-z13` | `101.30,2.90,101.90,3.50` | 0-13 | 10,755,117 B |
-| Singapore | `singapore-z12` | `103.60,1.15,104.05,1.44` | 0-12 | 2,778,893 B |
-| Johor Bahru | `johor-bahru-z13` | `103.55,1.44,103.95,1.78` | 0-13 | 3,953,605 B |
+| Penang | `penang` | `100.20,5.20,100.50,5.50` | 0-13 | 2.77 MB |
+| Malaysia | `malaysia-z11` | `99.6,0.85,119.3,7.4` | 0-11 | 18.79 MB |
+| Klang Valley | `klang-valley-z13` | `101.30,2.90,101.90,3.50` | 0-13 | 10.76 MB |
+| Singapore | `singapore-z12` | `103.60,1.15,104.05,1.44` | 0-12 | 2.78 MB |
+| Johor Bahru | `johor-bahru-z13` | `103.55,1.44,103.95,1.78` | 0-13 | 3.95 MB |
 
-The machine-readable list is [catalog.json](catalog.json). It holds the byte
-count, hash and download URLs for every pack.
+The machine-readable list is [catalog.json](catalog.json). It holds the exact
+byte count, hash and download URLs for every pack. The bounding box is the pack
+coverage; it is not a claim of complete administrative coverage.
 
 ## Install a downloaded pack
 
@@ -52,10 +54,10 @@ cheap, then move the bytes over the best path available:
 4. A Meshticulum network with an uplink. One node fetches the pack and serves it
    to the others over IP.
 
-An RF-only hop is the last resort. At the measured 2 kB/s, a 10 MB pack takes
-about 90 minutes on that hop, and the transfer has to be scheduled so it does
-not block other traffic. Meshticulum can make that reliable and resumable. It
-cannot make the radio faster.
+An RF-only hop is the last resort. Around 90 minutes for a 10 MB pack is a
+planning extrapolation from a finite measured rate, not an accepted map-transfer
+result. The transfer has to be scheduled so it does not block other traffic.
+Meshticulum can make it reliable and resumable. It cannot make the radio faster.
 
 ## Build another region
 
@@ -77,14 +79,16 @@ Keep packs bounded. Malaysia at z0-11 is 18.8 MB. The same country at z0-12 is
 
 ## Attribution and licence
 
-Map data © OpenStreetMap contributors, available under the
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+licensed under the
 [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
-Vector tiles are produced with [OpenMapTiles](https://openmaptiles.org/),
-© OpenMapTiles, CC-BY 4.0. The world overview uses Natural Earth 1:110m, which
-is public domain.
+These packs use the [OpenMapTiles](https://openmaptiles.org/) schema; its
+cartographic design is licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The Natural Earth
+world overview is public domain.
 
-Keep the attribution visible in the map view. These packs contain no Google
-tiles or cached Google data.
+Keep "© OpenMapTiles © OpenStreetMap contributors" visible in the map view and
+with map screenshots. These packs contain no Google tiles or cached Google data.
 
 ## Limits
 
@@ -93,5 +97,5 @@ tiles or cached Google data.
 - A pack covers its bounding box. Panning outside it falls back to the world
   overview.
 - Catalog and manifest signatures are not implemented yet. The current check is
-  SHA-256 from the catalog plus transport trust. Signed metadata belongs with
-  the trust-root work.
+  a checksum against metadata from the catalog plus transport trust. It is not
+  publisher authentication. Signed metadata belongs with the trust-root work.
