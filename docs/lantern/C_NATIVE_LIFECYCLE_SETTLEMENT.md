@@ -32,6 +32,25 @@ A different boot ID is accepted only with the complete resource evidence. A
 boot change alone, a closed socket alone, or a missing observation returns
 `uncertain` and preserves the obligation.
 
+## Durable journal contract
+
+`software/security/desktop_loader_candidate/settlement_journal.py` adds the
+next layer: one record per obligation, with `record_attempt` creating the
+attempt once and `settle` moving it from `attempted` to `settled` through a
+compare-and-exchange.
+
+The journal checks the authority result first, then writes the settlement with
+the exact obligation digest, proof digest and a derived receipt digest. It
+reads the record back before returning `settled`. A repeated settlement with
+the same proof returns the existing record; a different proof cannot replace
+it. A CAS conflict, a missing attempt, an unavailable backend or an
+unconfirmed readback returns `uncertain`.
+
+If a write reports unknown after committing, the next read sees `settled` and
+a retry with the same proof returns `settled`. If the write never committed,
+the record stays `attempted`. The test backend models both cases. It is not a
+durable store.
+
 ## What is proven
 
 The tests in `scripts/tests/test_lifecycle_settlement.py` cover:
@@ -45,6 +64,18 @@ The tests in `scripts/tests/test_lifecycle_settlement.py` cover:
 - a different boot without child evidence is refused;
 - an unavailable backend returns uncertain and settles nothing.
 
+The tests in `scripts/tests/test_settlement_journal.py` cover:
+
+- attempt creation is idempotent;
+- settlement is idempotent with the same proof;
+- a different proof cannot replace an existing settlement;
+- settlement without an attempt is refused;
+- a CAS conflict leaves the attempt in place;
+- an unknown write after commit is recovered by readback;
+- an unknown write before commit leaves the attempt in place;
+- an invalid proof writes nothing;
+- an unavailable journal backend is uncertain.
+
 These are source tests against synthetic evidence. They do not prove that a
 real pidfd is dead, that a cgroup is empty, that a socket is closed, or that
 the native owner can persist settlement across power loss.
@@ -52,7 +83,7 @@ the native owner can persist settlement across power loss.
 ## What the native owner still needs
 
 1. A serialized authority that records the attempt and the settlement in the
-   same durable transaction.
+   same durable transaction, with an actual durable journal backend.
 2. Independently protected monotonic state, with rollback resistance and a
    complete read-back after every write.
 3. A real pidfd and cgroup probe that reports terminal state without adopting

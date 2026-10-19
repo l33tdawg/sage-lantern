@@ -82,8 +82,10 @@ C-native: the disabled settlement contract is now in
 11 source tests. It binds settlement to the launch UUID and exact owned
 resources, requires a terminal pidfd or child observation, and returns
 `uncertain` for missing, extra, non-terminal or digest-mismatched evidence.
-Nothing is installed on C. The native owner, durable store, real probes and
-fault replays remain open.
+`settlement_journal.py` adds a one-record-per-obligation CAS journal with
+idempotent attempts and settlements, readback and unknown-write recovery,
+covered by 10 more tests. Nothing is installed on C. The native owner, real
+durable store, real probes and native fault replays remain open.
 
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
