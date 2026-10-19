@@ -14,7 +14,7 @@ here for detail; it does not replace the individual task records.
 | `sage-lantern-maps.service` | active, loopback 8091, `/packs.json` |
 
 GNSS bridge `status_bridge.py` `e414bdf6…`; map server `serve_pack.py`
-`de2f1e56…`; Maps page `maps.html` `2c5ad4d8…`. The local Penang pack is
+`de2f1e56…`; Maps page `maps.html` `c9cb51ca…`. The local Penang pack is
 `/opt/sage-lantern/maps/penang.pmtiles` — 90 tiles, 2,766,338 bytes,
 SHA-256 `15d9a3ec…`, with a manifest. MapLibre GL 4.7.1 and PMTiles JS 3.2.1
 are vendored locally; no Google tiles.
