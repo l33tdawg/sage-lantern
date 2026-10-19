@@ -25,8 +25,9 @@ and **unknown** means the records do not settle it.
 The main fleet is therefore **4 x ROCK 5B+ (2 x 12 GB + 2 x 16 GB) plus
 2 x Orange Pi bench units**; the two ROCK 5B 8 GB boards remain the A/B
 Meshticulum relay units. The remaining gap list (16 GB boards, coolers,
-panels, NVMe, cameras and radios) is in
+panels, 256 GB NVMe and cameras) is in
 [`SESSION_HANDOFF_20261019.md`](../docs/lantern/SESSION_HANDOFF_20261019.md).
+LoRa HAT procurement is deferred — spare HATs are in hand.
 
 ## Display
 

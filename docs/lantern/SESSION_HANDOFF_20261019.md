@@ -44,8 +44,10 @@ routing, internal 5 V panel power, final enclosure fit or final
 panel/touch/thermal acceptance. The two ROCK 5B 8 GB boards remain the A/B
 Meshticulum relay units. D-028 records this. The four AC005 adapters already
 ordered are exactly right; remaining ROCK-unit gaps are two 16 GB boards,
-two coolers, two more DSI panels (four total), four 512 GB NVMe drives, four
-IMX415 cameras and four radio HATs.
+two coolers, two more DSI panels (four total), four **256 GB** NVMe drives and
+four IMX415 cameras. LoRa HAT procurement is deferred — spare HATs are in hand
+and they are cheap/readily available later. Flint is checking whether the
+camera order was already placed.
 
 - The product radio baseline is one LoRa radio per unit. Meshticulum carries
   messages and resource transfers over that single half-duplex radio. Extra
