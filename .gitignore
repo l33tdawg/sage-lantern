@@ -12,6 +12,8 @@ dist/
 build/
 !docs/build/
 !docs/build/**
+work/
+evidence/
 .next/
 .vinext/
 .wrangler/
