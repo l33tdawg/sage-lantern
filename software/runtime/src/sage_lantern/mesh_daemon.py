@@ -697,7 +697,7 @@ class HardwareRuntime:
                 # LIVE_CHECK_SECONDS).
                 allowed = (not ended and time.monotonic() < deadline and self.supervisor is supervisor
                     and supervisor.broker_id == broker and supervisor.resource_lifecycle_check() is True
-                    and supervisor.verified_epoch() == epoch and time.monotonic() < deadline)
+                    and supervisor.admission_epoch() == epoch and time.monotonic() < deadline)
             except Exception:
                 allowed = False
             return {"allowed": allowed}

@@ -47,7 +47,7 @@ class Supervisor:
         return self.alive and (pid, uid) == (901, 1001) and broker_id in (None, self.broker_id) and (self.phase == "active" or draining)
     def resource_lifecycle_check(self):
         return self.alive and self.phase in ("active", "draining")
-    def verified_epoch(self):
+    def admission_epoch(self):
         if not (self.alive and self.phase in ("active", "draining", "stopping")):
             raise MeshIPCError()
         return self.epoch

@@ -245,6 +245,10 @@ class RootStorageSupervisor:
         self._backend, self._snapshot, self._access, self._clock = backend, snapshot, access_epoch, clock
         self._live_cache = None
         self._producer_cache = None
+        self._epoch_observers = set()
+        self._epoch_refused = False
+        self._epoch_dependencies = (backend, snapshot, clock, backend.vault_identity,
+            self._mutex, self._epoch_observers, type(self)._held, type(self)._epoch)
         self.directory = Path(directory)
         self._owner = owner_uid
         try:
@@ -345,7 +349,7 @@ class RootStorageSupervisor:
         self._producer_cache = (key, now, producer)
         return producer
 
-    def verified_epoch(self):
+    def admission_epoch(self):
         """The epoch this broker has verified inside the current window.
 
         Callers that must compare an admission-time epoch use this instead of
@@ -354,6 +358,13 @@ class RootStorageSupervisor:
         true for exactly the lifetime window `resource_lifecycle_check` admits
         (active, or draining/stopping inside the drain deadline), because an
         admitted capture must stay checkable while the unit shuts down.
+
+        This is the measured hot-path contract. A dispatch wake makes ~165 of
+        these checks inside one radio budget, and a fresh signed snapshot for
+        each one saturated the unit's replay window (unit A 2026-09-19,
+        2,928+2,597 probes and 54 `503 Replay window saturated` answers). It
+        must not be used where a caller needs the vault state observed now;
+        use `verified_epoch()` for a native security fence.
         """
         with self._mutex:
             self._held()
@@ -508,6 +519,88 @@ class RootStorageSupervisor:
                         and self._clock() < self._drain_deadline))
         except Exception:
             return False
+
+    def verified_epoch(self):
+        """Fresh storage identity, never a cached permission or drain receipt.
+
+        Already-owned resources may observe it during the original bounded
+        drain, while private action callers retain their own active-only gate.
+        Callback IO releases the state lock; no lease or deadline is renewed.
+        This is deliberately uncached: each native forward-secrecy fence must
+        observe the vault status before and after its own signed-row read.
+        """
+        thread = threading.get_ident()
+        entered = False
+        resource = None
+        dependencies = self._epoch_dependencies
+        backend, snapshot, clock, vault_reader, mutex, observers, held, epoch_reader = dependencies
+
+        def state():
+            current_vault = backend.vault_identity
+            same_vault_reader = (getattr(current_vault, '__self__', None) is getattr(vault_reader, '__self__', None)
+                and getattr(current_vault, '__func__', current_vault) is getattr(vault_reader, '__func__', vault_reader))
+            if (self._epoch_dependencies is not dependencies or self._epoch_refused
+                    or self._backend is not backend or self._snapshot is not snapshot or self._clock is not clock
+                    or self._mutex is not mutex or self._epoch_observers is not observers
+                    or type(self)._held is not held or type(self)._epoch is not epoch_reader
+                    or '_held' in vars(self) or '_epoch' in vars(self) or not same_vault_reader):
+                raise StorageSupervisorError()
+            held(self)
+            info = os.fstat(self._fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != self._owner
+                    or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size != 0
+                    or (info.st_dev, info.st_ino) != self._inode
+                    or resource is None or self._resource is not resource or self._resource_joined
+                    or self.phase not in {'active', 'draining', 'stopping'}):
+                raise StorageSupervisorError()
+            deadline = getattr(self, '_drain_deadline', None)
+            if (self._epoch_refused or self._epoch_dependencies is not dependencies
+                    or self._backend is not backend or self._snapshot is not snapshot
+                    or self._clock is not clock or self._mutex is not mutex or self._epoch_observers is not observers):
+                raise StorageSupervisorError()
+            return (self.broker_id, self.phase, self._baseline, self._vault,
+                self._resource_joined, deadline, self._shutdown_requested,
+                self._fd, self._inode, self._pid, self._owner, self.directory, self._state_path,
+                tuple(self._path_identity), tuple(sorted(self._record.items())))
+
+        def checked_state():
+            before = state()
+            if before[1] != 'active':
+                now = clock()
+                if (state() != before or type(before[5]) not in (int, float) or not math.isfinite(before[5])
+                        or type(now) not in (int, float) or not math.isfinite(now) or now >= before[5]):
+                    raise StorageSupervisorError()
+            return before
+
+        try:
+            with mutex:
+                if thread in observers:
+                    self._epoch_refused = True
+                    raise StorageSupervisorError()
+                observers.add(thread)
+                entered = True
+                resource = self._resource
+                before = checked_state()
+            epoch = epoch_reader(self)
+            with mutex:
+                if checked_state() != before:
+                    raise StorageSupervisorError()
+            vault = vault_reader()
+            with mutex:
+                if checked_state() != before or epoch != before[2] or vault != before[3]:
+                    raise StorageSupervisorError()
+                return epoch
+        except BaseException as error:
+            if entered:
+                with mutex:
+                    self._epoch_refused = True
+            if not isinstance(error, Exception):
+                raise
+            raise StorageSupervisorError() from None
+        finally:
+            if entered:
+                with mutex:
+                    observers.discard(thread)
 
     def resource_drain(self, timeout):
         with self._mutex:
