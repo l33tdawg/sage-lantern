@@ -33,3 +33,10 @@ This tree covers the Lantern device and the services that support it. Start with
 - [Lantern 3B](https://github.com/l33tdawg/lantern-3b): model weights and model card.
 
 The [Foundation site](https://sage-foundation.net/) is the public home for the programme and contact details.
+
+## Foundation and mission
+
+- [SAGE Foundation](https://sage-foundation.net/foundation/): stewardship, ownership boundaries and the people behind it.
+- [SAGE Commons](https://sage-foundation.net/commons/): how the Foundation, the commons and community networks relate.
+- [Lantern hardware](https://sage-foundation.net/hardware/): the device concept and programme.
+- [Meshticulum alpha](https://github.com/l33tdawg/meshticulum/releases/tag/v1.0.0-alpha): transport SDK, firmware source build and proof records.

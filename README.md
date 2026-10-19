@@ -43,6 +43,40 @@ model weights live in [lantern-3b](https://github.com/l33tdawg/lantern-3b).
 See [project family and repository boundaries](docs/PROJECT_FAMILY.md) for the
 ownership detail.
 
+**Meshticulum** is the reusable transport underneath Lantern: authenticated
+messages, reliable flow, and verified resources across LoRa and IP. It is
+public as `1.0.0-alpha`, with the tested SDK wheel, source archive, firmware
+build path, notices and proof records. Start with the
+[repository](https://github.com/l33tdawg/meshticulum),
+[project site](https://l33tdawg.github.io/meshticulum/),
+[alpha release](https://github.com/l33tdawg/meshticulum/releases/tag/v1.0.0-alpha),
+[documentation](https://github.com/l33tdawg/meshticulum/blob/main/docs/index.md)
+or the [HTTP gateway notes](https://github.com/l33tdawg/meshticulum/blob/main/docs/HTTP_GATEWAY.md).
+Its published figures are near-bench application goodput, not field-range or
+carrier-capacity claims.
+
+### The Foundation and the mission
+
+SAGE Foundation is an initiative in formation. It exists to steward the
+mission, not to own the commons: it holds releases, the signing trust root and
+public reporting, and it is designed to hand them on. It is not a registered
+entity, holds no funds on anyone's behalf, and this site does not take payments
+or device orders.
+
+The mission is to democratise intelligence: help people learn, create and solve
+problems regardless of income or connectivity. That means local AI that works
+without a reliable network, community-owned radio networks that keep working
+during outages, and a public knowledge commons built from deliberate, reviewed
+contributions. Private knowledge stays on the owner's device unless they choose
+to share it.
+
+Read more at [sage-foundation.net](https://sage-foundation.net/), the
+[Foundation page](https://sage-foundation.net/foundation/),
+[SAGE Commons](https://sage-foundation.net/commons/) or
+[Lantern hardware](https://sage-foundation.net/hardware/). To talk about the
+mission, a build or a community pilot, write to
+[dhillon@sage.ngo](mailto:dhillon@sage.ngo).
+
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
 physical hold-to-talk control, an outward camera for visual questions and a
 10,000 mAh USB-C pack in a serviceable tray, running local intelligence on an
