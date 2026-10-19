@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import tempfile
 import unittest
@@ -140,6 +141,101 @@ class InstallTests(unittest.TestCase):
             result = pack_manager.remove(root, "test.pmtiles", confirmed=True)
             self.assertFalse((root / "test.pmtiles").exists())
             self.assertTrue((Path(result["backup"]) / "test.pmtiles").is_file())
+
+
+class FetchTests(unittest.TestCase):
+    CATALOG_URL = "https://example.test/catalog.json"
+    PACK_URL = "https://example.test/test.pmtiles"
+    MANIFEST_URL = "https://example.test/test.pmtiles.manifest.json"
+
+    def make_remote(self, payload=b"PMTiles-test", **overrides):
+        digest = hashlib.sha256(payload).hexdigest()
+        manifest = {
+            "schema": pack_manager.SCHEMA,
+            "name": "Test region",
+            "bbox": [100.2, 5.2, 100.5, 5.5],
+            "zoom": [0, 13],
+            "tiles": 90,
+            "bytes": len(payload),
+            "sha256": digest,
+            "attribution": "© OpenMapTiles © OpenStreetMap contributors",
+            "license": "ODbL 1.0; OpenMapTiles CC-BY",
+        }
+        manifest.update(overrides)
+        entry = {
+            "id": "test",
+            "name": "Test region",
+            "bbox": [100.2, 5.2, 100.5, 5.5],
+            "zoom": [0, 13],
+            "tiles": 90,
+            "bytes": len(payload),
+            "sha256": digest,
+            "download_url": self.PACK_URL,
+            "manifest_url": self.MANIFEST_URL,
+        }
+        catalog = {"schema": pack_manager.CATALOG_SCHEMA, "packs": [entry]}
+        mapping = {
+            self.CATALOG_URL: json.dumps(catalog).encode(),
+            self.PACK_URL: payload,
+            self.MANIFEST_URL: json.dumps(manifest).encode(),
+        }
+        return mapping
+
+    @staticmethod
+    def opener(mapping):
+        return lambda url: io.BytesIO(mapping[url])
+
+    def test_fetch_installs_verified_pack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "maps"
+            mapping = self.make_remote()
+            result = pack_manager.fetch(
+                self.CATALOG_URL, "test", root, min_free_bytes=0,
+                opener=self.opener(mapping))
+            self.assertEqual(result["id"], "test")
+            self.assertTrue((root / "test.pmtiles").is_file())
+            self.assertEqual(pack_manager.list_packs(root)["ok_count"], 1)
+            self.assertEqual(
+                [path.name for path in root.iterdir() if path.name.startswith(".fetch-")],
+                [])
+
+    def test_fetch_unknown_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mapping = self.make_remote()
+            with self.assertRaises(pack_manager.PackError):
+                pack_manager.fetch(self.CATALOG_URL, "missing",
+                                   Path(tmp) / "maps", min_free_bytes=0,
+                                   opener=self.opener(mapping))
+
+    def test_fetch_rejects_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mapping = self.make_remote(sha256="0" * 64)
+            with self.assertRaises(pack_manager.PackError):
+                pack_manager.fetch(self.CATALOG_URL, "test",
+                                   Path(tmp) / "maps", min_free_bytes=0,
+                                   opener=self.opener(mapping))
+            self.assertFalse((Path(tmp) / "maps" / "test.pmtiles").exists())
+
+    def test_fetch_rejects_manifest_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = b"PMTiles-test"
+            mapping = self.make_remote(payload, sha256="f" * 64)
+            with self.assertRaises(pack_manager.PackError):
+                pack_manager.fetch(self.CATALOG_URL, "test",
+                                   Path(tmp) / "maps", min_free_bytes=0,
+                                   opener=self.opener(mapping))
+
+    def test_fetch_respects_size_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mapping = self.make_remote()
+            with self.assertRaises(pack_manager.PackError):
+                pack_manager.fetch(self.CATALOG_URL, "test",
+                                   Path(tmp) / "maps", min_free_bytes=0,
+                                   max_bytes=1, opener=self.opener(mapping))
+
+    def test_checked_open_refuses_plain_http(self):
+        with self.assertRaises(pack_manager.PackError):
+            pack_manager._checked_open("http://example.com/pack.pmtiles")
 
 
 if __name__ == "__main__":

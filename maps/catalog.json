@@ -1,0 +1,111 @@
+{
+  "schema": "sage.lantern.map-catalog.v1",
+  "updated_at": "2026-10-19T00:14:15.024358Z",
+  "packs": [
+    {
+      "id": "johor-bahru-z13",
+      "name": "Johor Bahru",
+      "bbox": [
+        103.55,
+        1.44,
+        103.95,
+        1.78
+      ],
+      "zoom": [
+        0,
+        13
+      ],
+      "tiles": 138,
+      "bytes": 3953605,
+      "sha256": "991f14f7c83acaca9ca14802ef12f4e9fd43f528732e13f9ba2f1a9aea6c8953",
+      "download_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/johor-bahru-z13.pmtiles",
+      "manifest_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/johor-bahru-z13.pmtiles.manifest.json",
+      "attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
+      "license": "ODbL 1.0; OpenMapTiles CC-BY"
+    },
+    {
+      "id": "klang-valley-z13",
+      "name": "Klang Valley",
+      "bbox": [
+        101.3,
+        2.9,
+        101.9,
+        3.5
+      ],
+      "zoom": [
+        0,
+        13
+      ],
+      "tiles": 282,
+      "bytes": 10755117,
+      "sha256": "a87385b5c410ff3bd5d2bc12200fd45b2ac8f29df049fc8498597f4668aa8bc0",
+      "download_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/klang-valley-z13.pmtiles",
+      "manifest_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/klang-valley-z13.pmtiles.manifest.json",
+      "attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
+      "license": "ODbL 1.0; OpenMapTiles CC-BY"
+    },
+    {
+      "id": "malaysia-z11",
+      "name": "Malaysia",
+      "bbox": [
+        99.6,
+        0.85,
+        119.3,
+        7.4
+      ],
+      "zoom": [
+        0,
+        11
+      ],
+      "tiles": 5970,
+      "bytes": 18793137,
+      "sha256": "6764fe59eb793fc5a8e5d573e70d9959df1a08cecb05cb2d019a36fbae51c9e5",
+      "download_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/malaysia-z11.pmtiles",
+      "manifest_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/malaysia-z11.pmtiles.manifest.json",
+      "attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
+      "license": "ODbL 1.0; OpenMapTiles CC-BY"
+    },
+    {
+      "id": "penang",
+      "name": "Penang",
+      "bbox": [
+        100.2,
+        5.2,
+        100.5,
+        5.5
+      ],
+      "zoom": [
+        0,
+        13
+      ],
+      "tiles": 90,
+      "bytes": 2766338,
+      "sha256": "15d9a3ec13f6dd1664beb4807a72417fd7beac4ba0aaef44b9757c605272984d",
+      "download_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/penang.pmtiles",
+      "manifest_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/penang.pmtiles.manifest.json",
+      "attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
+      "license": "ODbL 1.0; OpenMapTiles CC-BY"
+    },
+    {
+      "id": "singapore-z12",
+      "name": "Singapore",
+      "bbox": [
+        103.6,
+        1.15,
+        104.05,
+        1.44
+      ],
+      "zoom": [
+        0,
+        12
+      ],
+      "tiles": 49,
+      "bytes": 2778893,
+      "sha256": "ad5772b71408b00a5c4ad69d08bc65cab44ee9a1106498fe4eb9cb186e2d6a43",
+      "download_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/singapore-z12.pmtiles",
+      "manifest_url": "https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/singapore-z12.pmtiles.manifest.json",
+      "attribution": "\u00a9 OpenMapTiles \u00a9 OpenStreetMap contributors",
+      "license": "ODbL 1.0; OpenMapTiles CC-BY"
+    }
+  ]
+}

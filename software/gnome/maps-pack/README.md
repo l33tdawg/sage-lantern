@@ -60,6 +60,24 @@ python3 pack_manager.py verify /opt/sage-lantern/maps/penang.pmtiles
 python3 pack_manager.py remove penang.pmtiles --root /opt/sage-lantern/maps --yes
 ```
 
+Fetch a published pack by ID:
+
+```sh
+python3 pack_manager.py fetch \
+  --catalog https://raw.githubusercontent.com/l33tdawg/sage-lantern/main/maps/catalog.json \
+  --id malaysia-z11 \
+  --root /opt/sage-lantern/maps
+```
+
+Build the public catalog from verified local packs:
+
+```sh
+python3 publish_packs.py \
+  --root work/lantern-maps-20261019/public \
+  --base-url https://github.com/l33tdawg/sage-lantern/releases/download/maps-20261019/ \
+  --output maps/catalog.json
+```
+
 The loopback server exposes `GET /packs.json`, which the Maps page uses to pick
 an installed pack and show its name, size and zoom range.
 

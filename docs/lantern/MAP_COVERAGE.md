@@ -106,6 +106,37 @@ Signing and automatic delivery are **not** part of this increment. Manifest
 authenticity is currently a transport/operator responsibility; the signed
 trust-root channel is task `30741772`.
 
+## Public distribution
+
+The `sage-lantern` repository is public as of 19 October 2026. Map packs ship as
+release assets with a catalog at `maps/catalog.json`. A unit can install one by
+ID:
+
+```sh
+python3 software/gnome/maps-pack/pack_manager.py fetch \
+  --catalog https://raw.githubusercontent.com/l33tdawg/sage-lantern/main/maps/catalog.json \
+  --id malaysia-z11
+```
+
+The fetcher downloads the manifest and pack, verifies both against the catalog,
+and installs through the same checked path as a local file. It refuses plain
+HTTP, an unknown ID, a size above the catalog entry, a manifest that disagrees
+with the catalog, and any hash mismatch.
+
+Transport choice matters more than the catalog format:
+
+- **HTTPS** is the default when the unit has internet.
+- **A LAN peer** that already holds the pack is faster than a fresh download.
+- **Removable media** carries the same pair when the unit is offline.
+- **Meshticulum** can route the transfer through a node with an uplink, so the
+  bytes take an IP path. The catalog itself is small enough for a radio link.
+  An RF-only hop is the last resort: at the measured 2 kB/s, a 10 MB pack takes
+  about 90 minutes and has to be scheduled around other traffic.
+
+The catalog and manifests are not signed yet. The SHA-256 check catches
+corruption and a swapped asset; it does not establish who published it. Signed
+metadata belongs with the trust-root work.
+
 ## Sideload rehearsal
 
 On 19 October 2026 the install path was rehearsed on C from a staging directory

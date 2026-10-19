@@ -50,6 +50,13 @@ all behaved, and `/packs.json` updated without a service restart (PID
 unchanged). Evidence: `work/lantern-maps-20261019/SIDELOAD_REHEARSAL_20261019.json`.
 Physical SD/USB media is still untested.
 
+The `sage-lantern` repository is now public. The five packs are published as
+release assets under tag `maps-20261019`, with a catalog at `maps/catalog.json`.
+`pack_manager.py fetch --catalog <raw URL> --id <pack>` downloads, verifies and
+installs a pack. The catalog is small enough to advertise over a radio link;
+the bytes should take HTTPS, a LAN peer or removable media. A Meshticulum node
+with an uplink can carry the transfer over IP.
+
 The antenna is still **mode 1, 0 satellites, HDOP 25.5**. No fix or position
 claim exists. The privacy toggle is off by default; `/status?position=1`
 returns no coordinates without a fresh mode 2/3 fix.
@@ -131,8 +138,8 @@ labels or a different base, not more self-generated pairs.
 1. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait.
-2. Run one install from physical SD/USB media, then connect the GNSS antenna
-   for the live-fix and physical panel acceptance pass.
+2. Connect the GNSS antenna for the live-fix and physical panel acceptance
+   pass. Run one install from physical SD/USB media when a card is available.
 3. Continue C-native and conversation-product acceptance.
 4. Resume weights only with independent preference labels or a different base.
 

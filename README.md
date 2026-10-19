@@ -2,6 +2,10 @@
 
 **Intelligence. For all of us.**
 
+A [SAGE Foundation](https://sage-foundation.net/) project, created and maintained by [Dhillon Andrew Kannabhiran (@l33tdawg)](https://github.com/l33tdawg). Part of the broader [SAGE project](https://github.com/l33tdawg/sage/).
+
+**Development preview, public since 19 October 2026.** This is the product repository for the Lantern device: runtime, touchscreen apps, provisioning tools, firmware glue and the offline map packs. The [Foundation site](https://sage-foundation.net/) carries the programme and contact details. [Offline maps](maps/README.md) are published as release assets. [Device status](docs/lantern/DELIVERY_BACKLOG.md) records what is proven and what is not.
+
 A curious mind shouldn't need a better postcode. SAGE is an initiative to
 democratise intelligence: local AI that works without reliable internet, and
 community-owned networks that keep people connected when the usual connections
@@ -9,9 +13,12 @@ don't. SAGE Commons is the fabric underneath that: core mesh technology and a
 governed public network that community networks, services and devices join.
 SAGE Lantern is the first deployment on it.
 
-This repository is the private development home of that work — device runtime,
+This repository is the development home of that work: device runtime,
 touchscreen interface, firmware, provisioning tools, public website and the
-engineering documentation behind them.
+engineering documentation behind them. It opened publicly on 19 October 2026,
+ahead of the January 2027 launch plan, so the device work and map packs can be
+reviewed and used now. Opening the repository does not change the device's
+acceptance status.
 
 Current device allocation: **A/B are single-LoRa Lamplighter, admin, knowledge
 delivery and repeater support units with dashboard screens. C/D/E/F are the real user Lanterns: Orange
@@ -20,6 +27,17 @@ for verified readiness and remaining integration work. Unit C is the first unit
 running the 3B chat model in production; the 2B remains its rollback.
 
 ## What we're building
+
+### The SAGE project family
+
+| Project | Repository and scope |
+| --- | --- |
+| **SAGE** | [Main SAGE repository](https://github.com/l33tdawg/sage/) — agent memory, governance and core infrastructure. |
+| **Meshticulum** | [Meshticulum](https://github.com/l33tdawg/meshticulum) — reusable transport, reliable flow, radio and IP carrier work, and verified resource protocols. |
+| **Lantern** | This repository — product apps and UI, device provisioning, runtime orchestration and private SAGE integrations. |
+
+Lantern consumes the SAGE SDK and Meshticulum. Neither depends on Lantern. The
+model weights live in [lantern-3b](https://github.com/l33tdawg/lantern-3b).
 
 **SAGE Lantern — a handheld AI companion.** A 6.25-inch portrait touchscreen, a
 physical hold-to-talk control, an outward camera for visual questions and a
@@ -134,6 +152,7 @@ as the current source of truth for what is proven and what is still open.
 | [`docs/lantern/`](docs/lantern/) | Device PRD, hardware BOM and contract, bring-up and validation, protocol notes, acceptance evidence, delivery backlog |
 | [`docs/`](docs/) | Programme, architecture, distribution, roadmap, governance and open-source policy documents |
 | [`deploy/`](deploy/) | Server-side configuration used by the hosted services |
+| [`maps/`](maps/) | Offline map pack catalog, licence notes and install commands |
 
 `docs/` is the published documentation tree: device, hardware and engineering
 material only. Business material — pitch decks, exported programme documents,
@@ -211,7 +230,7 @@ The project's public plan, as published on the website:
 | --- | --- | --- |
 | Now | Build and prove the prototypes end to end | In development |
 | Next | First-article prints and a measured tolerance report for the C–F fleet | Gates every hardware decision and date |
-| 1 January 2027 | Public launch: the announcement, and the repositories open | Target |
+| 1 January 2027 | Public launch announcement and campaign | Repositories opened 19 October 2026; announcement target 1 January 2027 |
 | 1 February 2027 | Campaign live, and the first backers can place orders | Target; receiving entity and checkout still to settle |
 | Next, with funding | A supported 20–30 unit community pilot | Proposed first stage |
 
