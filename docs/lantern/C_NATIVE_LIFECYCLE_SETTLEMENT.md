@@ -175,8 +175,8 @@ the native owner can persist settlement across power loss.
    same durable transaction on the target filesystem.
 2. Independently protected monotonic state, with rollback resistance and a
    complete read-back after every write. The source now has an injectable
-   counter port and refuses a missing/stale counter; the actual TPM/RPMB
-   adapter and provisioning remain open.
+   counter port, refuses a missing/stale counter, and includes a TPM2 NV-counter
+   adapter; actual TPM/RPMB provisioning and cold-power drills remain open.
 3. A real pidfd and cgroup probe that reports terminal state without adopting
    a PID or killing a possibly released child. The Linux source exists and
    passed a disposable-child run on C; it still needs integration with the

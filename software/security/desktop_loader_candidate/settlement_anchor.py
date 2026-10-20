@@ -14,6 +14,8 @@ from pathlib import Path
 import re
 import secrets
 import stat
+import subprocess
+import tempfile
 
 import fcntl
 
@@ -45,6 +47,61 @@ class UnavailableCounter:
 
     def advance(self, expected):
         raise CounterRefused("monotonic_counter_unavailable")
+
+
+class Tpm2NvCounter:
+    """TPM2 NV-counter adapter; provisioning and TPM acceptance are external."""
+    def __init__(self, index, *, nvread="/usr/bin/tpm2_nvread",
+                 nvincrement="/usr/bin/tpm2_nvincrement", timeout=10,
+                 runner=None):
+        if (type(index) is not int or index < 0 or index > 0xFFFFFFFF
+                or not Path(nvread).is_absolute()
+                or not Path(nvincrement).is_absolute()
+                or type(timeout) is not int or timeout < 1):
+            raise CounterRefused("tpm2_counter_config_invalid")
+        self.index = index
+        self.nvread = nvread
+        self.nvincrement = nvincrement
+        self.timeout = timeout
+        self.runner = runner or subprocess.run
+
+    @property
+    def selector(self):
+        return f"0x{self.index:08x}"
+
+    def _run(self, argv):
+        result = self.runner(
+            argv, check=False, capture_output=True, timeout=self.timeout)
+        if type(result.returncode) is not int or result.returncode != 0:
+            raise CounterRefused("tpm2_command_failed")
+
+    def read(self):
+        descriptor, temporary = tempfile.mkstemp(prefix="sage-tpm-counter-")
+        os.close(descriptor)
+        try:
+            self._run([self.nvread, "-C", "o", "-x", self.selector,
+                       "-s", "8", "-o", temporary])
+            try:
+                raw = Path(temporary).read_bytes()
+            except OSError:
+                raise CounterRefused("tpm2_counter_read_failed") from None
+            if len(raw) != 8:
+                raise CounterRefused("tpm2_counter_size_invalid")
+            return CounterValue(int.from_bytes(raw, "big"))
+        finally:
+            try:
+                Path(temporary).unlink()
+            except FileNotFoundError:
+                pass
+
+    def advance(self, expected):
+        if type(expected) is not int or expected < 0:
+            raise CounterRefused("tpm2_counter_expected_invalid")
+        self._run([self.nvincrement, "-C", "o", "-x", self.selector])
+        value = self.read().value
+        if value != expected + 1:
+            raise CounterRefused("tpm2_counter_not_advanced")
+        return CounterValue(value)
 
 
 @dataclass(frozen=True)
