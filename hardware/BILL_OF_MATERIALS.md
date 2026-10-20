@@ -20,12 +20,12 @@ and **unknown** means the records do not settle it.
 | 2 | Radxa ROCK 5B, 8 GB | Owned | The A/B test boards. The earlier note that A/B were Orange Pi was corrected. |
 | 2 | Orange Pi 5 Plus, 16 GB | Bench/development main units (D-028) | No internal DSI/CSI or final-enclosure acceptance required. |
 | 2 | Radxa ROCK 5B+, 12 GB | In hand | Main fleet floor-spec units. Keep labelled as the 12 GB regression pair. |
-| 2 | Radxa ROCK 5B+, 16 GB | Planned | Main fleet preferred spec; order two to complete the four-ROCK main fleet. |
+| 2 | Radxa ROCK 5B+, 16 GB | Ordered 19 October | RS order 1000144782; estimated delivery 23 October. Completes the four-ROCK main fleet. |
 
 The main fleet is therefore **4 x ROCK 5B+ (2 x 12 GB + 2 x 16 GB) plus
 2 x Orange Pi bench units**; the two ROCK 5B 8 GB boards remain the A/B
-Meshticulum relay units. The remaining gap list (16 GB boards, DSI panels and
-256 GB NVMe) is in
+Meshticulum relay units. Receipt, panel/camera bring-up and NVMe allocation
+remain open; the dated state is in
 [`SESSION_HANDOFF_20261019.md`](../docs/lantern/SESSION_HANDOFF_20261019.md).
 LoRa HAT procurement is deferred — spare HATs are in hand.
 
@@ -33,10 +33,11 @@ LoRa HAT procurement is deferred — spare HATs are in hand.
 
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
-| 4 | Waveshare 6.25-inch HDMI capacitive touch panel, 720x1560, SKU 26757 | In hand | The C-F bench panel. It is not the final product panel. |
-| 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | Arrived | Two panels in hand; two more needed for the four ROCK main units. |
-| 2 | Radxa FPC adapter cable AC012 | Identified, likely wrong for this panel | AC012 is a 39-pin to 40-pin cable for the Radxa Display 8 HD. The Waveshare 6.25-inch DSI panel is 22-pin or 15-pin. The correct adapter is unresolved. |
-| 2 | 15-pin 1.0 mm FPC and PH2.0 four-pin power lead, about 200 mm | Part of the panel package | The recorded plan uses the AC012 DSI path and the included lead to header 5 V/GND. This is a proposed route, not a proven harness. |
+| 4 | Waveshare 6.25-inch HDMI capacitive touch panel, 720x1560, SKU 26757 | In hand | Bench-only displays. They are not the product panel path. |
+| 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | In hand | Part of the four-panel ROCK product allocation. |
+| 2 | Waveshare 6.25-inch DSI LCD (B), SKU 35000 | Ordered 19 October | Order 261019-122830-E0; awaiting shipment. Completes the four-panel ROCK allocation. |
+| 4 | Radxa FPC adapter AC005, 39-pin 0.3 mm to 15-pin 1.0 mm | Ordered from RS Malaysia | The panel-side adapter for the ROCK DSI path. Physical connector, pitch and lane checks remain open. |
+| 4 | 15-pin 1.0 mm FPC and PH2.0 four-pin power lead, about 200 mm | Part of the DSI panel packages | The recorded plan uses AC005 plus the included lead to header 5 V/GND. This is not yet a physically proven harness. |
 
 ## Radio and GNSS
 
@@ -53,7 +54,7 @@ LoRa HAT procurement is deferred — spare HATs are in hand.
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
 | 4 | Waveshare 16 MP AF IMX519 camera (owner label `IMX519-7B`; `IMX519-78` family) | Bought, last recorded in transit | Bench/experimental only. IMX519 is a Raspberry Pi libcamera module; the ROCK 5B+ has no official driver/overlay. Not the product camera. |
-| 4 | Radxa Camera 4K, IMX415 (SKU AS001) | Ordered from Arace, owner confirmed 19 October | RM205 each / RM820 subtotal. Radxa-supported product camera path on the ROCK 5B+ for the four ROCK units. |
+| 4 | Radxa Camera 4K, IMX415 (SKU AS001) | Ordered from Arace, owner confirmed 19 October | Radxa-supported product camera path on the ROCK 5B+ for the four ROCK units. |
 
 A selected camera or a kernel overlay reference is not proof of capture.
 
@@ -75,11 +76,11 @@ describe the old bezel chamber as fitted hardware.
 | Qty | Part | Status | Notes |
 |---:|---|---|---|
 | Product power | External USB-C, bring your own | Direction | The Orange Pi needs a fixed 5 V at 4 A or more. No battery or charge pigtail ships. |
-| 3 | Fixed 5 V bench adapter for C-F | Paid and ordered, last state To Ship | Two are WNB-0504000 5 V/4 A. The third model needs confirmation. Receipt and load tests are unknown. |
+| 3 | Fixed 5 V bench adapter for the Orange Pi units | Paid and ordered, last state To Ship | Two are WNB-0504000 5 V/4 A. The third model needs confirmation. Receipt and load tests are unknown. |
 | 4 | Nitecore NB10000 Gen 2 | Historical bench stock | 5 V/3 A, external only. Not a qualified 20 W product supply. |
-| 4 | Radxa heatsink 6240B, MPN AE013B | 2 ordered 9 October; 2 more ordered from RS Malaysia 19 October (MYR56.92) | Delivered revision and mounted thermal clearance are unknown. |
+| 4 | Radxa heatsink 6240B, MPN AE013B | 2 ordered 9 October; 2 more ordered from RS Malaysia 19 October | Delivered revision and mounted thermal clearance are unknown. |
 | 4 | Aluminium case and 30 mm fan kit | Receipt-confirmed stock | Compatibility with the later housing revision must be checked. |
-| 4 | Netac 256 GB NVMe, M.2 2280 | Owned | C-F storage. Exact series and installed state are unknown. |
+| 2 | Netac 256 GB NVMe, M.2 2280 | Owned spare inventory | Exact series, installed state and unit allocation are unknown; no NVMe order is currently open. |
 | 2 | Netac 512 GB NVMe, M.2 2280 | Owned | A/B bench inventory. |
 
 ## Antennas, cables and small parts
@@ -100,7 +101,8 @@ not copied into this repository yet. The list and status are in
 ## Builder gates still open
 
 - Count the actual ROCK DSI connector. The records disagree between 39, 40 and
-  41 pins. Verify the AC012 contacts, pitch, lane route and the panel overlay.
+  41 pins. Verify the ordered AC005 contacts, pitch, lane route and panel
+  overlay.
 - Identify the Orange Pi CSI connector and net map. The earlier 15-pin
   Raspberry Pi assumption was withdrawn.
 - Bring up the IMX415 on the actual ROCK 5B+ with the matching ribbon and

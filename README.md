@@ -36,15 +36,16 @@ ahead of the January 2027 launch plan, so the device work and map packs can be
 reviewed and used now. Opening the repository does not change the device's
 acceptance status.
 
-Current device allocation: **A/B are single-LoRa Lamplighter, administration,
-knowledge delivery and repeater support units with dashboard screens. C–F are
-the current bench and acceptance Lanterns: Orange Pi 5 Plus, one LoRa radio,
-GPS and WiFi via the Pi. G/H are the next user
-units on the ROCK 5B+.** See the [device-role map](docs/lantern/DEVICE_ROLES.md)
-for verified readiness and remaining integration work. Unit C is the first unit
-running the 3B chat model as its live device lane; V79.6 remains the rollback.
+Current hardware state: **A/B are the two ROCK 5B 8 GB Lamplighter and relay
+units. The product fleet is four ROCK 5B+ units — two 12 GB boards in hand and
+two 16 GB boards ordered — with two Orange Pi 5 Plus units retained for bench
+and development use.** Unit C remains the current Orange Pi acceptance unit.
+See the [device-role map](docs/lantern/DEVICE_ROLES.md) and the
+[19 October handoff](docs/lantern/SESSION_HANDOFF_20261019.md) for the dated
+allocation, orders and open gates. Unit C runs the V81 3B chat model as its live
+device lane; V79.6 remains the rollback.
 
-[Meshticulum](https://github.com/l33tdawg/meshticulum/tree/0e240641d04b373402267c68cdf261a516a5156e)
+[Meshticulum](https://github.com/l33tdawg/meshticulum/tree/673eb60d24dc60f67371e24bc5c9caeec3a68508)
 owns the reusable transport, crypto, flow, drivers and resource protocols.
 Lantern consumes that pinned dependency and owns its
 [private/native integration](software/meshticulum-integration/README.md) and
@@ -198,8 +199,9 @@ that way.
 
 - **Two test units (A and B) are built and running.** Local voice, on-device
   answers, camera capture, the touchscreen interface and the radio foundation
-  are under active integration and validation. The fleet build in flight is
-  C–H. The ROCK 5B+ tub, firmer bezel and back cover have been printed and
+  are under active integration and validation. The product build is four ROCK
+  5B+ units, with two Orange Pi 5 Plus units retained for bench and development
+  use. The ROCK 5B+ tub, firmer bezel and back cover have been printed and
   accepted as mechanical trials. No complete unit has passed electrical,
   thermal or field acceptance, and the gasket and antenna-collar trials remain
   open.
@@ -239,7 +241,7 @@ as the current source of truth for what is proven and what is still open.
 | [Bill of materials](hardware/BILL_OF_MATERIALS.md) | Parts, quantities and what is still pending |
 | [Printable parts](hardware/stl/README.md) | STL folder and print-file conventions; nothing published yet |
 | [Build guide](docs/build/README.md) | The full build path and what it assumes |
-| [Assembly](docs/build/ASSEMBLY.md) | Physical build sequence for the C-F unit |
+| [Assembly](docs/build/ASSEMBLY.md) | Physical build sequence for the Orange Pi bench unit |
 | [First boot](docs/boot/FIRST_BOOT.md) | Owner setup, networking and service checks |
 | [Recovery](docs/boot/RECOVERY.md) | Rollback and evidence preservation |
 
@@ -319,7 +321,7 @@ Start with these, then follow the links inside them:
 - [`docs/lantern/DELIVERY_BACKLOG.md`](docs/lantern/DELIVERY_BACKLOG.md) — current device gate, verified state and open work.
 - [`docs/lantern/3B_MODEL_PRODUCTION.md`](docs/lantern/3B_MODEL_PRODUCTION.md) — V81 3B production deployment, device timings, guards, rollback and known limits.
 - [`docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md`](docs/lantern/HARDWARE_SOFTWARE_CONTRACT.md) — the hardware/software ownership boundary.
-- [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) — the A/B test-unit parts list and order history as of 11 September 2026. Superseded for the C–F fleet build, which the hardware workstream records in its own bill of materials and build status; kept here as the bring-up record.
+- [`docs/lantern/HARDWARE_BOM.md`](docs/lantern/HARDWARE_BOM.md) — the A/B test-unit parts list and order history as of 11 September 2026. Superseded for the current four-ROCK product fleet and two-Orange-Pi bench plan; kept here as the bring-up record.
 - [`docs/lantern/BRINGUP_AND_VALIDATION.md`](docs/lantern/BRINGUP_AND_VALIDATION.md) — staged assembly, test procedure and evidence checklist.
 - [`docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md`](docs/lantern/UNIT_A_ACCEPTANCE_EVIDENCE.md) — Unit A build, offline voice, timing and recovery evidence.
 - [`docs/lantern/SSH_MANAGEMENT.md`](docs/lantern/SSH_MANAGEMENT.md) — operator access, the `sage` maintenance account and key rotation.
@@ -327,15 +329,14 @@ Start with these, then follow the links inside them:
 - [`docs/MASTER_TECHNICAL_PRD.md`](docs/MASTER_TECHNICAL_PRD.md), [`docs/TERMINOLOGY.md`](docs/TERMINOLOGY.md) and [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md) — programme contract, canonical vocabulary and document hierarchy.
 - [`docs/OPEN_SOURCE_POLICY.md`](docs/OPEN_SOURCE_POLICY.md) and [`GOVERNANCE.md`](GOVERNANCE.md) — licensing scope and how decisions are made.
 
-## Direction and roadmap
-
 ## Direction
 
 This repository is public now. Device launch, campaign and order dates are
-separate decisions and are not announced here. The current work is to qualify
-C-F and bring up the first G/H unit. The next hardware gate is the remaining
-first-article prints and a measured tolerance report. A supported community
-pilot remains a proposal.
+separate decisions and are not announced here. The current work is to complete
+Unit C's physical desktop and GNSS acceptance, continue the conversation and
+native-runtime gates, and bring up the four ROCK 5B+ product units as the
+remaining boards and DSI panels arrive. Mechanical V2 collar and gasket trials
+remain open. A supported community pilot remains a proposal.
 
 ## Contact
 

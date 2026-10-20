@@ -1,22 +1,23 @@
-# Device roles — radio direction updated 9 October 2026
+# Device roles — fleet plan updated 19 October 2026
 
-This is the current device-role map. It supersedes older A/B endpoint completion
-plans and provisional role descriptions. Historical bench evidence remains dated;
-it does not describe the current service configuration.
+This is the current device-role map under D-028. It supersedes older C–H
+four-unit and dual-radio plans. Historical bench evidence remains dated; it does
+not describe the current service configuration.
 
 | Units | Use cases | Hardware target | Current software state |
 | --- | --- | --- | --- |
-| **A and B** | **Lamplighter, administration, public knowledge cache/delivery, repeater/relay testing** | **Attached dashboard screens**; existing Radxa ROCK 5B, 8 GB (owner-confirmed 2026-09-29 — the base model, not the 5B+); **one LoRa chip per unit** (Heltec USB companion); existing WiFi/IP bench connection | Public pack seeds running on both; private native SAGE stores wiped; legacy endpoint services stopped and inhibited. Pack dashboard and scoped SSH admin are installed; managed C–F onboarding and RF repeater/LoRa pack integration remain open. |
-| **C, D, E and F** | **Bench/acceptance units** for the end-user Lantern — each with its own private SAGE, local AI and user interface | **Orange Pi 5 Plus**, 16 GB / 256 GB NVMe; one LoRa radio for the Meshticulum baseline, GPS and WiFi via the Orange Pi; **HDMI 6.25-inch 720×1560 panel with USB touch — bench-only, NOT final spec (owner 2026-09-29; the product display is the ribbon/DSI panel on G/H)** | C first, then D/E/F. C is commissioned and running; the rest of the first-boot/peripheral work remains open. Display/touch results here are bench evidence only. |
-| **G and H** | **Additional end-user Lanterns** (December fleet C–H) | **Planned Radxa ROCK 5B+, 16 GB minimum** — owner direction 2026-09-29; sourcing research open. Chosen because the ROCK's USB-C input negotiates PD (users can bring a common charger — D-015, bring-your-own power) and because it carries **onboard WiFi/Bluetooth**, which the Orange Pi 5 Plus lacks. **Full peripheral set (owner 2026-09-29): the final ribbon (MIPI DSI) panel — already ordered — the CSI-ribbon camera, and the radios.** | Boards not ordered and not started; the final panels are ordered. C–F qualification precedes them. C–F remain Orange Pi 5 Plus on the HDMI panel + USB touch, need a 5 V/4 A supply path and an added wireless module (no onboard WiFi); G/H would follow the ROCK PD behaviour measured on B (ROCK 5B 8 GB). DSI panel drivers/overlays and per-platform ribbon adapters are open, see CF_DISPLAY_LAYOUT.md. |
+| **A and B** | **Lamplighter, administration, public knowledge cache/delivery, repeater/relay testing** | **Attached dashboard screens**; existing Radxa ROCK 5B, 8 GB (owner-confirmed 2026-09-29 — the base model, not the 5B+); **one LoRa chip per unit** (Heltec USB companion); existing WiFi/IP bench connection | Public pack seeds running on both; private native SAGE stores wiped; legacy endpoint services stopped and inhibited. Pack dashboard and scoped SSH admin are installed; managed bench/product onboarding and RF repeater/LoRa pack integration remain open. |
+| **Orange Pi 5 Plus bench units** | **Bench and acceptance work** for the end-user Lantern — private SAGE, local AI and user interface | **Orange Pi 5 Plus**, 16 GB / 256 GB NVMe; one LoRa radio for the Meshticulum baseline, GPS and WiFi via the Orange Pi; **HDMI 6.25-inch 720×1560 panel with USB touch — bench-only, not the product panel** | Two units are retained under D-028; C is commissioned and running. The earlier C–F four-unit lettering remains historical until the physical count is reconciled. Display/touch results here are bench evidence only. |
+| **ROCK 5B+ product fleet (four units)** | **Main end-user Lantern fleet** | **Four ROCK 5B+**: two 12 GB boards in hand and two 16 GB boards ordered (RS order 1000144782, ETA 23 October). Two 6.25-inch DSI panels in hand and two ordered; four AC005 adapters and four IMX415 product cameras ordered. The ROCK USB-C input negotiates PD, and the platform carries onboard WiFi/Bluetooth (D-015: bring-your-own power). | Board and panel bring-up has not started. AC005 routing, DSI overlays, camera capture, thermal path, power and physical panel/touch acceptance remain open. |
 
 **A/B use their existing screens for Lamplighter administration.** The owner’s
 latest clarification supersedes the earlier headless interpretation. Their web
 dashboard distributes the approved public pack, shows transfer progress and
 pause/resume, and monitors A/B health, connected USB hardware and cached LAN
 neighbours. It is available on both screens and from the management computer.
-SSH and `sage-lamplighter-admin` remain available. C–F retain their separate
-end-user display, touch, voice and personal-SAGE acceptance requirements.
+SSH and `sage-lamplighter-admin` remain available. The Orange Pi bench units
+retain their separate end-user display, touch, voice and personal-SAGE
+acceptance requirements.
 
 One LoRa radio per device is the product baseline. Meshticulum carries messages
 and resource transfers over that single half-duplex radio. Earlier dual-radio
@@ -38,9 +39,10 @@ Administration on A/B includes the installed scoped SSH operator CLI
 (`sage-lamplighter-admin`); see [the operator runbook](AB_OPERATOR_RUNBOOK.md). It does
 not grant publisher signing, personal-Root or public validator authority. The
 old endpoint Fleet Admin UI is stopped; the separate Lamplighter dashboard
-runs on A at port 18791. C–F managed-device onboarding remains future work. Verified public downloads never automatically
-enter a user's personal SAGE. Four C–F personal devices are not a four-validator
-public consensus network; the independent Lightbearer lab remains separate.
+runs on A at port 18791. Bench and ROCK managed-device onboarding remains future
+work. Verified public downloads never automatically enter a user's personal
+SAGE. The bench units and planned ROCK fleet do not form a four-validator public
+consensus network; the independent Lightbearer lab remains separate.
 
 ## A/B readiness and data boundary
 
@@ -53,7 +55,8 @@ Both serve the signed 5,686-chunk public world-facts-lite v3 pack from
 `/var/lib/sage-lamplighter-lab/`. WiFi resume, multi-source fetch, re-seeding and
 seed-outage fallback passed. This is an HTTP chunk lab with BitTorrent-style
 retrieval, not the BitTorrent wire protocol. LoRa pack transfer, RF repeater
-forwarding, range/coexistence and four actual C–F receivers remain unqualified.
+forwarding, range/coexistence and four actual ROCK product receivers remain
+unqualified.
 
 With explicit owner approval, `/var/lib/sage-lantern/sage-personal` was deleted
 on A and B, including their native test memories, vault keys and agent identities.
@@ -63,10 +66,11 @@ verified after deletion. This was a scoped native-store deletion, not a whole-di
 sanitization: other retired endpoint files and historical bench evidence remain.
 SSH, radio firmware and the public pack caches remain in use.
 
-No more A/B personal-endpoint/model/UI acceptance is required before starting C–F.
-Use A/B for support-system tests as C–F is brought up; validate the actual user
-experience, the single-radio baseline, GPS/WiFi and fresh identities on C–F.
+No more A/B personal-endpoint/model/UI acceptance is required before starting
+the ROCK product fleet. Use A/B for support-system tests as the Orange Pi and
+ROCK units are brought up; validate the actual user experience, the single-radio
+baseline, GPS/WiFi and fresh identities on real end-user hardware.
 
-See [Lamplighter lab](LAMPLIGHTER_AB_LAB.md), [current SAGE task map](SAGE_TASKS_20260927.md),
-[C–F provisioning](REAL_UNIT_PROVISIONING.md), [peripheral bindings](CF_PERIPHERAL_BINDINGS.md)
-and [recorded A/B results](../../work/ab-support-lab-20260927/README.md).
+See [Lamplighter lab](LAMPLIGHTER_AB_LAB.md), [current handoff](SESSION_HANDOFF_20261019.md),
+[unit provisioning](REAL_UNIT_PROVISIONING.md) and
+[peripheral bindings](CF_PERIPHERAL_BINDINGS.md).
