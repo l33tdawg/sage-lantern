@@ -365,6 +365,12 @@ static int frozen(void *context, int pidfd, const struct lantern_guard_grant *gr
     int result = bpf_map_update_elem(c->map_fd, &pidfd, grant, BPF_EXIST);
     return result < 0 && errno == EPERM ? 0 : -EPERM;
 }
+static int record_attempt(void *context, const struct lantern_child *child)
+{
+    (void)context; (void)child;
+    /* No fitted settlement owner exists. Refuse before the release callback. */
+    return -EOPNOTSUPP;
+}
 static int release(void *context, const struct lantern_child *child)
 {
     struct lantern_linux *c = context;
@@ -400,4 +406,5 @@ void lantern_linux_close(struct lantern_linux *c)
     c->map = NULL; c->map_fd = -1;
 }
 const struct lantern_ops lantern_linux_ops = {prepare, load_map, attach_pin, attest,
-    spawn_stopped, stopped, insert, lookup, freeze, frozen, release, fence};
+    spawn_stopped, stopped, insert, lookup, freeze, frozen, record_attempt,
+    release, fence};

@@ -94,7 +94,9 @@ probed on Unit C: the pidfd was opened, the child exited 0, the probe produced
 a proof and the durable journal moved `attempted` to `settled` at revision 1.
 The evidence is in
 `docs/lantern/evidence/LINUX_PROBE_CHILD_C_20261019.json`. The probe is not
-wired to a service or the desktop launch authority.
+wired to a service or the desktop launch authority. The C loader now requires a
+stopped-child `record_attempt` callback before release; the fitted Linux
+backend refuses that callback with `EOPNOTSUPP`.
 
 ## Disabled owner facade
 

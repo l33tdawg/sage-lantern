@@ -29,10 +29,12 @@ still returns `EOPNOTSUPP`.
 
 ## Why settlement is not wired around the live exec
 
-1. **No stopped-child receipt in the Python authority.** A pidfd opened after
-   `spawn_shell()` is not proof that the attempt was durably recorded before
-   compositor release. Recording after an unchecked exec leaves a crash window
-   in which a live child exists with no settlement obligation.
+1. **The stopped-child settlement callback is not connected to a live
+   authority.** The C loader now requires `record_attempt()` after all frozen
+   child/map checks and before its sole release callback. The Linux backend
+   deliberately returns `EOPNOTSUPP` there, and the Python authority still uses
+   `spawn_shell()` rather than the loader. Recording after that direct exec
+   would leave a crash window in which a live child has no obligation.
 2. **No frozen capture selection.** `SettlementOwner.track_release()` requires
    the exact capture, generation and policy digest. The launch authority reads
    an activation gate, not a protected current-capture selection. A command-line
@@ -75,6 +77,12 @@ list. `FileJournalBackend.pending()` returns attempted records and
 trusted owner restart. Missing or unavailable recovery state returns
 `uncertain`; it does not appear as an empty queue.
 
+The C sequencing core now requires a `record_attempt()` operation after the
+child is stopped, granted and frozen, immediately before the one release
+callback. Failure or cancellation at that point fences the loader and cannot
+release the compositor. The Linux backend returns `EOPNOTSUPP`, so the path
+remains deliberately closed until a fitted settlement owner exists.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -84,6 +92,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 - running, zombie, absent and PID-reused child observations.
 - durable attempt recovery through a reopened file journal;
 - unavailable recovery state remaining uncertain.
+- an actual stopped-child loader replay proving `record_attempt` precedes
+  release and a callback refusal prevents release.
 
 ## Required implementation order
 
@@ -94,8 +104,9 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 2. Record the persistent child identity at attempt time using boot ID, PID and
    process start time, or a native pidfd handoff that remains valid after
    authority restart. A reused numeric PID/FD must not match.
-3. Invoke settlement attempt creation at the stopped-child boundary, before
-   the compositor release callback. Do not insert it after a live exec.
+3. Connect the new stopped-child `record_attempt` callback to a fitted
+   settlement owner and make the Python authority invoke the loader instead of
+   `spawn_shell()`. Do not insert settlement after a live exec.
 4. Supply capture ID, generation and policy digest from a protected current
    selection, not from bridge JSON, command-line claims or user-writable state.
 5. Serialize the release-attempt anchor and settlement journal through the

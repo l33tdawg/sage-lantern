@@ -22,7 +22,7 @@ static int complete(const struct lantern_ops *o)
 {
     return o && o->prepare && o->load_map && o->attach_pin && o->attest &&
         o->spawn_stopped && o->stopped && o->insert && o->lookup && o->freeze &&
-        o->frozen && o->release && o->fence;
+        o->frozen && o->record_attempt && o->release && o->fence;
 }
 void lantern_hold(struct lantern_loader *s, const struct lantern_ops *o, void *ctx)
 {
@@ -110,6 +110,8 @@ int lantern_launch(struct lantern_loader *s, const struct lantern_ops *o, void *
     if (o->stopped(ctx, &s->child) || s->phase != LANTERN_FROZEN ||
         o->attest(ctx, s->links, s->map_id) ||
         s->phase != LANTERN_FROZEN) return failed(s, o, ctx);
+    if (o->record_attempt(ctx, &s->child) || s->phase != LANTERN_FROZEN)
+        return failed(s, o, ctx);
     /* Once release was attempted, cancellation never kills a possibly running
      * session, even when the transport cannot confirm success. */
     s->release_attempted = 1;
