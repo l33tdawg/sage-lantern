@@ -99,6 +99,9 @@ class UnavailableJournalBackend:
     def pending(self):
         raise JournalBackendUnavailable("no_qualified_journal_backend")
 
+    def records(self):
+        raise JournalBackendUnavailable("no_qualified_journal_backend")
+
     def create(self, record):
         raise JournalBackendUnavailable("no_qualified_journal_backend")
 
@@ -226,6 +229,15 @@ class FileJournalBackend:
                 digest = path.stem
                 record = self._read(digest)
                 if record is not None and record.state == "attempted":
+                    records.append(record)
+            return tuple(records)
+
+    def records(self):
+        with self._locked():
+            records = []
+            for path in sorted(self.root.glob("*.json")):
+                record = self._read(path.stem)
+                if record is not None:
                     records.append(record)
             return tuple(records)
 
@@ -391,3 +403,7 @@ class SettlementJournal:
         records = self.backend.pending()
         return tuple(_record(value) for value in records
                      if value.state == "attempted")
+
+    def records(self):
+        """Return every durable record for independent anchor verification."""
+        return tuple(_record(value) for value in self.backend.records())

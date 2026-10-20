@@ -243,9 +243,11 @@ def test_broker_authority_requires_clean_startup_recovery(monkeypatch):
 def test_settlement_runtime_composes_provider_recorder_and_recovery(tmp_path):
     module = authority_module()
     tmp_path.chmod(0o700)
+    anchor = tmp_path / 'anchor'
+    anchor.mkdir(mode=0o700)
     selection, recorder, recovery = module.load_settlement_runtime(
         ROOT / 'software/security/desktop_loader_candidate',
-        tmp_path, '/synthetic/capture-policy.json')
+        tmp_path, anchor, '/synthetic/capture-policy.json')
     assert callable(selection) and callable(recorder) and callable(recovery)
     assert recovery() == ()
 

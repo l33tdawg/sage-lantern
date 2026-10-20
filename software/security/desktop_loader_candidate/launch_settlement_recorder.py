@@ -18,8 +18,7 @@ def _load(name, filename):
     return module
 
 
-L = _load("sage_lantern_lifecycle_settlement_for_recorder",
-          "lifecycle_settlement.py")
+L = _load("sage_lantern_lifecycle_settlement", "lifecycle_settlement.py")
 
 
 @dataclass(frozen=True)

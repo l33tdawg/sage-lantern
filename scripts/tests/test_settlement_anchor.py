@@ -55,8 +55,11 @@ class AnchorTests(unittest.TestCase):
     def test_cas_cannot_roll_generation_back(self):
         first = self.store.create(A.AnchorValue(1, "a" * 64, 0))
         self.assertEqual(first.generation, 1)
+        second = self.store.compare_exchange(
+            first, A.AnchorValue(2, "b" * 64, 0))
+        self.assertEqual(second.generation, 2)
         with self.assertRaisesRegex(A.AnchorRefused, "anchor_generation_mismatch"):
-            self.store.compare_exchange(first, A.AnchorValue(1, "b" * 64, 0))
+            self.store.compare_exchange(second, A.AnchorValue(2, "c" * 64, 0))
 
     def test_record_payload_is_part_of_seal(self):
         first = records("attempted")

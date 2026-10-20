@@ -108,9 +108,10 @@ recovery before serving launch requests.
 `settlement_anchor.py` adds an independently stored monotonic seal over the
 complete recoverable journal and optional outstanding-release digest. It
 detects changed, missing or reordered record sets and refuses generation
-rollback in its CAS API. The store is still a private file in source; it is not
-bound to a separate monotonic hardware owner and is not yet consulted by the
-settlement owner.
+rollback in its CAS API. `SettlementOwner` verifies the seal before a new
+attempt and advances it after each durable attempt or settlement; recovery
+returns `uncertain` if the journal and anchor disagree. The store is still a
+private file in source; it is not bound to a separate monotonic hardware owner.
 
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
@@ -131,6 +132,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   stopped-child/handoff/release replay.
 - an independent journal anchor that detects record-set changes, release
   identity changes and generation rollback at its CAS boundary.
+- owner integration that verifies the anchor before attempts and advances it
+  only after durable attempt or settlement transitions.
 
 ## Required implementation order
 
@@ -142,9 +145,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 3. Serialize the release-attempt anchor and settlement journal through the
    native owner. Preserve an unresolved attempt across supervisor crash, boot,
    cancellation and protection-store rollback.
-4. Bind the new anchor to the settlement owner and a separate protected
-   monotonic store, then add a bound owner identity. A same-store file alone is
-   not rollback resistance.
+4. Bind the integrated anchor to a separate protected monotonic store and
+   trusted owner identity. A same-store file alone is not rollback resistance.
 5. Replay failures before and after each durable write, after child exit, at
    release-callback return, during supervisor restart and with stale or reused
    child identities.

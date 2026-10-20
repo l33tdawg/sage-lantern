@@ -40,6 +40,7 @@ REQUIRED = {'/usr/local/libexec/sage-lantern-guarded-session-authority',
     '/usr/local/libexec/native_probe.py',
     '/usr/local/libexec/settlement_journal.py',
     '/usr/local/libexec/settlement_owner.py',
+    '/usr/local/libexec/settlement_anchor.py',
     *('/opt/sage-lantern/venv/lib/python3.11/site-packages/sage_lantern/' + name + '.py'
       for name in ('__init__', 'desktop_launch', 'desktop_native',
                    'desktop_control', 'desktop_seat', 'loader_broker'))}
@@ -97,24 +98,27 @@ def load_launch_policy(path, adapter):
     return {**value, **native}, check, hashlib.sha256(body).hexdigest()
 
 
-def load_settlement_runtime(source, journal_root, capture_policy):
+def load_settlement_runtime(source, journal_root, anchor_root, capture_policy):
     """Load and compose the reviewed source-only settlement owner."""
     source = Path(source)
     if not source.is_absolute() or not source.is_dir():
         raise NativeError()
     names = {
-        "lifecycle": "lifecycle_settlement.py",
-        "journal": "settlement_journal.py",
-        "probe": "linux_probe.py",
-        "owner": "settlement_owner.py",
-        "recorder": "launch_settlement_recorder.py",
-        "selection": "launch_selection.py",
+        "lifecycle": ("sage_lantern_lifecycle_settlement",
+                      "lifecycle_settlement.py"),
+        "journal": ("sage_lantern_settlement_journal", "settlement_journal.py"),
+        "probe": ("sage_lantern_linux_probe", "linux_probe.py"),
+        "anchor": ("sage_lantern_settlement_anchor", "settlement_anchor.py"),
+        "owner": ("sage_lantern_settlement_owner", "settlement_owner.py"),
+        "recorder": ("sage_lantern_launch_settlement_recorder",
+                     "launch_settlement_recorder.py"),
+        "selection": ("sage_lantern_launch_selection", "launch_selection.py"),
     }
     loaded = {}
-    for name, filename in names.items():
+    for name, (module_name, filename) in names.items():
         path = source / filename
         spec = importlib.util.spec_from_file_location(
-            f"guarded_settlement_{name}", path)
+            module_name, path)
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
@@ -124,7 +128,10 @@ def load_settlement_runtime(source, journal_root, capture_policy):
         loaded["journal"].FileJournalBackend(journal_root),
         lifecycle.SettlementAuthority())
     probe = loaded["probe"].LinuxProbe("/")
-    owner = loaded["owner"].SettlementOwner(journal, probe)
+    anchor = loaded["anchor"].FileAnchorStore(anchor_root)
+    owner = loaded["owner"].SettlementOwner(journal, probe, anchor)
+    if owner.anchor_value is None and not owner.initialize_anchor():
+        raise NativeError("settlement_anchor_not_initialized")
     recorder = loaded["recorder"].LaunchSettlementRecorder(owner)
     def identity():
         machine = trusted_file("/etc/machine-id").decode("ascii").strip()
@@ -355,16 +362,17 @@ def main(argv=None):
     parser.add_argument("--capture-policy", type=Path)
     parser.add_argument("--loader-broker")
     parser.add_argument("--settlement-root", type=Path)
+    parser.add_argument("--settlement-anchor", type=Path)
     parser.add_argument("--settlement-source", type=Path,
         default=Path(__file__).resolve().parents[2] /
             "software/security/desktop_loader_candidate")
     args = parser.parse_args(argv)
     broker_values = (args.capture_policy, args.loader_broker,
-                     args.settlement_root)
+                     args.settlement_root, args.settlement_anchor)
     if any(value is not None for value in broker_values) and not all(
             value is not None for value in broker_values):
-        parser.error("capture-policy, loader-broker and settlement-root "
-                     "must be supplied together")
+        parser.error("capture-policy, loader-broker, settlement-root and "
+                     "settlement-anchor must be supplied together")
     status = Path('/proc/self/status').read_text()
     if (os.geteuid() != 0 or not hasattr(os, 'pidfd_open') or 'NoNewPrivs:\t1\n' not in status
             or resource.getrlimit(resource.RLIMIT_CORE) != (0, 0)
@@ -375,7 +383,8 @@ def main(argv=None):
     selection_provider = broker_factory = settlement_recorder = recovery = None
     if args.loader_broker is not None:
         selection_provider, settlement_recorder, recovery = load_settlement_runtime(
-            args.settlement_source, args.settlement_root, args.capture_policy)
+            args.settlement_source, args.settlement_root,
+            args.settlement_anchor, args.capture_policy)
         broker_factory = lambda: LoaderBroker.connect(args.loader_broker)
     ready, ready_identity = bound_socket(NOTIFY, policy['uid'], socket.SOCK_DGRAM)
     authority = None

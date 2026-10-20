@@ -6,7 +6,7 @@ a TPM/RPMB-equivalent owner, before treating it as a production trust anchor.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -43,6 +43,14 @@ def journal_digest(records):
             "obligation": record.obligation,
         })
     return hashlib.sha256(canonical(rows)).hexdigest()
+
+
+def release_set_digest(records):
+    """Digest the full set of outstanding, pre-release obligations."""
+    pending = sorted(
+        record.obligation_sha256 for record in records
+        if record.state == "attempted")
+    return hashlib.sha256(canonical(pending)).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -112,7 +120,7 @@ class FileAnchorStore:
     def compare_exchange(self, before, after):
         _anchor(before)
         _anchor(after)
-        if before.generation != after.generation or after.generation != before.generation + 1:
+        if after.generation != before.generation + 1:
             raise AnchorRefused("anchor_generation_mismatch")
         with self._locked():
             if self.read() != before:
