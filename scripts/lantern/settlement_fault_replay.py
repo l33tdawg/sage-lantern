@@ -29,6 +29,7 @@ def load(name, filename):
 
 L = load("lifecycle_settlement_for_replay", "lifecycle_settlement.py")
 J = load("settlement_journal_for_replay", "settlement_journal.py")
+A = load("settlement_anchor_for_replay", "settlement_anchor.py")
 
 MACHINE = "a" * 32
 BOOT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -218,6 +219,66 @@ def unavailable():
     return {"status": outcome.status, "reason": outcome.reason}
 
 
+class Counter:
+    def __init__(self, value):
+        self.value = value
+
+    def read(self):
+        return A.CounterValue(self.value)
+
+    def advance(self, expected):
+        if expected != self.value:
+            raise A.CounterRefused("counter_race")
+        self.value += 1
+        return A.CounterValue(self.value)
+
+
+def counter_write_failure():
+    tmp = tempfile.mkdtemp(prefix="settlement-counter-replay-")
+    try:
+        counter = Counter(4)
+        store = A.FileAnchorStore(tmp, counter=counter)
+        before = store.create(A.AnchorValue(1, "a" * 64, 0))
+        write = store._write
+        store._write = lambda _value: (_ for _ in ()).throw(
+            A.AnchorRefused("simulated_counter_write_failure"))
+        try:
+            try:
+                store.compare_exchange(
+                    before, A.AnchorValue(2, "b" * 64, 0))
+            except A.AnchorRefused as error:
+                result = str(error)
+            else:
+                result = "unexpected_success"
+        finally:
+            store._write = write
+        rejection = None
+        try:
+            store.read()
+        except A.AnchorRefused as error:
+            rejection = str(error)
+        return {"write": result, "counter": counter.value,
+                "readback": rejection}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def stale_counter():
+    tmp = tempfile.mkdtemp(prefix="settlement-counter-stale-")
+    try:
+        counter = Counter(9)
+        store = A.FileAnchorStore(tmp, counter=counter)
+        store.create(A.AnchorValue(1, "a" * 64, 0))
+        counter.value = 8
+        try:
+            store.read()
+        except A.AnchorRefused as error:
+            return {"status": "refused", "reason": str(error)}
+        return {"status": "unexpected_success"}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 CASES = [
     ("normal", normal),
     ("create_failure_before_replace", create_fail_before),
@@ -230,6 +291,8 @@ CASES = [
     ("new_boot_full_evidence", new_boot_full_evidence),
     ("no_child_identity", no_child_identity),
     ("unavailable_backend", unavailable),
+    ("counter_write_failure", counter_write_failure),
+    ("stale_counter", stale_counter),
 ]
 
 

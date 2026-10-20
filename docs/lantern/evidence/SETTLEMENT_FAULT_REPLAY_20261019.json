@@ -1,6 +1,6 @@
 {
   "schema": "sage.lantern.settlement-fault-replay.v1",
-  "generated_at": "2026-10-19T02:16:51.781882Z",
+  "generated_at": "2026-10-20T04:56:04.167409Z",
   "scope": "source contract only; no native owner, device or service",
   "cases": [
     {
@@ -74,6 +74,19 @@
       "ok": true,
       "status": "uncertain",
       "reason": "no_qualified_journal_backend"
+    },
+    {
+      "case": "counter_write_failure",
+      "ok": true,
+      "write": "simulated_counter_write_failure",
+      "counter": 5,
+      "readback": "anchor_counter_mismatch"
+    },
+    {
+      "case": "stale_counter",
+      "ok": true,
+      "status": "refused",
+      "reason": "anchor_counter_mismatch"
     }
   ],
   "passed": true
