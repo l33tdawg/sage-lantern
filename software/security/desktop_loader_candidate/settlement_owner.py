@@ -28,12 +28,13 @@ A = _load("sage_lantern_settlement_anchor", "settlement_anchor.py")
 
 class SettlementOwner:
     """The disabled owner. A caller supplies a journal and a native probe."""
-    def __init__(self, journal, probe, anchor=None):
+    def __init__(self, journal, probe, anchor=None, owner=None):
         if journal is None or probe is None:
             raise ValueError("journal_and_probe_required")
         self.journal = journal
         self.probe = probe
         self.anchor = anchor
+        self.owner_sha256 = None if owner is None else A.owner_digest(owner)
         self.anchor_value = None if anchor is None else anchor.read()
 
     def initialize_anchor(self):
@@ -43,7 +44,8 @@ class SettlementOwner:
         if self.journal.records():
             raise A.AnchorRefused("anchor_initialization_requires_empty_journal")
         value = A.AnchorValue(
-            1, A.journal_digest(()), 0, A.release_set_digest(()))
+            1, A.journal_digest(()), 0, A.release_set_digest(()),
+            self.owner_sha256)
         created = self.anchor.create(value)
         if created is None:
             current = self.anchor.read()
@@ -58,7 +60,9 @@ class SettlementOwner:
         value = self.anchor_value
         if value is None:
             return False
-        return (value.journal_sha256 == A.journal_digest(records)
+        return ((self.owner_sha256 is None
+                 or value.owner_sha256 == self.owner_sha256)
+                and value.journal_sha256 == A.journal_digest(records)
                 and value.record_count == len(records)
                 and value.release_sha256 == A.release_set_digest(records))
 
@@ -70,7 +74,8 @@ class SettlementOwner:
             return False
         after = A.AnchorValue(
             before.generation + 1, A.journal_digest(records),
-            len(records), A.release_set_digest(records))
+            len(records), A.release_set_digest(records),
+            self.owner_sha256)
         try:
             written = self.anchor.compare_exchange(before, after)
         except (A.AnchorRefused, OSError):

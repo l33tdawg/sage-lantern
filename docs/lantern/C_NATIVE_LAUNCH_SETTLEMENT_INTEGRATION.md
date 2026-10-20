@@ -113,6 +113,23 @@ attempt and advances it after each durable attempt or settlement; recovery
 returns `uncertain` if the journal and anchor disagree. The store is still a
 private file in source; it is not bound to a separate monotonic hardware owner.
 
+The same source now carries an `OwnerIdentity` loaded from one mode-0600 owner
+policy: machine ID, owner ID, executable digest and owner UID. The anchor value
+includes the owner-policy digest, and an owner-bound `FileAnchorStore` refuses a
+different owner even when the journal bytes are unchanged. The policy loader
+checks the exact schema, file identity and expected UID; it does not establish
+that the policy is installed from a trusted boot channel or that the owner
+binary is currently running. Callers must load the policy from a protected path
+and pass that identity through the native owner, never from bridge JSON.
+
+`FileAnchorStore` also accepts a separate monotonic-counter port. The anchor
+records the counter value and requires it to match on read; a create or
+compare-exchange advances the counter before writing the next anchor. The
+default `UnavailableCounter` refuses, so the source cannot accidentally treat
+the file itself as a hardware rollback counter. A counter that is missing,
+behind the anchor, or fails to advance returns `uncertain`/refuses the write.
+No TPM, RPMB or other hardware counter adapter is shipped or qualified here.
+
 `native_bundle.py` defines the exact native bundle closure: required broker,
 BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
 hashes; source commit; and rejection of missing, extra, changed or symlinked
@@ -165,6 +182,10 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   identity changes and generation rollback at its CAS boundary.
 - owner integration that verifies the anchor before attempts and advances it
   only after durable attempt or settlement transitions.
+- owner-policy loading and anchor binding that refuses a substituted owner
+  identity at the same generation and journal digest.
+- counter-bound anchor transitions that refuse a missing, rolled-back or
+  non-advancing monotonic counter.
 - an exact native-bundle manifest/verification source contract with a fixed
   required file set and metadata closure.
 - an early-boot admission receipt requiring a clean UID-1000 namespace for the
@@ -184,6 +205,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
    cancellation and protection-store rollback.
 5. Bind the integrated anchor to a separate protected monotonic store and
    trusted owner identity. A same-store file alone is not rollback resistance.
+   The owner identity source binding is now prepared; the hardware counter and
+   installed policy channel remain open.
 6. Replay failures before and after each durable write, after child exit, at
    release-callback return, during supervisor restart and with stale or reused
    child identities.
