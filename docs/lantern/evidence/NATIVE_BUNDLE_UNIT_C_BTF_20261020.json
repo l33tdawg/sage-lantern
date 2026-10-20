@@ -1,0 +1,31 @@
+{
+  "schema": "sage.lantern.native-bundle-target-btf-evidence.v1",
+  "generated_at": "2026-10-20T05:20:00Z",
+  "device": "lantern-c",
+  "kernel_release": "6.1.115-vendor-rk35xx",
+  "btf_size": 8025493,
+  "btf_sha256": "9392c4db36fc75e2e06a154133f9328fc42d21fe251757f7515ce50393f15c60",
+  "bpf_object_sha256": "4f930d4c1da25df501ce354049ef8d9d4aabcaa2756b87b140c1344fc9427e39",
+  "bpf_object_size": 806800,
+  "bpf_hook_sections": 13,
+  "broker_sha256": "27015a2d71a2f9661191a2edaea39b9922f785d6a55a6d77b024027af089cea4",
+  "bundle_files": 18,
+  "bundle_manifest_sha256": "557ca0b4ea256035dc7af406ff527d0b91739b324711f50e8828c70aacd58915",
+  "source_commit": "0fb2a912db52ef58b4a89187d2227b03ef6cd583",
+  "review_only": true,
+  "signed": false,
+  "installed": false,
+  "runtime_authorized": false,
+  "absent_target_inputs": [
+    "/etc/sage-lantern/root-gnome-capture-policy.json",
+    "/etc/sage-lantern/desktop-launch-policy.json",
+    "/etc/sage-lantern/desktop-native-policy.json",
+    "/dev/tpm*"
+  ],
+  "limitations": [
+    "The BPF object was compiled from the target vendor BTF but was not loaded or verified by the target kernel.",
+    "The bundle used synthetic policy fixtures because the target protected policies were absent.",
+    "The target has no TPM character device visible in the read-only check.",
+    "The broker, object and bundle were not installed, activated or accepted on Unit C."
+  ]
+}

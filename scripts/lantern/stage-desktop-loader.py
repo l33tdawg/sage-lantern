@@ -30,6 +30,7 @@ SOURCES = (
     "scripts/lantern/native-broker-builder.Dockerfile",
     "scripts/lantern/stage-native-bundle.py",
     "docs/lantern/evidence/NATIVE_BUNDLE_ASSEMBLY_20261020.json",
+    "docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json",
     "scripts/lantern/stage-desktop-loader.py",
     "docs/lantern/DESKTOP_LOADER_CANDIDATE.md",
 )
