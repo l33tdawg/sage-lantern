@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,11 +33,15 @@ LIBS = {
     "settlement_journal.py": "settlement_journal.py",
     "settlement_owner.py": "settlement_owner.py",
 }
-GNOME_PREFIX = "usr/local/lib/sage-lantern/gnome-pin/"
+GNOME_RELATIVE = "usr/local/lib/sage-lantern/gnome-pin/"
+GNOME_POLICY = "/usr/local/lib/sage-lantern/gnome-pin/"
 UNITS = (
     "sage-lantern-early-boot-admission.service",
     "sage-lantern-guarded-session.service",
 )
+_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_MACHINE = re.compile(r"[0-9a-f]{32}\Z")
+_UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 
 
 def _module(name, path):
@@ -67,6 +72,74 @@ def _policy(path, schema):
     if type(value) is not dict or value.get("schema") != schema:
         raise ValueError(f"policy_schema:{path}")
     return path
+
+
+def _validate_policy_set(capture, launch, native, native_files, library_sha):
+    try:
+        capture_value = json.loads(capture.read_bytes().decode("utf-8"))
+        launch_value = json.loads(launch.read_bytes().decode("utf-8"))
+        native_value = json.loads(native.read_bytes().decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError("policy_decode") from None
+    capture_fields = {
+        "schema", "contract_version", "machine_id", "boot_id", "capture_id",
+        "generation", "authority_file", "source_directory", "capture_directory",
+        "consumer_sha256", "python_sha256", "payload_digests",
+    }
+    if (type(capture_value) is not dict or set(capture_value) != capture_fields
+            or capture_value.get("contract_version") != 3
+            or not _MACHINE.fullmatch(str(capture_value.get("machine_id", "")))
+            or not _UUID.fullmatch(str(capture_value.get("boot_id", "")))
+            or not _UUID.fullmatch(str(capture_value.get("capture_id", "")))
+            or type(capture_value.get("generation")) is not int
+            or capture_value["generation"] < 1
+            or type(capture_value.get("payload_digests")) is not dict
+            or type(capture_value.get("consumer_sha256")) is not str
+            or not _DIGEST.fullmatch(capture_value["consumer_sha256"])
+            or type(capture_value.get("python_sha256")) is not str
+            or not _DIGEST.fullmatch(capture_value["python_sha256"])):
+        raise ValueError("capture_policy_invalid")
+    native_files = dict(native_files)
+    native_files["/usr/lib/gnome-shell/libshell-18.so"] = library_sha
+    if (type(native_value) is not dict
+            or set(native_value) != {
+                "schema", "uid", "overlay", "executable_sha256", "files",
+                "native_socket", "broker_socket", "broker_uid"}
+            or native_value.get("schema") != POLICIES["native-policy.json"]
+            or native_value.get("uid") != 1000
+            or native_value.get("overlay")
+            != "/org/gnome/shell=/usr/local/lib/sage-lantern/gnome-pin/overlay"
+            or native_value.get("native_socket")
+            != "/run/sage-lantern-desktop/native.sock"
+            or native_value.get("broker_socket")
+            != "/run/sage-lantern-desktop-auth/control.sock"
+            or type(native_value.get("broker_uid")) is not int
+            or native_value["broker_uid"] <= 0
+            or native_value.get("files") != native_files
+            or not _DIGEST.fullmatch(str(native_value.get("executable_sha256")))):
+        raise ValueError("native_policy_invalid")
+    native_digest = hashlib.sha256(native.read_bytes()).hexdigest()
+    expected_files = {
+        "/etc/sage-lantern/desktop-native-policy.json": native_digest,
+        **native_files,
+    }
+    if (type(launch_value) is not dict
+            or set(launch_value) != {
+                "schema", "uid", "gid", "account", "home", "native_policy",
+                "native_policy_sha256", "files", "activation_file"}
+            or launch_value.get("schema")
+            != POLICIES["guarded-launch-policy.json"]
+            or launch_value.get("uid") != 1000
+            or launch_value.get("gid") != 1000
+            or launch_value.get("account") != "sage"
+            or launch_value.get("home") != "/home/sage"
+            or launch_value.get("native_policy")
+            != "/etc/sage-lantern/desktop-native-policy.json"
+            or launch_value.get("native_policy_sha256") != native_digest
+            or launch_value.get("files") != expected_files
+            or launch_value.get("activation_file")
+            != "/etc/sage-lantern/desktop-pin-activation.json"):
+        raise ValueError("guarded_launch_policy_invalid")
 
 
 def assemble(args):
@@ -112,6 +185,15 @@ def assemble(args):
     launch = _policy(
         args.guarded_launch_policy, POLICIES["guarded-launch-policy.json"])
     native = _policy(args.native_policy, POLICIES["native-policy.json"])
+    native_files = {
+        GNOME_POLICY + "overlay/" + relative: digest
+        for relative, digest in declared.items()
+    }
+    native_files[GNOME_POLICY + "manifest.json"] = hashlib.sha256(
+        (gnome / "manifest.json").read_bytes()).hexdigest()
+    _validate_policy_set(
+        capture, launch, native, native_files,
+        hashlib.sha256(library.read_bytes()).hexdigest())
     object_sections = _module(
         "native_bundle_object_sections",
         ROOT / "scripts/lantern/stage-desktop-confinement.py").object_sections(
@@ -131,7 +213,7 @@ def assemble(args):
         for source in sorted(gnome.rglob("*")):
             if source.is_file():
                 relative = source.relative_to(gnome).as_posix()
-                targets[GNOME_PREFIX + relative] = (source, 0o644)
+                targets[GNOME_RELATIVE + relative] = (source, 0o644)
         for name, source in LIBS.items():
             targets["usr/local/libexec/" + name] = (SOURCE / source, 0o644)
         for name in UNITS:
