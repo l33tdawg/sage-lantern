@@ -207,6 +207,12 @@ receipt at launch preparation. This is still an uninstalled source unit: the
 actual systemd graph, service enablement, all alternate login paths and the
 first-UID-1000 boundary must be measured on the target.
 
+The read-only Unit C check on 20 October found the native admission and guarded
+session units absent, while `graphical.target`, active GDM and active SSH were
+present. This is an explicit unbootstrapped target state, not an enforcement
+result; see
+`docs/lantern/evidence/NATIVE_BOOT_CHAIN_UNIT_C_20261020.json`.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
