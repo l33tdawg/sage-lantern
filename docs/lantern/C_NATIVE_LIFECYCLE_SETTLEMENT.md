@@ -159,12 +159,12 @@ release with no resources, refuse an uncertain or already-settled durable
 attempt, recover a durable attempt through a reopened journal, and keep an
 unavailable recovery state uncertain.
 
-`scripts/lantern/settlement_fault_replay.py` runs 13 source-level cases and
+`scripts/lantern/settlement_fault_replay.py` runs 16 source-level cases and
 writes `docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. The
 record covers normal settlement, create and CAS failures before and after the
 rename, CAS conflict, duplicate settlement, different proof, new boot with
-full evidence, missing child identity, unavailable backend, a counter advance
-whose anchor write fails, and a stale counter after restart.
+full evidence, missing child identity, unavailable backend, counter read and
+advance failures, owner substitution, and a stale counter after restart.
 
 These are source tests against synthetic evidence. They do not prove that a
 real pidfd is dead, that a cgroup is empty, that a socket is closed, or that
