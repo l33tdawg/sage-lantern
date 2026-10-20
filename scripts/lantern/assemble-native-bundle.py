@@ -32,6 +32,7 @@ LIBS = {
     "settlement_journal.py": "settlement_journal.py",
     "settlement_owner.py": "settlement_owner.py",
 }
+GNOME_PREFIX = "usr/local/lib/sage-lantern/gnome-pin/"
 UNITS = (
     "sage-lantern-early-boot-admission.service",
     "sage-lantern-guarded-session.service",
@@ -77,6 +78,36 @@ def assemble(args):
         raise ValueError("source_commit_invalid")
     broker = _regular(args.broker)
     bpf = _regular(args.object)
+    library = _regular(args.gnome_library)
+    gnome = Path(args.gnome_candidate)
+    if not gnome.is_absolute() or not (gnome / "manifest.json").is_file():
+        raise ValueError("gnome_candidate_invalid")
+    try:
+        gnome_manifest = json.loads(
+            (gnome / "manifest.json").read_bytes().decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError("gnome_manifest_decode") from None
+    if (type(gnome_manifest) is not dict
+            or gnome_manifest.get("schema")
+            != "sage.lantern.gnome-pin-candidate.v1"):
+        raise ValueError("gnome_manifest_schema")
+    declared = gnome_manifest.get("files")
+    if type(declared) is not dict or not declared:
+        raise ValueError("gnome_manifest_files_invalid")
+    overlay_root = gnome / "overlay"
+    found = {
+        path.relative_to(overlay_root).as_posix()
+        for path in overlay_root.rglob("*")
+        if path.is_file()
+    }
+    if found != set(declared):
+        raise ValueError("gnome_overlay_set_mismatch")
+    for relative, digest in declared.items():
+        if hashlib.sha256((overlay_root / relative).read_bytes()).hexdigest() != digest:
+            raise ValueError("gnome_overlay_digest_mismatch")
+    if (gnome_manifest.get("gnome_library_sha256")
+            != hashlib.sha256(library.read_bytes()).hexdigest()):
+        raise ValueError("gnome_library_digest_mismatch")
     capture = _policy(args.capture_policy, POLICIES["capture-policy.json"])
     launch = _policy(
         args.guarded_launch_policy, POLICIES["guarded-launch-policy.json"])
@@ -95,7 +126,12 @@ def assemble(args):
             "etc/capture-policy.json": (capture, 0o600),
             "etc/guarded-launch-policy.json": (launch, 0o600),
             "etc/native-policy.json": (native, 0o600),
+            "usr/lib/gnome-shell/libshell-18.so": (library, 0o644),
         }
+        for source in sorted(gnome.rglob("*")):
+            if source.is_file():
+                relative = source.relative_to(gnome).as_posix()
+                targets[GNOME_PREFIX + relative] = (source, 0o644)
         for name, source in LIBS.items():
             targets["usr/local/libexec/" + name] = (SOURCE / source, 0o644)
         for name in UNITS:
@@ -139,6 +175,8 @@ def main(argv=None):
     parser.add_argument("--capture-policy", type=Path, required=True)
     parser.add_argument("--guarded-launch-policy", type=Path, required=True)
     parser.add_argument("--native-policy", type=Path, required=True)
+    parser.add_argument("--gnome-candidate", type=Path, required=True)
+    parser.add_argument("--gnome-library", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         print(json.dumps(assemble(args), sort_keys=True))
