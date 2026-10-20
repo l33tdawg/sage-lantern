@@ -195,6 +195,57 @@ class OwnerTests(unittest.TestCase):
                 self.release(), CAPTURE, POLICY,
                 (L.ResourceRef("child", "child:789:987"),))
 
+    def test_owner_identity_is_bound_to_anchor_value(self):
+        owner_identity = O.A.OwnerIdentity(
+            MACHINE, "sage-native-owner", "2" * 64, 0)
+        anchor_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, anchor_dir, True)
+        Path(anchor_dir).chmod(0o700)
+        store = O.A.FileAnchorStore(anchor_dir, owner_identity)
+        owner = O.SettlementOwner(
+            self.journal, self.probe, store, owner_identity)
+        self.assertTrue(owner.initialize_anchor())
+        owner.track_release(
+            self.release(), CAPTURE, POLICY,
+            (L.ResourceRef("child", "child:123:456"),))
+        self.assertEqual(
+            owner.anchor_value.owner_sha256,
+            O.A.owner_digest(owner_identity))
+        other = O.A.OwnerIdentity(
+            MACHINE, "other-owner", "2" * 64, 0)
+        with self.assertRaisesRegex(
+                O.A.AnchorRefused, "anchor_owner_mismatch"):
+            O.A.FileAnchorStore(anchor_dir, other).read()
+
+    def test_counter_is_advanced_with_each_owner_transition(self):
+        class Counter:
+            def __init__(self):
+                self.value = 4
+
+            def read(self):
+                return O.A.CounterValue(self.value)
+
+            def advance(self, expected):
+                if expected != self.value:
+                    raise O.A.CounterRefused("counter_race")
+                self.value += 1
+                return O.A.CounterValue(self.value)
+
+        anchor_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, anchor_dir, True)
+        Path(anchor_dir).chmod(0o700)
+        counter = Counter()
+        store = O.A.FileAnchorStore(anchor_dir, counter=counter)
+        owner = O.SettlementOwner(self.journal, self.probe, store)
+        self.assertTrue(owner.initialize_anchor())
+        self.assertEqual(owner.anchor_value.counter_value, 4)
+        obligation, _ = owner.track_release(
+            self.release(), CAPTURE, POLICY,
+            (L.ResourceRef("child", "child:123:456"),))
+        self.assertEqual(owner.anchor_value.counter_value, 5)
+        self.assertEqual(owner.settle(obligation).status, "settled")
+        self.assertEqual(owner.anchor_value.counter_value, 6)
+
 
 if __name__ == "__main__":
     unittest.main()

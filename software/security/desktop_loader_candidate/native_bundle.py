@@ -26,6 +26,8 @@ REQUIRED = {
     "etc/capture-policy.json": 0o600,
     "etc/guarded-launch-policy.json": 0o600,
     "etc/native-policy.json": 0o600,
+    "lib/systemd/system/sage-lantern-early-boot-admission.service": 0o644,
+    "lib/systemd/system/sage-lantern-guarded-session.service": 0o644,
     "libexec/capture-selection-cli.py": 0o644,
     "libexec/early_boot_admission.py": 0o644,
     "libexec/frozen_gnome_consumer.py": 0o644,

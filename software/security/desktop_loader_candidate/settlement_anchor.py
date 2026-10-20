@@ -6,11 +6,12 @@ a TPM/RPMB-equivalent owner, before treating it as a production trust anchor.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 
@@ -18,16 +19,113 @@ import fcntl
 
 
 SCHEMA = "sage.lantern.settlement-anchor.v1"
+OWNER_SCHEMA = "sage.lantern.settlement-owner.v1"
 _DIGEST = 64
+_MACHINE = re.compile(r"[0-9a-f]{32}\Z")
+_OWNER = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 
 
 class AnchorRefused(ValueError):
     pass
 
 
+class CounterRefused(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class CounterValue:
+    value: int
+
+
+class UnavailableCounter:
+    """Default: no separately protected monotonic counter exists."""
+    def read(self):
+        raise CounterRefused("monotonic_counter_unavailable")
+
+    def advance(self, expected):
+        raise CounterRefused("monotonic_counter_unavailable")
+
+
+@dataclass(frozen=True)
+class OwnerIdentity:
+    """Identity loaded from one protected owner policy."""
+    machine_id: str
+    owner_id: str
+    executable_sha256: str
+    uid: int
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"),
                       allow_nan=False).encode("utf-8")
+
+
+def _owner(value):
+    if (type(value) is not OwnerIdentity
+            or type(value.machine_id) is not str
+            or not _MACHINE.fullmatch(value.machine_id)
+            or type(value.owner_id) is not str
+            or not _OWNER.fullmatch(value.owner_id)
+            or type(value.executable_sha256) is not str
+            or len(value.executable_sha256) != _DIGEST
+            or type(value.uid) is not int or value.uid < 0):
+        raise AnchorRefused("owner_identity_invalid")
+    return value
+
+
+def owner_digest(owner):
+    value = _owner(owner)
+    return hashlib.sha256(canonical({
+        "machine_id": value.machine_id,
+        "owner_id": value.owner_id,
+        "executable_sha256": value.executable_sha256,
+        "uid": value.uid,
+    })).hexdigest()
+
+
+def load_owner(path, expected_uid):
+    """Load one owner policy from an exact private regular file."""
+    path = Path(path)
+    if not path.is_absolute() or expected_uid < 0:
+        raise AnchorRefused("owner_policy_path_invalid")
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise AnchorRefused("owner_policy_unavailable") from None
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != expected_uid
+                or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != 1 or before.st_size < 1
+                or before.st_size > 4096):
+            raise AnchorRefused("owner_policy_identity_invalid")
+        raw = os.read(descriptor, 4097)
+        after = os.fstat(descriptor)
+        if (len(raw) != before.st_size
+                or (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns)):
+            raise AnchorRefused("owner_policy_changed")
+        value = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        if isinstance(error, AnchorRefused):
+            raise
+        raise AnchorRefused("owner_policy_decode") from None
+    finally:
+        os.close(descriptor)
+    if type(value) is not dict or set(value) != {
+            "schema", "machine_id", "owner_id", "executable_sha256", "uid"}:
+        raise AnchorRefused("owner_policy_schema_invalid")
+    if value["schema"] != OWNER_SCHEMA:
+        raise AnchorRefused("owner_policy_schema_invalid")
+    owner = _owner(OwnerIdentity(
+        value["machine_id"], value["owner_id"],
+        value["executable_sha256"], value["uid"]))
+    if owner.uid != expected_uid:
+        raise AnchorRefused("owner_policy_uid_mismatch")
+    return owner
 
 
 def journal_digest(records):
@@ -59,6 +157,8 @@ class AnchorValue:
     journal_sha256: str
     record_count: int
     release_sha256: str | None = None
+    owner_sha256: str | None = None
+    counter_value: int | None = None
 
 
 def _anchor(value):
@@ -69,7 +169,13 @@ def _anchor(value):
             or type(value.record_count) is not int or value.record_count < 0
             or (value.release_sha256 is not None
                 and (type(value.release_sha256) is not str
-                     or len(value.release_sha256) != _DIGEST))):
+                     or len(value.release_sha256) != _DIGEST))
+            or (value.owner_sha256 is not None
+                and (type(value.owner_sha256) is not str
+                     or len(value.owner_sha256) != _DIGEST))
+            or (value.counter_value is not None
+                and (type(value.counter_value) is not int
+                     or value.counter_value < 0))):
         raise AnchorRefused("anchor_value_invalid")
     return value
 
@@ -78,7 +184,7 @@ class FileAnchorStore:
     """Private root-owned CAS store for one independent anchor."""
     MAX_BYTES = 4096
 
-    def __init__(self, root):
+    def __init__(self, root, owner=None, counter=None):
         self.root = Path(root)
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         info = self.root.stat()
@@ -86,6 +192,20 @@ class FileAnchorStore:
             raise AnchorRefused("anchor_directory_not_private")
         self.path = self.root / "anchor.json"
         self.lock_path = self.root / ".lock"
+        self.owner_sha256 = None if owner is None else owner_digest(owner)
+        self.counter = counter
+
+    def _counter_value(self):
+        if self.counter is None:
+            return None
+        try:
+            value = self.counter.read()
+        except (CounterRefused, OSError):
+            raise AnchorRefused("anchor_counter_unavailable") from None
+        if (type(value) is not CounterValue or type(value.value) is not int
+                or value.value < 0):
+            raise AnchorRefused("anchor_counter_invalid")
+        return value
 
     def _locked(self):
         return _Lock(self.lock_path)
@@ -101,19 +221,36 @@ class FileAnchorStore:
             value = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
             raise AnchorRefused("anchor_decode") from None
-        if type(value) is not dict or set(value) != {
-                "schema", "generation", "journal_sha256", "record_count",
-                "release_sha256"} or value["schema"] != SCHEMA:
+        required = {"schema", "generation", "journal_sha256", "record_count",
+                    "release_sha256"}
+        if (type(value) is not dict
+                or not required.issubset(value)
+                or set(value) - required - {"owner_sha256", "counter_value"}
+                or value["schema"] != SCHEMA):
             raise AnchorRefused("anchor_schema_invalid")
-        return _anchor(AnchorValue(
+        result = _anchor(AnchorValue(
             value["generation"], value["journal_sha256"],
-            value["record_count"], value["release_sha256"]))
+            value["record_count"], value["release_sha256"],
+            value.get("owner_sha256"), value.get("counter_value")))
+        if (self.owner_sha256 is not None
+                and result.owner_sha256 != self.owner_sha256):
+            raise AnchorRefused("anchor_owner_mismatch")
+        counter = self._counter_value()
+        if counter is not None and result.counter_value != counter.value:
+            raise AnchorRefused("anchor_counter_mismatch")
+        return result
 
     def create(self, value):
         _anchor(value)
         with self._locked():
             if self.path.exists():
                 return None
+            counter = self._counter_value()
+            if counter is not None:
+                if (value.counter_value is not None
+                        and value.counter_value != counter.value):
+                    raise AnchorRefused("anchor_counter_mismatch")
+                value = replace(value, counter_value=counter.value)
             self._write(value)
             return value
 
@@ -125,6 +262,22 @@ class FileAnchorStore:
         with self._locked():
             if self.read() != before:
                 return None
+            if self.counter is not None:
+                counter = self._counter_value()
+                if counter is None or before.counter_value != counter.value:
+                    raise AnchorRefused("anchor_counter_mismatch")
+                try:
+                    advanced = self.counter.advance(counter.value)
+                except (CounterRefused, OSError):
+                    raise AnchorRefused("anchor_counter_advance_failed") from None
+                if (type(advanced) is not CounterValue
+                        or type(advanced.value) is not int
+                        or advanced.value != counter.value + 1):
+                    raise AnchorRefused("anchor_counter_not_advanced")
+                if (after.counter_value is not None
+                        and after.counter_value != advanced.value):
+                    raise AnchorRefused("anchor_counter_mismatch")
+                after = replace(after, counter_value=advanced.value)
             self._write(after)
             return after
 
@@ -135,6 +288,8 @@ class FileAnchorStore:
             "journal_sha256": value.journal_sha256,
             "record_count": value.record_count,
             "release_sha256": value.release_sha256,
+            "owner_sha256": value.owner_sha256,
+            "counter_value": value.counter_value,
         }) + b"\n"
         if len(payload) > self.MAX_BYTES:
             raise AnchorRefused("anchor_too_large")
@@ -179,14 +334,16 @@ class _Lock:
         self.fd = None
 
 
-def advance(store, records, *, release_sha256=None):
+def advance(store, records, *, release_sha256=None, owner_sha256=None):
     """Compare the protected seal with the current recoverable record set."""
     digest = journal_digest(records)
     before = store.read()
     if before is None:
-        value = AnchorValue(1, digest, len(records), release_sha256)
+        value = AnchorValue(
+            1, digest, len(records), release_sha256, owner_sha256)
         return store.create(value)
     if (before.journal_sha256 != digest or before.record_count != len(records)
-            or before.release_sha256 != release_sha256):
+            or before.release_sha256 != release_sha256
+            or before.owner_sha256 != owner_sha256):
         raise AnchorRefused("anchor_journal_mismatch")
     return before

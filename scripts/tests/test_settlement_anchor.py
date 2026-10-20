@@ -1,6 +1,8 @@
 """Independent settlement-journal anchor controls."""
 from pathlib import Path
 import importlib.util
+import json
+import os
 import sys
 import tempfile
 import unittest
@@ -66,6 +68,83 @@ class AnchorTests(unittest.TestCase):
         second = (SettlementRecord("1" * 64, "attempted", 0, obligation={
             "binding": {}, "resources": []}),)
         self.assertNotEqual(A.journal_digest(first), A.journal_digest(second))
+
+    def test_owner_policy_is_private_and_typed(self):
+        owner = A.OwnerIdentity(
+            "a" * 32, "sage-native-owner", "b" * 64, os.geteuid())
+        path = Path(self.tmp.name) / "owner.json"
+        path.write_text(json.dumps({
+            "schema": A.OWNER_SCHEMA,
+            "machine_id": owner.machine_id,
+            "owner_id": owner.owner_id,
+            "executable_sha256": owner.executable_sha256,
+            "uid": owner.uid,
+        }) + "\n")
+        path.chmod(0o600)
+        self.assertEqual(A.load_owner(path, os.geteuid()), owner)
+        path.chmod(0o644)
+        with self.assertRaisesRegex(A.AnchorRefused, "owner_policy_identity"):
+            A.load_owner(path, os.geteuid())
+        path.chmod(0o600)
+        link = Path(self.tmp.name) / "owner-link.json"
+        link.symlink_to(path)
+        with self.assertRaisesRegex(A.AnchorRefused, "owner_policy_unavailable"):
+            A.load_owner(link, os.geteuid())
+
+    def test_owner_bound_store_refuses_substitution(self):
+        owner = A.OwnerIdentity(
+            "a" * 32, "sage-native-owner", "b" * 64, os.geteuid())
+        path = Path(self.tmp.name) / "owner-store"
+        path.mkdir(mode=0o700)
+        store = A.FileAnchorStore(path, owner)
+        value = A.AnchorValue(
+            1, "a" * 64, 0, owner_sha256=A.owner_digest(owner))
+        store.create(value)
+        self.assertEqual(store.read(), value)
+        other = A.OwnerIdentity(
+            "a" * 32, "other-owner", "b" * 64, os.geteuid())
+        with self.assertRaisesRegex(A.AnchorRefused, "anchor_owner_mismatch"):
+            A.FileAnchorStore(path, other).read()
+
+    def test_anchor_is_bound_to_a_monotonic_counter(self):
+        class Counter:
+            def __init__(self, value):
+                self.value = value
+
+            def read(self):
+                return A.CounterValue(self.value)
+
+            def advance(self, expected):
+                if expected != self.value:
+                    raise A.CounterRefused("counter_race")
+                self.value += 1
+                return A.CounterValue(self.value)
+
+        path = Path(self.tmp.name) / "counter-store"
+        path.mkdir(mode=0o700)
+        counter = Counter(4)
+        store = A.FileAnchorStore(path, counter=counter)
+        first = store.create(A.AnchorValue(1, "a" * 64, 0))
+        self.assertEqual(first.counter_value, 4)
+        self.assertEqual(store.read(), first)
+        (path / "anchor.json").unlink()
+        with self.assertRaisesRegex(A.AnchorRefused, "anchor_counter_mismatch"):
+            store.create(A.AnchorValue(1, "a" * 64, 0, counter_value=3))
+        first = store.create(A.AnchorValue(1, "a" * 64, 0))
+        second = store.compare_exchange(
+            first, A.AnchorValue(2, "b" * 64, 0))
+        self.assertEqual(second.counter_value, 5)
+        self.assertEqual(counter.value, 5)
+        counter.value = 4
+        with self.assertRaisesRegex(A.AnchorRefused, "anchor_counter_mismatch"):
+            store.read()
+
+    def test_unavailable_counter_refuses_creation(self):
+        path = Path(self.tmp.name) / "unavailable-counter"
+        path.mkdir(mode=0o700)
+        store = A.FileAnchorStore(path, counter=A.UnavailableCounter())
+        with self.assertRaisesRegex(A.AnchorRefused, "anchor_counter_unavailable"):
+            store.create(A.AnchorValue(1, "a" * 64, 0))
 
 
 if __name__ == "__main__":

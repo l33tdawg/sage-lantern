@@ -1,6 +1,7 @@
 [Unit]
 Description=SAGE Lantern root authority for the mandatory GNOME PIN session (candidate)
-After=systemd-logind.service sage-lantern-device-auth.service
+After=systemd-logind.service sage-lantern-device-auth.service sage-lantern-early-boot-admission.service
+Requires=sage-lantern-early-boot-admission.service
 ConditionPathExists=/etc/sage-lantern/desktop-pin-activation.json
 
 [Service]

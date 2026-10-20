@@ -113,6 +113,23 @@ attempt and advances it after each durable attempt or settlement; recovery
 returns `uncertain` if the journal and anchor disagree. The store is still a
 private file in source; it is not bound to a separate monotonic hardware owner.
 
+The same source now carries an `OwnerIdentity` loaded from one mode-0600 owner
+policy: machine ID, owner ID, executable digest and owner UID. The anchor value
+includes the owner-policy digest, and an owner-bound `FileAnchorStore` refuses a
+different owner even when the journal bytes are unchanged. The policy loader
+checks the exact schema, file identity and expected UID; it does not establish
+that the policy is installed from a trusted boot channel or that the owner
+binary is currently running. Callers must load the policy from a protected path
+and pass that identity through the native owner, never from bridge JSON.
+
+`FileAnchorStore` also accepts a separate monotonic-counter port. The anchor
+records the counter value and requires it to match on read; a create or
+compare-exchange advances the counter before writing the next anchor. The
+default `UnavailableCounter` refuses, so the source cannot accidentally treat
+the file itself as a hardware rollback counter. A counter that is missing,
+behind the anchor, or fails to advance returns `uncertain`/refuses the write.
+No TPM, RPMB or other hardware counter adapter is shipped or qualified here.
+
 `native_bundle.py` defines the exact native bundle closure: required broker,
 BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
 hashes; source commit; and rejection of missing, extra, changed or symlinked
@@ -144,6 +161,16 @@ process. The authority retains the admission receipt and refuses launch if the
 boot changes. The source gate is not yet invoked before every UID-1000 process
 by the native boot chain.
 
+`software/systemd/sage-lantern-early-boot-admission.service` is the source
+boot-order candidate. It runs the gate as a oneshot root unit before
+`display-manager.service`, `getty.target`, `ssh.service` and `ssh.socket`, and
+writes a private receipt under `/var/lib/sage-lantern-early-boot`. The guarded
+session unit requires that gate and waits for it. When the broker configuration
+is selected, the authority now requires `--early-boot-receipt` and re-reads the
+receipt at launch preparation. This is still an uninstalled source unit: the
+actual systemd graph, service enablement, all alternate login paths and the
+first-UID-1000 boundary must be measured on the target.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -165,10 +192,16 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   identity changes and generation rollback at its CAS boundary.
 - owner integration that verifies the anchor before attempts and advances it
   only after durable attempt or settlement transitions.
+- owner-policy loading and anchor binding that refuses a substituted owner
+  identity at the same generation and journal digest.
+- counter-bound anchor transitions that refuse a missing, rolled-back or
+  non-advancing monotonic counter.
 - an exact native-bundle manifest/verification source contract with a fixed
   required file set and metadata closure.
 - an early-boot admission receipt requiring a clean UID-1000 namespace for the
   current boot.
+- a source oneshot unit ordered before display-manager, getty and SSH, plus a
+  protected receipt re-read by the broker-backed authority.
 
 ## Required implementation order
 
@@ -184,6 +217,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
    cancellation and protection-store rollback.
 5. Bind the integrated anchor to a separate protected monotonic store and
    trusted owner identity. A same-store file alone is not rollback resistance.
+   The owner identity source binding is now prepared; the hardware counter and
+   installed policy channel remain open.
 6. Replay failures before and after each durable write, after child exit, at
    release-callback return, during supervisor restart and with stale or reused
    child identities.
