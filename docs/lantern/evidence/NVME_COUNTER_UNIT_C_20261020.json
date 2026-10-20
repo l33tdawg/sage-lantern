@@ -22,6 +22,7 @@
   "review_only": true,
   "runtime_authorized": false,
   "installed": false,
+  "advanced": true,
   "limitations": [
     "Data Units Written is controller telemetry, not TPM/RPMB authentication.",
     "The adapter pins the NVMe serial but trusts the storage controller and firmware.",
