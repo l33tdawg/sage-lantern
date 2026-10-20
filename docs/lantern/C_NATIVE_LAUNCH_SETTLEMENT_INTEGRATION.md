@@ -143,6 +143,14 @@ that manifest once; it refuses a tree that already contains a manifest, so a
 retry cannot silently replace the bundle identity. The stager does not build
 the broker, object or policies and does not sign or install the result.
 
+`scripts/lantern/assemble-native-bundle.py` composes an exact 18-file review
+tree from a compiled broker, a compiled BPF object and three explicitly
+supplied policy files. It validates the 13 LSM sections and the manifest. The
+review-only assembly evidence is
+`docs/lantern/evidence/NATIVE_BUNDLE_ASSEMBLY_20261020.json`; it used synthetic
+policy fixtures and builder-kernel BTF, so it is not a Unit C deployment
+bundle.
+
 `broker_agent.c` supplies the fitted-agent source around the Linux backend:
 it loads digest-bound object/shell/pin inputs, accepts the one staged request,
 and forwards `record_attempt` over the same broker socket. The Linux backend
@@ -152,6 +160,13 @@ as an ELF64 AArch64 broker in an isolated Linux ARM64 builder with libbpf and
 OpenSSL. The Linux early-boot `prepare` still returns `EOPNOTSUPP`; the
 binary is a required bundle member but has not been built, installed or
 qualified on Unit C.
+
+`scripts/lantern/build-native-bpf.sh OUTPUT [BTF]` builds the disabled
+`desktop_guard.bpf.o` from a supplied kernel BTF file. The isolated ARM64
+builder produced a deterministic object with all thirteen LSM sections when
+run twice from the same inputs. That object came from the builder kernel's BTF,
+not Unit C's vendor BTF; it is a source-build check, not verifier, load or
+target-kernel qualification.
 
 Run the Linux-host build with
 `scripts/lantern/build-native-broker.sh OUTPUT`, or use

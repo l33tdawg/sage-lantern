@@ -4,6 +4,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -11,6 +12,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/lantern/build-native-broker.sh"
 CONTAINER_SCRIPT = ROOT / "scripts/lantern/build-native-broker-in-container.sh"
+BPF_SCRIPT = ROOT / "scripts/lantern/build-native-bpf.sh"
+ASSEMBLE_SCRIPT = ROOT / "scripts/lantern/assemble-native-bundle.py"
 
 
 def test_non_linux_build_is_refused_without_output(tmp_path):
@@ -34,6 +37,20 @@ def test_container_builder_is_executable_and_shell_valid():
     assert CONTAINER_SCRIPT.is_file()
     assert CONTAINER_SCRIPT.stat().st_mode & 0o111
     subprocess.run(["sh", "-n", str(CONTAINER_SCRIPT)], check=True)
+
+
+def test_bpf_builder_is_executable_and_shell_valid():
+    assert BPF_SCRIPT.is_file()
+    assert BPF_SCRIPT.stat().st_mode & 0o111
+    subprocess.run(["sh", "-n", str(BPF_SCRIPT)], check=True)
+
+
+def test_bundle_assembler_is_executable_and_python_valid():
+    assert ASSEMBLE_SCRIPT.is_file()
+    assert ASSEMBLE_SCRIPT.stat().st_mode & 0o111
+    subprocess.run(
+        [sys.executable, "-m", "py_compile", str(ASSEMBLE_SCRIPT)],
+        check=True)
 
 
 def test_linux_child_identity_replay(tmp_path):
