@@ -177,6 +177,43 @@ class AnchorTests(unittest.TestCase):
         with self.assertRaisesRegex(A.CounterRefused, "tpm2_command_failed"):
             counter.read()
 
+    def test_nvme_smart_counter_uses_monotonic_units_written(self):
+        state = {"value": 4, "calls": 0}
+        def runner(argv, **_kwargs):
+            state["calls"] += 1
+            value = state["value"] + (1 if state["calls"] > 1 else 0)
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=json.dumps({
+                    "serial_number": "NVME-SERIAL",
+                    "nvme_smart_health_information_log": {
+                        "data_units_written": value,
+                    },
+                }).encode())
+
+        witness = Path(self.tmp.name) / "nvme-witness"
+        counter = A.NvmeSmartCounter(
+            "/dev/nvme0n1", "NVME-SERIAL", witness,
+            runner=runner, poll_seconds=0.001, poll_attempts=2)
+        self.assertEqual(counter.read().value, 4)
+        self.assertEqual(counter.advance(4).value, 5)
+        self.assertGreater(witness.stat().st_size, 0)
+
+    def test_nvme_smart_counter_rejects_device_substitution(self):
+        def runner(argv, **_kwargs):
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=json.dumps({
+                    "serial_number": "OTHER",
+                    "nvme_smart_health_information_log": {
+                        "data_units_written": 4,
+                    },
+                }).encode())
+
+        counter = A.NvmeSmartCounter(
+            "/dev/nvme0n1", "NVME-SERIAL",
+            Path(self.tmp.name) / "nvme-witness", runner=runner)
+        with self.assertRaisesRegex(A.CounterRefused, "device_mismatch"):
+            counter.read()
+
 
 if __name__ == "__main__":
     unittest.main()

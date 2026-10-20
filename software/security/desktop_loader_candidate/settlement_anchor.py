@@ -1,8 +1,9 @@
 """Independent monotonic seal for the settlement journal.
 
-This source component does not claim hardware rollback resistance. The caller
-must place the anchor on a separately protected monotonic store, or bind it to
-a TPM/RPMB-equivalent owner, before treating it as a production trust anchor.
+This source component does not by itself claim hardware rollback resistance.
+The caller must place the anchor on a separately protected monotonic store, or
+bind it to a TPM/RPMB-equivalent or NVMe-controller witness, before treating it
+as a production trust anchor.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import secrets
 import stat
 import subprocess
 import tempfile
+import time
 
 import fcntl
 
@@ -102,6 +104,83 @@ class Tpm2NvCounter:
         if value != expected + 1:
             raise CounterRefused("tpm2_counter_not_advanced")
         return CounterValue(value)
+
+
+class NvmeSmartCounter:
+    """Use the NVMe controller's monotonic Data Units Written counter."""
+    def __init__(self, device, serial, witness, *,
+                 smartctl="/usr/sbin/smartctl", timeout=15, runner=None,
+                 poll_seconds=0.1, poll_attempts=50,
+                 witness_bytes=1 << 20):
+        if (not Path(device).is_absolute() or not Path(witness).is_absolute()
+                or not Path(smartctl).is_absolute()
+                or type(serial) is not str or not 1 <= len(serial) <= 128
+                or type(timeout) is not int or timeout < 1
+                or type(poll_seconds) not in (int, float) or poll_seconds <= 0
+                or type(poll_attempts) is not int or poll_attempts < 1
+                or type(witness_bytes) is not int or witness_bytes < 1):
+            raise CounterRefused("nvme_counter_config_invalid")
+        self.device = device
+        self.serial = serial
+        self.witness = witness
+        self.smartctl = smartctl
+        self.timeout = timeout
+        self.runner = runner or subprocess.run
+        self.poll_seconds = poll_seconds
+        self.poll_attempts = poll_attempts
+        self.witness_bytes = witness_bytes
+
+    def read(self):
+        result = self.runner(
+            [self.smartctl, "-A", "-i", "-j", self.device],
+            check=False, capture_output=True, timeout=self.timeout)
+        if type(result.returncode) is not int or result.returncode != 0:
+            raise CounterRefused("nvme_smart_command_failed")
+        try:
+            payload = json.loads(
+                result.stdout.decode("utf-8")
+                if type(result.stdout) is bytes else result.stdout)
+            units = payload["nvme_smart_health_information_log"][
+                "data_units_written"]
+            observed_serial = payload["serial_number"]
+        except (AttributeError, KeyError, TypeError, ValueError,
+                UnicodeDecodeError):
+            raise CounterRefused("nvme_smart_payload_invalid") from None
+        if observed_serial != self.serial:
+            raise CounterRefused("nvme_counter_device_mismatch")
+        if type(units) is not int or units < 0:
+            try:
+                units = int(str(units).replace(",", ""))
+            except ValueError:
+                raise CounterRefused("nvme_counter_value_invalid") from None
+        if units < 0:
+            raise CounterRefused("nvme_counter_value_invalid")
+        return CounterValue(units)
+
+    def advance(self, expected):
+        if type(expected) is not int or expected < 0:
+            raise CounterRefused("nvme_counter_expected_invalid")
+        descriptor = os.open(
+            self.witness, os.O_WRONLY | os.O_CREAT | os.O_TRUNC |
+            os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            payload = b"\0" * 65536
+            remaining = self.witness_bytes
+            while remaining:
+                chunk = payload[:min(remaining, len(payload))]
+                written = os.write(descriptor, chunk)
+                if written <= 0:
+                    raise CounterRefused("nvme_counter_witness_write_failed")
+                remaining -= written
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        for _ in range(self.poll_attempts):
+            value = self.read().value
+            if value > expected:
+                return CounterValue(value)
+            time.sleep(self.poll_seconds)
+        raise CounterRefused("nvme_counter_not_advanced")
 
 
 @dataclass(frozen=True)
@@ -329,7 +408,7 @@ class FileAnchorStore:
                     raise AnchorRefused("anchor_counter_advance_failed") from None
                 if (type(advanced) is not CounterValue
                         or type(advanced.value) is not int
-                        or advanced.value != counter.value + 1):
+                        or advanced.value <= counter.value):
                     raise AnchorRefused("anchor_counter_not_advanced")
                 if (after.counter_value is not None
                         and after.counter_value != advanced.value):

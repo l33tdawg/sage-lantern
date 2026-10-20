@@ -101,7 +101,7 @@ def load_launch_policy(path, adapter):
 
 def load_settlement_runtime(source, journal_root, anchor_root, capture_policy,
                             *, expected_uid=1000, early_root="/",
-                            early_receipt=None):
+                            early_receipt=None, counter_spec=None):
     """Load and compose the reviewed source-only settlement owner."""
     source = Path(source)
     if not source.is_absolute() or not source.is_dir():
@@ -133,7 +133,10 @@ def load_settlement_runtime(source, journal_root, anchor_root, capture_policy,
         loaded["journal"].FileJournalBackend(journal_root),
         lifecycle.SettlementAuthority())
     probe = loaded["probe"].LinuxProbe("/")
-    anchor = loaded["anchor"].FileAnchorStore(anchor_root)
+    counter = None
+    if counter_spec is not None:
+        counter = loaded["anchor"].NvmeSmartCounter(*counter_spec)
+    anchor = loaded["anchor"].FileAnchorStore(anchor_root, counter=counter)
     owner = loaded["owner"].SettlementOwner(journal, probe, anchor)
     if owner.anchor_value is None and not owner.initialize_anchor():
         raise NativeError("settlement_anchor_not_initialized")
@@ -387,6 +390,9 @@ def main(argv=None):
     parser.add_argument("--settlement-root", type=Path)
     parser.add_argument("--settlement-anchor", type=Path)
     parser.add_argument("--early-boot-receipt", type=Path)
+    parser.add_argument("--settlement-counter-device")
+    parser.add_argument("--settlement-counter-serial")
+    parser.add_argument("--settlement-counter-witness", type=Path)
     parser.add_argument("--settlement-source", type=Path,
         default=Path(__file__).resolve().parents[2] /
             "software/security/desktop_loader_candidate")
@@ -399,6 +405,16 @@ def main(argv=None):
         parser.error("capture-policy, loader-broker, settlement-root, "
                      "settlement-anchor and early-boot-receipt must be "
                      "supplied together")
+    counter_values = (args.settlement_counter_device,
+                      args.settlement_counter_serial,
+                      args.settlement_counter_witness)
+    if any(value is not None for value in counter_values) and not all(
+            value is not None for value in counter_values):
+        parser.error("settlement-counter-device, settlement-counter-serial "
+                     "and settlement-counter-witness must be supplied together")
+    if args.loader_broker is not None and not all(
+            value is not None for value in counter_values):
+        parser.error("broker-backed launch requires the NVMe settlement counter")
     status = Path('/proc/self/status').read_text()
     if (os.geteuid() != 0 or not hasattr(os, 'pidfd_open') or 'NoNewPrivs:\t1\n' not in status
             or resource.getrlimit(resource.RLIMIT_CORE) != (0, 0)
@@ -411,7 +427,10 @@ def main(argv=None):
         selection_provider, settlement_recorder, recovery, admission = load_settlement_runtime(
             args.settlement_source, args.settlement_root,
             args.settlement_anchor, args.capture_policy,
-            early_receipt=args.early_boot_receipt)
+            early_receipt=args.early_boot_receipt,
+            counter_spec=(args.settlement_counter_device,
+                          args.settlement_counter_serial,
+                          args.settlement_counter_witness))
         broker_factory = lambda: LoaderBroker.connect(args.loader_broker)
     ready, ready_identity = bound_socket(NOTIFY, policy['uid'], socket.SOCK_DGRAM)
     authority = None
