@@ -29,6 +29,7 @@ SOURCES = (
     "scripts/lantern/assemble-native-bundle.py",
     "scripts/lantern/native-broker-builder.Dockerfile",
     "scripts/lantern/stage-native-bundle.py",
+    "scripts/lantern/verify-native-boot-graph.py",
     "docs/lantern/evidence/NATIVE_BUNDLE_ASSEMBLY_20261020.json",
     "docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json",
     "docs/lantern/evidence/NATIVE_BOOT_CHAIN_UNIT_C_20261020.json",
