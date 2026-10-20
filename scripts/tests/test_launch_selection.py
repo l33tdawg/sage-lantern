@@ -108,6 +108,31 @@ class LaunchSelectionTests(unittest.TestCase):
                 S.LaunchSelectionRefused, "capture_policy_decode"):
             self.select(raw=raw)
 
+    def test_provider_uses_isolated_consumer_and_refreshes_selection(self):
+        calls = []
+        payload = json.dumps({
+            "evidence_consumable": True,
+            "reasons": [],
+            "policy_sha256": self.digest,
+            "analysis_view_digest": VIEW,
+            "unit_path": UNIT,
+            "capture_id": CAPTURE,
+            "generation": 7,
+            "runtime_authorized": False,
+        }).encode()
+        def run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return type("Result", (), {
+                "returncode": 0, "stdout": payload})()
+        provider = S.provider_from_capture(
+            POLICY_PATH, read_file=lambda _: self.raw,
+            platform_identity=(MACHINE, BOOT), run=run)
+        first = provider()
+        second = provider()
+        self.assertEqual(first, second)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0][1:3], ["-I", "-S"])
+
 
 if __name__ == "__main__":
     unittest.main()

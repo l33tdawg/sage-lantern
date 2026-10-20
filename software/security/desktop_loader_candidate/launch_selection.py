@@ -9,7 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+from pathlib import Path
 import re
+import subprocess
+import sys
 
 
 SCHEMA = "sage.lantern.root-gnome-capture-policy.v1"
@@ -37,6 +40,17 @@ class LaunchSelection:
     analysis_view_digest: str
     unit_path: str
     runtime_authorized: bool = False
+
+
+class _Decision:
+    def __init__(self, value):
+        for name in (
+                "evidence_consumable", "reasons", "policy_sha256",
+                "analysis_view_digest", "unit_path", "capture_id",
+                "generation", "runtime_authorized"):
+            setattr(self, name, value.get(name))
+        if type(self.reasons) is list:
+            self.reasons = tuple(self.reasons)
 
 
 def _unique(pairs):
@@ -93,3 +107,25 @@ def from_capture_decision(policy_path, decision, *, read_file, platform_identity
     return LaunchSelection(
         machine_id, boot_id, value["capture_id"], value["generation"],
         policy_digest, view_digest, unit_path)
+
+
+def provider_from_capture(policy_path, *, read_file, platform_identity,
+                          run=subprocess.run, timeout=5):
+    """Return a fresh selection provider backed by the isolated consumer."""
+    helper = str(Path(__file__).with_name("capture-selection-cli.py"))
+    def provider():
+        result = run(
+            [sys.executable, "-I", "-S", helper, policy_path],
+            capture_output=True, check=True, timeout=timeout)
+        if result.returncode or len(result.stdout) > 32768:
+            raise LaunchSelectionRefused("capture_consumer_failed")
+        try:
+            value = json.loads(result.stdout.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise LaunchSelectionRefused("capture_consumer_output_invalid") from None
+        if type(value) is not dict:
+            raise LaunchSelectionRefused("capture_consumer_output_invalid")
+        return from_capture_decision(
+            policy_path, _Decision(value), read_file=read_file,
+            platform_identity=platform_identity)
+    return provider

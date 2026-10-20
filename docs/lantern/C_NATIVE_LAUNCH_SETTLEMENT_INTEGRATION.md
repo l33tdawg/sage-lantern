@@ -29,33 +29,20 @@ still returns `EOPNOTSUPP`.
 
 ## Why settlement is not wired around the live exec
 
-1. **The native stopped-child broker server does not exist yet.** The C loader
-   requires `record_attempt()` after all frozen child/map checks and before its
-   sole release callback. The Python authority now has a broker-backed launch
-   path that stages the stopped child, records it and releases only after an
-   exact acknowledgment. The Linux backend still returns `EOPNOTSUPP`, and
-   `main` supplies neither the broker connection nor a fitted settlement
-   recorder, so the direct `spawn_shell()` remains the only configured path.
-2. **The authority has no trusted capture-selection provider.** The source
-   selection contract now validates an eligible frozen-consumer decision
-   against the exact root-owned policy bytes and current machine/boot. The
-   authority requires that selection before `prepare()` can spawn, but `main`
-   does not yet invoke the isolated capture consumer or supply the provider.
-   A command-line value or user-writable file still cannot establish it.
-3. **The launch authority has no recovery hook yet.** The durable journal now
-   stores the complete obligation and exposes pending attempts, and
-   `SettlementOwner.recover()` reconstructs and probes them after restart. The
-   authority does not instantiate or call a trusted settlement owner.
-4. **No persistent child identity is recorded by the launch authority.** A
-   resource named `pidfd:<fd>` is meaningful only in the process that owns that
-   descriptor. The Linux probe now supports a boot-bound
-   `child:<pid>:<starttime>` identity that survives supervisor restart and
-   refuses PID reuse, but the launch authority does not create that attempt or
-   resource yet.
-5. **Release and settlement are not one transaction.** Publication and
-   settlement have separate contracts. The native owner still needs a
-   serialized anchor that records the failed or uncertain release and its
-   settlement in the same protected lifecycle.
+1. **The broker is still a source replay, not the fitted Linux broker.** The
+   actual `loader.c` sequencing core stops the child, passes one descriptor and
+   waits at `record_attempt`; the Linux backend still returns `EOPNOTSUPP` and
+   no installed broker exists. `main` can now select the broker path only when
+   the capture policy, socket and settlement root are all supplied together.
+2. **The capture provider needs a root-owned installed dependency closure.**
+   The authority can invoke the isolated capture consumer and validate its
+   decision against protected policy bytes and current machine/boot. The
+   consumer scripts and policy are not installed or qualified on C.
+3. **Release and settlement still need one protected native transaction.**
+   Publication and settlement have separate contracts. The native owner still
+   needs a serialized anchor that records the failed or uncertain release and
+   its settlement with rollback-resistant protection and a trusted owner
+   identity.
 
 Each item can hide or manufacture an obligation if ignored. None can be closed
 by a timeout, a numeric PID, a fresh boot, a new generation or an unchanged
@@ -97,8 +84,7 @@ a value.
 child, requires exactly one pidfd over `SCM_RIGHTS`, validates PID/start/cookie
 identity, calls a durable-record callback, aborts a still-stopped child when
 recording fails, and sends `release` only after the callback returns exactly
-`True`. The native broker server, authority use of this client and startup
-recovery invocation remain open.
+`True`. A compiled replay implements the server over the actual loader core.
 
 `BrokerLaunchOnce` is now the authority alternative to `spawn_shell()`. It
 binds the staged child to the current frozen selection, requires an injected
@@ -111,6 +97,13 @@ result is uncertain. A compiled native replay now exercises the actual
 `loader.c` core over the broker socket: the child stops, the descriptor is
 passed, `record_attempt` waits for the client's release acknowledgment, and an
 abort kills only the still-stopped child.
+
+`launch_settlement_recorder.py` binds the staged child identity to the exact
+capture selection and calls `SettlementOwner.track_release()` before the broker
+may release. `guarded-session-authority.py` accepts an isolated capture policy,
+broker socket and settlement root as one required configuration group; when
+present it selects `BrokerLaunchOnce`, installs the recorder and runs startup
+recovery before serving launch requests.
 
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
@@ -132,24 +125,17 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 ## Required implementation order
 
-1. Add a protected append-only pending-work/rollback boundary around the new
-   recoverable journal records. A fresh trusted process can enumerate and
-   probe them, but file-level rollback protection and owner identity remain
-   open.
-2. Record the persistent child identity at attempt time using boot ID, PID and
-   process start time, or a native pidfd handoff that remains valid after
-   authority restart. A reused numeric PID/FD must not match.
-3. Turn the compiled replay broker into the fitted Linux broker, connect its
-   `record_attempt` callback to the settlement owner, and configure `main` to
-   select `BrokerLaunchOnce` instead of `spawn_shell()`. Do not insert
-   settlement after a live exec.
-4. Put the isolated frozen-consumer process behind a fixed root-owned provider
-   and connect it to `Authority.selection_provider`; never accept capture ID,
-   generation or policy digest from bridge JSON or user-writable state.
-5. Serialize the release-attempt anchor and settlement journal through the
+1. Turn the compiled replay broker into the fitted Linux broker and install its
+   fixed policy, socket and sidecar assets as one reviewed closure.
+2. Turn the isolated capture consumer and fixed policy into a root-owned
+   installed dependency closure; never accept capture ID, generation or policy
+   digest from bridge JSON or user-writable state.
+3. Serialize the release-attempt anchor and settlement journal through the
    native owner. Preserve an unresolved attempt across supervisor crash, boot,
    cancellation and protection-store rollback.
-6. Replay failures before and after each durable write, after child exit, at
+4. Add a protected append-only pending-work/rollback boundary around the
+   recoverable journal records and a bound owner identity.
+5. Replay failures before and after each durable write, after child exit, at
    release-callback return, during supervisor restart and with stale or reused
    child identities.
 

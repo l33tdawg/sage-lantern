@@ -148,7 +148,7 @@ class BrokerLaunchOnce:
         self.broker = self.broker_factory()
         try:
             self.child = self.broker.stage_until_recorded(
-                lambda child: self.record(child, selection),
+                lambda child, request: self.record(child, request, selection),
                 launch_id=str(uuid.uuid4()),
                 capture_id=selection.capture_id,
                 generation=selection.generation,

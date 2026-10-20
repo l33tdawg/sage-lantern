@@ -201,12 +201,14 @@ def test_broker_authority_requires_recorder_and_uses_staged_pidfd():
     calls = []
     def stage(record, **kwargs):
         calls.append(kwargs)
-        assert record(child) is True
+        assert record(child, SimpleNamespace(
+            launch_id='launch', capture_id=selection.capture_id,
+            generation=7, policy_sha256=selection.policy_sha256)) is True
         return child
     broker.stage_until_recorded.side_effect = stage
     once = BrokerLaunchOnce(
         lambda: (policy(), session()), lambda: broker,
-        lambda staged, selected: selected is selection, lambda: selection)
+        lambda staged, request, selected: selected is selection, lambda: selection)
     assert once.start()[2] is child
     assert once.fd == 9
     assert calls[0]['capture_id'] == selection.capture_id
@@ -236,6 +238,16 @@ def test_broker_authority_requires_clean_startup_recovery(monkeypatch):
     authority.settlement_recovery = lambda: ()
     assert authority.recover() is True
     assert authority.prepare() == (policy(), session())
+
+
+def test_settlement_runtime_composes_provider_recorder_and_recovery(tmp_path):
+    module = authority_module()
+    tmp_path.chmod(0o700)
+    selection, recorder, recovery = module.load_settlement_runtime(
+        ROOT / 'software/security/desktop_loader_candidate',
+        tmp_path, '/synthetic/capture-policy.json')
+    assert callable(selection) and callable(recorder) and callable(recovery)
+    assert recovery() == ()
 
 
 def test_authority_hold_closes_grants_without_process_termination():

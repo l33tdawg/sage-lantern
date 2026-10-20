@@ -27,6 +27,14 @@ class StagedChild:
     cookie: int
 
 
+@dataclass(frozen=True)
+class StageRequest:
+    launch_id: str
+    capture_id: str
+    generation: int
+    policy_sha256: str
+
+
 def _message(value):
     if type(value) is not dict or value.get("schema") != SCHEMA:
         raise LoaderBrokerError("broker_schema_invalid")
@@ -125,11 +133,13 @@ class LoaderBroker:
     def stage_until_recorded(self, record, *, launch_id, capture_id,
                              generation, policy_sha256):
         """Persist the stopped-child obligation before permitting release."""
+        request = StageRequest(
+            launch_id, capture_id, generation, policy_sha256)
         child = self.stage(
             launch_id=launch_id, capture_id=capture_id,
             generation=generation, policy_sha256=policy_sha256)
         try:
-            recorded = record(child)
+            recorded = record(child, request)
         except BaseException:
             try:
                 self.abort()

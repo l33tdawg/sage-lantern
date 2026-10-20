@@ -43,7 +43,10 @@ def test_native_loader_stages_and_releases_only_after_record(binary, tmp_path):
     events = []
     with LoaderBroker(client) as broker:
         child = broker.stage_until_recorded(
-            lambda staged: events.append(staged.pid) or os.kill(staged.pid, 0) is None,
+            lambda staged, request: (
+                events.append(staged.pid) or
+                request.capture_id == "capture" and
+                os.kill(staged.pid, 0) is None),
             launch_id="launch", capture_id="capture",
             generation=7, policy_sha256="a" * 64)
         assert os.fstat(child.pidfd)
@@ -57,7 +60,7 @@ def test_native_loader_aborts_stopped_child_when_record_refuses(binary, tmp_path
     with LoaderBroker(client) as broker:
         with pytest.raises(LoaderBrokerError, match="settlement_attempt_not_recorded"):
             broker.stage_until_recorded(
-                lambda _: False,
+                lambda _, request: False,
                 launch_id="launch", capture_id="capture",
                 generation=7, policy_sha256="a" * 64)
     assert process.wait(3) == 1

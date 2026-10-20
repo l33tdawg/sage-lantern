@@ -121,7 +121,9 @@ def test_durable_record_must_succeed_before_release():
     thread.start()
     broker = LoaderBroker(client)
     child = broker.stage_until_recorded(
-        lambda staged: events.append("recorded") or staged.cookie == 789,
+        lambda staged, request: (
+            events.append("recorded") or
+            staged.cookie == 789 and request.launch_id == "launch"),
         launch_id="launch", capture_id="capture",
         generation=7, policy_sha256="a" * 64)
     assert events == ["recorded", "release"]
@@ -150,7 +152,8 @@ def test_failed_durable_record_aborts_stopped_child(failure):
     thread = threading.Thread(target=worker)
     thread.start()
     broker = LoaderBroker(client)
-    def record(_):
+    def record(_, request):
+        assert request.capture_id == "capture"
         if isinstance(failure, BaseException):
             raise failure
         return failure
