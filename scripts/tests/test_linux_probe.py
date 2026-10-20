@@ -31,6 +31,7 @@ BINDING = L.LaunchBinding(
     "1" * 64, "eeeeeeee-ffff-aaaa-bbbb-cccccccccccc")
 RESOURCES = (
     L.ResourceRef("pidfd", "pidfd:7"),
+    L.ResourceRef("child", "child:123:456"),
     L.ResourceRef("cgroup", "/sys/fs/cgroup/sage-session-7"),
     L.ResourceRef("socket", "unix:/run/sage/native-7"),
     L.ResourceRef("mount", "/run/sage/mnt"),
@@ -110,6 +111,30 @@ class LinuxProbeTests(unittest.TestCase):
     def test_absent_cgroup_is_terminal(self):
         (Path(self.tmp) / "sys/fs/cgroup/sage-session-7").rename(
             Path(self.tmp) / "sys/fs/cgroup/moved")
+        result = self.probe().observe(OBLIGATION)
+        self.assertIsNotNone(result.proof)
+
+    @staticmethod
+    def child_stat(pid, state, start):
+        # Fields after comm begin with state; starttime is field 22 overall.
+        fields = ["0"] * 20
+        fields[0], fields[19] = state, str(start)
+        return f"{pid} (gnome-shell) {' '.join(fields)}\n"
+
+    def test_running_child_is_not_terminal(self):
+        write(self.tmp, "proc/123/stat", self.child_stat(123, "S", 456))
+        result = self.probe().observe(OBLIGATION)
+        self.assertIsNone(result.proof)
+        self.assertIn("child_not_terminal", result.reason)
+
+    def test_unreaped_zombie_is_not_terminal(self):
+        write(self.tmp, "proc/123/stat", self.child_stat(123, "Z", 456))
+        result = self.probe().observe(OBLIGATION)
+        self.assertIsNone(result.proof)
+        self.assertIn("child_not_terminal", result.reason)
+
+    def test_reused_pid_with_different_start_time_is_absent(self):
+        write(self.tmp, "proc/123/stat", self.child_stat(123, "S", 999))
         result = self.probe().observe(OBLIGATION)
         self.assertIsNotNone(result.proof)
 

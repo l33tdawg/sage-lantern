@@ -44,8 +44,13 @@ def canonical(value):
 
 def obligation_digest(obligation):
     """Stable digest of the launch binding and exact owned resources."""
+    return hashlib.sha256(canonical(obligation_payload(obligation))).hexdigest()
+
+
+def obligation_payload(obligation):
+    """Canonical recoverable form of a launch obligation."""
     binding = obligation.binding
-    return hashlib.sha256(canonical({
+    return {
         "binding": {
             "machine_id": binding.machine_id,
             "boot_id": binding.boot_id,
@@ -58,7 +63,7 @@ def obligation_digest(obligation):
             {"kind": item.kind, "identity": item.identity}
             for item in obligation.resources
         ],
-    })).hexdigest()
+    }
 
 
 def settlement_digest(obligation_sha256, proof_sha256):
@@ -75,6 +80,7 @@ class SettlementRecord:
     revision: int
     proof_sha256: str | None = None
     receipt_sha256: str | None = None
+    obligation: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +94,9 @@ class JournalOutcome:
 class UnavailableJournalBackend:
     """Default: no durable settlement store exists."""
     def read(self, obligation_sha256):
+        raise JournalBackendUnavailable("no_qualified_journal_backend")
+
+    def pending(self):
         raise JournalBackendUnavailable("no_qualified_journal_backend")
 
     def create(self, record):
@@ -104,17 +113,20 @@ def _record_dict(record):
         "revision": record.revision,
         "proof_sha256": record.proof_sha256,
         "receipt_sha256": record.receipt_sha256,
+        "obligation": record.obligation,
     }
 
 
 def _record_from_dict(data):
-    if not isinstance(data, dict) or set(data) != {
-            "obligation_sha256", "state", "revision",
-            "proof_sha256", "receipt_sha256"}:
+    required = {"obligation_sha256", "state", "revision",
+                "proof_sha256", "receipt_sha256"}
+    if (not isinstance(data, dict)
+            or set(data) not in (required, required | {"obligation"})):
         raise JournalRefused("journal_record_schema_invalid")
     return _record(SettlementRecord(
         data["obligation_sha256"], data["state"], data["revision"],
-        data["proof_sha256"], data["receipt_sha256"]))
+        data["proof_sha256"], data["receipt_sha256"],
+        data.get("obligation")))
 
 
 class FileJournalBackend:
@@ -207,6 +219,16 @@ class FileJournalBackend:
         with self._locked():
             return self._read(obligation_sha256)
 
+    def pending(self):
+        with self._locked():
+            records = []
+            for path in sorted(self.root.glob("*.json")):
+                digest = path.stem
+                record = self._read(digest)
+                if record is not None and record.state == "attempted":
+                    records.append(record)
+            return tuple(records)
+
     def create(self, record):
         _record(record)
         with self._locked():
@@ -249,6 +271,16 @@ def _record(value, digest=None):
         if value.receipt_sha256 != settlement_digest(
                 value.obligation_sha256, value.proof_sha256):
             raise JournalRefused("settled_record_receipt_mismatch")
+    if value.obligation is not None:
+        if type(value.obligation) is not dict:
+            raise JournalRefused("journal_obligation_invalid")
+        try:
+            calculated = hashlib.sha256(
+                canonical(value.obligation)).hexdigest()
+        except (TypeError, ValueError):
+            raise JournalRefused("journal_obligation_invalid") from None
+        if calculated != value.obligation_sha256:
+            raise JournalRefused("journal_obligation_digest_mismatch")
     return value
 
 
@@ -281,7 +313,9 @@ class SettlementJournal:
             existing = self._read(digest)
             if existing is not None:
                 return JournalOutcome(existing.state, record=existing)
-            record = SettlementRecord(digest, "attempted", 0)
+            record = SettlementRecord(
+                digest, "attempted", 0,
+                obligation=obligation_payload(obligation))
             created = self.backend.create(record)
             if created is None:
                 return self._state(digest,
@@ -327,6 +361,8 @@ class SettlementJournal:
                 return JournalOutcome("uncertain", "attempt_not_recorded")
             if record.state != "attempted":
                 return JournalOutcome("uncertain", "record_not_attempted")
+            if record.obligation != obligation_payload(obligation):
+                return JournalOutcome("uncertain", "journal_obligation_mismatch")
             after = replace(
                 record, state="settled", revision=record.revision + 1,
                 proof_sha256=receipt.proof_sha256,
@@ -349,3 +385,9 @@ class SettlementJournal:
         except (JournalRefused, JournalBackendUnavailable, JournalUnknown,
                 OSError) as error:
             return JournalOutcome("uncertain", str(error))
+
+    def pending(self):
+        """Return durable attempts for a restarted trusted owner to probe."""
+        records = self.backend.pending()
+        return tuple(_record(value) for value in records
+                     if value.state == "attempted")

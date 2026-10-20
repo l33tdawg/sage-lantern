@@ -36,7 +36,43 @@ class SettlementOwner:
     def track_release(self, release, capture_id, policy_sha256, resources):
         obligation = L.bind_release(
             release, capture_id, policy_sha256, resources)
-        return obligation, self.journal.record_attempt(obligation)
+        attempt = self.journal.record_attempt(obligation)
+        if getattr(attempt, "status", None) != "attempted":
+            reason = getattr(attempt, "reason", "") or "attempt_not_durable"
+            raise L.SettlementRefused(reason)
+        return obligation, attempt
 
     def settle(self, obligation):
         return N.settle_from_probe(self.journal, self.probe, obligation)
+
+    def recover(self):
+        """Probe durable attempts after a trusted-owner restart."""
+        outcomes = []
+        try:
+            pending = self.journal.pending()
+        except (ValueError, RuntimeError, OSError) as error:
+            return (N.ProbeOutcome("uncertain", str(error)),)
+        for record in pending:
+            payload = record.obligation
+            try:
+                if type(payload) is not dict or set(payload) != {
+                        "binding", "resources"}:
+                    raise ValueError("journal_obligation_invalid")
+                binding = payload["binding"]
+                if type(binding) is not dict or set(binding) != {
+                        "machine_id", "boot_id", "capture_id", "generation",
+                        "policy_sha256", "launch_id"}:
+                    raise ValueError("journal_obligation_invalid")
+                resources = payload["resources"]
+                if type(resources) is not list:
+                    raise ValueError("journal_obligation_invalid")
+                obligation = L.SettlementObligation(
+                    L.LaunchBinding(**binding),
+                    tuple(L.ResourceRef(item["kind"], item["identity"])
+                          for item in resources))
+            except (KeyError, TypeError, ValueError):
+                outcomes.append(N.ProbeOutcome(
+                    "uncertain", "journal_obligation_invalid"))
+                continue
+            outcomes.append(self.settle(obligation))
+        return tuple(outcomes)
