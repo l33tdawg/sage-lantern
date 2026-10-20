@@ -151,6 +151,14 @@ review-only assembly evidence is
 policy fixtures and builder-kernel BTF, so it is not a Unit C deployment
 bundle.
 
+A read-only Unit C check found kernel BTF `6.1.115-vendor-rk35xx` at
+`9392c4db…f15c60` and no `/dev/tpm*` device. Building that exact BTF produced
+a 13-hook object at `4f930d4c…427e39`; the corresponding review-only
+18-file bundle manifest is `557ca0b4…58915`. The target protected policies are
+absent, so this target-BTF bundle still uses synthetic policy fixtures and
+cannot be installed. Evidence:
+`docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json`.
+
 `broker_agent.c` supplies the fitted-agent source around the Linux backend:
 it loads digest-bound object/shell/pin inputs, accepts the one staged request,
 and forwards `record_attempt` over the same broker socket. The Linux backend
