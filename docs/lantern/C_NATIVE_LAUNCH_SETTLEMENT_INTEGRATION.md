@@ -122,6 +122,11 @@ that the policy is installed from a trusted boot channel or that the owner
 binary is currently running. Callers must load the policy from a protected path
 and pass that identity through the native owner, never from bridge JSON.
 
+An owner restart now converts a missing, malformed or counter-behind anchor
+read into an absent in-memory seal. Recovery then returns
+`settlement_anchor_mismatch` and further `track_release()` calls refuse; it
+cannot treat the same failure as an empty journal and authorize a fresh launch.
+
 `FileAnchorStore` also accepts a separate monotonic-counter port. The anchor
 records the counter value and requires it to match on read; a create or
 compare-exchange advances the counter before writing the next anchor. The
@@ -227,6 +232,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   identity at the same generation and journal digest.
 - counter-bound anchor transitions that refuse a missing, rolled-back or
   non-advancing monotonic counter.
+- restart recovery that keeps a counter-ahead/anchor-behind interruption
+  uncertain and blocks every subsequent release attempt.
 - an exact native-bundle manifest/verification source contract with a fixed
   required file set and metadata closure.
 - an early-boot admission receipt requiring a clean UID-1000 namespace for the
