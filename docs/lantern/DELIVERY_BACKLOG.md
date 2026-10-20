@@ -1,25 +1,25 @@
 # SAGE Lantern delivery backlog
 
-**Current role/task map:** 2026-09-27 — [Device roles](DEVICE_ROLES.md) and
-[SAGE task map](SAGE_TASKS_20260927.md) supersede the execution order below.
-A/B are single-LoRa Lamplighter/admin/knowledge/repeater support units. C–F are
-real Orange Pi 5 Plus user Lanterns with dual LoRa, GPS and WiFi. A/B endpoint
-completion is no longer a gate. Their public seeds are active and native personal
-SAGE stores deleted; LoRa/repeater and C–F acceptance remain open.
+**Current role/task map:** 19 October 2026 — [Device roles](DEVICE_ROLES.md)
+and the [fresh-session handoff](SESSION_HANDOFF_20261019.md) supersede the
+execution order below. Under D-028, A/B remain the ROCK 5B 8 GB Lamplighter and
+relay units; the product fleet is four ROCK 5B+ units, with two Orange Pi 5 Plus
+units retained for bench and development. Every unit uses one LoRa radio. A/B
+endpoint completion is no longer a gate. Their public seeds are active and
+native personal SAGE stores were deleted; ROCK bring-up, physical C acceptance
+and production messaging remain open.
 
 **Historical checkpoint date:** 2026-09-12
 **Purpose:** One operational backlog for the Lantern device, Fleet Admin, Fleet
 Authority, radio bring-up, and later Commons federation work.
 
-**Current model lane (2026-10-18):** Unit C production chat is the V79.6 3B
-token engine with the final-reviewed response guards; see
-[3B_MODEL_PRODUCTION.md](3B_MODEL_PRODUCTION.md). The live server is
-`b568af7d…` and the guards are `07d64238…`; the token engine is `c4cf4fda…`
-at 16k context / 8192 default output. The 48-request device comparison was
-run with guards off at 2048 context. A separate 8192 long-form suite now
-normalizes requested paragraph counts; repeated bullets and a negated retired
-label remain open. This does not close the broader model-quality,
-long-conversation, field, power or multi-unit acceptance items below.
+**Current model lane (2026-10-19):** Unit C production chat is V81 with the
+grounded composer and response guards; V79.6 remains the rollback. It runs at
+16k context / 8192 default output. Device latency figures, weights research and
+the remaining quality and long-form limits are in
+[3B_MODEL_PRODUCTION.md](3B_MODEL_PRODUCTION.md) and the current handoff. This
+does not close the broader model-quality, long-conversation, field, power or
+multi-unit acceptance items below.
 
 The runtime action boundary is now tracked in
 `software/runtime/src/sage_lantern/action_guard.py` and

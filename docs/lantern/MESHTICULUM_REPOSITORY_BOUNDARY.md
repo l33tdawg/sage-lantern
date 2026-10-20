@@ -3,12 +3,12 @@
 
 | Record | Value |
 | --- | --- |
-| Status | CANDIDATE for source review; not ratified or a deployment approval |
+| Status | Source boundary merged; normative review and deployment approval remain open |
 | Version | 0.1 |
 | Proposed owners | SAGE Foundation maintainers / Lantern engineering |
 | Required reviewers | Product, engineering, security/privacy, operations, test and release; review outcomes pending |
-| Created / last updated | 2026-10-10 |
-| Target gate / decision deadline | Boundary review before merge; operational and publication review before their respective activation gates |
+| Created / last updated | 2026-10-10 / 2026-10-20 |
+| Target gate / decision deadline | Source merge completed 2026-10-20 in PR #3; operational and publication review remain before their respective activation gates |
 | Parent requirements | SYS-001, SYS-003, SYS-006, SYS-007, SYS-008, SYS-009, SYS-011; DST-001, DST-003, DST-004; FLE-001–003; SEC-001–003; API-001; OSS-001–002; GOV-001–002 |
 | Proposed child requirements | LAN-MESH-BOUND-001–010, defined below; not yet adopted into the programme register |
 | Dependencies | [Master PRD](../MASTER_TECHNICAL_PRD.md), [documentation governance](../DOCUMENTATION_GOVERNANCE.md), [requirement register](../REQUIREMENTS_TRACEABILITY.md), [Open Source Policy](../OPEN_SOURCE_POLICY.md), reviewed Meshticulum dependency |
@@ -16,7 +16,7 @@
 
 ## Summary and decision requested
 
-Review a strict source and dependency boundary: [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/6605ba714ce414445673b40bfcfe93fe467b86aa) owns reusable cryptography, protocol, contracts, flow, scheduler, drivers and public resources. [SAGE Lantern](https://github.com/l33tdawg/sage-lantern) owns its application policy, protected SAGE integration, native nodes, device provisioning and fleet deployment. The dependency is **Lantern → Meshticulum**, with no reverse import or product-service prerequisite in the core.
+Review the merged source and dependency boundary: [Meshticulum](https://github.com/l33tdawg/meshticulum/tree/673eb60d24dc60f67371e24bc5c9caeec3a68508) owns reusable cryptography, protocol, contracts, flow, scheduler, drivers and public resources. [SAGE Lantern](https://github.com/l33tdawg/sage-lantern) owns its application policy, protected SAGE integration, native nodes, device provisioning and fleet deployment. The dependency is **Lantern → Meshticulum**, with no reverse import or product-service prerequisite in the core.
 
 The user requested this source boundary. This candidate records that intent and the reviewable migration contract; it does not declare normative approval, production enablement, hardware qualification or publication permission.
 
@@ -24,7 +24,7 @@ The user requested this source boundary. This candidate records that intent and 
 
 The initial Meshticulum extraction also carried Lantern-specific inbox/capture, Linux unit roles, service-lifetime checks, provisioning and pilot tools. That made a transport repository appear to own a product's private and operational authority. It also made independent use and validation harder.
 
-The migration candidate now places those implementations in `lantern_meshticulum`, while keeping their reusable dependency canonical in Meshticulum. Source controls and installed artifacts must be revalidated against the paired candidate commits. Historical tests, radio measurements and runtime hashes retain their original scope; relocating a file does not transfer qualification.
+The merged migration places those implementations in `lantern_meshticulum`, while keeping their reusable dependency canonical in Meshticulum. Source controls and installed artifacts must be revalidated against the paired candidate commits. Historical tests, radio measurements and runtime hashes retain their original scope; relocating a file does not transfer qualification.
 
 Affected users are application developers consuming Meshticulum, Lantern runtime engineers, private-backend integrators, device operators and release reviewers. Ordinary Lantern users gain no new traffic, consent decision or deployment action from this source change.
 
@@ -142,4 +142,4 @@ Keeping product adapters in Meshticulum would retain the reverse ownership ambig
 
 The generic core's ability to carry resource bytes is not an amendment to Lantern's accepted DST-003 or Master PRD distribution rules. Bounded synthetic lab qualification must remain explicitly scoped. Any product-policy change requires its own reviewed RFC delta; this source-boundary RFC does not grant that change.
 
-**Decision/dissent log:** 2026-10-10 — user requested the strict one-way source boundary; candidate documentation and migration prepared. Normative review outcomes, acceptance evidence and any dissent remain unrecorded. No ratification, deployment or publication decision is asserted.
+**Decision/dissent log:** 2026-10-10 — user requested the strict one-way source boundary; candidate documentation and migration prepared. 2026-10-20 — the source boundary merged in Lantern PR #3 at `f5d1147` as `c1373d3`. Normative review outcomes, acceptance evidence and any dissent remain unrecorded. No ratification, deployment or publication decision is asserted.

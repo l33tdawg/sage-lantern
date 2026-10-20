@@ -22,17 +22,19 @@ account can load that policy profile. All SAGE listeners are loopback-only.
 Evidence and rollback paths are in
 `work/sage-provisioning-profile-migration-20261019/`.
 
-The PR stack is settled:
+The Lantern PR stack is settled:
 
-- PR 1 and PR 2 are superseded by PR 3 and should close.
-- PR 3, `codex/transport-qualification-20261014`, now includes main through
-  merge `99b5e15`. The storage-epoch conflict is resolved by D-027:
-  `verified_epoch()` stays uncached for the six native forward-secrecy fences,
-  while `admission_epoch()` carries main's one-second reuse for capture leases
-  and hot admission checks.
+- PRs 1 and 2 were closed as superseded.
+- PR 3, `codex/transport-qualification-20261014`, merged on 20 October at
+  source `f5d1147` as merge commit `c1373d3`. The storage-epoch conflict is
+  resolved by D-027: `verified_epoch()` stays uncached for the six native
+  forward-secrecy fences, while `admission_epoch()` carries main's one-second
+  reuse for capture leases and hot admission checks.
 - Native proof for the merge: 180 storage/daemon tests, 34 fence tests and 298
-  forward native owner/provider/relay/bound-pair tests. Remaining integration
-  failures are sandbox IP-bind and external-service limits.
+  forward native owner/provider/relay/bound-pair tests. The test-only
+  `mesh-window` fix compares the 86,400-second contract by value across the
+  canonical Meshticulum module alias. Remaining integration failures are
+  sandbox IP-bind and external-service limits.
 
 Hardware and device waits:
 
@@ -132,8 +134,9 @@ visuals. Wick reviewed the map copy: use "Lantern Offline Maps", decimal MB,
 bounding-box coverage, checksum not signature, and HTTPS/LAN/USB before radio.
 Flint supplied the current hardware state: the ROCK 5B+ tub finished 263/263,
 the firmer bezel 199/199, and the back cover 89/89; the V2 collar and gasket
-trials are still open. C-F Orange Pi physical count needs reconciliation, and
-the G/H boards were owner-reported arrived by 9 October but are not brought up.
+trials are still open. The Orange Pi physical count still needs reconciliation.
+Two 12 GB ROCK 5B+ boards are in hand, while two 16 GB boards and two DSI
+panels were ordered on 19 October; none of the four ROCK boards is brought up.
 
 Hardware reconciliation on 19 October found two adapter problems:
 `hardware/RECONCILIATION_20261019.md`. Radxa's 5B/5B+ interface page lists 41
@@ -148,8 +151,8 @@ RM205 each (RM820 subtotal) and the owner confirmed the order on 19 October.
 The IMX519-7B modules remain
 bench/experimental only; they are a Pi libcamera module with no official ROCK
 5B+ driver/overlay. The Orange Pi 5 Plus CSI connector is a 30-pin mezzanine
-and the IMX519 is a 22-pin camera, so C-F bench use also needs a 30-to-22
-adapter with I2C level shifting. Unit C is confirmed as an Orange Pi 5
+and the IMX519 is a 22-pin camera, so the Orange Pi bench experiment also needs
+a 30-to-22 adapter with I2C level shifting. Unit C is confirmed as an Orange Pi 5
 Plus with 8 cores, 15 GiB, a Netac 256 GB NVMe, USB audio, a C270 and an open
 GNSS receiver.
 
@@ -177,8 +180,8 @@ wiring.
 
 The hardware inventory is now repeatable with
 `scripts/lantern/hardware_inventory.py`; the Unit C output is at
-`docs/lantern/evidence/HARDWARE_INVENTORY_C_20261019.json`. The bench fields to
-fill for the board count, DSI/CSI contacts and G/H bring-up are in
+`docs/lantern/evidence/HARDWARE_INVENTORY_C_20261019.json`. The bench fields for
+board count, DSI/CSI contacts and four-ROCK bring-up are in
 `hardware/PHYSICAL_CHECKLIST.md`.
 
 The product radio baseline is **one LoRa radio per unit**. Meshticulum carries
@@ -253,7 +256,7 @@ labels or a different base, not more self-generated pairs.
 
 14 assigned open tasks remain: one index record, **f96255e5** (replacing
 71276d72), and 13 engineering workstreams. **bc68398e** replaces the stale
-G/H hardware task 92680e1c. The inbox is clear — 0 pending requests, 0 task
+hardware task 92680e1c. The inbox is clear — 0 pending requests, 0 task
 notices and 0 unfinished claims; last checked `2026-10-19T12:40:46Z`, reply
 watermark `2026-10-19T01:38:14.498Z`. Flint has the final procurement state
 as `msg-fcd279b3`.
@@ -266,7 +269,7 @@ as `msg-fcd279b3`.
 - **d410e922** — Lantern 3B: V81 research preview live on C with guards;
   weights next step needs independent preference labels.
 - **21647cae** — C-native qualification: protected backend, lifecycle,
-  consent/session, D-022 and D/E/F gates remain.
+  consent/session, D-022 and later unit-rollout gates remain.
 - **131d5018** — Conversation product: installed owner-session UI, private
   SAGE, ASR/voice, router and streaming acceptance remain.
 - **7c72ccdf** — Mail/domain: owner password-manager, contact, redirect and
@@ -280,8 +283,8 @@ as `msg-fcd279b3`.
 - **30741772** — Trust root: signed root-update channel and rotation drill.
 - **7f87281f** — Launch: measured demo, evidence, licence/secret review,
   signing custody and campaign gates.
-- **cd2312c4** — Messaging/discovery: C–F authenticated delivery, status
-  channel and White Pages.
+- **cd2312c4** — Messaging/discovery: authenticated delivery across bench and
+  product units, the message-status channel and White Pages.
 - **d8cca61b** — Fleet operations: inventory/audit, certificate lifecycle,
   backups/monitoring and reviewed remote commands.
 
@@ -289,20 +292,22 @@ as `msg-fcd279b3`.
 
 1. ~~Review, commit and push the r24 SAGE provisioning-profile, installer and
    source change.~~ Done: `5b1a8f1` on `main`.
-2. Close PR 1 and PR 2 as superseded, then review the settled PR 3 merge
-   (`99b5e15`). The `verified_epoch` contract is D-027.
+2. ~~Close the superseded PRs and merge the settled transport qualification.~~
+   Done: Lantern PR 3 merged as `c1373d3`; the `verified_epoch` contract is
+   D-027.
 3. Connect/qualify the GNSS antenna and capture a real mode 2/3 fix; then
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait. Run one physical SD/USB map install when a card is
    available.
 4. Wire the settlement owner into the native launch authority and repeat the
    native fault replay on C.
-5. Bring up one G/H unit once the 16 GB boards and panels arrive; keep the
-   IMX519 CSI adapter off the product path.
+5. Bring up the four ROCK 5B+ product units as the 16 GB boards and DSI panels
+   arrive, starting with one unit; keep the IMX519 CSI adapter off the product
+   path.
 6. Continue conversation-product acceptance.
 7. Resume weights only with independent preference labels or a different base.
 8. Run the Meshticulum native/proper-bundle 1 MB and mixed-path qualification
-   in a fresh bounded radio window; close PR 37 as superseded by PR 38.
+   in a fresh bounded radio window.
 
 ## Guardrails
 

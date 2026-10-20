@@ -6,33 +6,32 @@ still open. It is not a claim that the fleet has been built.
 
 The repository's [`HARDWARE_BOM.md`](../docs/lantern/HARDWARE_BOM.md) is a dated
 record of the A/B bring-up and early orders. The hardware workstream keeps the
-live C-F bill of materials and build status in its own working records. The
-summary here is compiled from the repository docs and marks anything it cannot
-confirm.
+current fleet bill of materials and build status in its own working records.
+The summary here is compiled from the repository docs and marks anything it
+cannot confirm.
 
 ## Device roles
 
 | Units | Role | Hardware target | Current state |
 | --- | --- | --- | --- |
 | **A and B** | Lamplighter, administration, public knowledge cache and repeater support | Radxa ROCK 5B, 8 GB, one LoRa companion, dashboard screen | Built and running. Public pack seeds and the Lamplighter dashboard are installed. Private personal SAGE stores were removed with owner approval. |
-| **C, D, E and F** | Bench and acceptance units for the end-user Lantern | Orange Pi 5 Plus, 16 GB, 256 GB NVMe, HDMI 6.25-inch 720x1560 panel with USB touch, SX1262/GNSS HAT | C is commissioned and running. D/E/F first boot and peripheral acceptance remain open. The HDMI panel is bench hardware, not the final product panel. |
-| **G and H** | Additional end-user Lanterns | Radxa ROCK 5B+ 12 GB, 6.25-inch DSI panel, IMX415 camera | Two boards ordered 30 September and owner-reported arrived by 9 October. Electrical bring-up has not started. C-F qualification comes first. |
+| **Orange Pi 5 Plus bench units** | Bench and acceptance work for the end-user Lantern | Orange Pi 5 Plus, 16 GB, 256 GB NVMe, HDMI 6.25-inch 720x1560 panel with USB touch, SX1262/GNSS HAT | Two units are retained under D-028; C is commissioned and running. The earlier C–F four-unit label remains historical until the physical count is reconciled. The HDMI panel is bench hardware, not the product panel. |
+| **ROCK 5B+ product fleet (four units)** | Main end-user Lantern fleet | Four ROCK 5B+ boards: two 12 GB in hand and two 16 GB ordered. Two 6.25-inch DSI panels in hand and two ordered; four AC005 adapters and four IMX415 cameras ordered. | Board and panel bring-up has not started. DSI overlay, camera, thermal, power and physical acceptance remain open. |
 
 The role map is maintained in [`DEVICE_ROLES.md`](../docs/lantern/DEVICE_ROLES.md).
 It controls allocation when older notes disagree.
 
 ## What is settled
 
-- C-F are planned as four Orange Pi 5 Plus boards with 16 GB RAM and 256 GB
-  NVMe. The procurement records conflate an earlier pair with A/B, so count the
-  physical boards before saying four are in hand.
-- C-F need a fixed 5 V/4 A power path. The Orange Pi Type-C input does not
-  negotiate USB-C PD.
-- G/H use the ROCK 5B+ and can take a common PD charger. Power is
+- D-028 sets two Orange Pi 5 Plus bench/development units. The procurement
+  records conflate an earlier pair with A/B, so count the physical boards
+  before claiming a larger bench fleet.
+- The Orange Pi bench units need a fixed 5 V/4 A power path. The Orange Pi
+  Type-C input does not negotiate USB-C PD.
+- The four ROCK 5B+ product units can take a common PD charger. Power is
   bring-your-own under D-015.
-- The 6.25-inch 720x1560 panel is the current bench panel for C-F and the
-  retained panel choice for G/H. The final G/H product path is the ribbon DSI
-  panel.
+- The 6.25-inch 720x1560 HDMI panel is bench-only. The ROCK product path uses
+  the 6.25-inch DSI panel with the AC005 adapter.
 - The product radio baseline is one LoRa radio per unit. Meshticulum carries
   messages and resource transfers over that single half-duplex radio. Extra
   radios are bench comparison inventory, not a product requirement.
@@ -45,15 +44,18 @@ It controls allocation when older notes disagree.
   The ROCK 5B+ tub, firmer bezel and back cover have been printed and accepted
   as mechanical trials. The gasket and V2 collar trials are still open. See
   [`stl/`](stl/README.md).
-- The C-F panel adapter, the panel's 5 V lead and the camera FPC path.
-- The C-F camera path. Four IMX519 modules were ordered, but the Orange Pi CSI
-  path is unverified and the final choice is still open.
-- The G/H camera modules and adapters. IMX415 is the decided sensor there.
+- Physical connector/pin and lane checks for the AC005 DSI path, the panel
+  power lead, the DSI overlay and the camera FPC path.
+- The Orange Pi camera experiment. Four IMX519 modules were bought, but the
+  Orange Pi CSI path remains unverified and is not the product camera path.
+- ROCK 5B+ camera capture with the ordered IMX415 modules and the matching
+  ribbon and overlay.
 - The microphone, PTT switch and acoustic path. The I2S modules are ordered,
   the PTT switches are ordered, and the current generator does not have the
   microphone fitted.
 - Physical confirmation of connector pitch and pin count on the real boards.
-- Meter tests of the C-F power adapters before any unit runs heavy model loads.
+- Meter tests of the Orange Pi bench power adapters before any unit runs heavy
+  model loads.
 - A real GNSS fix, touch mapping, panel rotation and sleep/wake acceptance on
   the physical unit.
 
