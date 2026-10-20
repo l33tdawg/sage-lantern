@@ -1,7 +1,9 @@
 """Synthetic early-boot admission gate controls."""
 from pathlib import Path
 import importlib.util
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -91,6 +93,17 @@ class EarlyBootTests(unittest.TestCase):
         self.assertIn("ConditionPathExists=/etc/sage-lantern/desktop-pin-activation.json",
                       unit)
         self.assertIn("StateDirectory=sage-lantern-early-boot", unit)
+
+    def test_source_boot_graph_verifier(self):
+        result = subprocess.run([
+            sys.executable,
+            str(ROOT / "scripts/lantern/verify-native-boot-graph.py"),
+            "--unit-dir", str(ROOT / "software/systemd")],
+            check=True, capture_output=True, text=True)
+        value = json.loads(result.stdout)
+        self.assertTrue(value["source_verified"])
+        self.assertFalse(value["installed_on_target"])
+        self.assertFalse(value["runtime_authorized"])
 
 
 if __name__ == "__main__":

@@ -228,6 +228,12 @@ present. This is an explicit unbootstrapped target state, not an enforcement
 result; see
 `docs/lantern/evidence/NATIVE_BOOT_CHAIN_UNIT_C_20261020.json`.
 
+`scripts/lantern/verify-native-boot-graph.py --unit-dir software/systemd`
+performs the source-level graph check: the admission unit is a oneshot before
+display-manager, getty and SSH, and the guarded session unit requires it. Its
+success output explicitly keeps `installed_on_target=false` and
+`runtime_authorized=false`.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
