@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  * Fitted root broker around linux_backend.c. prepare remains EOPNOTSUPP. */
-#define _GNU_SOURCE
 #include "linux_backend.c"
 #include <getopt.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 struct agent {
     int client;
@@ -46,8 +47,9 @@ static int record_callback(void *context, const struct lantern_child *child)
     char message[512], response[1024];
     int count = snprintf(response, sizeof(response),
         "{\"schema\":\"sage.lantern.desktop-loader-broker.v1\","
-        "\"status\":\"stopped\",\"pid\":%d,\"start_ticks\":1,\"cookie\":%llu}\n",
-        child->pid, (unsigned long long)child->cookie);
+        "\"status\":\"stopped\",\"pid\":%d,\"start_ticks\":%llu,\"cookie\":%llu}\n",
+        child->pid, (unsigned long long)child->start_ticks,
+        (unsigned long long)child->cookie);
     if (count < 0 || (size_t)count >= sizeof(response) ||
         send_message(a, response, child->pidfd)) return -EPERM;
     if (receive_line(a, message, sizeof(message), 5000)) return -EPERM;
@@ -149,9 +151,12 @@ int main(int argc, char **argv)
     if (strlen(socket_path) >= sizeof(address.sun_path)) { free(bytes); return 1; }
     struct agent a = {.client = -1};
     struct lantern_linux context;
+    struct lantern_loader loader;
     memset(&context, 0, sizeof(context));
+    memset(&loader, 0, sizeof(loader));
     context.map_fd = context.shell_fd = context.pin_dir_fd =
         context.exec_error_fd = context.owned_child.pidfd = -1;
+    loader.child.pidfd = -1;
     context.environment = environment;
     context.record_callback = record_callback;
     context.record_context = &a;
@@ -177,8 +182,8 @@ int main(int argc, char **argv)
             !strstr(request, "\"action\":\"stage\"")) result = -1;
     }
     if (!result) {
-        result = lantern_prepare(&context, &policy, &lantern_linux_ops, &context);
-        if (!result) result = lantern_launch(&context, &lantern_linux_ops, &context);
+        result = lantern_prepare(&loader, &policy, &lantern_linux_ops, &context);
+        if (!result) result = lantern_launch(&loader, &lantern_linux_ops, &context);
     }
     if (a.client >= 0) {
         if (!result) {

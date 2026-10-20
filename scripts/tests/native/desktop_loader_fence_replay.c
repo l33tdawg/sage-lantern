@@ -34,7 +34,7 @@ static void bpf_object__close(void *pointer) { (void)pointer; objects_closed++; 
 static void init(struct lantern_linux *c)
 {
     memset(c, 0, sizeof(*c));
-    c->owned_child = (struct lantern_child){7, 123, 99};
+    c->owned_child = (struct lantern_child){7, 123, 456, 99};
     c->shell_fd = 8; c->pin_dir_fd = 9; c->exec_error_fd = 10;
     c->object = c; c->links[0] = c;
     signals = closes = links_closed = objects_closed = 0;

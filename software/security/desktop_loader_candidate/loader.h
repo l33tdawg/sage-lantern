@@ -11,7 +11,8 @@ enum lantern_phase { LANTERN_NEW, LANTERN_PINNED, LANTERN_CHILD_STOPPED,
     LANTERN_GRANTED, LANTERN_FROZEN, LANTERN_RELEASED, LANTERN_HELD };
 
 struct lantern_binding { uint32_t link_id, program_id, map_id; };
-struct lantern_child { int pidfd; int pid; uint64_t cookie; };
+/* start_ticks is procfs stat field 22, taken from the same child as pidfd. */
+struct lantern_child { int pidfd; int pid; uint64_t start_ticks; uint64_t cookie; };
 struct lantern_policy {
     uint32_t uid;
     struct lantern_guard_grant executable;

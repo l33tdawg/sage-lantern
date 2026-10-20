@@ -120,9 +120,23 @@ files. It neither signs the manifest nor installs the bundle.
 
 `broker_agent.c` supplies the fitted-agent source around the Linux backend:
 it loads digest-bound object/shell/pin inputs, accepts the one staged request,
-and forwards `record_attempt` over the same broker socket. The Linux backend's
-early-boot `prepare` still returns `EOPNOTSUPP`; the compiled binary is a
-required bundle member but has not been built or qualified on C.
+and forwards `record_attempt` over the same broker socket. The Linux backend
+now obtains the stopped child's PID/start-time identity before that callback;
+an absent callback remains `EOPNOTSUPP`. The source was compiled successfully
+as an ELF64 AArch64 broker in an isolated Linux ARM64 builder with libbpf and
+OpenSSL. The Linux early-boot `prepare` still returns `EOPNOTSUPP`; the
+binary is a required bundle member but has not been built, installed or
+qualified on Unit C.
+
+Run the Linux-host build with
+`scripts/lantern/build-native-broker.sh OUTPUT`, or use
+`scripts/lantern/build-native-broker-in-container.sh OUTPUT` from the
+review workstation. The container path uses the pinned bootstrap image and a
+read-only source mount; it does not contact a unit. The package set is part of
+the builder image, and the build output is not a kernel or session acceptance
+result. On a root Linux builder, `scripts/tests/test_native_broker_build.py`
+also compiles and runs the disposable stopped-child replay; it verifies the
+actual `/proc` start-time identity and kills the child before release or exec.
 
 `early_boot_admission.py` adds the source early-boot gate: current boot ID,
 initial UID mapping, protected policy generation and absence of any UID-1000
