@@ -100,7 +100,8 @@ def load_launch_policy(path, adapter):
 
 
 def load_settlement_runtime(source, journal_root, anchor_root, capture_policy,
-                            *, expected_uid=1000, early_root="/"):
+                            *, expected_uid=1000, early_root="/",
+                            early_receipt=None):
     """Load and compose the reviewed source-only settlement owner."""
     source = Path(source)
     if not source.is_absolute() or not source.is_dir():
@@ -145,10 +146,19 @@ def load_settlement_runtime(source, journal_root, anchor_root, capture_policy,
     selection = loaded["selection"].provider_from_capture(
         str(capture_policy), read_file=trusted_file,
         platform_identity=identity)
-    admission = loaded["early"].observe(
-        early_root, expected_uid=expected_uid, generation=1)
-    admission_check = lambda: loaded["early"].receipt_current(
-        admission, early_root)
+    if early_receipt is None:
+        admission = loaded["early"].observe(
+            early_root, expected_uid=expected_uid, generation=1)
+        admission_check = lambda: loaded["early"].receipt_current(
+            admission, early_root)
+    else:
+        admission = loaded["early"].read_receipt(
+            early_receipt, expected_uid=expected_uid, generation=1,
+            root=early_root)
+        admission_check = lambda: loaded["early"].receipt_current(
+            loaded["early"].read_receipt(
+                early_receipt, expected_uid=expected_uid, generation=1,
+                root=early_root), early_root)
     return selection, recorder, owner.recover, admission_check
 
 
@@ -376,16 +386,19 @@ def main(argv=None):
     parser.add_argument("--loader-broker")
     parser.add_argument("--settlement-root", type=Path)
     parser.add_argument("--settlement-anchor", type=Path)
+    parser.add_argument("--early-boot-receipt", type=Path)
     parser.add_argument("--settlement-source", type=Path,
         default=Path(__file__).resolve().parents[2] /
             "software/security/desktop_loader_candidate")
     args = parser.parse_args(argv)
     broker_values = (args.capture_policy, args.loader_broker,
-                     args.settlement_root, args.settlement_anchor)
+                     args.settlement_root, args.settlement_anchor,
+                     args.early_boot_receipt)
     if any(value is not None for value in broker_values) and not all(
             value is not None for value in broker_values):
-        parser.error("capture-policy, loader-broker, settlement-root and "
-                     "settlement-anchor must be supplied together")
+        parser.error("capture-policy, loader-broker, settlement-root, "
+                     "settlement-anchor and early-boot-receipt must be "
+                     "supplied together")
     status = Path('/proc/self/status').read_text()
     if (os.geteuid() != 0 or not hasattr(os, 'pidfd_open') or 'NoNewPrivs:\t1\n' not in status
             or resource.getrlimit(resource.RLIMIT_CORE) != (0, 0)
@@ -397,7 +410,8 @@ def main(argv=None):
     if args.loader_broker is not None:
         selection_provider, settlement_recorder, recovery, admission = load_settlement_runtime(
             args.settlement_source, args.settlement_root,
-            args.settlement_anchor, args.capture_policy)
+            args.settlement_anchor, args.capture_policy,
+            early_receipt=args.early_boot_receipt)
         broker_factory = lambda: LoaderBroker.connect(args.loader_broker)
     ready, ready_identity = bound_socket(NOTIFY, policy['uid'], socket.SOCK_DGRAM)
     authority = None

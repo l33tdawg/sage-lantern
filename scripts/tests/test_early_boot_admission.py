@@ -1,6 +1,7 @@
 """Synthetic early-boot admission gate controls."""
 from pathlib import Path
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
@@ -48,6 +49,48 @@ class EarlyBootTests(unittest.TestCase):
         self.write("proc/self/uid_map", "1000 0 1\n")
         with self.assertRaisesRegex(E.AdmissionRefused, "initial_uid"):
             E.observe(self.root)
+
+    def test_receipt_roundtrip_and_boot_binding(self):
+        state = self.root / "state"
+        state.mkdir(mode=0o700)
+        path = state / "admission.json"
+        receipt = E.observe(self.root, expected_uid=1000, generation=7)
+        E.write_receipt(receipt, path)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(
+            E.read_receipt(
+                path, expected_uid=1000, generation=7, root=self.root),
+            receipt)
+        self.write("proc/sys/kernel/random/boot_id",
+                   "bbbbbbbb-cccc-dddd-eeee-ffffffffffff\n")
+        with self.assertRaisesRegex(E.AdmissionRefused, "receipt_binding"):
+            E.read_receipt(
+                path, expected_uid=1000, generation=7, root=self.root)
+
+    def test_receipt_is_private_bounded_and_not_a_symlink(self):
+        state = self.root / "state"
+        state.mkdir(mode=0o700)
+        path = state / "admission.json"
+        receipt = E.observe(self.root, expected_uid=1000, generation=7)
+        E.write_receipt(receipt, path)
+        alias = state / "alias.json"
+        alias.symlink_to(path)
+        with self.assertRaisesRegex(E.AdmissionRefused, "receipt_unavailable"):
+            E.read_receipt(
+                alias, expected_uid=1000, generation=7, root=self.root)
+        state.chmod(0o755)
+        with self.assertRaisesRegex(E.AdmissionRefused, "receipt_directory"):
+            E.read_receipt(
+                path, expected_uid=1000, generation=7, root=self.root)
+
+    def test_unit_orders_barrier_before_user_entrypoints(self):
+        unit = (ROOT / "software/systemd/"
+                "sage-lantern-early-boot-admission.service").read_text()
+        self.assertIn("Before=display-manager.service getty.target ssh.service ssh.socket",
+                      unit)
+        self.assertIn("ConditionPathExists=/etc/sage-lantern/desktop-pin-activation.json",
+                      unit)
+        self.assertIn("StateDirectory=sage-lantern-early-boot", unit)
 
 
 if __name__ == "__main__":

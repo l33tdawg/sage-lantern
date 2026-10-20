@@ -60,11 +60,15 @@ The previous isolated ARM64 replay and compiler definition remain under
 disposable stopped child is killed before UID drop or exec. No compositor,
 user session or BPF policy is launched by these checks.
 
-The root early-boot session admission barrier, qualified asset/environment and
-GNOME plan, authenticated activation policy, native broker/seat integration,
-vendor kernel load/deny tests and physical acceptance remain open. Read
-`docs/lantern/DESKTOP_LOADER_CANDIDATE.md` before any integration. There is no
-installer, enabled unit or activation marker in this candidate.
+The root early-boot session admission barrier now has a source oneshot unit
+ordered before display-manager, getty and SSH, and a protected receipt that the
+broker-backed authority re-reads. Its actual boot graph, every alternate entry
+path and installed service state remain unqualified. Qualified
+asset/environment and GNOME plan, authenticated activation policy, native
+broker/seat integration, vendor kernel load/deny tests and physical acceptance
+also remain open. Read `docs/lantern/DESKTOP_LOADER_CANDIDATE.md` before any
+integration. There is no installer, enabled unit or activation marker in this
+candidate.
 
 ## Root-held GNOME evidence reader
 

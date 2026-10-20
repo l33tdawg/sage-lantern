@@ -161,6 +161,16 @@ process. The authority retains the admission receipt and refuses launch if the
 boot changes. The source gate is not yet invoked before every UID-1000 process
 by the native boot chain.
 
+`software/systemd/sage-lantern-early-boot-admission.service` is the source
+boot-order candidate. It runs the gate as a oneshot root unit before
+`display-manager.service`, `getty.target`, `ssh.service` and `ssh.socket`, and
+writes a private receipt under `/var/lib/sage-lantern-early-boot`. The guarded
+session unit requires that gate and waits for it. When the broker configuration
+is selected, the authority now requires `--early-boot-receipt` and re-reads the
+receipt at launch preparation. This is still an uninstalled source unit: the
+actual systemd graph, service enablement, all alternate login paths and the
+first-UID-1000 boundary must be measured on the target.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -190,6 +200,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   required file set and metadata closure.
 - an early-boot admission receipt requiring a clean UID-1000 namespace for the
   current boot.
+- a source oneshot unit ordered before display-manager, getty and SSH, plus a
+  protected receipt re-read by the broker-backed authority.
 
 ## Required implementation order
 

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import socket
 import struct
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -262,6 +263,35 @@ def test_settlement_runtime_composes_provider_recorder_and_recovery(tmp_path):
     assert recovery() == ()
 
 
+def test_settlement_runtime_uses_current_early_boot_receipt(tmp_path):
+    module = authority_module()
+    spec = importlib.util.spec_from_file_location(
+        "early_boot_for_authority",
+        ROOT / "software/security/desktop_loader_candidate/early_boot_admission.py")
+    early_module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = early_module
+    spec.loader.exec_module(early_module)
+    early = tmp_path / "early"
+    boot = early / "proc/sys/kernel/random/boot_id"
+    boot.parent.mkdir(parents=True)
+    boot.write_text("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n")
+    uid_map = early / "proc/self/uid_map"
+    uid_map.parent.mkdir(parents=True)
+    uid_map.write_text("0 0 4294967295\n")
+    state = tmp_path / "state"
+    state.mkdir(mode=0o700)
+    receipt_path = state / "admission.json"
+    early_module.write_receipt(
+        early_module.observe(early, expected_uid=1000, generation=1),
+        receipt_path)
+    _, _, _, admission = module.load_settlement_runtime(
+        ROOT / "software/security/desktop_loader_candidate",
+        tmp_path / "journal", tmp_path / "anchor",
+        "/synthetic/capture-policy.json", early_root=early,
+        early_receipt=receipt_path)
+    assert admission() is True
+
+
 def test_authority_hold_closes_grants_without_process_termination():
     module = authority_module()
     authority = module.Authority(policy(), lambda: True, 'a' * 64, Mock(), Mock())
@@ -396,4 +426,5 @@ def test_candidate_units_have_no_automatic_shell_restart_or_shutdown():
     assert 'Restart=no' in root and 'KillMode=process' in root
     assert 'NoNewPrivileges=true' in root and 'LimitCORE=0' in root
     assert 'ConditionPathExists=/etc/sage-lantern/desktop-pin-activation.json' in root
+    assert 'Requires=sage-lantern-early-boot-admission.service' in root
     assert 'OnFailure=\n' in bridge and 'TimeoutStartSec=infinity' in bridge

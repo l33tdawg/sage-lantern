@@ -1,0 +1,28 @@
+[Unit]
+Description=SAGE Lantern early-boot UID admission barrier
+After=local-fs.target systemd-remount-fs.service
+Before=display-manager.service getty.target ssh.service ssh.socket
+ConditionPathExists=/etc/sage-lantern/desktop-pin-activation.json
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I -B /usr/local/libexec/early_boot_admission.py --receipt /var/lib/sage-lantern-early-boot/admission.json
+RemainAfterExit=yes
+StateDirectory=sage-lantern-early-boot
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+LimitCORE=0
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
