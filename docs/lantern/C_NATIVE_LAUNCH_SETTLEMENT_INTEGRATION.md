@@ -113,6 +113,11 @@ attempt and advances it after each durable attempt or settlement; recovery
 returns `uncertain` if the journal and anchor disagree. The store is still a
 private file in source; it is not bound to a separate monotonic hardware owner.
 
+`native_bundle.py` defines the exact native bundle closure: required broker,
+BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
+hashes; source commit; and rejection of missing, extra, changed or symlinked
+files. It neither signs the manifest nor installs the bundle.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -134,6 +139,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   identity changes and generation rollback at its CAS boundary.
 - owner integration that verifies the anchor before attempts and advances it
   only after durable attempt or settlement transitions.
+- an exact native-bundle manifest/verification source contract with a fixed
+  required file set and metadata closure.
 
 ## Required implementation order
 
