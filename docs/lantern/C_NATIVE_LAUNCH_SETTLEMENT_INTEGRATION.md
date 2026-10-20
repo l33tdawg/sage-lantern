@@ -128,7 +128,11 @@ compare-exchange advances the counter before writing the next anchor. The
 default `UnavailableCounter` refuses, so the source cannot accidentally treat
 the file itself as a hardware rollback counter. A counter that is missing,
 behind the anchor, or fails to advance returns `uncertain`/refuses the write.
-No TPM, RPMB or other hardware counter adapter is shipped or qualified here.
+`Tpm2NvCounter` supplies an absolute-command TPM2 NV-counter adapter using
+`tpm2_nvread` and `tpm2_nvincrement`; it is tested with an injected runner but
+has not been provisioned or exercised against a TPM. RPMB and other hardware
+owners, NV-index attributes, provisioning and cold-power/rollback drills remain
+open.
 
 `native_bundle.py` defines the exact native bundle closure: required broker,
 BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256

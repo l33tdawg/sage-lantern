@@ -159,11 +159,12 @@ release with no resources, refuse an uncertain or already-settled durable
 attempt, recover a durable attempt through a reopened journal, and keep an
 unavailable recovery state uncertain.
 
-`scripts/lantern/settlement_fault_replay.py` runs 11 source-level cases and
+`scripts/lantern/settlement_fault_replay.py` runs 13 source-level cases and
 writes `docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. The
 record covers normal settlement, create and CAS failures before and after the
 rename, CAS conflict, duplicate settlement, different proof, new boot with
-full evidence, missing child identity and an unavailable backend.
+full evidence, missing child identity, unavailable backend, a counter advance
+whose anchor write fails, and a stale counter after restart.
 
 These are source tests against synthetic evidence. They do not prove that a
 real pidfd is dead, that a cgroup is empty, that a socket is closed, or that
@@ -175,8 +176,8 @@ the native owner can persist settlement across power loss.
    same durable transaction on the target filesystem.
 2. Independently protected monotonic state, with rollback resistance and a
    complete read-back after every write. The source now has an injectable
-   counter port and refuses a missing/stale counter; the actual TPM/RPMB
-   adapter and provisioning remain open.
+   counter port, refuses a missing/stale counter, and includes a TPM2 NV-counter
+   adapter; actual TPM/RPMB provisioning and cold-power drills remain open.
 3. A real pidfd and cgroup probe that reports terminal state without adopting
    a PID or killing a possibly released child. The Linux source exists and
    passed a disposable-child run on C; it still needs integration with the

@@ -3,6 +3,7 @@ from pathlib import Path
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -145,6 +146,36 @@ class AnchorTests(unittest.TestCase):
         store = A.FileAnchorStore(path, counter=A.UnavailableCounter())
         with self.assertRaisesRegex(A.AnchorRefused, "anchor_counter_unavailable"):
             store.create(A.AnchorValue(1, "a" * 64, 0))
+
+    def test_tpm2_counter_adapter_uses_nvread_and_nvincrement(self):
+        state = {"value": 4}
+        calls = []
+
+        def runner(argv, **kwargs):
+            calls.append(argv)
+            if argv[0].endswith("tpm2_nvread"):
+                output = Path(argv[argv.index("-o") + 1])
+                output.write_bytes(state["value"].to_bytes(8, "big"))
+            elif argv[0].endswith("tpm2_nvincrement"):
+                state["value"] += 1
+            else:
+                return subprocess.CompletedProcess(argv, 1)
+            return subprocess.CompletedProcess(argv, 0)
+
+        counter = A.Tpm2NvCounter(
+            0x01500001, runner=runner)
+        self.assertEqual(counter.read().value, 4)
+        self.assertEqual(counter.advance(4).value, 5)
+        self.assertEqual(counter.selector, "0x01500001")
+        self.assertEqual(len(calls), 3)
+
+    def test_tpm2_counter_command_failure_refuses(self):
+        def runner(argv, **_kwargs):
+            return subprocess.CompletedProcess(argv, 1)
+
+        counter = A.Tpm2NvCounter(0x01500001, runner=runner)
+        with self.assertRaisesRegex(A.CounterRefused, "tpm2_command_failed"):
+            counter.read()
 
 
 if __name__ == "__main__":
