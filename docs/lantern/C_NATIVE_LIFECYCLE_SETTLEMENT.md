@@ -1,7 +1,10 @@
 # C-native lifecycle settlement
 
-Status: disabled source contract, 19 October 2026. Nothing is installed on C.
-No native owner, durable store or device probe is supplied.
+Status: disabled source contract, 20 October 2026. Nothing is installed on C.
+No native owner, durable store or device probe is supplied. Wiring this into
+the launch authority is currently blocked on the exact stopped-child, frozen
+capture selection and restart-recoverable journal boundaries documented in
+[`C_NATIVE_LAUNCH_SETTLEMENT_INTEGRATION.md`](C_NATIVE_LAUNCH_SETTLEMENT_INTEGRATION.md).
 
 The desktop launch authority can record an attempted release and then lose the
 ability to prove what happened to the child. A timeout, a new boot, a new
@@ -39,7 +42,9 @@ boot change alone, a closed socket alone, or a missing observation returns
 `software/security/desktop_loader_candidate/settlement_journal.py` adds the
 next layer: one record per obligation, with `record_attempt` creating the
 attempt once and `settle` moving it from `attempted` to `settled` through a
-compare-and-exchange.
+compare-and-exchange. The durable record includes the canonical launch binding
+and exact resource list, so a fresh trusted owner can recover and probe an
+attempt after restart.
 
 `FileJournalBackend` is the durable source implementation. It requires a
 private mode-0700 directory, writes each record through a mode-0600 temporary
@@ -89,7 +94,9 @@ probed on Unit C: the pidfd was opened, the child exited 0, the probe produced
 a proof and the durable journal moved `attempted` to `settled` at revision 1.
 The evidence is in
 `docs/lantern/evidence/LINUX_PROBE_CHILD_C_20261019.json`. The probe is not
-wired to a service or the desktop launch authority.
+wired to a service or the desktop launch authority. The C loader now requires a
+stopped-child `record_attempt` callback before release; the fitted Linux
+backend refuses that callback with `EOPNOTSUPP`.
 
 ## Disabled owner facade
 
@@ -140,14 +147,17 @@ replace, and concurrent create.
 `scripts/tests/test_native_probe.py` adds 4 tests: unavailable probe, valid
 probe settling through the journal, probe error and invalid probe result.
 
-`scripts/tests/test_linux_probe.py` adds 10 tests against a synthetic procfs:
+`scripts/tests/test_linux_probe.py` adds 13 tests against a synthetic procfs:
 terminal proof, live pidfd, populated cgroup, present socket, present mount,
 open descriptor, machine mismatch, absent cgroup, missing identity and an
-end-to-end settlement through the durable journal.
+end-to-end settlement through the durable journal, plus running, zombie and
+PID-reused child identities.
 
-`scripts/tests/test_settlement_owner.py` adds 2 end-to-end tests: track a
-release and settle it through the Linux probe and file journal, and refuse a
-release with no resources.
+`scripts/tests/test_settlement_owner.py` adds six end-to-end and failure tests:
+track and settle a release through the Linux probe and file journal, refuse a
+release with no resources, refuse an uncertain or already-settled durable
+attempt, recover a durable attempt through a reopened journal, and keep an
+unavailable recovery state uncertain.
 
 `scripts/lantern/settlement_fault_replay.py` runs 11 source-level cases and
 writes `docs/lantern/evidence/SETTLEMENT_FAULT_REPLAY_20261019.json`. The

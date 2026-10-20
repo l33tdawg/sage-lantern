@@ -136,6 +136,25 @@ class LinuxProbe(NativeProbe):
             return "closed", f"fd:{fd}"
         return "open", f"{info.st_dev}:{info.st_ino}"
 
+    def _child(self, identity):
+        match = re.fullmatch(r"child:([1-9][0-9]*):([0-9]+)", identity)
+        if not match:
+            return None, "child identity malformed"
+        pid, start = match.group(1), int(match.group(2))
+        raw = _read(self.root, f"proc/{pid}/stat")
+        if raw is None:
+            return "absent", identity
+        try:
+            fields = raw.rsplit(")", 1)[1].split()
+            state, observed_start = fields[0], int(fields[19])
+        except (IndexError, ValueError):
+            return None, "child stat malformed"
+        if observed_start != start:
+            return "absent", identity  # The PID was reused by another process.
+        if state == "Z":
+            return "zombie", identity
+        return "running", identity
+
     def _observe(self, resource):
         kind, identity = resource.kind, resource.identity
         if kind == "pidfd":
@@ -157,6 +176,8 @@ class LinuxProbe(NativeProbe):
             if not match:
                 return None, "fd identity malformed"
             return self._fd(int(match.group(1)))
+        if kind == "child":
+            return self._child(identity)
         return None, f"{kind} probe unavailable"
 
     def observe(self, obligation):

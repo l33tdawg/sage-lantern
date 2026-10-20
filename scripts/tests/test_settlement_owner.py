@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -79,10 +80,10 @@ class OwnerTests(unittest.TestCase):
         write(self.root, "proc/self/mountinfo", "1 0 0:1 / / rw - tmpfs t rw\n")
         (Path(self.root) / "proc/self/fd").mkdir(parents=True)
         self.probe = P.LinuxProbe(self.root, pidfd_alive=lambda fd: False)
-        journal_dir = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, journal_dir, True)
+        self.journal_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.journal_dir, True)
         self.journal = J.SettlementJournal(
-            J.FileJournalBackend(journal_dir),
+            J.FileJournalBackend(self.journal_dir),
             L.SettlementAuthority(ProbeBackend(self.probe)))
         self.owner = O.SettlementOwner(self.journal, self.probe)
 
@@ -104,6 +105,52 @@ class OwnerTests(unittest.TestCase):
         with self.assertRaises(L.SettlementRefused):
             self.owner.track_release(
                 self.release(), CAPTURE, POLICY, ())
+
+    def test_uncertain_attempt_is_not_returned_for_release(self):
+        owner = O.SettlementOwner(
+            SimpleNamespace(record_attempt=lambda _: SimpleNamespace(
+                status="uncertain", reason="attempt_readback_mismatch")),
+            self.probe)
+        with self.assertRaisesRegex(
+                L.SettlementRefused, "attempt_readback_mismatch"):
+            owner.track_release(
+                self.release(), CAPTURE, POLICY,
+                (L.ResourceRef("pidfd", "pidfd:7"),))
+
+    def test_already_settled_attempt_cannot_start_a_new_release(self):
+        owner = O.SettlementOwner(
+            SimpleNamespace(record_attempt=lambda _: SimpleNamespace(
+                status="settled", reason="")),
+            self.probe)
+        with self.assertRaisesRegex(
+                L.SettlementRefused, "attempt_not_durable"):
+            owner.track_release(
+                self.release(), CAPTURE, POLICY,
+                (L.ResourceRef("pidfd", "pidfd:7"),))
+
+    def test_restarted_owner_recovers_and_settles_durable_attempt(self):
+        obligation, _ = self.owner.track_release(
+            self.release(), CAPTURE, POLICY,
+            (L.ResourceRef("pidfd", "pidfd:7"),
+             L.ResourceRef("cgroup", "/sys/fs/cgroup/sage-session-7")))
+        pending = self.journal.pending()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(
+            pending[0].obligation_sha256, J.obligation_digest(obligation))
+        reopened = J.SettlementJournal(
+            J.FileJournalBackend(self.journal_dir),
+            L.SettlementAuthority(ProbeBackend(self.probe)))
+        owner = O.SettlementOwner(reopened, self.probe)
+        outcomes = owner.recover()
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].status, "settled")
+        self.assertEqual(reopened.pending(), ())
+
+    def test_recovery_without_a_journal_is_uncertain(self):
+        owner = O.SettlementOwner(J.SettlementJournal(), self.probe)
+        outcomes = owner.recover()
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].status, "uncertain")
 
 
 if __name__ == "__main__":

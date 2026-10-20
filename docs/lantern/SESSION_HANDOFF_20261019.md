@@ -176,7 +176,11 @@ disposable `sleep` child was probed on C: proof true, journal `attempted` to
 actual launch authority and native fault replays remain open.
 `settlement_owner.py` is the disabled owner facade: it binds a release, records
 the attempt and settles through the probe and journal. It has no service
-wiring.
+wiring. Direct integration with the Python launch authority is blocked until
+the stopped-child, protected capture-selection and restart-recoverable journal
+requirements in
+[`C_NATIVE_LAUNCH_SETTLEMENT_INTEGRATION.md`](C_NATIVE_LAUNCH_SETTLEMENT_INTEGRATION.md)
+are implemented.
 
 The hardware inventory is now repeatable with
 `scripts/lantern/hardware_inventory.py`; the Unit C output is at
@@ -299,8 +303,9 @@ as `msg-fcd279b3`.
    physically verify the 1560×720 panel, touch/rotation, CEREBRUM, Sky View and
    Return to Portrait. Run one physical SD/USB map install when a card is
    available.
-4. Wire the settlement owner into the native launch authority and repeat the
-   native fault replay on C.
+4. Close the documented stopped-child, frozen-selection, persistent-child and
+   restart-recoverable journal blockers, then wire settlement at the native
+   release boundary and repeat the fault replay on C.
 5. Bring up the four ROCK 5B+ product units as the 16 GB boards and DSI panels
    arrive, starting with one unit; keep the IMX519 CSI adapter off the product
    path.

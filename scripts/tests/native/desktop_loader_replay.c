@@ -11,6 +11,7 @@ static unsigned checks;
 struct fake {
     struct lantern_loader *state;
     int call, fail_at, cancel_at, spawned, released, fenced, preserve;
+    int recorded;
     int post_fence_calls;
     int duplicate_link, duplicate_program, wrong_map, wrong_grant, dead_child;
     struct lantern_guard_grant grant;
@@ -56,8 +57,14 @@ static int lookup(void *v, int fd, struct lantern_guard_grant *g)
 static int freeze(void *v) { return point(v); }
 static int frozen(void *v, int fd, const struct lantern_guard_grant *g)
 { (void)fd; (void)g; return point(v); }
+static int record_attempt(void *v, const struct lantern_child *c)
+{ (void)c; struct fake *f = v; f->recorded++; return point(v); }
 static int release(void *v, const struct lantern_child *c)
-{ (void)c; struct fake *f = v; f->released++; return point(v); }
+{
+    (void)c; struct fake *f = v;
+    if (f->recorded != 1) return -EPERM;
+    f->released++; return point(v);
+}
 static void fence(void *v, const struct lantern_child *c, int preserve)
 { (void)c; struct fake *f = v; f->fenced++; f->preserve |= preserve; }
 static struct lantern_policy policy(void)
@@ -72,11 +79,12 @@ int main(void)
 {
     struct lantern_loader s; struct fake f; struct lantern_policy p = policy();
     ops = (struct lantern_ops){prepare, load, attach, attest, spawn, stopped,
-        insert, lookup, freeze, frozen, release, fence};
+        insert, lookup, freeze, frozen, record_attempt, release, fence};
     init(&f, &s);
     CHECK(!lantern_prepare(&s, &p, &ops, &f)); CHECK(s.pinned == LANTERN_HOOK_COUNT);
     CHECK(!f.spawned); CHECK(!lantern_launch(&s, &ops, &f));
-    CHECK(s.phase == LANTERN_RELEASED); CHECK(f.spawned == 1 && f.released == 1);
+    CHECK(s.phase == LANTERN_RELEASED);
+    CHECK(f.spawned == 1 && f.recorded == 1 && f.released == 1);
     CHECK(!lantern_recheck(&s, &ops, &f)); int max_calls = f.call;
     lantern_hold(&s, &ops, &f); lantern_hold(&s, &ops, &f);
     CHECK(s.phase == LANTERN_HELD && f.preserve);

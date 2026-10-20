@@ -22,6 +22,7 @@ struct lantern_policy {
  * process; load consumes digest-checked bytes, never reopens an object path.
  * attest compares root-owned pins against this loaded object and identities.
  * stopped must verify the parent's own unreleased child, never adopt a PID.
+ * record_attempt must durably bind the stopped child before release.
  * fence retains all pins and does not terminate an already running session.
  */
 struct lantern_ops {
@@ -35,6 +36,7 @@ struct lantern_ops {
     int (*lookup)(void *, int, struct lantern_guard_grant *);
     int (*freeze)(void *);
     int (*frozen)(void *, int, const struct lantern_guard_grant *);
+    int (*record_attempt)(void *, const struct lantern_child *);
     int (*release)(void *, const struct lantern_child *);
     void (*fence)(void *, const struct lantern_child *, int);
 };

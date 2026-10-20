@@ -9,9 +9,12 @@ requires all thirteen hook identities and the single task-storage map to be
 pinned and positively attested before it permits one child creation attempt.
 It writes that child's grant using its pidfd, reads it back, freezes the map,
 checks that a same-value userspace write is denied, then rechecks the stopped
-child and all pins before requesting release. Failure fences admission and
-retains pins. Release uncertainty is sticky: repeated cancellation never turns
-it into permission to terminate a potentially running session.
+child and all pins, durably records the settlement attempt through
+`record_attempt`, and only then requests release. The Linux backend currently
+refuses `record_attempt` with `EOPNOTSUPP`; no unfitted owner can release the
+child. Failure fences admission and retains pins. Release uncertainty is
+sticky: repeated cancellation never turns it into permission to terminate a
+potentially running session.
 
 `linux_backend.c` supplies the libbpf/OS source implementation. It loads from
 digest-checked bytes, accepts the exact hook/map shape, rejects existing pins,
