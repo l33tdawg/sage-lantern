@@ -92,6 +92,13 @@ capture/generation, malformed view digests and non-absolute unit paths. The
 root authority refuses to spawn unless a fresh selection provider returns such
 a value.
 
+`loader_broker.py` now defines the stopped-child handoff client. It stages one
+child, requires exactly one pidfd over `SCM_RIGHTS`, validates PID/start/cookie
+identity, calls a durable-record callback, aborts a still-stopped child when
+recording fails, and sends `release` only after the callback returns exactly
+`True`. The native broker server, authority use of this client and startup
+recovery invocation remain open.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -104,6 +111,7 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 - an actual stopped-child loader replay proving `record_attempt` precedes
   release and a callback refusal prevents release.
 - strict frozen-capture selection binding and authority refusal without it.
+- strict loader-broker framing, pidfd handoff and record-before-release order.
 
 ## Required implementation order
 
@@ -114,9 +122,10 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 2. Record the persistent child identity at attempt time using boot ID, PID and
    process start time, or a native pidfd handoff that remains valid after
    authority restart. A reused numeric PID/FD must not match.
-3. Connect the new stopped-child `record_attempt` callback to a fitted
-   settlement owner and make the Python authority invoke the loader instead of
-   `spawn_shell()`. Do not insert settlement after a live exec.
+3. Implement the native broker server around the stopped-child loader, connect
+   its `record_attempt` callback to a fitted settlement owner, and make the
+   Python authority invoke the broker instead of `spawn_shell()`. Do not insert
+   settlement after a live exec.
 4. Put the isolated frozen-consumer process behind a fixed root-owned provider
    and connect it to `Authority.selection_provider`; never accept capture ID,
    generation or policy digest from bridge JSON or user-writable state.
