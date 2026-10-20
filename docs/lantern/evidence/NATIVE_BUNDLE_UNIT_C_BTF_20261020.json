@@ -10,7 +10,7 @@
   "bpf_hook_sections": 13,
   "broker_sha256": "27015a2d71a2f9661191a2edaea39b9922f785d6a55a6d77b024027af089cea4",
   "bundle_files": 18,
-  "bundle_manifest_sha256": "557ca0b4ea256035dc7af406ff527d0b91739b324711f50e8828c70aacd58915",
+  "bundle_manifest_sha256": "8f71fe745e4b440d029f647f921e5287961bd07d260bb7fe7f700c03afce66c6",
   "source_commit": "0fb2a912db52ef58b4a89187d2227b03ef6cd583",
   "review_only": true,
   "signed": false,
