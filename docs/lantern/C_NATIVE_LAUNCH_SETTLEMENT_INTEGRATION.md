@@ -35,10 +35,12 @@ still returns `EOPNOTSUPP`.
    deliberately returns `EOPNOTSUPP` there, and the Python authority still uses
    `spawn_shell()` rather than the loader. Recording after that direct exec
    would leave a crash window in which a live child has no obligation.
-2. **No frozen capture selection.** `SettlementOwner.track_release()` requires
-   the exact capture, generation and policy digest. The launch authority reads
-   an activation gate, not a protected current-capture selection. A command-line
-   value or user-writable file would not establish that binding.
+2. **The authority has no trusted capture-selection provider.** The source
+   selection contract now validates an eligible frozen-consumer decision
+   against the exact root-owned policy bytes and current machine/boot. The
+   authority requires that selection before `prepare()` can spawn, but `main`
+   does not yet invoke the isolated capture consumer or supply the provider.
+   A command-line value or user-writable file still cannot establish it.
 3. **The launch authority has no recovery hook yet.** The durable journal now
    stores the complete obligation and exposes pending attempts, and
    `SettlementOwner.recover()` reconstructs and probes them after restart. The
@@ -83,6 +85,13 @@ callback. Failure or cancellation at that point fences the loader and cannot
 release the compositor. The Linux backend returns `EOPNOTSUPP`, so the path
 remains deliberately closed until a fitted settlement owner exists.
 
+`launch_selection.py` now converts an eligible frozen-consumer decision into an
+exact, non-authorizing launch selection. It rejects revoked decisions, reasons,
+authority claims, changed policy bytes, wrong machine/boot identity, changed
+capture/generation, malformed view digests and non-absolute unit paths. The
+root authority refuses to spawn unless a fresh selection provider returns such
+a value.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -94,6 +103,7 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 - unavailable recovery state remaining uncertain.
 - an actual stopped-child loader replay proving `record_attempt` precedes
   release and a callback refusal prevents release.
+- strict frozen-capture selection binding and authority refusal without it.
 
 ## Required implementation order
 
@@ -107,8 +117,9 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 3. Connect the new stopped-child `record_attempt` callback to a fitted
    settlement owner and make the Python authority invoke the loader instead of
    `spawn_shell()`. Do not insert settlement after a live exec.
-4. Supply capture ID, generation and policy digest from a protected current
-   selection, not from bridge JSON, command-line claims or user-writable state.
+4. Put the isolated frozen-consumer process behind a fixed root-owned provider
+   and connect it to `Authority.selection_provider`; never accept capture ID,
+   generation or policy digest from bridge JSON or user-writable state.
 5. Serialize the release-attempt anchor and settlement journal through the
    native owner. Preserve an unresolved attempt across supervisor crash, boot,
    cancellation and protection-store rollback.

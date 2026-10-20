@@ -119,9 +119,12 @@ def remove_own_socket(path, identity):
 
 
 class Authority:
-    def __init__(self, policy, check, digest, adapter, ready):
+    def __init__(self, policy, check, digest, adapter, ready,
+                 selection_provider=None):
         self.policy, self.check, self.digest = policy, check, digest
         self.adapter, self.ready = adapter, ready
+        self.selection_provider = selection_provider or (lambda: None)
+        self.selection = None
         self.launch = LaunchOnce(self.prepare)
         self.anchor = self.fd = self.native = self.worker = None
         self.seat = None
@@ -133,6 +136,17 @@ class Authority:
         if (self.held.is_set() or not self.check() or not activation_check(self.policy, self.digest)
                 or existing_compositor(self.policy['uid'])):
             raise NativeError()
+        selection = self.selection_provider()
+        if (selection is None
+                or getattr(selection, "runtime_authorized", None) is not False
+                or not getattr(selection, "machine_id", None)
+                or not getattr(selection, "boot_id", None)
+                or not getattr(selection, "capture_id", None)
+                or type(getattr(selection, "generation", None)) is not int
+                or getattr(selection, "generation") < 1
+                or not getattr(selection, "policy_sha256", None)):
+            raise NativeError("capture_selection_required")
+        self.selection = selection
         return self.policy, active_session(self.policy['uid'])
 
     def valid(self):

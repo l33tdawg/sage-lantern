@@ -158,6 +158,31 @@ def test_activation_is_root_owned_exact_policy_and_requires_both_gates(monkeypat
     assert not module.activation_check({'activation_file': '/fixture'}, 'b' * 64)
 
 
+def test_authority_requires_fresh_non_authorizing_capture_selection(monkeypatch):
+    module = authority_module()
+    monkeypatch.setattr(module, 'activation_check', lambda *_: True)
+    monkeypatch.setattr(module, 'existing_compositor', lambda *_: False)
+    monkeypatch.setattr(module, 'active_session', lambda *_: session())
+    selection = SimpleNamespace(
+        machine_id='a' * 32,
+        boot_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        capture_id='cccccccc-dddd-eeee-ffff-aaaaaaaaaaaa',
+        generation=7,
+        policy_sha256='d' * 64,
+        runtime_authorized=False)
+    authority = module.Authority(
+        policy(), lambda: True, 'a' * 64, Mock(), Mock())
+    with pytest.raises(NativeError, match='capture_selection_required'):
+        authority.prepare()
+    authority.selection_provider = lambda: SimpleNamespace(
+        **{**vars(selection), 'runtime_authorized': True})
+    with pytest.raises(NativeError, match='capture_selection_required'):
+        authority.prepare()
+    authority.selection_provider = lambda: selection
+    assert authority.prepare() == (policy(), session())
+    assert authority.selection is selection
+
+
 def test_authority_hold_closes_grants_without_process_termination():
     module = authority_module()
     authority = module.Authority(policy(), lambda: True, 'a' * 64, Mock(), Mock())
