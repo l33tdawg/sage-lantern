@@ -1,0 +1,743 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Finite endpoint composition; no transport opening or native qualification.
+
+Root supplies two live, independently bound MeshActionAuthority contexts and a
+concrete held native accounting source. There is deliberately no accounting
+implementation or permissive fallback here. Generated keys remain in the
+NoisePurpose/ForwardSession incarnation; only signed public records persist.
+The original actor/operation namespace cannot regenerate after interruption.
+An opaque relay, private stage provisioning and recovery admission are separate.
+"""
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+import hashlib
+import os
+import threading
+
+from meshticulum.privacy.forward_session import ForwardContext
+from meshticulum.privacy.mesh_envelope import Peer
+from .forward_budget import Cost
+from .forward_native_owner import ForwardNativeOwner, SCOPES, approval_binding, host_boot, clock
+from .forward_receive_journal import ReceiveIntention
+from .mesh_inbox import _canonical, _uuid
+from .message_contacts import RecipientID
+from .message_storage import MessageStorageProbe
+from .noise_native_enrollment import NativeNoiseEnrollment, ENROLL_SCOPE
+from .noise_purpose import NoisePurpose
+from .workflow_store import WorkflowStore
+from .bound_storage_pair import BoundStoragePair, BoundStoragePairError
+
+SETUP_SCOPES = SCOPES + (ENROLL_SCOPE,)
+SETUP_DOMAIN = b'sage.lantern.forward-native-setup.v1\0'
+
+
+class ForwardNativeProviderError(RuntimeError):
+    def __init__(self):
+        super().__init__('forward_native_provider_unavailable')
+
+
+def require(value):
+    if not value:
+        raise ForwardNativeProviderError()
+
+
+def digest(value):
+    require(type(value) is str and len(value) == 64
+            and all(c in '0123456789abcdef' for c in value))
+    return value
+
+
+@dataclass(frozen=True, repr=False)
+class NativeAccountingObservation:
+    """Comparison data, never a grant or proof of global/native qualification."""
+    retained_debt: Cost
+    actual_usage: Cost | None
+    evidence_sha256: str
+    host_boot_id: str
+    observed_epoch_us: int
+    observed_monotonic_us: int
+
+    def __post_init__(self):
+        require(type(self.retained_debt) is Cost
+                and (self.actual_usage is None or type(self.actual_usage) is Cost
+                     and self.actual_usage.within(self.retained_debt)))
+        digest(self.evidence_sha256)
+        _uuid(self.host_boot_id)
+        require(all(type(v) is int and 0 <= v < 2**63 for v in
+                    (self.observed_epoch_us, self.observed_monotonic_us)))
+
+    def binding(self):
+        return dict(retained_debt=asdict(self.retained_debt),
+                    actual_usage=None if self.actual_usage is None else asdict(self.actual_usage),
+                    evidence_sha256=self.evidence_sha256, host_boot_id=self.host_boot_id)
+
+
+class NativeAccountingSource(ABC):
+    """Already-held native evidence, transferred to this endpoint's lifetime.
+
+    observe must freshly validate its exact held/named accounting inputs,
+    ownership and original resource/intention binding. Its clocks must be inside
+    the calling provider's clock bracket. Evidence/debt/unknown measurements are
+    immutable; new child spending belongs to ForwardBudget. A public Snapshot or
+    constructor-shaped DTO alone cannot implement this contract. close releases
+    only this source after endpoint/key cleanup, including after permission or
+    time expires; it must not infer RF retirement. There is no default source.
+    """
+    @abstractmethod
+    def observe(self, resource, intention):
+        raise NotImplementedError
+
+    @abstractmethod
+    def close(self):
+        raise NotImplementedError
+
+
+def setup_approval_binding(*, local, remote, local_initiator, intention,
+                           issued_epoch_us, limits, accounting, config_revision,
+                           broker_id, storage_epoch):
+    """Pure original setup digest; live root authorization is still required."""
+    require(type(local) is Peer and type(remote) is Peer and local != remote
+            and type(local_initiator) is bool and type(intention) is ReceiveIntention
+            and type(limits) is Cost and type(accounting) is NativeAccountingObservation
+            and accounting.retained_debt.within(limits)
+            and accounting.host_boot_id == intention.host_boot_id
+            and type(issued_epoch_us) is int
+            and 0 <= issued_epoch_us < intention.application_expires_epoch_us
+            and type(broker_id) is str and len(broker_id) == 32
+            and type(storage_epoch) is str and 1 <= len(storage_epoch) <= 100)
+    digest(config_revision)
+    body = dict(local=local.to_dict(), remote=remote.to_dict(), local_initiator=local_initiator,
+                intention=intention.to_dict(), issued_epoch_us=issued_epoch_us,
+                limits=asdict(limits), accounting=accounting.binding(),
+                config_revision=config_revision, broker_id=broker_id, storage_epoch=storage_epoch)
+    return hashlib.sha256(SETUP_DOMAIN + _canonical(body)).hexdigest()
+
+
+class ForwardNativeProvider:
+    """One opt-in endpoint; constructor and returned objects grant no transport.
+
+    Keep the setup and full exchange authority contexts live through cleanup.
+    Accounting ownership transfers after argument validation. generate reserves
+    one original namespace. bind persists the independently approved public
+    enrollment. start creates only the protected budget/journal/session; root
+    must separately provision and admit every physical forward/reverse child.
+    """
+    def __init__(self, resource, authority, setup_context, *, remote, local_initiator,
+                 intention, issued_epoch_us, limits, accounting,
+                 boot_reader=host_boot, clock_reader=clock, storage_pair_factory=BoundStoragePair):
+        from sage_lantern.mesh_daemon import HardwareRuntime
+        from sage_lantern.mesh_community import MeshActionAuthority
+        from sage_lantern.mesh_runtime import MeshUserContext
+        require(type(resource) is HardwareRuntime and type(authority) is MeshActionAuthority
+                and type(setup_context) is MeshUserContext and type(remote) is Peer
+                and type(local_initiator) is bool and type(intention) is ReceiveIntention
+                and type(limits) is Cost and isinstance(accounting, NativeAccountingSource)
+                and callable(boot_reader) and callable(clock_reader)
+                and (storage_pair_factory is None or storage_pair_factory is BoundStoragePair)
+                and type(issued_epoch_us) is int
+                and 0 <= issued_epoch_us < intention.application_expires_epoch_us)
+        self.resource, self.authority, self.setup_context = resource, authority, setup_context
+        self.remote, self.local_initiator, self.intention = remote, local_initiator, intention
+        self.issued_epoch_us, self.limits, self.accounting = issued_epoch_us, limits, accounting
+        self._boot, self._clock = boot_reader, clock_reader
+        self._process = os.getpid(), threading.get_ident()
+        self._closed = self._uncertain = self._busy = self._observing = self._held = False
+        self._source_closed = False
+        self._purpose = self._enrollment = self._handle = self._owner = self._operation = None
+        self._context = self._exchange = self._public = None
+        self._storage_pair_factory = storage_pair_factory
+        self._storage_pair = self._storage_pair_ref = None
+        self._storage_pair_check = self._storage_pair_check_ref = None
+        self._storage_pair_delegates = None
+        self._components = {}
+        self._last_clock = self._accounting_binding = self._setup_approval = None
+        self._source_methods = (type(accounting).observe, type(accounting).close)
+        self._source_observe, self._source_close = accounting.observe, accounting.close
+        self._source_cleanup = (accounting, self._source_methods[1])
+        self._source_registry_close = getattr(type(accounting), 'close_from_registry', None)
+        self._abort_callback = self._abort
+        self._registry_finishing = False
+        self._refs = (resource, authority, setup_context, remote, local_initiator, intention,
+                      limits, accounting, boot_reader, clock_reader, storage_pair_factory)
+        try:
+            self._native_refs = (resource.supervisor, resource.probe, resource.probe.client,
+                                resource.identity, resource.identity._signing_key, resource._mutex)
+            self.local = Peer(resource.actor.chain_id, bytes.fromhex(resource.identity.agent_id))
+            self.config_revision = hashlib.sha256(_canonical(resource.config)).hexdigest()
+            self.consent = resource.consent()
+            self.broker_id = resource.supervisor.broker_id
+            self.storage_epoch = resource.probe.snapshot().epoch
+            self._facts = (self.local, self.config_revision, self.consent, self.broker_id,
+                           self.storage_epoch, issued_epoch_us, _canonical(intention.to_dict()))
+            self._store = WorkflowStore(resource.probe.client, storage=MessageStorageProbe(
+                resource.probe.client, actor=RecipientID(self.local.chain_id, self.local.public_key.hex()),
+                endpoint=resource.probe.endpoint))
+            self._components['_store'] = self._store
+            if storage_pair_factory is not None:
+                self._storage_pair = self._storage_pair_ref = storage_pair_factory(resource.probe, self._store)
+                self._storage_pair_check = self._storage_pair_check_ref = self._storage_pair.observe
+                self._storage_pair_delegates = (self._storage_pair._BoundStoragePair__matches,
+                                               self._storage_pair._BoundStoragePair__observe)
+            self._components['_storage_pair_delegates'] = self._storage_pair_delegates
+            self._guard()
+            self._purpose = NoisePurpose(self._store, local=self.local, remote=remote,
+                local_initiator=local_initiator, intention=intention,
+                signing_key=self._native_refs[4], issued_epoch_us=issued_epoch_us,
+                approval_digest=self._setup_approval, owner_lease=self._lease,
+                access_check=self._access_check, storage_check=self._storage_check,
+                native_check=self._purpose_check, enrollment_check=self._enrollment_check,
+                remote_pin_check=self._peer_check, boot_reader=boot_reader, clock=clock_reader,
+                exchange_enrollment_check=self._exchange_enrollment_check,
+                workflow_access_check=self._access_check)
+            self._components['_purpose'] = self._purpose
+            self._guard()
+        except BaseException as error:
+            self._uncertain = True
+            self.close()
+            if isinstance(error, BoundStoragePairError): raise ForwardNativeProviderError() from None
+            raise
+
+    def __repr__(self):
+        return '<ForwardNativeProvider>'
+
+    def _available(self):
+        require(not self._closed and not self._uncertain and not self._source_closed
+                and self._process == (os.getpid(), threading.get_ident()))
+        h = self.resource
+        require(all(a is b for a, b in zip(self._refs, (h, self.authority, self.setup_context,
+            self.remote, self.local_initiator, self.intention, self.limits, self.accounting, self._boot, self._clock,
+            self._storage_pair_factory))))
+        require(all(a is b for a, b in zip(self._native_refs, (h.supervisor, h.probe, h.probe.client,
+            h.identity, h.identity._signing_key, h._mutex))))
+        require(self._source_methods == (type(self.accounting).observe, type(self.accounting).close)
+                and 'observe' not in self.accounting.__dict__ and 'close' not in self.accounting.__dict__
+                and 'close_from_registry' not in self.accounting.__dict__
+                and getattr(type(self.accounting), 'close_from_registry', None) is self._source_registry_close)
+        require(self._source_observe.__self__ is self.accounting
+                and self._source_observe.__func__ is self._source_methods[0]
+                and self._source_close.__self__ is self.accounting
+                and self._source_close.__func__ is self._source_methods[1]
+                and self._source_cleanup[0] is self.accounting
+                and self._source_cleanup[1] is self._source_methods[1])
+        require(all(getattr(self, name) is value for name, value in self._components.items()))
+        require(self._storage_pair is self._storage_pair_ref
+                and self._storage_pair_check is self._storage_pair_check_ref)
+        if self._storage_pair_factory is None:
+            require(self._storage_pair is None and self._storage_pair_check is None
+                    and self._storage_pair_delegates is None)
+        else:
+            require(self._storage_pair_factory is BoundStoragePair and type(self._storage_pair) is BoundStoragePair
+                    and self._storage_pair_check.__self__ is self._storage_pair
+                    and self._storage_pair_check.__func__ is BoundStoragePair.observe
+                    and all(current is original for current, original in zip(
+                        (getattr(self._storage_pair, '_BoundStoragePair__matches', None),
+                         getattr(self._storage_pair, '_BoundStoragePair__observe', None)),
+                        self._storage_pair_delegates)))
+            try: paired = self._storage_pair.matches(h.probe, self._store)
+            except BoundStoragePairError: raise ForwardNativeProviderError() from None
+            require(paired is True)
+        require(self._facts == (self.local, self.config_revision, self.consent, self.broker_id,
+                self.storage_epoch, self.issued_epoch_us, _canonical(self.intention.to_dict())))
+        require(h.supervisor._resource is h and h.supervisor.phase == 'active'
+                and not h._closed and not h._closing and not h._uncertain
+                and h.probe.actor == h.actor and h.actor.chain_id == self.local.chain_id
+                and h.actor.agent_id == h.identity.agent_id == self.local.public_key.hex()
+                and self.setup_context.actor == h.actor
+                and hashlib.sha256(_canonical(h.config)).hexdigest() == self.config_revision)
+        if self._setup_approval is not None:
+            require(self.setup_context.approval_binding == self._setup_approval)
+
+    def _checked(self, callback, *args):
+        self._available()
+        result = callback(*args)
+        self._available()
+        return result
+
+    def _time(self):
+        require(self._checked(self._boot) == self.intention.host_boot_id)
+        now = self._checked(self._clock)
+        require(type(now) is tuple and len(now) == 2
+                and all(type(n) is int and 0 <= n < 2**63 for n in now)
+                and (self._last_clock is None or all(a >= b for a, b in zip(now, self._last_clock)))
+                and self.issued_epoch_us <= now[0] < self.intention.application_expires_epoch_us
+                and now[1] < self.intention.application_deadline_monotonic_us)
+        self._last_clock = now
+        return now
+
+    def _permissions(self):
+        h = self.resource
+        require(self._checked(h._epoch) == self.setup_context.epoch)
+        for scope in SETUP_SCOPES:
+            require(self._checked(self.authority.authorized, self.setup_context, scope, None) is True)
+        if self._exchange is not None:
+            require(self._exchange.actor == h.actor and self._exchange.epoch == self.setup_context.epoch
+                    and self._exchange.approval_binding == approval_binding(self._context, self.intention,
+                        self.local_initiator, config_revision=self.config_revision,
+                        broker_id=self.broker_id, storage_epoch=self.storage_epoch))
+            for scope in SETUP_SCOPES:
+                require(self._checked(self.authority.authorized, self._exchange, scope, None) is True)
+
+    def _check_access(self):
+        h = self.resource
+        require(self._checked(h.configured) is True and self._checked(h.active) is True
+                and self._checked(h.consent) == self.consent
+                and self.consent.messaging_enabled is True and self.consent.dispatch_enabled is True
+                and h.supervisor.broker_id == self.broker_id
+                and any(p['chain_id'] == self.remote.chain_id
+                        and p['agent_id'] == self.remote.public_key.hex() for p in h.config['peers']))
+        self._permissions()
+
+    def _check_storage(self):
+        h = self.resource
+        require(self._checked(h.supervisor.resource_lifecycle_check) is True
+                and self._checked(h.supervisor.verified_epoch) == self.storage_epoch)
+        if self._storage_pair_check is None:
+            require(self._checked(h.probe.snapshot).epoch == self.storage_epoch
+                    and self._checked(self._store.storage.snapshot).epoch == self.storage_epoch)
+        else:
+            require(self._checked(self._storage_pair_check, self.storage_epoch) == self.storage_epoch)
+
+    def _check_accounting(self):
+        before = self._time()
+        observed = self._checked(self._source_observe, self.resource, self.intention)
+        after = self._time()
+        require(type(observed) is NativeAccountingObservation
+                and observed.host_boot_id == self.intention.host_boot_id
+                and before[0] <= observed.observed_epoch_us <= after[0]
+                and before[1] <= observed.observed_monotonic_us <= after[1]
+                and observed.retained_debt.within(self.limits))
+        binding = _canonical(observed.binding())
+        require(self._accounting_binding is None or binding == self._accounting_binding)
+        approved = setup_approval_binding(local=self.local, remote=self.remote,
+            local_initiator=self.local_initiator, intention=self.intention,
+            issued_epoch_us=self.issued_epoch_us, limits=self.limits, accounting=observed,
+            config_revision=self.config_revision, broker_id=self.broker_id, storage_epoch=self.storage_epoch)
+        require(self.setup_context.approval_binding == approved)
+        if self._accounting_binding is None:
+            self._accounting_binding, self._setup_approval = binding, approved
+            self._retained_debt = observed.retained_debt
+        require(self._retained_debt == observed.retained_debt)
+
+    def _check_native(self):
+        self._check_accounting()
+        # The source is an independent callback. Fence callback-time storage
+        # and approval drift before the combined purpose guard may return.
+        self._check_storage()
+        self._check_access()
+        self._time()
+
+    def _observe(self, predicate):
+        if self._observing:
+            self._uncertain = True
+            raise ForwardNativeProviderError()
+        self._observing = True
+        try:
+            self._available()
+            predicate()
+            self._available()
+            return True
+        except BaseException as error:
+            self._uncertain = self._closed = True
+            if isinstance(error, BoundStoragePairError): raise ForwardNativeProviderError() from None
+            raise
+        finally:
+            self._observing = False
+            if self._closed:
+                self.close()
+
+    def _access_check(self):
+        return self._observe(self._check_access)
+
+    def _storage_check(self):
+        return self._observe(self._check_storage)
+
+    def _guard(self):
+        def all_predicates():
+            self._check_access()
+            self._check_storage()
+            self._check_native()
+        return self._observe(all_predicates)
+
+    def _radio_native_check(self,owner,adoption,child,epoch):
+        """One fresh metadata fence, never crypto or physical dispatch authority.
+
+        Accounting is independent read-only evidence. Native storage observes
+        its pre-Vault epoch; the exact pair then observes the post-Vault epoch.
+        The surrounding read retains every SDK bracket and full key bookend.
+        A late callback change may be read and rejected, never published.
+        """
+        run=owner._radio_read
+        facts=owner._radio_facts
+        source=self.accounting;binding=self._accounting_binding
+        debt=self._retained_debt;approved=self._setup_approval
+        def bound():
+            require(type(owner) is ForwardNativeOwner and owner is self._owner
+                and owner.resource is self.resource and owner.authority is self.authority
+                and owner.native_context is self._exchange and owner.context is self._context
+                and owner.intention is self.intention and owner.storage_epoch==epoch==self.storage_epoch
+                and owner._busy and run is not None and owner._radio_read is run
+                and adoption._read_run is run and adoption.owner is owner and adoption.child is child
+                and adoption.store is owner._composition.store
+                and owner._radio_native_check.__self__ is self
+                and owner._radio_native_check.__func__ is _RADIO_NATIVE_CHECK
+                and owner._radio_facts is facts
+                and owner._boot is self._boot and owner._clock is self._clock
+                and owner.consent==self.consent and owner.config_revision==self.config_revision
+                and owner.consent.messaging_enabled is True and owner.consent.dispatch_enabled is True
+                and owner.broker_id==self.broker_id and self.accounting is source
+                and self._accounting_binding==binding and self._retained_debt is debt
+                and self._setup_approval==approved)
+            if facts is not None:
+                from .forward_radio import ForwardRadioFactory, _RadioFactsMode, _RadioAuthorizationMode
+                require(type(facts) is tuple and len(facts)==3
+                    and type(facts[0]) is ForwardRadioFactory
+                    and (type(facts[1]) is _RadioFactsMode
+                         or type(facts[1]) is _RadioAuthorizationMode and facts[1] is _RadioAuthorizationMode.AUTHORIZE)
+                    and facts[2] is run and facts[0].owner is owner and facts[0].adoption is adoption
+                    and adoption._adopted is True and self.resource._forward_radio is adoption
+                    and facts[0]._native_observing and adoption._child.observing
+                    and adoption._child.observe_thread==threading.get_ident())
+            require(all(name not in self.__dict__ and getattr(type(self),name) is original
+                        for name,original in _RADIO_PROVIDER_METHODS))
+            owner._available();adoption._bound();self._available()
+        def metadata():
+            bound();self._check_accounting();bound()
+            self._check_access();bound()
+            self._check_storage();bound()
+            self._check_access();bound()
+            self._time();bound()
+        bound();self._observe(metadata);bound();return True
+
+    def _stage_native_check(self,token):
+        """Fresh read-only accounting/Vault/root fences for one paid read."""
+        from .forward_operation import _StageRead
+        require(type(token) is _StageRead and token.provider is self)
+        owner=token.owner;source=self.accounting;binding=self._accounting_binding
+        debt=self._retained_debt;approved=self._setup_approval
+        def bound():
+            token.bound()
+            require(owner is self._owner and owner.resource is self.resource
+                and owner.authority is self.authority and owner.native_context is self._exchange
+                and owner.context is self._context and owner.intention is self.intention
+                and owner._stage_read is token and owner._busy and token._checking
+                and owner.storage_epoch==self.storage_epoch and owner._clock is self._clock
+                and owner._boot is self._boot and owner.consent==self.consent
+                and owner.consent.messaging_enabled is True and owner.consent.dispatch_enabled is True
+                and owner.config_revision==self.config_revision and owner.broker_id==self.broker_id
+                and self.accounting is source and self._accounting_binding==binding
+                and self._retained_debt is debt and self._setup_approval==approved)
+        def metadata():
+            bound();self._check_accounting();bound()
+            self._check_access();bound()
+            self._check_storage();bound()
+            self._check_access();bound()
+            self._time();bound()
+        bound();self._observe(metadata);bound();return True
+
+    @contextmanager
+    def _lease(self):
+        from sage_lantern.storage_supervisor_socket import CaptureLease
+        self._guard()
+        require(not self._held and self._native_refs[-1].acquire(blocking=False))
+        self._held = True
+        lease = None
+        try:
+            self._guard()
+            lease = self.resource.capture_lease(self.consent)
+            self._available()
+            require(type(lease) is CaptureLease and lease.check() is True)
+            self._guard()
+            yield
+            self._guard()
+            require(lease.check() is True)
+        finally:
+            try:
+                if lease is not None:
+                    lease.close()
+            finally:
+                self._held = False
+                self._native_refs[-1].release()
+        self._guard()
+
+    def _purpose_check(self, binding):
+        def native():
+            require(self._purpose is not None and binding is self._purpose.binding)
+            self._check_native()
+        return self._observe(native)
+
+    def _enrollment_check(self, info, context_digest):
+        self._guard()
+        require(self._enrollment is not None)
+        result = self._enrollment.enrollment_check(info, context_digest)
+        self._guard()
+        return result
+
+    def _peer_check(self, peer, public_key, context_digest):
+        self._guard()
+        require(self._enrollment is not None)
+        result = self._enrollment.peer_key_check(peer, public_key, context_digest)
+        self._guard()
+        return result
+
+    def _exchange_enrollment_check(self, info, remote_peer, remote_public_key, context_digest):
+        self._guard()
+        require(self._enrollment is not None)
+        result = self._enrollment.exchange_check(info, remote_peer, remote_public_key, context_digest)
+        self._guard()
+        return result
+
+    def _run(self, action):
+        if self._busy or self._owner is not None and (
+                self._owner._radio_read is not None or self._owner._stage_read is not None):
+            self._uncertain = True
+            self.close()
+            raise ForwardNativeProviderError()
+        self._busy = True
+        try:
+            self._guard()
+            result = action()
+            self._guard()
+            return result
+        except BaseException as error:
+            self._uncertain = True
+            self.close()
+            if not isinstance(error, Exception):
+                raise
+            raise ForwardNativeProviderError() from None
+        finally:
+            self._busy = False
+            if self._closed:
+                self.close()
+
+    def generate(self):
+        def generate():
+            require(self._public is None)
+            self._public = self._purpose.generate()
+            self._components['_public'] = self._public
+            return self._public
+        return self._run(generate)
+
+    def bind(self, context, exchange_context, *, remote_generation_id):
+        from sage_lantern.mesh_runtime import MeshUserContext
+        def bind():
+            require(type(context) is ForwardContext and type(exchange_context) is MeshUserContext
+                    and self._public is not None and self._context is None)
+            self._context, self._exchange = context, exchange_context
+            self._components.update(_context=context, _exchange=exchange_context)
+            self._guard()
+            self._enrollment = NativeNoiseEnrollment(self.resource, self.authority, exchange_context,
+                self._store, context=context, intention=self.intention, local_initiator=self.local_initiator,
+                local_public=self._public, remote_generation_id=remote_generation_id,
+                boot_reader=self._boot, clock_reader=self._clock, storage_pair=self._storage_pair)
+            self._components['_enrollment'] = self._enrollment
+            with self._lease():
+                require(self._enrollment.enroll() is True)
+            self._handle = self._purpose.bind(context)
+            self._components['_handle'] = self._handle
+            return True
+        return self._run(bind)
+
+    def _abort(self):
+        if self._owner is None:
+            return True
+        if getattr(self._owner,'_registry',None) is not None:
+            self._owner._registry._endpoint(self._owner)
+            self._owner._cleanup_bound()
+        operation = getattr(self._owner, '_operation', None)
+        if operation is not None and operation.active is not None:
+            self._owner.fence()
+            return self._owner._registry.cancellation_pending(self._owner)
+        if any(getattr(self._owner, name, False) for name in ('_busy', '_held', '_constructing')):
+            self._owner.fence()
+            return False
+        return self._owner.close()
+
+    def start(self, sealed_record=None):
+        def start():
+            require(self._handle is not None and self._owner is None and self._operation is None)
+            def create(key):
+                # Retain cleanup ownership even if native construction refuses.
+                self._owner = object.__new__(ForwardNativeOwner)
+                self._components['_owner'] = self._owner
+                self._owner.__init__(self.resource, self.authority, self._exchange,
+                    context=self._context, intention=self.intention, local_initiator=self.local_initiator,
+                    key_check=self._purpose.key_check, peer_key_check=self._purpose.peer_key_check,
+                    boot_reader=self._boot, clock_reader=self._clock,
+                    exchange_key_check=self._purpose.exchange_check,
+                    radio_native_check=self._radio_native_check)
+                self._owner._registry.bind_endpoint(self._owner, self)
+                return self._owner.operation(key, limits=self.limits,
+                    prior_debt=self._retained_debt, sealed_record=sealed_record)
+            self._operation = self._handle.start(create, abort=self._abort_callback)
+            self._components['_operation'] = self._operation
+            return self._operation
+        return self._run(start)
+
+    @property
+    def owner(self):
+        def owner():
+            require(self._owner is not None)
+            self._owner.access_check()
+            return self._owner
+        return self._run(owner)
+
+    @property
+    def operation(self):
+        self.owner
+        require(self._operation is not None and self._owner._operation is self._operation)
+        return self._operation
+
+    def retire(self):
+        """Persist public retirement only while original permission is live."""
+        result = self._run(lambda: self._purpose.retire())
+        require(self.close() is True)
+        return result
+
+    def close(self):
+        """Cancel locally; retain accounting until endpoint/key cleanup joins.
+
+        False is not retirement or handoff proof. Physical children must have
+        their separately owned terminal cleanup; this method never opens or
+        drains a transport, renews permission or deletes durable debt/claims.
+        """
+        self._closed = True
+        if self._registry_finishing:
+            self._uncertain = True
+            return False
+        try:
+            purpose_ok = self._purpose is None or self._purpose.close()
+        except Exception:
+            purpose_ok = False
+            self._uncertain = True
+        if self._busy or self._observing or self._held:
+            return False
+        try:
+            endpoint_ok = self._abort() is True
+        except Exception:
+            endpoint_ok = False
+            self._uncertain = True
+        key_busy = self._purpose is not None and (self._purpose._busy is not None
+            or self._purpose._observing or self._purpose._factory_active)
+        endpoint_busy = self._owner is not None and any(getattr(self._owner, name, False)
+            for name in ('_busy', '_held', '_constructing'))
+        if self._owner is not None and self._owner._registry is not None:
+            endpoint_busy = endpoint_busy or any(c.owner is self._owner and not c.retired
+                for c in self._owner._registry._children)
+        enrollment_busy = self._enrollment is not None and self._enrollment._busy
+        enrollment_ok = self._enrollment is None
+        cancellation_owned = (self._owner is not None and self._owner._registry is not None
+            and id(self._owner) in self._owner._registry._cancellations)
+        # Ordinary failed actions still release already fenced local resources.
+        # A registered child cancellation must first join through its permits.
+        cleanup_ready = (not endpoint_busy and not key_busy and not enrollment_busy
+            and (not cancellation_owned or purpose_ok and endpoint_ok))
+        if cleanup_ready:
+            try:
+                enrollment_ok = self._enrollment is None or self._enrollment.close() is True
+            except Exception:
+                self._uncertain = True
+        if cleanup_ready and (enrollment_ok or not cancellation_owned) and not self._source_closed:
+            self._source_closed = True
+            try:
+                source_ok = self._source_cleanup[1](self._source_cleanup[0]) is True
+            except Exception:
+                source_ok = False
+            self._uncertain = self._uncertain or not source_ok
+        return (purpose_ok and endpoint_ok and enrollment_ok and not key_busy and self._source_closed
+                and not self._uncertain and self._process == (os.getpid(), threading.get_ident()))
+
+    def _cleanup_busy(self):
+        source_busy = getattr(self.accounting, '_busy', False)
+        return (self._busy or self._observing or self._held
+            or self._purpose is not None and (self._purpose._busy is not None or self._purpose._observing
+                or self._purpose._factory_active or self._purpose._closing_sessions)
+            or self._enrollment is not None and self._enrollment._busy
+            or type(source_busy) not in (bool, int) or source_busy != 0)
+
+    def _registry_finish_close(self, permit):
+        """Only local cleanup under the original idle, contained owner."""
+        from .forward_children import ForwardClosePermit
+        if self._registry_finishing:
+            self._uncertain = True
+            raise ForwardNativeProviderError()
+        require(type(permit) is ForwardClosePermit and permit.original_owner == self._process
+            and permit.resource is self.resource and os.getpid() == self._process[0]
+            and not self._cleanup_busy() and not self._registry_finishing)
+        registry = self._owner._registry
+        bundle = registry._endpoint(self._owner)
+        require(bundle is not None and bundle.refs[1] is self and permit.consume(self) is True)
+        self._closed = self._registry_finishing = True
+        try:
+            require(self._purpose.close_from_registry(registry.cleanup_permit(self._owner, self._purpose)) is True)
+            require(registry._endpoint(self._owner) is bundle)
+            registry._cleanup_current(self._owner,self)
+            require(self._enrollment.close_from_registry(registry.cleanup_permit(self._owner, self._enrollment)) is True)
+            require(registry._endpoint(self._owner) is bundle and not self._cleanup_busy() and not self._uncertain)
+            registry._cleanup_current(self._owner,self)
+            if not self._source_closed:
+                source = bundle.refs[4]
+                own_thread=self._process == (os.getpid(), threading.get_ident())
+                require(own_thread or self._source_registry_close is not None)
+                source_permit=registry.cleanup_permit(self._owner,source)
+                if own_thread:require(source_permit.consume(source) is True)
+                self._source_closed = True # One attempt; a failed return stays uncertain.
+                if own_thread:
+                    result = self._source_cleanup[1](source)
+                else:
+                    result = self._source_registry_close(source, source_permit)
+                require(result is True)
+            require(registry._endpoint(self._owner) is bundle and not self._uncertain)
+            registry._cleanup_current(self._owner,self)
+            return not self._uncertain
+        except BaseException:
+            self._uncertain = True
+            raise
+        finally:
+            self._registry_finishing = False
+
+_RADIO_NATIVE_CHECK=ForwardNativeProvider._radio_native_check
+_RADIO_PROVIDER_METHODS=tuple((name,getattr(ForwardNativeProvider,name)) for name in
+    ('_available','_checked','_guard','_observe','_check_access','_check_storage',
+     '_check_accounting','_check_native','_permissions','_time','_radio_native_check'))
+_STAGE_PROVIDER_METHODS=tuple((name,getattr(ForwardNativeProvider,name),getattr(ForwardNativeProvider,name).__code__)
+    for name in ('_available','_checked','_observe','_check_access','_check_storage',
+                 '_check_accounting','_permissions','_time','_stage_native_check'))
+# Import only after the owner/provider classes exist. Pin at module loading,
+# never first use of a possibly substituted factory callback.
+from .forward_radio import ForwardRadioFactory as _StageRadioFactory
+from .forward_tcp import ForwardTcpStage as _StageTcpFactory
+_STAGE_NATIVE_METHODS=tuple((kind,kind._native,kind._native.__code__,read,read.__code__) for kind,read in
+    ((_StageRadioFactory,_StageRadioFactory._observed),(_StageTcpFactory,_StageTcpFactory._observe_stage_read)))
+
+# The final native callback is the selected read's mandatory key boundary.
+# Seal its permission-bearing chain at module load, including mutable defaults.
+from . import forward_native_owner as _stage_owner_module
+from . import radio_native_adoption as _stage_adoption_module
+from .forward_radio import NativeRadioObserver as _StageRadioObserver
+
+def _stage_function_stamp(function):
+    wrapped=getattr(function,'__wrapped__',None)
+    def values(f):
+        if f is None:return None
+        return (f.__code__,f.__defaults__,None if f.__kwdefaults__ is None else
+                tuple((k,type(v),v) for k,v in sorted(f.__kwdefaults__.items())))
+    return function,values(function),wrapped,values(wrapped)
+
+_STAGE_PROOF_METHODS=tuple((kind,tuple((name,_stage_function_stamp(getattr(kind,name))) for name in names))
+    for kind,names in (
+    (_StageRadioFactory,('_native','_native_current','_facts','_bound','_observed')),
+    (_StageTcpFactory,('_native','_live','_owned','_bound','_child_time','_clock','_observe_stage_read')),
+    (_StageRadioObserver,('_bound','_worker_current')),
+    (_stage_adoption_module.NativeRadioAdoption,('_bound','_guard','_assets','_observe','current','_read_record','_guard_tail')),
+    (ForwardNativeOwner,('_run','_available','_checked','_observe','phase_check','access_check',
+                         'observe_radio_facts','_observe_radio','observe_stage_read','time')),
+    (ForwardNativeProvider,('_guard','_observe','_check_access','_check_storage','_check_native',
+                           '_check_accounting','_radio_native_check','_exchange_enrollment_check')),
+    (NoisePurpose,('exchange_check','_observer','_observe','_read','_validate','_enrolled')),
+    (NativeNoiseEnrollment,('exchange_check','_observe','_validate'))))
+_STAGE_PROOF_GLOBALS=tuple((module,name,getattr(module,name)) for module,names in (
+    (_stage_owner_module,('_RADIO_FACTS_OBSERVER','_RADIO_OBSERVER','_RADIO_OWNER_METHODS')),
+    (_stage_adoption_module,('_ADOPTION_READ_BODY','_ADOPTION_GUARD_TAIL')))
+    for name in names)
+_STAGE_STAMP_CODE=_stage_function_stamp.__code__

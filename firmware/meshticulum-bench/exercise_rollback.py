@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Verify the retained A/B rollback in ROM, then boot only verified bench bytes.
 
 Uses the installed, hash-pinned flash adapter and exact on-device backup. The

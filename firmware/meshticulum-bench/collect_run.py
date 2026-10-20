@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Read bounded public bench evidence; never reads session keys or payloads."""
 import fcntl
 import hashlib

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Finite receive-only diagnostic for C; forbid TX opcodes and record no payload."""
 from collections import deque
 import hashlib
@@ -12,11 +14,11 @@ raw = (ROOT / 'manifest.json').read_bytes()
 assert hashlib.sha256(raw).hexdigest() == MANIFEST
 for name, digest in json.loads(raw)['files'].items():
     assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest
-sys.path.insert(0, str(ROOT))
-from software.experiments.meshticulum_bench.linux_hat import LinuxHAT
-from software.experiments.meshticulum_bench.node import roles
-from software.experiments.meshticulum_bench.serial_protocol import RadioProfile
-from software.experiments.meshticulum_bench.sx1262 import SX1262
+sys.path.insert(0, str(ROOT / 'src'))
+from meshticulum.bench.linux_hat import LinuxHAT
+from lantern_meshticulum.bench.node import roles
+from meshticulum.bench.serial_protocol import RadioProfile
+from meshticulum.bench.sx1262 import SX1262
 
 before = roles('unit-c')
 result = {'schema': 'meshticulum.hat-rx-timeout-diagnostic.v1', 'services_before': before,

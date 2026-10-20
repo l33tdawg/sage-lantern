@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Stage the source-only bench runtime and write a hash-pinned sudo operator."""
 import hashlib
 import importlib.util

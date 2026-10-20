@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Freeze and execute C's SPI configuration check with transmit/receive denied."""
 import base64
 import hashlib
 import json
+from source_core import core_source
 from pathlib import Path
 import shlex
 import subprocess
@@ -45,9 +48,11 @@ print(json.dumps(result))
 
 
 def main():
+    source = core_source()
     files = {'check_hat_config.py': (ROOT / 'firmware/meshticulum-bench/check_hat_config.py').read_bytes()}
     for name in ('__init__.py', 'linux_hat.py', 'hat_probe.py', 'serial_protocol.py', 'serial_worker.py', 'sx1262.py'):
-        files['meshticulum_bench/' + name] = (ROOT / 'software/experiments/meshticulum_bench' / name).read_bytes()
+        files['meshticulum/bench/' + name] = (source / 'src/meshticulum/bench' / name).read_bytes()
+    files['meshticulum/__init__.py'] = (source / 'src/meshticulum/__init__.py').read_bytes()
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     payload = json.dumps({'files': {name: base64.b64encode(data).decode() for name, data in files.items()},

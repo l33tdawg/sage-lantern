@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Inline root bootstrap: verify the complete archive before executing its code.
 
 The local operator helper passes this source via `sudo python3 -I -B -c`, with

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Create a retained synthetic benchmark object; no device or network access."""
 import argparse
 import hashlib

@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Freeze the reviewed app-only installer and firmware; no network or device I/O."""
 import gzip
 import hashlib
 import io
 import json
+from source_core import core_source
 from pathlib import Path
 import tarfile
 
@@ -19,6 +22,7 @@ def sha(data):
 
 
 def main():
+    source = core_source()
     evidence = json.loads((WORK / 'FIRMWARE_BUILD_EVIDENCE.json').read_text())
     build = next(v for v in evidence['results'] if v['target'] == 'mtbench_heltec_v4')
     assert build['returncode'] == 0
@@ -29,7 +33,8 @@ def main():
     assert sha(files['firmware.bin']) == artifact['sha256']
     assert sha(files['rollback-r7.bin']) == PRIOR_SHA
     for name in ('__init__.py', 'flash_app.py', 'linux_hat.py', 'serial_port.py', 'serial_protocol.py'):
-        files['meshticulum_bench/' + name] = (ROOT / 'software/experiments/meshticulum_bench' / name).read_bytes()
+        files['meshticulum/bench/' + name] = (source / 'src/meshticulum/bench' / name).read_bytes()
+    files['meshticulum/__init__.py'] = (source / 'src/meshticulum/__init__.py').read_bytes()
     manifest = {'schema': 'meshticulum.ab-flash-bundle.v1', 'units': UNITS,
         'firmware_identity': build['firmware_identity'], 'board_id': 1, 'target': build['target'],
         'files': {name: sha(data) for name, data in sorted(files.items())},

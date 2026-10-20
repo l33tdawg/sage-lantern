@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Configure C's SX1262 and return to standby, with SetRx/SetTx denied at SPI.
 
 This is a hardware configuration check, not an RF test or a transmission grant.
@@ -10,9 +11,9 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from meshticulum_bench.linux_hat import HardwareError, LinuxHAT, require
-from meshticulum_bench.serial_protocol import RadioProfile
-from meshticulum_bench.sx1262 import SX1262
+from meshticulum.bench.linux_hat import HardwareError, LinuxHAT, require
+from meshticulum.bench.serial_protocol import RadioProfile
+from meshticulum.bench.sx1262 import SX1262
 
 
 class NoRFTxRx:

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Compile board images from a prepared local snapshot; never upload or flash."""
 import argparse
 import hashlib
@@ -7,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from source_core import core_source
 
 from prepare_build import CORE, DEST, HERE, RETAINED, hashes
 
@@ -16,6 +18,7 @@ def main():
     parser.add_argument('--refresh', action='store_true', help='Retain prior manifest and copy current bench source into the isolated snapshot')
     parser.add_argument('--target', choices=['mtbench_heltec_v4', 'mtbench_xiao_s3_wio'], action='append')
     args = parser.parse_args()
+    firmware_source = core_source() / 'firmware/meshticulum-bench'
     manifest_path = DEST.parent / 'FIRMWARE_SOURCE_MANIFEST.json'
     manifest = json.loads(manifest_path.read_text())
     source = DEST / 'examples/meshticulum_bench'
@@ -25,7 +28,7 @@ def main():
             revision += 1
         shutil.copy2(manifest_path, DEST.parent / f'firmware-source-revision-{revision:02}.json')
         for name in ('main.cpp', 'protocol.hpp'):
-            shutil.copy2(HERE / name, source / name)
+            shutil.copy2(firmware_source / name, source / name)
         manifest['bench_source'] = hashes(source)
         manifest['bench_source_digest'] = hashlib.sha256(json.dumps(manifest['bench_source'], sort_keys=True).encode()).hexdigest()
         version = 'mtb1-' + manifest['bench_source_digest'][:10]
@@ -35,7 +38,7 @@ def main():
         manifest['snapshot_source'] = hashes(DEST, ('.pio', '.git', '__pycache__'))
         manifest_path.write_text(json.dumps(manifest, indent=2) + '\n')
     assert hashes(source) == manifest['bench_source'], 'snapshot source drift'
-    assert {n: hashlib.sha256((HERE/n).read_bytes()).hexdigest() for n in ('main.cpp', 'protocol.hpp')} == manifest['bench_source'], 'unfrozen current source'
+    assert {n: hashlib.sha256((firmware_source/n).read_bytes()).hexdigest() for n in ('main.cpp', 'protocol.hpp')} == manifest['bench_source'], 'unfrozen current source'
     assert hashes(DEST, ('.pio', '.git', '__pycache__')) == manifest['snapshot_source'], 'build configuration drift'
     environment = dict(os.environ)
     environment['PATH'] = str(RETAINED/'compiler/xtensa-esp32s3-elf/bin') + os.pathsep + environment.get('PATH', '')

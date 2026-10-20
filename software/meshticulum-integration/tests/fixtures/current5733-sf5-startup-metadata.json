@@ -1,0 +1,2646 @@
+{
+  "native": {
+    "unit-a": {
+      "MCU_observations": null,
+      "actual_plus_prepaid_sum_permitted": false,
+      "complete_global_debt": false,
+      "current_host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+      "database_writes": false,
+      "declared_manifest_sha256": "3476737fe14be9b1f34ff6ba938d1fd2db4a489c787a331e05b63d482fbab40e",
+      "declared_runtime_sha256": "2d72dbbe1cee7f3e6cb5480ab64977d3a98553feed1850d67c34a90ee38d7514",
+      "detail": {
+        "approval_bytes_match_enrollment": true,
+        "claim_count": 1,
+        "claims": [
+          {
+            "application_deadline_monotonic_us": 258939640216,
+            "child": {
+              "application_expires_epoch_us": 1791799586932590,
+              "campaign_id": "63afd42eeab96eb40fd4c0db41adf324",
+              "child_digest": "f72aabe79b9830fd2783b9b1a2379963f7b7e6afd723a82d9837c4d04eb3e0c3",
+              "cipher_frame_limit": 512,
+              "format": "MR1.request",
+              "full_caps": {
+                "estimated_airtime_us": 60000000,
+                "ip_frames": 0,
+                "radio_attempts": 256,
+                "rx_stream_bytes": 0,
+                "tx_stream_bytes": 0
+              },
+              "grant_digest": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+              "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+              "object": {
+                "bytes": 74,
+                "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+              },
+              "plan_sha256": "2df5212ee301e64a75e118710fa3e1b1e244e179761a6d987c6ef41ff1fd1b5d",
+              "receiver": "unit-c",
+              "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+              "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+              "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+              "sender": "unit-a",
+              "sends": true,
+              "transport": "lora",
+              "unit": "unit-a"
+            },
+            "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+            "native_claim_id": "ebfbfdd8004375106b70c3d30f412cbaddb711f461893897e2c647af6c96f9c4",
+            "native_plan_sha256": "9c5b224fbb232626eaf53764b9433e1b34d4a8170c6ddb2c0563528ddb26fa09",
+            "prepared": true,
+            "prepared_row_sha256": "8ab3f32095ac1284cfae8ae0da5b8692b74ec2cd8c85c810acb737c7ae4526af",
+            "resource_id": "da065ac799052501d629513868e96afd23675be4659182f3c73815025739d0a9",
+            "row_sha256": "7c83f7aa1b77cf00cb3cb280286cf19d12a063428c16095bc9feb596b4f019b6",
+            "start_row_sha256": "af7897cba787e6691e8a2e245b3e37acaff128e915a5de5bc36031893077e3fb",
+            "started": true
+          }
+        ],
+        "enrollment": {
+          "deadline_monotonic_us": 259244488479,
+          "history_binding_sha256": "7f1e344b82a16ce210ab29ed56e83faca397ea0123709f99a7e175e0ba65107c",
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "original_epoch_us": 1791799392640636,
+          "original_monotonic_us": 258745348265,
+          "row_sha256": "bfb5f059691e9253a8b6a620bf912224f73b3c60e88559557dd1f528121761ab",
+          "unit": "unit-a"
+        },
+        "full_prepaid_caps": {
+          "estimated_airtime_us": 60000000,
+          "ip_frames": 0,
+          "radio_attempts": 256,
+          "rx_stream_bytes": 0,
+          "tx_stream_bytes": 0
+        },
+        "limit": {
+          "estimated_airtime_us": 8460000000,
+          "ip_frames": 20480,
+          "radio_attempts": 36096,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "prepared_count": 1,
+        "prior_plus_prepaid_caps": {
+          "estimated_airtime_us": 8400000000,
+          "ip_frames": 20480,
+          "radio_attempts": 35840,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "resource_count": 1,
+        "resources": [
+          {
+            "application_deadline_monotonic_us": 258939640217,
+            "application_expires_epoch_us": 1791799586932590,
+            "original_epoch_us": 1791799411129578,
+            "original_monotonic_us": 258763837205,
+            "resource_id": "da065ac799052501d629513868e96afd23675be4659182f3c73815025739d0a9",
+            "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+            "row_sha256": "bfc5fde42ccba8d95ca1932cbb747c0f4dd88bddbb6da3add6d1a27d1091497e"
+          }
+        ],
+        "start_count": 1,
+        "stored_clock": {
+          "epoch_us": 1791799415798677,
+          "monotonic_us": 258768506303
+        },
+        "underlying_native_plan_correspondence_verified": false
+      },
+      "eligible_for_enrollment": false,
+      "expected_database_sha256": "488905937419145a0fe89df1e0d601435cbecacb8759d4fc22d128e8c4144424",
+      "files": {
+        "native.sqlite": {
+          "bytes": 49152,
+          "device": 66307,
+          "inode": 6411075,
+          "mode": 384,
+          "sha256": "488905937419145a0fe89df1e0d601435cbecacb8759d4fc22d128e8c4144424",
+          "uid": 0
+        },
+        "native.sqlite.approval": {
+          "bytes": 65,
+          "device": 66307,
+          "inode": 6411076,
+          "mode": 384,
+          "sha256": "57a45fe6a0a072942486552e1b0fd6a82e794146d6c8ba052a785176faae0451",
+          "uid": 0
+        },
+        "native.sqlite.owner": {
+          "bytes": 0,
+          "device": 66307,
+          "inode": 6411074,
+          "mode": 384,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "uid": 0
+        }
+      },
+      "legacy_actual_usage_included": true,
+      "legacy_relation": {
+        "complete_run_coverage": false,
+        "links": [
+          {
+            "actual_cost": {
+              "estimated_airtime_us": 0,
+              "ip_frames": 0,
+              "radio_attempts": 0,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "application_deadline_monotonic_us": 258939640216,
+            "application_expires_epoch_us": 1791799586932590,
+            "child_digest": "f72aabe79b9830fd2783b9b1a2379963f7b7e6afd723a82d9837c4d04eb3e0c3",
+            "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+            "full_prepaid_caps": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "native_claim_id": "ebfbfdd8004375106b70c3d30f412cbaddb711f461893897e2c647af6c96f9c4",
+            "no_refund": true,
+            "relation": "same_endpoint_allocation",
+            "resource_id": "da065ac799052501d629513868e96afd23675be4659182f3c73815025739d0a9",
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "separate_debt_sum_permitted": false,
+            "transport": "lora"
+          }
+        ],
+        "native_claims_without_scoped_actuals": [],
+        "scoped_linkage_complete": true,
+        "serialized_cross_host_provenance_qualified": false
+      },
+      "legacy_runs": [
+        {
+          "actual_cost": {
+            "estimated_airtime_us": 0,
+            "ip_frames": 0,
+            "radio_attempts": 0,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "admitted_caps": {
+            "estimated_airtime_us": 60000000,
+            "ip_frames": 0,
+            "radio_attempts": 256,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "conservative_unknown_caps": {
+            "estimated_airtime_us": 60000000,
+            "ip_frames": 0,
+            "radio_attempts": 256,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "files": {
+            "active": {
+              "bytes": 8,
+              "device": 66307,
+              "inode": 6411085,
+              "mode": 384,
+              "sha256": "8b86d3b824a855c1b156ba78756ca36a80a6f1b1290204878987a662e0951324",
+              "uid": 0
+            },
+            "attempts.sqlite": {
+              "bytes": 12288,
+              "device": 66307,
+              "inode": 6411094,
+              "mode": 384,
+              "sha256": "cc1e4c1fafdf9705535c0e85a45d42ac7c75bfaf4885f33b2674c284e19e388d",
+              "uid": 0
+            },
+            "attempts.sqlite.owner": {
+              "bytes": 0,
+              "device": 66307,
+              "inode": 6411095,
+              "mode": 384,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "uid": 0
+            },
+            "grant.json": {
+              "bytes": 1326,
+              "device": 66307,
+              "inode": 6411083,
+              "mode": 384,
+              "sha256": "f1e8ca82787828131c8104a3784572c1e54aa80813ab704911b05c5201ad9d1a",
+              "uid": 0
+            },
+            "job.json": {
+              "bytes": 406,
+              "device": 66307,
+              "inode": 6411090,
+              "mode": 384,
+              "sha256": "f75a384bfd706a8e069f8957ada20950081c744206543c0bcdbdd9d074bd8d01",
+              "uid": 0
+            },
+            "provision.json": {
+              "bytes": 3144,
+              "device": 66307,
+              "inode": 6411087,
+              "mode": 384,
+              "sha256": "b6297b844cbda520d8566a56a55bd5c46bebc55db2b6194985bcd513743a4dfa",
+              "uid": 0
+            },
+            "result.json": {
+              "bytes": 9266,
+              "device": 66307,
+              "inode": 6411077,
+              "mode": 384,
+              "sha256": "613c7816876c8ff2bdce50bb353882256077e78ef19127f660895c6da7171394",
+              "uid": 0
+            },
+            "wire.sqlite": {
+              "bytes": 8192,
+              "device": 66307,
+              "inode": 6411091,
+              "mode": 384,
+              "sha256": "470281388f379763d4e9a5b4b579e3af73c31cee611e2ddf2edb217fa9d9aec9",
+              "uid": 0
+            }
+          },
+          "grant": {
+            "application_deadline_monotonic_us": 258939640216,
+            "application_expires_epoch_us": 1791799586932590,
+            "caps": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "direction": 0,
+            "format": "MR1.request",
+            "max_frames": 512
+          },
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "journal": {
+            "actual_cost": {
+              "estimated_airtime_us": 0,
+              "ip_frames": 0,
+              "radio_attempts": 0,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "attempts": [],
+            "has_unknown_or_pending": false,
+            "owner": {
+              "binding": "305aec7636af4198dd95a60a490a4ba2df6343d2b30df3dedffaac004ae07ccc",
+              "fenced": false,
+              "max_airtime_us": 60000000,
+              "max_attempts": 256,
+              "request": 1791799421934701
+            },
+            "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          "live_terminal_ownership_observed": false,
+          "parent_prepayment_verified": false,
+          "parent_reference": {
+            "child_descriptor_sha256": "f72aabe79b9830fd2783b9b1a2379963f7b7e6afd723a82d9837c4d04eb3e0c3",
+            "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+            "full_caps": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "native_claim_id": "ebfbfdd8004375106b70c3d30f412cbaddb711f461893897e2c647af6c96f9c4",
+            "native_plan_sha256": "9c5b224fbb232626eaf53764b9433e1b34d4a8170c6ddb2c0563528ddb26fa09",
+            "original_plan_sha256": "2df5212ee301e64a75e118710fa3e1b1e244e179761a6d987c6ef41ff1fd1b5d",
+            "parent_id": "57339cca60ddf62b41eafac60147a252",
+            "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+            "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "schema": "meshticulum.native-parent-claim.v1",
+            "unit": "unit-a",
+            "verified_against_parent_ledger": false
+          },
+          "physical_quiescence_observed": false,
+          "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+          "status": "scoped_rows_observed",
+          "terminal_metadata": {
+            "command_sha256": "e6aec6049af62845b22ef5b2778e04fb8096bf5661aa2f95c2dff66620166697",
+            "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "pid": 706919,
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "schema": "meshticulum.native-public-job.v1",
+            "start_ticks": 25876809,
+            "transport": "lora",
+            "unit": "unit-a"
+          },
+          "transport": "lora",
+          "wire": {
+            "binding": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "bitmap": "0000000000000000000000000000000000000000000000000000000000000000",
+            "boot": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "deadline": 258939640217,
+            "direction": 0,
+            "epoch": 1791799415814908,
+            "high": 0,
+            "mono": 258768522535,
+            "only_row": 1,
+            "retired": 1,
+            "tx": 0
+          }
+        }
+      ],
+      "legacy_scope_canonical_sha256": "014feb815ddfbe88ca4cbc4f632df263ca31fb1300c861d7389884022fca2af5",
+      "legacy_scoped_rows_complete": true,
+      "live_terminal_ownership_observed": false,
+      "observation_deadline_monotonic_us": 259346954391,
+      "observation_expires_epoch_us": 1791799994246765,
+      "observation_final_epoch_us": 1791799959322680,
+      "observation_final_monotonic_us": 259312030307,
+      "observation_original_epoch_us": 1791799959302536,
+      "observation_original_monotonic_us": 259312010162,
+      "owner_uid": 0,
+      "parent_id": "57339cca60ddf62b41eafac60147a252",
+      "pending_marker_matches_policy": null,
+      "pending_unknown": false,
+      "physical_quiescence_observed": false,
+      "policy_controller_boot_id": "20cfff28-7827-43ed-ac44-02c74e4c320d",
+      "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+      "policy_expired_at_observation": true,
+      "policy_original_deadline_monotonic_us": 887987129827,
+      "policy_original_expires_epoch_us": 1791799891780850,
+      "policy_original_issued_epoch_us": 1791799296780850,
+      "policy_original_monotonic_us": 887392129827,
+      "policy_row_sha256": "d73b259d682554708128e87d90afc00bbc0e5e5e229b2351aab0ff1a2e2ef6af",
+      "prior_lineage": {
+        "deduplication_permitted": false,
+        "global_snapshot_sha256": "47d34bb6cccfe99309632a09456fdd67285ed924ec3f8549be2cbeb9eda4992f",
+        "lineage_verified": false,
+        "units": [
+          {
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "prior_debt": {
+              "estimated_airtime_us": 8340000000,
+              "ip_frames": 20480,
+              "radio_attempts": 35584,
+              "rx_stream_bytes": 10485760,
+              "tx_stream_bytes": 10485760
+            },
+            "prior_snapshot_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f",
+            "unit": "unit-a"
+          },
+          {
+            "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+            "prior_debt": {
+              "estimated_airtime_us": 3120000000,
+              "ip_frames": 92160,
+              "radio_attempts": 13312,
+              "rx_stream_bytes": 47185920,
+              "tx_stream_bytes": 47185920
+            },
+            "prior_snapshot_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992",
+            "unit": "unit-b"
+          },
+          {
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "prior_debt": {
+              "estimated_airtime_us": 9180000000,
+              "ip_frames": 71680,
+              "radio_attempts": 39168,
+              "rx_stream_bytes": 36700160,
+              "tx_stream_bytes": 36700160
+            },
+            "prior_snapshot_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd",
+            "unit": "unit-c"
+          }
+        ]
+      },
+      "refund_permitted": false,
+      "role": "native",
+      "runtime_archive_observed": false,
+      "schema": "meshticulum.public-parent-snapshot.v1",
+      "scope_canonical_sha256": "6f9a43202628d0daeaa1c6e2699719180a0d1338795f123cb23df0e3cb368083",
+      "scoped_rows_complete": true,
+      "sqlite_parser": {
+        "native_path_opened": false,
+        "query_only_memory": true,
+        "source": "bounded_held_bytes",
+        "wal_header_normalized_in_memory_only": true,
+        "whole_sqlite_consistency_proved": false
+      },
+      "status": "scoped_rows_observed",
+      "unit": "unit-a"
+    },
+    "unit-b": {
+      "MCU_observations": null,
+      "actual_plus_prepaid_sum_permitted": false,
+      "complete_global_debt": false,
+      "current_host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+      "database_writes": false,
+      "detail": {
+        "approval_bytes_match_enrollment": true,
+        "claim_count": 0,
+        "claims": [],
+        "enrollment": {
+          "deadline_monotonic_us": 259195250999,
+          "history_binding_sha256": "c24ba429863bd38e81640c77bc56bf33e5b6a5e363ec3aee0f1b2a14e909f91a",
+          "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+          "original_epoch_us": 1791799381236614,
+          "original_monotonic_us": 258684706763,
+          "row_sha256": "c81a347defdc3f8ccb16f71c10223c01a0667af6229d5a7c585c712c46f17634",
+          "unit": "unit-b"
+        },
+        "full_prepaid_caps": {
+          "estimated_airtime_us": 0,
+          "ip_frames": 0,
+          "radio_attempts": 0,
+          "rx_stream_bytes": 0,
+          "tx_stream_bytes": 0
+        },
+        "limit": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "prepared_count": 0,
+        "prior_plus_prepaid_caps": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "resource_count": 0,
+        "resources": [],
+        "start_count": 0,
+        "stored_clock": {
+          "epoch_us": 1791799391335145,
+          "monotonic_us": 258694805293
+        },
+        "underlying_native_plan_correspondence_verified": false
+      },
+      "eligible_for_enrollment": false,
+      "expected_database_sha256": "872336ed1ebf330eb309127a9e3f4f11ac601b1e5bff7cb798a70e7d27b68266",
+      "files": {
+        "native.sqlite": {
+          "bytes": 49152,
+          "device": 66307,
+          "inode": 3681718,
+          "mode": 384,
+          "sha256": "872336ed1ebf330eb309127a9e3f4f11ac601b1e5bff7cb798a70e7d27b68266",
+          "uid": 0
+        },
+        "native.sqlite.approval": {
+          "bytes": 65,
+          "device": 66307,
+          "inode": 3681719,
+          "mode": 384,
+          "sha256": "693708057bd102d327603b2ad91de90987b0982b275b6c468e4b85fd6b7c3cc9",
+          "uid": 0
+        },
+        "native.sqlite.owner": {
+          "bytes": 0,
+          "device": 66307,
+          "inode": 3681717,
+          "mode": 384,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "uid": 0
+        }
+      },
+      "legacy_actual_usage_included": false,
+      "legacy_relation": null,
+      "legacy_runs": null,
+      "legacy_scoped_rows_complete": null,
+      "live_terminal_ownership_observed": false,
+      "observation_deadline_monotonic_us": 259299711783,
+      "observation_expires_epoch_us": 1791799996241638,
+      "observation_final_epoch_us": 1791799961316215,
+      "observation_final_monotonic_us": 259264786360,
+      "observation_original_epoch_us": 1791799961310781,
+      "observation_original_monotonic_us": 259264780926,
+      "owner_uid": 0,
+      "parent_id": "57339cca60ddf62b41eafac60147a252",
+      "pending_marker_matches_policy": null,
+      "pending_unknown": false,
+      "physical_quiescence_observed": false,
+      "policy_controller_boot_id": "20cfff28-7827-43ed-ac44-02c74e4c320d",
+      "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+      "policy_expired_at_observation": true,
+      "policy_original_deadline_monotonic_us": 887987129827,
+      "policy_original_expires_epoch_us": 1791799891780850,
+      "policy_original_issued_epoch_us": 1791799296780850,
+      "policy_original_monotonic_us": 887392129827,
+      "policy_row_sha256": "d73b259d682554708128e87d90afc00bbc0e5e5e229b2351aab0ff1a2e2ef6af",
+      "prior_lineage": {
+        "deduplication_permitted": false,
+        "global_snapshot_sha256": "47d34bb6cccfe99309632a09456fdd67285ed924ec3f8549be2cbeb9eda4992f",
+        "lineage_verified": false,
+        "units": [
+          {
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "prior_debt": {
+              "estimated_airtime_us": 8340000000,
+              "ip_frames": 20480,
+              "radio_attempts": 35584,
+              "rx_stream_bytes": 10485760,
+              "tx_stream_bytes": 10485760
+            },
+            "prior_snapshot_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f",
+            "unit": "unit-a"
+          },
+          {
+            "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+            "prior_debt": {
+              "estimated_airtime_us": 3120000000,
+              "ip_frames": 92160,
+              "radio_attempts": 13312,
+              "rx_stream_bytes": 47185920,
+              "tx_stream_bytes": 47185920
+            },
+            "prior_snapshot_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992",
+            "unit": "unit-b"
+          },
+          {
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "prior_debt": {
+              "estimated_airtime_us": 9180000000,
+              "ip_frames": 71680,
+              "radio_attempts": 39168,
+              "rx_stream_bytes": 36700160,
+              "tx_stream_bytes": 36700160
+            },
+            "prior_snapshot_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd",
+            "unit": "unit-c"
+          }
+        ]
+      },
+      "refund_permitted": false,
+      "role": "native",
+      "schema": "meshticulum.public-parent-snapshot.v1",
+      "scope_canonical_sha256": "1ebf9c7b4073031c791b7e1f3cc43071b33b5d72706a66186a34b2849e6ebf5a",
+      "scoped_rows_complete": true,
+      "sqlite_parser": {
+        "native_path_opened": false,
+        "query_only_memory": true,
+        "source": "bounded_held_bytes",
+        "wal_header_normalized_in_memory_only": true,
+        "whole_sqlite_consistency_proved": false
+      },
+      "status": "scoped_rows_observed",
+      "unit": "unit-b"
+    },
+    "unit-c": {
+      "MCU_observations": null,
+      "actual_plus_prepaid_sum_permitted": false,
+      "complete_global_debt": false,
+      "current_host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+      "database_writes": false,
+      "declared_manifest_sha256": "3476737fe14be9b1f34ff6ba938d1fd2db4a489c787a331e05b63d482fbab40e",
+      "declared_runtime_sha256": "2d72dbbe1cee7f3e6cb5480ab64977d3a98553feed1850d67c34a90ee38d7514",
+      "detail": {
+        "approval_bytes_match_enrollment": true,
+        "claim_count": 1,
+        "claims": [
+          {
+            "application_deadline_monotonic_us": 255879652305,
+            "child": {
+              "application_expires_epoch_us": 1791799586932590,
+              "campaign_id": "63afd42eeab96eb40fd4c0db41adf324",
+              "child_digest": "035e4fbf0e8820c9c2367fadd2cfb49a9ff7600f6ce20981f664fbbb987d89da",
+              "cipher_frame_limit": 512,
+              "format": "MR1.request",
+              "full_caps": {
+                "estimated_airtime_us": 60000000,
+                "ip_frames": 0,
+                "radio_attempts": 256,
+                "rx_stream_bytes": 0,
+                "tx_stream_bytes": 0
+              },
+              "grant_digest": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+              "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+              "object": {
+                "bytes": 74,
+                "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+              },
+              "plan_sha256": "ad6c71bdad354fe13bd8174ca0c11796e7f367acfbfd364a6cd4664b6151951d",
+              "receiver": "unit-c",
+              "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+              "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+              "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+              "sender": "unit-a",
+              "sends": false,
+              "transport": "lora",
+              "unit": "unit-c"
+            },
+            "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+            "native_claim_id": "d3a7989ef1564bf4f1c250ec9e937e7b962764f1dc97b71e86af156970da3c81",
+            "native_plan_sha256": "3386e5456428f6f2222571f98c9d191dc627e17b1114604d18d71fd137d0a7a7",
+            "prepared": true,
+            "prepared_row_sha256": "98c2e1b462de5cf866acac51614ba06990a7b9db4478c8e613b946a050d68dfa",
+            "resource_id": "217b8fde88fc051e33ed902d38b1db11f1e8272e4d2c3ee858fe65aa1af33471",
+            "row_sha256": "6941737bc5888f33ae5bde76317a9a8a5dbe6ea20e9abedddcdd14c52c545435",
+            "start_row_sha256": "87c521de4b099026df32e483b60275b7b214cbb084b0982f1ecd97ae1039964f",
+            "started": true
+          }
+        ],
+        "enrollment": {
+          "deadline_monotonic_us": 256184500569,
+          "history_binding_sha256": "e00ced5c552a7b1057e24bb9d0ec1f32df9ca99789e23d8985ea028669333bbb",
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "original_epoch_us": 1791799365286456,
+          "original_monotonic_us": 255658006175,
+          "row_sha256": "4f87ee17dfca8595ab91517774c85d04ab8b9920f2464d3d44e70fa8a9f4c8b8",
+          "unit": "unit-c"
+        },
+        "full_prepaid_caps": {
+          "estimated_airtime_us": 60000000,
+          "ip_frames": 0,
+          "radio_attempts": 256,
+          "rx_stream_bytes": 0,
+          "tx_stream_bytes": 0
+        },
+        "limit": {
+          "estimated_airtime_us": 9300000000,
+          "ip_frames": 71680,
+          "radio_attempts": 39680,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "prepared_count": 1,
+        "prior_plus_prepaid_caps": {
+          "estimated_airtime_us": 9240000000,
+          "ip_frames": 71680,
+          "radio_attempts": 39424,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "resource_count": 1,
+        "resources": [
+          {
+            "application_deadline_monotonic_us": 255879652305,
+            "application_expires_epoch_us": 1791799586932590,
+            "original_epoch_us": 1791799410807376,
+            "original_monotonic_us": 255703527091,
+            "resource_id": "217b8fde88fc051e33ed902d38b1db11f1e8272e4d2c3ee858fe65aa1af33471",
+            "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+            "row_sha256": "1cea379760426d55998134fa0f386f387df596fe45ddc1a1fc8bfa9a6584932b"
+          }
+        ],
+        "start_count": 1,
+        "stored_clock": {
+          "epoch_us": 1791799416916522,
+          "monotonic_us": 255709636238
+        },
+        "underlying_native_plan_correspondence_verified": false
+      },
+      "eligible_for_enrollment": false,
+      "expected_database_sha256": "d76086b9ab30a64f5910208b8aca1abc490630c416648d76e3f4a0a12d670fd6",
+      "files": {
+        "native.sqlite": {
+          "bytes": 49152,
+          "device": 66305,
+          "inode": 11028233,
+          "mode": 384,
+          "sha256": "d76086b9ab30a64f5910208b8aca1abc490630c416648d76e3f4a0a12d670fd6",
+          "uid": 0
+        },
+        "native.sqlite.approval": {
+          "bytes": 65,
+          "device": 66305,
+          "inode": 11028234,
+          "mode": 384,
+          "sha256": "89b47b2c1d669bd5dc708fb770957a83310817460e4005ca047bcadf83e1f3e1",
+          "uid": 0
+        },
+        "native.sqlite.owner": {
+          "bytes": 0,
+          "device": 66305,
+          "inode": 11028232,
+          "mode": 384,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "uid": 0
+        }
+      },
+      "legacy_actual_usage_included": true,
+      "legacy_relation": {
+        "complete_run_coverage": false,
+        "links": [
+          {
+            "actual_cost": {
+              "estimated_airtime_us": 103888,
+              "ip_frames": 0,
+              "radio_attempts": 8,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "application_deadline_monotonic_us": 255879652305,
+            "application_expires_epoch_us": 1791799586932590,
+            "child_digest": "035e4fbf0e8820c9c2367fadd2cfb49a9ff7600f6ce20981f664fbbb987d89da",
+            "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+            "full_prepaid_caps": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "native_claim_id": "d3a7989ef1564bf4f1c250ec9e937e7b962764f1dc97b71e86af156970da3c81",
+            "no_refund": true,
+            "relation": "same_endpoint_allocation",
+            "resource_id": "217b8fde88fc051e33ed902d38b1db11f1e8272e4d2c3ee858fe65aa1af33471",
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "separate_debt_sum_permitted": false,
+            "transport": "lora"
+          }
+        ],
+        "native_claims_without_scoped_actuals": [],
+        "scoped_linkage_complete": true,
+        "serialized_cross_host_provenance_qualified": false
+      },
+      "legacy_runs": [
+        {
+          "actual_cost": {
+            "estimated_airtime_us": 103888,
+            "ip_frames": 0,
+            "radio_attempts": 8,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "admitted_caps": {
+            "estimated_airtime_us": 60000000,
+            "ip_frames": 0,
+            "radio_attempts": 256,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "conservative_unknown_caps": {
+            "estimated_airtime_us": 60000000,
+            "ip_frames": 0,
+            "radio_attempts": 256,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "files": {
+            "active": {
+              "bytes": 8,
+              "device": 66305,
+              "inode": 11028243,
+              "mode": 384,
+              "sha256": "8b86d3b824a855c1b156ba78756ca36a80a6f1b1290204878987a662e0951324",
+              "uid": 0
+            },
+            "attempts.sqlite": {
+              "bytes": 12288,
+              "device": 66305,
+              "inode": 11028251,
+              "mode": 384,
+              "sha256": "e69c1a16cd88dd1e9c58432f7975aa5728a2fe809ec2c38ac184d25fe78831d9",
+              "uid": 0
+            },
+            "attempts.sqlite.owner": {
+              "bytes": 0,
+              "device": 66305,
+              "inode": 11028252,
+              "mode": 384,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "uid": 0
+            },
+            "grant.json": {
+              "bytes": 1326,
+              "device": 66305,
+              "inode": 11028241,
+              "mode": 384,
+              "sha256": "9a0dc6bff76e21a11b3343986cb5a6919c98819f275888dc679753ff3c69a1bc",
+              "uid": 0
+            },
+            "job.json": {
+              "bytes": 407,
+              "device": 66305,
+              "inode": 11028247,
+              "mode": 384,
+              "sha256": "1774a9af25b014e89c2fec9f7828fefb954926839569a93597ecc0a65b0a0f26",
+              "uid": 0
+            },
+            "provision.json": {
+              "bytes": 3135,
+              "device": 66305,
+              "inode": 11028244,
+              "mode": 384,
+              "sha256": "09152039c69d1792f738c690d2c694639d794bcdb332f652c2233ece5d869a62",
+              "uid": 0
+            },
+            "result.json": {
+              "bytes": 13567,
+              "device": 66305,
+              "inode": 11028229,
+              "mode": 384,
+              "sha256": "cc6f4391897801bf85dcbfbc0f55f469e2b05269546177e7467869492301b278",
+              "uid": 0
+            },
+            "wire.sqlite": {
+              "bytes": 8192,
+              "device": 66305,
+              "inode": 11028248,
+              "mode": 384,
+              "sha256": "efec17acebe9dc8a5c49b2fb15a01264aca3353fd243c1da6aaa7e23474cf573",
+              "uid": 0
+            }
+          },
+          "grant": {
+            "application_deadline_monotonic_us": 255879652305,
+            "application_expires_epoch_us": 1791799586932590,
+            "caps": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "direction": 1,
+            "format": "MR1.request",
+            "max_frames": 512
+          },
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "journal": {
+            "actual_cost": {
+              "estimated_airtime_us": 103888,
+              "ip_frames": 0,
+              "radio_attempts": 8,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "attempts": [
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "7db454563fec0666ecb9ae9524f24abd729b8b9629692ba7444877c7a8f88bf7",
+                "packet_sha256": "209cd7a876827bb90fd5518df9038af59802f29f6908615167b87573b7a5740f",
+                "request": 1791799417128961,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "1e2e07e6d83210cd4ed3b24236e7583a3c3da6335b76992a618dcbc566747fa8",
+                "packet_sha256": "2a3342438dcc8a9dc72fff5c095025b6f600b1bd7d16d563e08523aff377e184",
+                "request": 1791799417628605,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "02055a3fc717e96221bc6293e53a21900307458adfe0b861ad1612d63880e851",
+                "packet_sha256": "f2430dcff4dbfcef41f666ab7117f69d0841982c6d564b2a0fda558b09340406",
+                "request": 1791799418129355,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "c39678efbd60113711c376858d46480c86ebc3bbb2bf889481a5841179f690af",
+                "packet_sha256": "b5640627e9bf03ebca5f1d42d948424c926c73e63613da4d0d44aca7e875a86c",
+                "request": 1791799418635777,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "7149f00f0aeb0f4932ce4161d06e528a5220e3abb9249edf24d26aac204e65ff",
+                "packet_sha256": "6ba45a210cb8224369db441946d1e14821ebcee52f15d3c824e0cab420165b91",
+                "request": 1791799419137026,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "7b951153bb6d853277f6a452573327ed91c30719dc9173c150c36abfc70eb711",
+                "packet_sha256": "dd262f0ccaf7d745323cade6a06cc45cd19aecda389d02bb57de6f14fe296dfc",
+                "request": 1791799419640310,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "68f7440f369b164f263c0b0af6f873fa4213bac68e55962d73062411d6ce0572",
+                "packet_sha256": "4a56a8225631e7a890c00523468c5fed51d098eaf7b3d0c94e72350528dcd7e9",
+                "request": 1791799420146897,
+                "state": "RF_DONE"
+              },
+              {
+                "bytes": 70,
+                "estimated_us": 12986,
+                "evidence_sha256": "89d8b5de198bb0a1e2c996587accacdec0098f9ea403de3184d40fdcc711caca",
+                "packet_sha256": "54dd74a460a3f72dada0c88a0049545ee1bd67377752e7f133785041bba970ec",
+                "request": 1791799420647370,
+                "state": "RF_DONE"
+              }
+            ],
+            "has_unknown_or_pending": false,
+            "owner": {
+              "binding": "0f7fe6ee5effc940e2796c59f7ebe5e92a830ab00da28773e9d0ba5da6b2401b",
+              "fenced": false,
+              "max_airtime_us": 60000000,
+              "max_attempts": 256,
+              "request": 1791799420647370
+            },
+            "rows_sha256": "1656a95c214da70fa1c53f4d40ac6cceac65a19fb6b08121476c3f75e9bd12c7"
+          },
+          "live_terminal_ownership_observed": false,
+          "parent_prepayment_verified": false,
+          "parent_reference": {
+            "child_descriptor_sha256": "035e4fbf0e8820c9c2367fadd2cfb49a9ff7600f6ce20981f664fbbb987d89da",
+            "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+            "full_caps": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "native_claim_id": "d3a7989ef1564bf4f1c250ec9e937e7b962764f1dc97b71e86af156970da3c81",
+            "native_plan_sha256": "3386e5456428f6f2222571f98c9d191dc627e17b1114604d18d71fd137d0a7a7",
+            "original_plan_sha256": "ad6c71bdad354fe13bd8174ca0c11796e7f367acfbfd364a6cd4664b6151951d",
+            "parent_id": "57339cca60ddf62b41eafac60147a252",
+            "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+            "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "schema": "meshticulum.native-parent-claim.v1",
+            "unit": "unit-c",
+            "verified_against_parent_ledger": false
+          },
+          "physical_quiescence_observed": false,
+          "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+          "status": "scoped_rows_observed",
+          "terminal_metadata": {
+            "command_sha256": "c544d817b3d0504abe0370fd3659e1de2d20d51555bb3e0b45387c278ecb0013",
+            "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "pid": 1223409,
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "schema": "meshticulum.native-public-job.v1",
+            "start_ticks": 25570899,
+            "transport": "lora",
+            "unit": "unit-c"
+          },
+          "transport": "lora",
+          "wire": {
+            "binding": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "bitmap": "0000000000000000000000000000000000000000000000000000000000000000",
+            "boot": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "deadline": 255879652309,
+            "direction": 1,
+            "epoch": 1791799420641058,
+            "high": 0,
+            "mono": 255713360774,
+            "only_row": 1,
+            "retired": 1,
+            "tx": 8
+          }
+        }
+      ],
+      "legacy_scope_canonical_sha256": "ed9f2ff0749b6f1de1d879e843599a87cb8a9b38c5a64f75c17e88cb4233f215",
+      "legacy_scoped_rows_complete": true,
+      "live_terminal_ownership_observed": false,
+      "observation_deadline_monotonic_us": 256284938078,
+      "observation_expires_epoch_us": 1791799992218362,
+      "observation_final_epoch_us": 1791799957286676,
+      "observation_final_monotonic_us": 256250006392,
+      "observation_original_epoch_us": 1791799957267294,
+      "observation_original_monotonic_us": 256249987010,
+      "owner_uid": 0,
+      "parent_id": "57339cca60ddf62b41eafac60147a252",
+      "pending_marker_matches_policy": null,
+      "pending_unknown": false,
+      "physical_quiescence_observed": false,
+      "policy_controller_boot_id": "20cfff28-7827-43ed-ac44-02c74e4c320d",
+      "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+      "policy_expired_at_observation": true,
+      "policy_original_deadline_monotonic_us": 887987129827,
+      "policy_original_expires_epoch_us": 1791799891780850,
+      "policy_original_issued_epoch_us": 1791799296780850,
+      "policy_original_monotonic_us": 887392129827,
+      "policy_row_sha256": "d73b259d682554708128e87d90afc00bbc0e5e5e229b2351aab0ff1a2e2ef6af",
+      "prior_lineage": {
+        "deduplication_permitted": false,
+        "global_snapshot_sha256": "47d34bb6cccfe99309632a09456fdd67285ed924ec3f8549be2cbeb9eda4992f",
+        "lineage_verified": false,
+        "units": [
+          {
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "prior_debt": {
+              "estimated_airtime_us": 8340000000,
+              "ip_frames": 20480,
+              "radio_attempts": 35584,
+              "rx_stream_bytes": 10485760,
+              "tx_stream_bytes": 10485760
+            },
+            "prior_snapshot_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f",
+            "unit": "unit-a"
+          },
+          {
+            "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+            "prior_debt": {
+              "estimated_airtime_us": 3120000000,
+              "ip_frames": 92160,
+              "radio_attempts": 13312,
+              "rx_stream_bytes": 47185920,
+              "tx_stream_bytes": 47185920
+            },
+            "prior_snapshot_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992",
+            "unit": "unit-b"
+          },
+          {
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "prior_debt": {
+              "estimated_airtime_us": 9180000000,
+              "ip_frames": 71680,
+              "radio_attempts": 39168,
+              "rx_stream_bytes": 36700160,
+              "tx_stream_bytes": 36700160
+            },
+            "prior_snapshot_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd",
+            "unit": "unit-c"
+          }
+        ]
+      },
+      "refund_permitted": false,
+      "role": "native",
+      "runtime_archive_observed": false,
+      "schema": "meshticulum.public-parent-snapshot.v1",
+      "scope_canonical_sha256": "e537ad1aaa4c55bee4094f811f6ff2e6711e0456fdcd18dd348b5a5b09e3a6fb",
+      "scoped_rows_complete": true,
+      "sqlite_parser": {
+        "native_path_opened": false,
+        "query_only_memory": true,
+        "source": "bounded_held_bytes",
+        "wal_header_normalized_in_memory_only": true,
+        "whole_sqlite_consistency_proved": false
+      },
+      "status": "scoped_rows_observed",
+      "unit": "unit-c"
+    }
+  },
+  "outcomes": {
+    "unit-a": {
+      "3ef93b13ec6966964c2f73d1dbd0a176": {
+        "airtime_basis": "LoRa source estimate; raw driver completion timings are separate",
+        "application_data_channel": "exclusive local radio only",
+        "attempt_journal": {
+          "attempts": 0,
+          "fenced": false,
+          "recovered_unknown": 0,
+          "reserved_estimated_airtime_us": 0
+        },
+        "complete": false,
+        "disarmed_on_exit": true,
+        "end_monotonic_us": 258774668476,
+        "error": "WireError:reliable_flow_startup_grant_absent",
+        "facts_after": {
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-a"
+        },
+        "facts_before": {
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-a"
+        },
+        "flow": {
+          "acked_frames": 0,
+          "attempt_journal": {
+            "attempts": 0,
+            "fenced": false,
+            "recovered_unknown": 0,
+            "reserved_estimated_airtime_us": 0
+          },
+          "complete": false,
+          "counts": {},
+          "duplicates": 0,
+          "events": [],
+          "received_bytes": 0,
+          "retransmits": 0,
+          "rto_seconds": 0.5,
+          "scheduler": {
+            "classes": {
+              "bulk": 0,
+              "control": 0,
+              "interactive": 0
+            },
+            "closed": true,
+            "control_queued_bytes": 0,
+            "control_queued_frames": 0,
+            "control_tokens_us": 6000000,
+            "events": {
+              "accepted": 0,
+              "dropped": 0,
+              "enqueued": 0,
+              "expired": 0,
+              "refused": 0,
+              "unknown": 0
+            },
+            "fenced_flows": 0,
+            "flows": 0,
+            "queued_bytes": 0,
+            "queued_frames": 0,
+            "retired_flows": 1,
+            "unresolved_attempts": 0
+          },
+          "startup_pending": false,
+          "timing_policy": {
+            "ack_delay_seconds": 0.01,
+            "burst_frames": 4,
+            "burst_max_hold_us": 500000,
+            "burst_quiet_us": 250000,
+            "control_rate_us_per_second": 1000000,
+            "persist_interval_seconds": 0.5,
+            "receive_gap_us": 71986,
+            "sender_control_hold_us": 571986
+          }
+        },
+        "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+        "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+        "measured_eirp_dbm": null,
+        "measured_energy_joules": null,
+        "native_job": {
+          "command_sha256": "e6aec6049af62845b22ef5b2778e04fb8096bf5661aa2f95c2dff66620166697",
+          "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "pid": 706919,
+          "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+          "schema": "meshticulum.native-public-job.v1",
+          "start_ticks": 25876809,
+          "transport": "lora",
+          "unit": "unit-a"
+        },
+        "object": {
+          "bytes": 74,
+          "chunk_index": 0,
+          "object_id": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a",
+          "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+        },
+        "original_application_deadline_us": 258939640216,
+        "original_application_expires_epoch_us": 1791799586932590,
+        "parent": {
+          "application_deadline_monotonic_us": 258939640216,
+          "application_expires_epoch_us": 1791799586932590,
+          "child_caps": {
+            "cost": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "digest": "f72aabe79b9830fd2783b9b1a2379963f7b7e6afd723a82d9837c4d04eb3e0c3",
+            "metadata": {
+              "application_expires_epoch_us": 1791799586932590,
+              "campaign_id": "63afd42eeab96eb40fd4c0db41adf324",
+              "cipher_frame_limit": 512,
+              "format": "MR1.request",
+              "grant_digest": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+              "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+              "object": {
+                "bytes": 74,
+                "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+              },
+              "parent_id": "57339cca60ddf62b41eafac60147a252",
+              "plan_sha256": "2df5212ee301e64a75e118710fa3e1b1e244e179761a6d987c6ef41ff1fd1b5d",
+              "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+              "profile": {
+                "bandwidth_hz": 500000,
+                "chip_power_dbm": 0,
+                "coding_rate": 5,
+                "frequency_hz": 921375000,
+                "lease_ms": 90000,
+                "max_boot_attempts": 256,
+                "max_boot_estimated_airtime_us": 60000000,
+                "preamble": 8,
+                "spreading_factor": 5,
+                "sync_word": 66
+              },
+              "receiver": "unit-c",
+              "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+              "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+              "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+              "sender": "unit-a",
+              "sends": true,
+              "source_run_id": null,
+              "transport": "lora",
+              "unit": "unit-a"
+            }
+          },
+          "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+          "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "native_claim_id": "ebfbfdd8004375106b70c3d30f412cbaddb711f461893897e2c647af6c96f9c4",
+          "native_plan_sha256": "9c5b224fbb232626eaf53764b9433e1b34d4a8170c6ddb2c0563528ddb26fa09",
+          "original_plan_sha256": "2df5212ee301e64a75e118710fa3e1b1e244e179761a6d987c6ef41ff1fd1b5d",
+          "parent_id": "57339cca60ddf62b41eafac60147a252",
+          "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+          "prepared": true,
+          "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+          "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+          "schema": "meshticulum.native-parent-start.v1",
+          "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+          "started": true,
+          "unit": "unit-a"
+        },
+        "parent_caps": {
+          "claims": 1,
+          "debt": {
+            "estimated_airtime_us": 8400000000,
+            "ip_frames": 20480,
+            "radio_attempts": 35840,
+            "rx_stream_bytes": 10485760,
+            "tx_stream_bytes": 10485760
+          },
+          "parent_id": "57339cca60ddf62b41eafac60147a252",
+          "physical_handoff_proven": false,
+          "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+          "prepared": 1,
+          "starts": 1,
+          "uncertain": false,
+          "unit": "unit-a"
+        },
+        "private_admission": false,
+        "publisher_verified": false,
+        "radio": {
+          "boot_attempts": 0,
+          "boot_reserved_estimated_airtime_us": 0,
+          "disarmed": true,
+          "firmware": "mtb1-5577916527",
+          "mcu_boot": "000008f6a51b5bf80000000000000027",
+          "usb_serial": "F8:5B:1B:A5:F6:08"
+        },
+        "resource": {
+          "max_rss_linux_kib": 35624,
+          "system_cpu_seconds": 0.52917,
+          "user_cpu_seconds": 4.367627
+        },
+        "schema": "meshticulum.physical-service-run.v1",
+        "sends": true,
+        "service_format": "MR1.request",
+        "service_kind": "knowledge",
+        "services_after": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "services_before": {
+          "sage-lantern-llm.service": "inactive",
+          "sage-lantern-mesh-runtime.service": "inactive",
+          "sage-lantern-personal-sage.service": "inactive",
+          "sage-lantern-voice-loop.service": "inactive"
+        },
+        "session_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+        "start_epoch_us": 1791799415750731,
+        "start_monotonic_us": 258768458364,
+        "stop_requested": false,
+        "unit": "unit-a"
+      }
+    },
+    "unit-b": {},
+    "unit-c": {
+      "3ef93b13ec6966964c2f73d1dbd0a176": {
+        "airtime_basis": "LoRa source estimate; raw driver completion timings are separate",
+        "application_data_channel": "exclusive local radio only",
+        "attempt_journal": {
+          "attempts": 8,
+          "fenced": false,
+          "recovered_unknown": 0,
+          "reserved_estimated_airtime_us": 103888
+        },
+        "complete": false,
+        "disarmed_on_exit": true,
+        "end_monotonic_us": 255713424650,
+        "error": "WireError:reliable_flow_startup_grant_unanswered",
+        "facts_after": {
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "9492195",
+              "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+              "MainPID": "833"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "11578324",
+              "InvocationID": "34edf2382564498ab081451564db093e",
+              "MainPID": "1347"
+            },
+            "sage-lantern-vlm.service": {
+              "ExecMainStartTimestampMonotonic": "9507094",
+              "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+              "MainPID": "841"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "170825468927",
+              "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+              "MainPID": "910093"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "active",
+            "sage-lantern-personal-sage.service": "active",
+            "sage-lantern-vlm.service": "active",
+            "sage-lantern-voice-loop.service": "active"
+          },
+          "unit": "unit-c"
+        },
+        "facts_before": {
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "9492195",
+              "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+              "MainPID": "833"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "11578324",
+              "InvocationID": "34edf2382564498ab081451564db093e",
+              "MainPID": "1347"
+            },
+            "sage-lantern-vlm.service": {
+              "ExecMainStartTimestampMonotonic": "9507094",
+              "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+              "MainPID": "841"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "170825468927",
+              "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+              "MainPID": "910093"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "active",
+            "sage-lantern-personal-sage.service": "active",
+            "sage-lantern-vlm.service": "active",
+            "sage-lantern-voice-loop.service": "active"
+          },
+          "unit": "unit-c"
+        },
+        "flow": {
+          "acked_frames": 0,
+          "attempt_journal": {
+            "attempts": 8,
+            "fenced": false,
+            "recovered_unknown": 0,
+            "reserved_estimated_airtime_us": 103888
+          },
+          "complete": false,
+          "counts": {
+            "tx_RF_DONE": 8
+          },
+          "duplicates": 0,
+          "events": [
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 16814,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255709882367,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "209cd7a876827bb90fd5518df9038af59802f29f6908615167b87573b7a5740f",
+              "request": 1791799417128961,
+              "worker_call_elapsed_us": 37772
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 16716,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255710381904,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "2a3342438dcc8a9dc72fff5c095025b6f600b1bd7d16d563e08523aff377e184",
+              "request": 1791799417628605,
+              "worker_call_elapsed_us": 37583
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 16622,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255710881904,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "f2430dcff4dbfcef41f666ab7117f69d0841982c6d564b2a0fda558b09340406",
+              "request": 1791799418129355,
+              "worker_call_elapsed_us": 36740
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 16706,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255711389321,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "b5640627e9bf03ebca5f1d42d948424c926c73e63613da4d0d44aca7e875a86c",
+              "request": 1791799418635777,
+              "worker_call_elapsed_us": 37842
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 17826,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255711890648,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "6ba45a210cb8224369db441946d1e14821ebcee52f15d3c824e0cab420165b91",
+              "request": 1791799419137026,
+              "worker_call_elapsed_us": 37932
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 17897,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255712396118,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "dd262f0ccaf7d745323cade6a06cc45cd19aecda389d02bb57de6f14fe296dfc",
+              "request": 1791799419640310,
+              "worker_call_elapsed_us": 40256
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 16686,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255712899919,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "4a56a8225631e7a890c00523468c5fed51d098eaf7b3d0c94e72350528dcd7e9",
+              "request": 1791799420146897,
+              "worker_call_elapsed_us": 37294
+            },
+            {
+              "bytes": 70,
+              "driver_elapsed_clock_basis": "host_monotonic",
+              "driver_elapsed_us": 16691,
+              "driver_error": 0,
+              "driver_estimated_airtime_us": 10896,
+              "driver_irq_flags": 1,
+              "event": "tx",
+              "mono_us": 255713400694,
+              "outcome": "RF_DONE",
+              "outer_kind": "ACK",
+              "packet_sha256": "54dd74a460a3f72dada0c88a0049545ee1bd67377752e7f133785041bba970ec",
+              "request": 1791799420647370,
+              "worker_call_elapsed_us": 37611
+            }
+          ],
+          "received_bytes": 0,
+          "retransmits": 0,
+          "rto_seconds": 0.5,
+          "scheduler": {
+            "classes": {
+              "bulk": 0,
+              "control": 0,
+              "interactive": 0
+            },
+            "closed": true,
+            "control_queued_bytes": 0,
+            "control_queued_frames": 0,
+            "control_tokens_us": 5947980,
+            "events": {
+              "accepted": 8,
+              "dropped": 0,
+              "enqueued": 8,
+              "expired": 0,
+              "refused": 0,
+              "unknown": 0
+            },
+            "fenced_flows": 0,
+            "flows": 0,
+            "queued_bytes": 0,
+            "queued_frames": 0,
+            "retired_flows": 1,
+            "unresolved_attempts": 0
+          },
+          "startup_pending": true,
+          "timing_policy": {
+            "ack_delay_seconds": 0.01,
+            "burst_frames": 4,
+            "burst_max_hold_us": 500000,
+            "burst_quiet_us": 250000,
+            "control_rate_us_per_second": 1000000,
+            "persist_interval_seconds": 0.5,
+            "receive_gap_us": 71986,
+            "sender_control_hold_us": 571986
+          }
+        },
+        "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+        "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+        "measured_eirp_dbm": null,
+        "measured_energy_joules": null,
+        "native_job": {
+          "command_sha256": "c544d817b3d0504abe0370fd3659e1de2d20d51555bb3e0b45387c278ecb0013",
+          "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "pid": 1223409,
+          "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+          "schema": "meshticulum.native-public-job.v1",
+          "start_ticks": 25570899,
+          "transport": "lora",
+          "unit": "unit-c"
+        },
+        "object": {
+          "bytes": 74,
+          "chunk_index": 0,
+          "object_id": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a",
+          "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+        },
+        "original_application_deadline_us": 255879652305,
+        "original_application_expires_epoch_us": 1791799586932590,
+        "parent": {
+          "application_deadline_monotonic_us": 255879652305,
+          "application_expires_epoch_us": 1791799586932590,
+          "child_caps": {
+            "cost": {
+              "estimated_airtime_us": 60000000,
+              "ip_frames": 0,
+              "radio_attempts": 256,
+              "rx_stream_bytes": 0,
+              "tx_stream_bytes": 0
+            },
+            "digest": "035e4fbf0e8820c9c2367fadd2cfb49a9ff7600f6ce20981f664fbbb987d89da",
+            "metadata": {
+              "application_expires_epoch_us": 1791799586932590,
+              "campaign_id": "63afd42eeab96eb40fd4c0db41adf324",
+              "cipher_frame_limit": 512,
+              "format": "MR1.request",
+              "grant_digest": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+              "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+              "object": {
+                "bytes": 74,
+                "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+              },
+              "parent_id": "57339cca60ddf62b41eafac60147a252",
+              "plan_sha256": "ad6c71bdad354fe13bd8174ca0c11796e7f367acfbfd364a6cd4664b6151951d",
+              "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+              "profile": {
+                "bandwidth_hz": 500000,
+                "chip_power_dbm": 0,
+                "coding_rate": 5,
+                "frequency_hz": 921375000,
+                "lease_ms": 90000,
+                "max_boot_attempts": 256,
+                "max_boot_estimated_airtime_us": 60000000,
+                "preamble": 8,
+                "spreading_factor": 5,
+                "sync_word": 66
+              },
+              "receiver": "unit-c",
+              "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+              "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+              "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+              "sender": "unit-a",
+              "sends": false,
+              "source_run_id": null,
+              "transport": "lora",
+              "unit": "unit-c"
+            }
+          },
+          "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+          "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "native_claim_id": "d3a7989ef1564bf4f1c250ec9e937e7b962764f1dc97b71e86af156970da3c81",
+          "native_plan_sha256": "3386e5456428f6f2222571f98c9d191dc627e17b1114604d18d71fd137d0a7a7",
+          "original_plan_sha256": "ad6c71bdad354fe13bd8174ca0c11796e7f367acfbfd364a6cd4664b6151951d",
+          "parent_id": "57339cca60ddf62b41eafac60147a252",
+          "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+          "prepared": true,
+          "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+          "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+          "schema": "meshticulum.native-parent-start.v1",
+          "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+          "started": true,
+          "unit": "unit-c"
+        },
+        "parent_caps": {
+          "claims": 1,
+          "debt": {
+            "estimated_airtime_us": 9240000000,
+            "ip_frames": 71680,
+            "radio_attempts": 39424,
+            "rx_stream_bytes": 36700160,
+            "tx_stream_bytes": 36700160
+          },
+          "parent_id": "57339cca60ddf62b41eafac60147a252",
+          "physical_handoff_proven": false,
+          "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+          "prepared": 1,
+          "starts": 1,
+          "uncertain": false,
+          "unit": "unit-c"
+        },
+        "private_admission": false,
+        "publisher_verified": false,
+        "radio": {
+          "model": "Waveshare SX1262 HF",
+          "spi": "/dev/spidev0.0"
+        },
+        "resource": {
+          "max_rss_linux_kib": 36244,
+          "system_cpu_seconds": 0.31564,
+          "user_cpu_seconds": 2.840767
+        },
+        "schema": "meshticulum.physical-service-run.v1",
+        "sends": false,
+        "service_format": "MR1.request",
+        "service_kind": "knowledge",
+        "services_after": {
+          "sage-lantern-llm.service": "active",
+          "sage-lantern-personal-sage.service": "active",
+          "sage-lantern-vlm.service": "active",
+          "sage-lantern-voice-loop.service": "active"
+        },
+        "services_before": {
+          "sage-lantern-llm.service": "active",
+          "sage-lantern-personal-sage.service": "active",
+          "sage-lantern-vlm.service": "active",
+          "sage-lantern-voice-loop.service": "active"
+        },
+        "session_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+        "start_epoch_us": 1791799416836173,
+        "start_monotonic_us": 255709555918,
+        "stop_requested": false,
+        "unit": "unit-c"
+      }
+    }
+  },
+  "owners": {
+    "unit-a": {
+      "actual_cost": null,
+      "authorization": {
+        "count_authorized": 1,
+        "current_direction": "yeah lets get to testing the faster version bro",
+        "human_statement": "run it bro",
+        "private_production": false,
+        "public_only": true,
+        "scope": "One fresh public signed 8 KiB C to A encrypted SF5 radio measurement."
+      },
+      "capture_record_sha256": "2fa67ec636ee655102857e6baa7acd8ee8e522ee661c2361932f8072cfa93cad",
+      "complete_global_debt": false,
+      "facts": {
+        "unit-a": {
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-a"
+        },
+        "unit-b": {
+          "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-b"
+        },
+        "unit-c": {
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "9492195",
+              "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+              "MainPID": "833"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "11578324",
+              "InvocationID": "34edf2382564498ab081451564db093e",
+              "MainPID": "1347"
+            },
+            "sage-lantern-vlm.service": {
+              "ExecMainStartTimestampMonotonic": "9507094",
+              "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+              "MainPID": "841"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "170825468927",
+              "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+              "MainPID": "910093"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "active",
+            "sage-lantern-personal-sage.service": "active",
+            "sage-lantern-vlm.service": "active",
+            "sage-lantern-voice-loop.service": "active"
+          },
+          "unit": "unit-c"
+        }
+      },
+      "history_binding_sha256": "7f1e344b82a16ce210ab29ed56e83faca397ea0123709f99a7e175e0ba65107c",
+      "manifest_sha256": "3476737fe14be9b1f34ff6ba938d1fd2db4a489c787a331e05b63d482fbab40e",
+      "native_phase": {
+        "unit-a": {
+          "deadline_monotonic_us": 259249488480,
+          "epoch_us": 1791799348100132,
+          "monotonic_us": 258700807762
+        },
+        "unit-b": {
+          "deadline_monotonic_us": 259200250998,
+          "epoch_us": 1791799333517376,
+          "monotonic_us": 258636987524
+        },
+        "unit-c": {
+          "deadline_monotonic_us": 256189500571,
+          "epoch_us": 1791799305480759,
+          "monotonic_us": 255598200480
+        }
+      },
+      "native_python": {
+        "unit-a": "/root/esp-venv-r3/bin/python",
+        "unit-b": "/root/esp-venv-r3/bin/python",
+        "unit-c": "/usr/bin/python3"
+      },
+      "phase_end_epoch_us": 1791799896780850,
+      "phase_start_epoch_us": 1791799296780850,
+      "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+      "prior_registry": {
+        "unit-a": {
+          "full_caps": {
+            "estimated_airtime_us": 8340000000,
+            "ip_frames": 20480,
+            "radio_attempts": 35584,
+            "rx_stream_bytes": 10485760,
+            "tx_stream_bytes": 10485760
+          },
+          "history_binding_sha256": "7f1e344b82a16ce210ab29ed56e83faca397ea0123709f99a7e175e0ba65107c",
+          "observation_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f"
+        },
+        "unit-b": {
+          "full_caps": {
+            "estimated_airtime_us": 3120000000,
+            "ip_frames": 92160,
+            "radio_attempts": 13312,
+            "rx_stream_bytes": 47185920,
+            "tx_stream_bytes": 47185920
+          },
+          "history_binding_sha256": "c24ba429863bd38e81640c77bc56bf33e5b6a5e363ec3aee0f1b2a14e909f91a",
+          "observation_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992"
+        },
+        "unit-c": {
+          "full_caps": {
+            "estimated_airtime_us": 9180000000,
+            "ip_frames": 71680,
+            "radio_attempts": 39168,
+            "rx_stream_bytes": 36700160,
+            "tx_stream_bytes": 36700160
+          },
+          "history_binding_sha256": "e00ced5c552a7b1057e24bb9d0ec1f32df9ca99789e23d8985ea028669333bbb",
+          "observation_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd"
+        }
+      },
+      "qualification_kind": "c-bulk-8k-v1",
+      "radio_profile_name": "sf5-500",
+      "review_sha256": "15781237e5947330783f4180c5e449ac6466bf372416918b2cd66ac5f191af36",
+      "rf_profile": {
+        "bandwidth_hz": 500000,
+        "chip_power_dbm": 0,
+        "coding_rate": 5,
+        "frequency_hz": 921375000,
+        "lease_ms": 90000,
+        "max_boot_attempts": 256,
+        "max_boot_estimated_airtime_us": 60000000,
+        "preamble": 8,
+        "spreading_factor": 5,
+        "sync_word": 66
+      },
+      "rf_record": {
+        "A_B_transmission_allowed": true,
+        "C_transmission_allowed": true,
+        "country": "MY",
+        "country_basis": "Owner answered yes to the question whether all three units are in Malaysia.",
+        "recorded_at": "2026-10-09T13:17:51.007046+00:00",
+        "schema": "meshticulum.owner-rf-physical-confirmation.v1",
+        "units": {
+          "unit-a": {
+            "antenna_connected": true,
+            "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+          },
+          "unit-b": {
+            "antenna_connected": true,
+            "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+          },
+          "unit-c": {
+            "antenna_connected": true,
+            "confirmation": "Owner followed up that C antenna is connected now (small antenna), in the context of the lower LoRa socket request."
+          }
+        }
+      },
+      "rf_record_sha256": "40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9",
+      "runtime_sha256": "2d72dbbe1cee7f3e6cb5480ab64977d3a98553feed1850d67c34a90ee38d7514",
+      "schema": "meshticulum.finite-public-resume-owner.v1"
+    },
+    "unit-b": {
+      "actual_cost": null,
+      "authorization": {
+        "count_authorized": 1,
+        "current_direction": "yeah lets get to testing the faster version bro",
+        "human_statement": "run it bro",
+        "private_production": false,
+        "public_only": true,
+        "scope": "One fresh public signed 8 KiB C to A encrypted SF5 radio measurement."
+      },
+      "capture_record_sha256": "643368901f00a69e117debdd9824febfa96a2fa33a2a91a47615bb1b3d2911ae",
+      "complete_global_debt": false,
+      "facts": {
+        "unit-a": {
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-a"
+        },
+        "unit-b": {
+          "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-b"
+        },
+        "unit-c": {
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "9492195",
+              "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+              "MainPID": "833"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "11578324",
+              "InvocationID": "34edf2382564498ab081451564db093e",
+              "MainPID": "1347"
+            },
+            "sage-lantern-vlm.service": {
+              "ExecMainStartTimestampMonotonic": "9507094",
+              "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+              "MainPID": "841"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "170825468927",
+              "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+              "MainPID": "910093"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "active",
+            "sage-lantern-personal-sage.service": "active",
+            "sage-lantern-vlm.service": "active",
+            "sage-lantern-voice-loop.service": "active"
+          },
+          "unit": "unit-c"
+        }
+      },
+      "history_binding_sha256": "c24ba429863bd38e81640c77bc56bf33e5b6a5e363ec3aee0f1b2a14e909f91a",
+      "manifest_sha256": "3476737fe14be9b1f34ff6ba938d1fd2db4a489c787a331e05b63d482fbab40e",
+      "native_phase": {
+        "unit-a": {
+          "deadline_monotonic_us": 259249488480,
+          "epoch_us": 1791799348100132,
+          "monotonic_us": 258700807762
+        },
+        "unit-b": {
+          "deadline_monotonic_us": 259200250998,
+          "epoch_us": 1791799333517376,
+          "monotonic_us": 258636987524
+        },
+        "unit-c": {
+          "deadline_monotonic_us": 256189500571,
+          "epoch_us": 1791799305480759,
+          "monotonic_us": 255598200480
+        }
+      },
+      "native_python": {
+        "unit-a": "/root/esp-venv-r3/bin/python",
+        "unit-b": "/root/esp-venv-r3/bin/python",
+        "unit-c": "/usr/bin/python3"
+      },
+      "phase_end_epoch_us": 1791799896780850,
+      "phase_start_epoch_us": 1791799296780850,
+      "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+      "prior_registry": {
+        "unit-a": {
+          "full_caps": {
+            "estimated_airtime_us": 8340000000,
+            "ip_frames": 20480,
+            "radio_attempts": 35584,
+            "rx_stream_bytes": 10485760,
+            "tx_stream_bytes": 10485760
+          },
+          "history_binding_sha256": "7f1e344b82a16ce210ab29ed56e83faca397ea0123709f99a7e175e0ba65107c",
+          "observation_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f"
+        },
+        "unit-b": {
+          "full_caps": {
+            "estimated_airtime_us": 3120000000,
+            "ip_frames": 92160,
+            "radio_attempts": 13312,
+            "rx_stream_bytes": 47185920,
+            "tx_stream_bytes": 47185920
+          },
+          "history_binding_sha256": "c24ba429863bd38e81640c77bc56bf33e5b6a5e363ec3aee0f1b2a14e909f91a",
+          "observation_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992"
+        },
+        "unit-c": {
+          "full_caps": {
+            "estimated_airtime_us": 9180000000,
+            "ip_frames": 71680,
+            "radio_attempts": 39168,
+            "rx_stream_bytes": 36700160,
+            "tx_stream_bytes": 36700160
+          },
+          "history_binding_sha256": "e00ced5c552a7b1057e24bb9d0ec1f32df9ca99789e23d8985ea028669333bbb",
+          "observation_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd"
+        }
+      },
+      "qualification_kind": "c-bulk-8k-v1",
+      "radio_profile_name": "sf5-500",
+      "review_sha256": "15781237e5947330783f4180c5e449ac6466bf372416918b2cd66ac5f191af36",
+      "rf_profile": {
+        "bandwidth_hz": 500000,
+        "chip_power_dbm": 0,
+        "coding_rate": 5,
+        "frequency_hz": 921375000,
+        "lease_ms": 90000,
+        "max_boot_attempts": 256,
+        "max_boot_estimated_airtime_us": 60000000,
+        "preamble": 8,
+        "spreading_factor": 5,
+        "sync_word": 66
+      },
+      "rf_record": {
+        "A_B_transmission_allowed": true,
+        "C_transmission_allowed": true,
+        "country": "MY",
+        "country_basis": "Owner answered yes to the question whether all three units are in Malaysia.",
+        "recorded_at": "2026-10-09T13:17:51.007046+00:00",
+        "schema": "meshticulum.owner-rf-physical-confirmation.v1",
+        "units": {
+          "unit-a": {
+            "antenna_connected": true,
+            "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+          },
+          "unit-b": {
+            "antenna_connected": true,
+            "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+          },
+          "unit-c": {
+            "antenna_connected": true,
+            "confirmation": "Owner followed up that C antenna is connected now (small antenna), in the context of the lower LoRa socket request."
+          }
+        }
+      },
+      "rf_record_sha256": "40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9",
+      "runtime_sha256": "2d72dbbe1cee7f3e6cb5480ab64977d3a98553feed1850d67c34a90ee38d7514",
+      "schema": "meshticulum.finite-public-resume-owner.v1"
+    },
+    "unit-c": {
+      "actual_cost": null,
+      "authorization": {
+        "count_authorized": 1,
+        "current_direction": "yeah lets get to testing the faster version bro",
+        "human_statement": "run it bro",
+        "private_production": false,
+        "public_only": true,
+        "scope": "One fresh public signed 8 KiB C to A encrypted SF5 radio measurement."
+      },
+      "capture_record_sha256": "98f5b7e8adcda1da9e8ee4e48c6afbe969697729b0f83d73726069733ea79ec3",
+      "complete_global_debt": false,
+      "facts": {
+        "unit-a": {
+          "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-a"
+        },
+        "unit-b": {
+          "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-mesh-runtime.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "0",
+              "InvocationID": "",
+              "MainPID": "0"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "inactive",
+            "sage-lantern-mesh-runtime.service": "inactive",
+            "sage-lantern-personal-sage.service": "inactive",
+            "sage-lantern-voice-loop.service": "inactive"
+          },
+          "unit": "unit-b"
+        },
+        "unit-c": {
+          "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+          "service_lifetimes": {
+            "sage-lantern-llm.service": {
+              "ExecMainStartTimestampMonotonic": "9492195",
+              "InvocationID": "4a37ec8384114b6597aaf02a98984dc3",
+              "MainPID": "833"
+            },
+            "sage-lantern-personal-sage.service": {
+              "ExecMainStartTimestampMonotonic": "11578324",
+              "InvocationID": "34edf2382564498ab081451564db093e",
+              "MainPID": "1347"
+            },
+            "sage-lantern-vlm.service": {
+              "ExecMainStartTimestampMonotonic": "9507094",
+              "InvocationID": "ae8f717b6fd54f24a06aadb2e126ca02",
+              "MainPID": "841"
+            },
+            "sage-lantern-voice-loop.service": {
+              "ExecMainStartTimestampMonotonic": "170825468927",
+              "InvocationID": "6bf4138407c04e2684f88cbcd34d9443",
+              "MainPID": "910093"
+            }
+          },
+          "services": {
+            "sage-lantern-llm.service": "active",
+            "sage-lantern-personal-sage.service": "active",
+            "sage-lantern-vlm.service": "active",
+            "sage-lantern-voice-loop.service": "active"
+          },
+          "unit": "unit-c"
+        }
+      },
+      "history_binding_sha256": "e00ced5c552a7b1057e24bb9d0ec1f32df9ca99789e23d8985ea028669333bbb",
+      "manifest_sha256": "3476737fe14be9b1f34ff6ba938d1fd2db4a489c787a331e05b63d482fbab40e",
+      "native_phase": {
+        "unit-a": {
+          "deadline_monotonic_us": 259249488480,
+          "epoch_us": 1791799348100132,
+          "monotonic_us": 258700807762
+        },
+        "unit-b": {
+          "deadline_monotonic_us": 259200250998,
+          "epoch_us": 1791799333517376,
+          "monotonic_us": 258636987524
+        },
+        "unit-c": {
+          "deadline_monotonic_us": 256189500571,
+          "epoch_us": 1791799305480759,
+          "monotonic_us": 255598200480
+        }
+      },
+      "native_python": {
+        "unit-a": "/root/esp-venv-r3/bin/python",
+        "unit-b": "/root/esp-venv-r3/bin/python",
+        "unit-c": "/usr/bin/python3"
+      },
+      "phase_end_epoch_us": 1791799896780850,
+      "phase_start_epoch_us": 1791799296780850,
+      "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+      "prior_registry": {
+        "unit-a": {
+          "full_caps": {
+            "estimated_airtime_us": 8340000000,
+            "ip_frames": 20480,
+            "radio_attempts": 35584,
+            "rx_stream_bytes": 10485760,
+            "tx_stream_bytes": 10485760
+          },
+          "history_binding_sha256": "7f1e344b82a16ce210ab29ed56e83faca397ea0123709f99a7e175e0ba65107c",
+          "observation_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f"
+        },
+        "unit-b": {
+          "full_caps": {
+            "estimated_airtime_us": 3120000000,
+            "ip_frames": 92160,
+            "radio_attempts": 13312,
+            "rx_stream_bytes": 47185920,
+            "tx_stream_bytes": 47185920
+          },
+          "history_binding_sha256": "c24ba429863bd38e81640c77bc56bf33e5b6a5e363ec3aee0f1b2a14e909f91a",
+          "observation_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992"
+        },
+        "unit-c": {
+          "full_caps": {
+            "estimated_airtime_us": 9180000000,
+            "ip_frames": 71680,
+            "radio_attempts": 39168,
+            "rx_stream_bytes": 36700160,
+            "tx_stream_bytes": 36700160
+          },
+          "history_binding_sha256": "e00ced5c552a7b1057e24bb9d0ec1f32df9ca99789e23d8985ea028669333bbb",
+          "observation_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd"
+        }
+      },
+      "qualification_kind": "c-bulk-8k-v1",
+      "radio_profile_name": "sf5-500",
+      "review_sha256": "15781237e5947330783f4180c5e449ac6466bf372416918b2cd66ac5f191af36",
+      "rf_profile": {
+        "bandwidth_hz": 500000,
+        "chip_power_dbm": 0,
+        "coding_rate": 5,
+        "frequency_hz": 921375000,
+        "lease_ms": 90000,
+        "max_boot_attempts": 256,
+        "max_boot_estimated_airtime_us": 60000000,
+        "preamble": 8,
+        "spreading_factor": 5,
+        "sync_word": 66
+      },
+      "rf_record": {
+        "A_B_transmission_allowed": true,
+        "C_transmission_allowed": true,
+        "country": "MY",
+        "country_basis": "Owner answered yes to the question whether all three units are in Malaysia.",
+        "recorded_at": "2026-10-09T13:17:51.007046+00:00",
+        "schema": "meshticulum.owner-rf-physical-confirmation.v1",
+        "units": {
+          "unit-a": {
+            "antenna_connected": true,
+            "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+          },
+          "unit-b": {
+            "antenna_connected": true,
+            "confirmation": "Owner explicitly confirmed A/B both have antennas attached."
+          },
+          "unit-c": {
+            "antenna_connected": true,
+            "confirmation": "Owner followed up that C antenna is connected now (small antenna), in the context of the lower LoRa socket request."
+          }
+        }
+      },
+      "rf_record_sha256": "40345bc09cb448f07b803318d69e0dec7b3d5ce1d1b8cba54bfd00ff14cecff9",
+      "runtime_sha256": "2d72dbbe1cee7f3e6cb5480ab64977d3a98553feed1850d67c34a90ee38d7514",
+      "schema": "meshticulum.finite-public-resume-owner.v1"
+    }
+  },
+  "policy": {
+    "aggregate_limits": {
+      "estimated_airtime_us": 20880000000,
+      "ip_frames": 184320,
+      "radio_attempts": 89088,
+      "rx_stream_bytes": 94371840,
+      "tx_stream_bytes": 94371840
+    },
+    "controller_boot_id": "20cfff28-7827-43ed-ac44-02c74e4c320d",
+    "deadline_monotonic_us": 887987129827,
+    "expires_epoch_us": 1791799891780850,
+    "issued_epoch_us": 1791799296780850,
+    "original_monotonic_us": 887392129827,
+    "parent_id": "57339cca60ddf62b41eafac60147a252",
+    "prior_snapshot_sha256": "47d34bb6cccfe99309632a09456fdd67285ed924ec3f8549be2cbeb9eda4992f",
+    "units": [
+      {
+        "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+        "limits": {
+          "estimated_airtime_us": 8460000000,
+          "ip_frames": 20480,
+          "radio_attempts": 36096,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "peer": {
+          "agent_id": "469515f1b470128ff731c159ce4d3adeb74369fa1035122f5f94dfc49850bb84",
+          "chain_id": "meshticulum-public-pilot-v1"
+        },
+        "prior_debt": {
+          "estimated_airtime_us": 8340000000,
+          "ip_frames": 20480,
+          "radio_attempts": 35584,
+          "rx_stream_bytes": 10485760,
+          "tx_stream_bytes": 10485760
+        },
+        "prior_snapshot_sha256": "d85edc6986de7b73872f216e789fded1eba8a0fe935101f3f265065a91656b5f",
+        "unit": "unit-a"
+      },
+      {
+        "host_boot_id": "dfe04f99-f765-45f0-aba7-27b8eaad902b",
+        "limits": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "peer": {
+          "agent_id": "b51bb82a597ca004365184bf3656183fd740605c3dc7fd1457eb026d10b19630",
+          "chain_id": "meshticulum-public-pilot-v1"
+        },
+        "prior_debt": {
+          "estimated_airtime_us": 3120000000,
+          "ip_frames": 92160,
+          "radio_attempts": 13312,
+          "rx_stream_bytes": 47185920,
+          "tx_stream_bytes": 47185920
+        },
+        "prior_snapshot_sha256": "be28091c154728c6160c74a4e106648fd42ed2e4d2698d9394107d21eade8992",
+        "unit": "unit-b"
+      },
+      {
+        "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+        "limits": {
+          "estimated_airtime_us": 9300000000,
+          "ip_frames": 71680,
+          "radio_attempts": 39680,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "peer": {
+          "agent_id": "6fe0259f1048d741eb58b66e2071378c87b51303a5bf1308e0f92c928187745d",
+          "chain_id": "meshticulum-public-pilot-v1"
+        },
+        "prior_debt": {
+          "estimated_airtime_us": 9180000000,
+          "ip_frames": 71680,
+          "radio_attempts": 39168,
+          "rx_stream_bytes": 36700160,
+          "tx_stream_bytes": 36700160
+        },
+        "prior_snapshot_sha256": "28fc851d7d41310169bdf2bdd22851747d56d3e21b43c494a9a19581a8c85cfd",
+        "unit": "unit-c"
+      }
+    ]
+  },
+  "prepared": {
+    "unit-a": {
+      "3ef93b13ec6966964c2f73d1dbd0a176": {
+        "application_deadline_monotonic_us": 258939640216,
+        "application_expires_epoch_us": 1791799586932590,
+        "child_caps": {
+          "cost": {
+            "estimated_airtime_us": 60000000,
+            "ip_frames": 0,
+            "radio_attempts": 256,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "digest": "f72aabe79b9830fd2783b9b1a2379963f7b7e6afd723a82d9837c4d04eb3e0c3",
+          "metadata": {
+            "application_expires_epoch_us": 1791799586932590,
+            "campaign_id": "63afd42eeab96eb40fd4c0db41adf324",
+            "cipher_frame_limit": 512,
+            "format": "MR1.request",
+            "grant_digest": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+            "object": {
+              "bytes": 74,
+              "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+            },
+            "parent_id": "57339cca60ddf62b41eafac60147a252",
+            "plan_sha256": "2df5212ee301e64a75e118710fa3e1b1e244e179761a6d987c6ef41ff1fd1b5d",
+            "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+            "profile": {
+              "bandwidth_hz": 500000,
+              "chip_power_dbm": 0,
+              "coding_rate": 5,
+              "frequency_hz": 921375000,
+              "lease_ms": 90000,
+              "max_boot_attempts": 256,
+              "max_boot_estimated_airtime_us": 60000000,
+              "preamble": 8,
+              "spreading_factor": 5,
+              "sync_word": 66
+            },
+            "receiver": "unit-c",
+            "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+            "sender": "unit-a",
+            "sends": true,
+            "source_run_id": null,
+            "transport": "lora",
+            "unit": "unit-a"
+          }
+        },
+        "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+        "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+        "host_boot_id": "34b27358-8e12-44e7-a39f-410af5dbc491",
+        "native_claim_id": "ebfbfdd8004375106b70c3d30f412cbaddb711f461893897e2c647af6c96f9c4",
+        "native_plan_sha256": "9c5b224fbb232626eaf53764b9433e1b34d4a8170c6ddb2c0563528ddb26fa09",
+        "original_plan_sha256": "2df5212ee301e64a75e118710fa3e1b1e244e179761a6d987c6ef41ff1fd1b5d",
+        "parent_id": "57339cca60ddf62b41eafac60147a252",
+        "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+        "prepared": true,
+        "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+        "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+        "schema": "meshticulum.native-parent-claim.v1",
+        "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+        "unit": "unit-a"
+      }
+    },
+    "unit-b": {},
+    "unit-c": {
+      "3ef93b13ec6966964c2f73d1dbd0a176": {
+        "application_deadline_monotonic_us": 255879652305,
+        "application_expires_epoch_us": 1791799586932590,
+        "child_caps": {
+          "cost": {
+            "estimated_airtime_us": 60000000,
+            "ip_frames": 0,
+            "radio_attempts": 256,
+            "rx_stream_bytes": 0,
+            "tx_stream_bytes": 0
+          },
+          "digest": "035e4fbf0e8820c9c2367fadd2cfb49a9ff7600f6ce20981f664fbbb987d89da",
+          "metadata": {
+            "application_expires_epoch_us": 1791799586932590,
+            "campaign_id": "63afd42eeab96eb40fd4c0db41adf324",
+            "cipher_frame_limit": 512,
+            "format": "MR1.request",
+            "grant_digest": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+            "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+            "object": {
+              "bytes": 74,
+              "sha256": "81911f4a8f9b495539cf245295cbe04d3731f43e4830fdc07400c4eb7057681a"
+            },
+            "parent_id": "57339cca60ddf62b41eafac60147a252",
+            "plan_sha256": "ad6c71bdad354fe13bd8174ca0c11796e7f367acfbfd364a6cd4664b6151951d",
+            "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+            "profile": {
+              "bandwidth_hz": 500000,
+              "chip_power_dbm": 0,
+              "coding_rate": 5,
+              "frequency_hz": 921375000,
+              "lease_ms": 90000,
+              "max_boot_attempts": 256,
+              "max_boot_estimated_airtime_us": 60000000,
+              "preamble": 8,
+              "spreading_factor": 5,
+              "sync_word": 66
+            },
+            "receiver": "unit-c",
+            "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+            "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+            "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+            "sender": "unit-a",
+            "sends": false,
+            "source_run_id": null,
+            "transport": "lora",
+            "unit": "unit-c"
+          }
+        },
+        "controller_allocation_id": "88e2dce5ba80a338ad0dd79620e34418fd1432b1b0205e59c55feb4c5340ed97",
+        "grant_context_sha256": "bfca3db72cefc2c7c4129c29ecf1b2e34a7f639b27b66ee3bc2c187c570bcdf5",
+        "host_boot_id": "21f9c178-6090-40d9-9359-ecf1c7b950b1",
+        "native_claim_id": "d3a7989ef1564bf4f1c250ec9e937e7b962764f1dc97b71e86af156970da3c81",
+        "native_plan_sha256": "3386e5456428f6f2222571f98c9d191dc627e17b1114604d18d71fd137d0a7a7",
+        "original_plan_sha256": "ad6c71bdad354fe13bd8174ca0c11796e7f367acfbfd364a6cd4664b6151951d",
+        "parent_id": "57339cca60ddf62b41eafac60147a252",
+        "policy_digest": "ffd58627e5fecbf342d6d0ff2473788c56a7ea38bf640103eb585fd7fe9ddcef",
+        "prepared": true,
+        "resource_sha256": "c9a288ef43273cf6df9f8f0ee1915e5437a6d3cfd5703381e7e0086d98fb892f",
+        "run_id": "3ef93b13ec6966964c2f73d1dbd0a176",
+        "schema": "meshticulum.native-parent-claim.v1",
+        "secret_sha256": "edf3656b9cc2623f5878b00472d4bea6924f899426ce7520f9677ef0fd8e20b1",
+        "unit": "unit-c"
+      }
+    }
+  },
+  "prior_paid_parent_ids": [
+    "28765d19f654ce3162525afe9c3f89c5",
+    "5ad7e65b7e50901a6f63629c04a776e2",
+    "4d1b5d6fe8d4b022c5cf1e21cef7f8ca",
+    "d60d8308326314a7753e651fa43a99e3",
+    "4559277fa43913ce3935b078d6744a55",
+    "4034f8979b985660df21859606c4f8a7",
+    "ba4572e95e598ad6c17fc954c3792db7",
+    "1df30b47fa36b8d47328fb886528a7a9",
+    "f153a7a87a2803db85078df81a6a1aaf",
+    "25a990a2d565c50b237ee45812a8c75f",
+    "cb5869e6aa8de545a267007b085d4762",
+    "f6e147e70ec7ce07f673ea5e9cd2cdc2",
+    "b8f9b5d9c5479c8d363c7b7e8014bc3b",
+    "806fdca055e79dfc0b86ff8f304bcdf9",
+    "4ea23c6b8fa83366904ac62ffa98e2bf",
+    "c26cd03a8fd427daf6b8d894e4b1d04c",
+    "8dfcfdfe8f8be2c0b326520d70eab7f5",
+    "6f89e2a21919991e15224e393446928c",
+    "62bcef4f1c74532fd7ab3ada1b8b94e2",
+    "141c892d83b6064a800c11aab6444f28",
+    "05c36e09fd4056c94d341d2dd32243f4",
+    "bccb99afe6589968190b131eeaf372b3",
+    "487ae574816ff5444de03e3daa4401e4",
+    "e01508ddcae7389728add074de4876b7",
+    "2429969fcbb0f57b3deaeda7187036c2",
+    "7746ddba2544ce79c01a195f1e8746ce"
+  ]
+}

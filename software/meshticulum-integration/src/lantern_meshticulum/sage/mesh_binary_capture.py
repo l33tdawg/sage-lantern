@@ -1,0 +1,621 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
+"""One protected, recipient-signed complete-private capture slot.
+
+The native owner supplies the exclusive lifecycle lease, current access/storage
+guards and independently pinned sender/consent verifier. This adapter grants no
+permission itself and opens no device, key, endpoint or listener. One producer
+owns its fixed actor slot across processes; CAS conflicts fence admission.
+
+Receiving intentions are persisted before flow dispatch. Completed sealed bytes
+and the original UUID/deadline survive an uncertain inbox write. Explicit recovery
+first probes existing recipient-signed admission, then admits only within the
+original deadline. Rejection/processed state is durable before clearing capture.
+Nothing here creates delivery/read receipts, resets RF counters, renews grants,
+reuses an unresolved receiving intention or closes a borrowed protected store.
+"""
+import base64
+from contextlib import AbstractContextManager
+import hashlib
+import math
+import threading
+import time
+
+from nacl.signing import SigningKey
+
+from meshticulum.privacy.mesh_binary_envelope import MAX_BINARY_BYTES, to_binary, to_text
+from meshticulum.privacy.mesh_envelope import Peer
+from lantern_meshticulum.sage.mesh_inbox import IngestResult, MeshInbox, _canonical, _id, _peer, _uuid
+from lantern_meshticulum.sage.workflow_store import WorkflowNotFound, WorkflowStore
+
+
+SCHEMA = 'sage.lantern.mesh-binary-capture.v1'
+DOMAIN = b'sage.lantern.mesh-binary-capture.v1/signature\x00'
+MAX_TIME_US = 2 ** 53 - 1
+REASONS = frozenset(('invalid_envelope', 'equivocation', 'application_expired', 'original_boot_changed'))
+
+
+class CaptureError(RuntimeError):
+    def __init__(self):
+        super().__init__('private_capture_unavailable')
+
+
+def _require(value):
+    if not value:
+        raise CaptureError()
+
+
+def _digest(value):
+    _require(type(value) is str and len(value) == 64
+             and all(c in '0123456789abcdef' for c in value))
+    return value
+
+
+def _decision(value):
+    fields = {'status', 'record_id', 'remote_id', 'envelope_kind', 'reason'}
+    _require(type(value) is dict and set(value) == fields)
+    if value['status'] in ('admitted', 'duplicate'):
+        _uuid(value['record_id']); _uuid(value['remote_id'])
+        _require(value['envelope_kind'] in ('message', 'delivery', 'read') and value['reason'] is None)
+    else:
+        _require(value['status'] == 'rejected' and value['reason'] in REASONS
+                 and all(value[k] is None for k in ('record_id', 'remote_id', 'envelope_kind')))
+    return value
+
+
+def _forward_link(value):
+    fields = {'record_id', 'revision', 'body_sha256', 'context_sha256',
+              'prepared_monotonic_us', 'observed_monotonic_us',
+              'handshake_hash', 'outer_sha256', 'intention',
+              'latest_revision', 'latest_body_sha256'}
+    _require(type(value) is dict and set(value) == fields)
+    _uuid(value['record_id'])
+    _require(type(value['revision']) is int and type(value['latest_revision']) is int
+             and 1 <= value['revision'] <= value['latest_revision'] <= MAX_TIME_US)
+    for name in ('body_sha256', 'latest_body_sha256', 'context_sha256', 'handshake_hash', 'outer_sha256'):
+        _digest(value[name])
+    if value['revision'] == value['latest_revision']:
+        _require(value['body_sha256'] == value['latest_body_sha256'])
+    _require(type(value['prepared_monotonic_us']) is int
+             and type(value['observed_monotonic_us']) is int
+             and 0 <= value['prepared_monotonic_us'] <= value['observed_monotonic_us'] <= MAX_TIME_US)
+    intention = value['intention']
+    _require(type(intention) is dict and set(intention) == {'operation_id', 'sender',
+        'packet_sha256', 'packet_bytes', 'application_expires_epoch_us',
+        'application_deadline_monotonic_us', 'host_boot_id', 'authority_digest', 'prepared_at_us'})
+    _uuid(intention['operation_id']); _uuid(intention['host_boot_id']); _peer(intention['sender'])
+    _digest(intention['packet_sha256']); _digest(intention['authority_digest'])
+    _require(type(intention['packet_bytes']) is int and 51 < intention['packet_bytes'] <= MAX_BINARY_BYTES
+             and type(intention['prepared_at_us']) is int
+             and type(intention['application_expires_epoch_us']) is int
+             and type(intention['application_deadline_monotonic_us']) is int
+             and 0 <= intention['prepared_at_us'] < intention['application_expires_epoch_us'] <= MAX_TIME_US
+             and value['observed_monotonic_us'] < intention['application_deadline_monotonic_us'] <= MAX_TIME_US)
+    return value
+
+
+def _advance_forward_link(prior, observed):
+    """Retain original import proof and monotonic source-observation fence."""
+    changing = {'revision', 'body_sha256', 'latest_revision', 'latest_body_sha256'}
+    _require(_canonical({k:v for k,v in prior.items() if k not in changing})
+             == _canonical({k:v for k,v in observed.items() if k not in changing})
+             and observed['revision'] >= prior['latest_revision'])
+    if observed['revision'] == prior['latest_revision']:
+        _require(observed['body_sha256'] == prior['latest_body_sha256'])
+        return prior
+    return {**prior, 'latest_revision':observed['revision'],
+            'latest_body_sha256':observed['body_sha256']}
+
+
+class _Lease(AbstractContextManager):
+    """A trusted native lease cannot suppress a failed write or guard check."""
+    def __init__(self, lease):
+        _require(isinstance(lease, AbstractContextManager))
+        self.lease = lease
+
+    def __enter__(self):
+        return self.lease.__enter__()
+
+    def __exit__(self, kind, value, traceback):
+        outcome = self.lease.__exit__(kind, value, traceback)
+        _require(outcome is None or outcome is False)
+        return False
+
+
+class BinaryCapture:
+    def __init__(self, store, *, recipient, recipient_signing_key, owner_lease,
+                 access_check, storage_check, peer_check, boot_id, clock=time.time,
+                 monotonic_clock=time.monotonic):
+        _uuid(boot_id)
+        _require(type(store) is WorkflowStore and type(recipient) is Peer
+                 and isinstance(recipient_signing_key, SigningKey)
+                 and bytes(recipient_signing_key.verify_key) == recipient.public_key
+                 and store.storage.actor.chain_id == recipient.chain_id
+                 and store.storage.actor.agent_id == recipient.public_key.hex()
+                 and all(callable(c) for c in (owner_lease, access_check, storage_check, peer_check, clock,
+                                               monotonic_clock)))
+        self.store, self.recipient, self.key = store, recipient, recipient_signing_key
+        self.slot_id = _id(SCHEMA, [recipient.to_dict(), 'complete-private'])
+        self._lease, self._access, self._storage, self._peer, self._clock = (
+            owner_lease, access_check, storage_check, peer_check, clock)
+        self.boot_id, self._monotonic_clock = boot_id, monotonic_clock
+        self._condition = threading.Condition()
+        self._busy, self._closing, self._uncertain, self._known = None, False, False, None
+
+    def _time(self):
+        self._available()
+        value = self._clock()
+        self._available()
+        _require(type(value) in (int, float) and math.isfinite(value)
+                 and 0 <= value <= MAX_TIME_US / 1000000)
+        return int(value * 1000000)
+
+    def _monotonic(self):
+        self._available()
+        value = self._monotonic_clock()
+        self._available()
+        _require(type(value) in (int, float) and math.isfinite(value)
+                 and 0 <= value <= MAX_TIME_US / 1000000)
+        return int(value * 1000000)
+
+    def _available(self):
+        _require(not self._closing and not self._uncertain)
+
+    def _storage_allowed(self):
+        self._available()
+        result = self._storage()
+        self._available()
+        return result is True
+
+    def _guard(self, sender=None):
+        self._available()
+        access = self._access()
+        self._available()
+        _require(access is True)
+        storage = self._storage_allowed()
+        _require(storage is True)
+        if sender is not None:
+            peer = self._peer(sender)
+            self._available()
+            _require(peer is True)
+
+    def _peer_allowed(self, sender):
+        self._guard(sender)
+        return True
+
+    def _run(self, action, *, post_exit=None):
+        _require(post_exit is None or callable(post_exit))
+        with self._condition:
+            if self._busy == threading.get_ident():
+                self._uncertain = True
+            _require(not self._closing and not self._uncertain and self._busy is None)
+            self._busy = threading.get_ident()
+        entered = False
+        try:
+            with _Lease(self._lease()):
+                self._guard()
+                epoch = self.store.storage.snapshot().epoch
+                self._available()
+                entered = True
+                value = action()
+                self._guard()
+                _require(self.store.storage.snapshot().epoch == epoch)
+                self._available()
+            self._available()
+            if post_exit is not None:
+                post_exit()
+                self._available()
+            return value
+        except BaseException as error:
+            # After admission into the native lease, an escaping error can
+            # follow a dispatched write/handler call or a failed lease exit.
+            # Reconstruct and explicitly reconcile; never retry in this owner.
+            if entered:
+                self._uncertain = True
+            if not isinstance(error, Exception):
+                raise
+            raise CaptureError() from None
+        finally:
+            with self._condition:
+                self._busy = None
+                self._condition.notify_all()
+
+    def _validate(self, record):
+        value = record['payload']
+        _require(type(value) is dict and set(value) == {'schema', 'body', 'signature'}
+                 and value['schema'] == SCHEMA and type(value['signature']) is str
+                 and len(value['signature']) == 88)
+        signature = base64.b64decode(value['signature'], validate=True)
+        _require(base64.b64encode(signature).decode('ascii') == value['signature'])
+        body = value['body']
+        self.key.verify_key.verify(DOMAIN + _canonical(body), signature)
+        _require(type(body) is dict and set(body) == {'slot_id', 'revision', 'recipient',
+                 'state', 'last_epoch_us', 'last_monotonic_us', 'last_writer_boot_id',
+                 'capture', 'decision', 'last_completed'}
+                 and record['record_id'] == body['slot_id'] == self.slot_id
+                 and body['revision'] == record['revision'] and type(body['revision']) is int
+                 and body['recipient'] == self.recipient.to_dict()
+                 and type(body['last_epoch_us']) is int
+                 and 0 <= body['last_epoch_us'] <= self._time()
+                 and type(body['last_monotonic_us']) is int
+                 and 0 <= body['last_monotonic_us'] <= MAX_TIME_US)
+        _uuid(body['last_writer_boot_id'])
+        if body['last_writer_boot_id'] == self.boot_id:
+            _require(body['last_monotonic_us'] <= self._monotonic())
+        last = body['last_completed']
+        if last is not None:
+            last_fields = {'operation_id', 'packet_sha256', 'decision', 'acknowledged',
+                           'sender', 'observed_at_us', 'wire'}
+            _require(type(last) is dict and set(last) in (last_fields, last_fields | {'forward_journal'})
+                     and type(last['acknowledged']) is bool)
+            if 'forward_journal' in last:
+                _forward_link(last['forward_journal'])
+            _uuid(last['operation_id']); _digest(last['packet_sha256']); _decision(last['decision'])
+            _peer(last['sender'])
+            _require(type(last['observed_at_us']) is int and 0 <= last['observed_at_us'] <= body['last_epoch_us'])
+            if 'forward_journal' in last:
+                intention = last['forward_journal']['intention']
+                _require(intention['operation_id'] == last['operation_id']
+                         and intention['packet_sha256'] == last['packet_sha256']
+                         and _canonical(intention['sender']) == _canonical(last['sender'])
+                         and intention['prepared_at_us'] <= last['observed_at_us']
+                         < intention['application_expires_epoch_us'])
+            if last['acknowledged']:
+                _require(last['wire'] is None)
+            else:
+                _require(hashlib.sha256(to_binary(last['wire'])).hexdigest() == last['packet_sha256'])
+        capture = body['capture']
+        if body['state'] == 'idle':
+            _require(capture is None and body['decision'] is None)
+        else:
+            capture_fields = {'operation_id', 'sender',
+                     'packet_sha256', 'packet_bytes', 'application_expires_epoch_us',
+                     'application_deadline_monotonic_us', 'host_boot_id',
+                     'authority_digest', 'prepared_at_us', 'captured_at_us', 'wire'}
+            _require(body['state'] in ('receiving', 'captured', 'processed')
+                     and type(capture) is dict
+                     and set(capture) in (capture_fields, capture_fields | {'forward_journal'}))
+            if 'forward_journal' in capture:
+                link = _forward_link(capture['forward_journal'])
+                _require(_canonical(link['intention'])
+                         == _canonical({k:capture[k] for k in link['intention']}))
+            _uuid(capture['operation_id']); _peer(capture['sender'])
+            _digest(capture['packet_sha256']); _digest(capture['authority_digest'])
+            _uuid(capture['host_boot_id'])
+            _require(type(capture['packet_bytes']) is int and 51 < capture['packet_bytes'] <= MAX_BINARY_BYTES
+                     and type(capture['application_expires_epoch_us']) is int
+                     and type(capture['prepared_at_us']) is int
+                     and type(capture['application_deadline_monotonic_us']) is int
+                     and 0 < capture['application_deadline_monotonic_us'] <= MAX_TIME_US
+                     and 0 <= capture['prepared_at_us'] < capture['application_expires_epoch_us'] <= MAX_TIME_US
+                     and capture['prepared_at_us'] <= body['last_epoch_us'])
+            if body['state'] == 'receiving':
+                _require(capture['wire'] is None and capture['captured_at_us'] is None
+                         and body['decision'] is None)
+            else:
+                _require(type(capture['captured_at_us']) is int
+                         and capture['prepared_at_us'] <= capture['captured_at_us']
+                         < capture['application_expires_epoch_us']
+                         and capture['captured_at_us'] <= body['last_epoch_us'])
+                packet = to_binary(capture['wire'])
+                _require(len(packet) == capture['packet_bytes']
+                         and hashlib.sha256(packet).hexdigest() == capture['packet_sha256'])
+                if body['state'] == 'captured':
+                    _require(body['decision'] is None)
+                else:
+                    _decision(body['decision'])
+        return body
+
+    def _read(self):
+        self._known = None
+        try:
+            record = self.store.get(self.slot_id, kind='mesh_inbound', access_check=self._storage_allowed)
+        except WorkflowNotFound:
+            return self._write(0, dict(slot_id=self.slot_id, revision=0, recipient=self.recipient.to_dict(),
+                state='idle', last_epoch_us=0, last_monotonic_us=0, last_writer_boot_id=self.boot_id,
+                capture=None, decision=None, last_completed=None))
+        body = self._validate(record)
+        self._known = body['state']
+        return record
+
+    def _write(self, revision, body):
+        self._known = None
+        self._guard()
+        now = self._time()
+        _require(now >= body['last_epoch_us'])
+        mono = self._monotonic()
+        if body['last_writer_boot_id'] == self.boot_id:
+            _require(mono >= body['last_monotonic_us'])
+        body = {**body, 'revision': revision + 1, 'last_epoch_us': now,
+                'last_monotonic_us': mono, 'last_writer_boot_id': self.boot_id}
+        signature = self.key.sign(DOMAIN + _canonical(body)).signature
+        record = self.store.put(self.slot_id, 'mesh_inbound', revision,
+            dict(schema=SCHEMA, body=body, signature=base64.b64encode(signature).decode('ascii')),
+            access_check=self._storage_allowed)
+        checked = self._validate(record)
+        self._known = checked['state']
+        return record
+
+    def state(self):
+        """Signed-state metadata only. An unread instance cannot certify drain."""
+        return self._run(lambda: self._read()['payload']['body']['state'])
+
+    def prepare(self, operation_id, *, sender, packet_sha256, packet_bytes,
+                application_expires_epoch_us, application_deadline_monotonic_us,
+                host_boot_id, authority_digest, permission_check):
+        """Persist original receive intention before DATA/ACK flow dispatch."""
+        def prepare():
+            self._guard(sender)
+            _require(callable(permission_check) and permission_check() is True)
+            _uuid(operation_id); _digest(packet_sha256); _digest(authority_digest)
+            _uuid(host_boot_id)
+            _require(type(sender) is Peer and type(packet_bytes) is int
+                     and 51 < packet_bytes <= MAX_BINARY_BYTES
+                     and type(application_expires_epoch_us) is int
+                     and self._time() < application_expires_epoch_us <= MAX_TIME_US
+                     and type(application_deadline_monotonic_us) is int
+                     and self._monotonic() < application_deadline_monotonic_us <= MAX_TIME_US
+                     and host_boot_id == self.boot_id)
+            record = self._read()
+            body = record['payload']['body']
+            _require(body['state'] == 'idle')
+            if body['last_completed'] is not None:
+                _require(body['last_completed']['acknowledged'] is True
+                         and body['last_completed']['operation_id'] != operation_id)
+            capture = dict(operation_id=operation_id, sender=sender.to_dict(), packet_sha256=packet_sha256,
+                packet_bytes=packet_bytes, application_expires_epoch_us=application_expires_epoch_us,
+                application_deadline_monotonic_us=application_deadline_monotonic_us, host_boot_id=host_boot_id,
+                authority_digest=authority_digest, prepared_at_us=self._time(), captured_at_us=None, wire=None)
+            self._write(record['revision'], {**body, 'state': 'receiving', 'capture': capture})
+            self._guard(sender)
+            _require(permission_check() is True)
+            return 'receiving'
+        return self._run(prepare)
+
+    def complete(self, operation_id, packet, *, authority_digest, permission_check):
+        """Persist bounded sealed bytes; never expose or decrypt message text."""
+        def complete():
+            _require(callable(permission_check) and permission_check() is True)
+            _uuid(operation_id); _digest(authority_digest)
+            wire = to_text(packet)
+            record = self._read()
+            body = record['payload']['body']
+            _require(body['state'] in ('receiving', 'captured'))
+            capture = body['capture']
+            self._guard(_peer(capture['sender']))
+            _require(capture['operation_id'] == operation_id and capture['authority_digest'] == authority_digest
+                     and len(packet) == capture['packet_bytes']
+                     and hashlib.sha256(packet).hexdigest() == capture['packet_sha256']
+                     and self._time() < capture['application_expires_epoch_us']
+                     and self._monotonic() < capture['application_deadline_monotonic_us']
+                     and self.boot_id == capture['host_boot_id'])
+            if body['state'] == 'receiving':
+                capture = {**capture, 'wire': wire, 'captured_at_us': self._time()}
+                self._write(record['revision'], {**body, 'state': 'captured', 'capture': capture})
+            self._guard(_peer(capture['sender']))
+            _require(permission_check() is True)
+            return 'captured'
+        return self._run(complete)
+
+    def import_forward(self, journal, *, read_permission_check):
+        """Import ACTUAL signed journal quarantine under this capture's lease.
+
+        No ReceiveRecovery/ caller-provided packet can authorize import. The
+        exact store record is read, signature/context/intention verified, and
+        original preparation/observation facts preserved. Historical quarantine
+        may be imported after expiry/boot change; process_pending separately
+        reconciles existing admission or rejects, never renewing the lifetime.
+
+        Use a fresh unclaimed journal reader. Read permission observations must
+        work inside and after the lease; this grants no fresh dispatch/consent.
+        The journal remains the recoverable outbox after every projection result.
+        """
+        from lantern_meshticulum.sage.forward_receive_journal import ForwardReceiveJournal
+        _require(type(journal) is ForwardReceiveJournal and journal.store is self.store
+                 and journal.local == self.recipient and journal.boot_id == self.boot_id
+                 and journal._lease is self._lease
+                 and bytes(journal._key.verify_key) == bytes(self.key.verify_key)
+                 and callable(read_permission_check))
+        journal._available()
+        _require(not journal._busy and not journal._claimed)
+        journal._busy = True
+        original_fresh = journal._fresh
+        journal._fresh = False
+        epoch = None
+
+        def permitted():
+            self._available(); journal._available()
+            allowed = read_permission_check(journal.intention)
+            self._available(); journal._available()
+            _require(allowed is True)
+            journal._guard(fresh=False)
+
+        def import_record():
+            nonlocal epoch
+            permitted()
+            self._guard(journal.remote)
+            epoch = journal._snapshot()
+            source = journal._read()  # Actual protected GET + recipient signature.
+            now = journal._time()
+            _require(now[0] >= source['last_epoch_us'])
+            if journal.boot_id == journal.intention.host_boot_id:
+                _require(now[1] >= source['last_monotonic_us'])
+            capsule = source['capsule']
+            _require(capsule is not None)
+            intention = journal.intention
+            expected = dict(operation_id=intention.operation_id, sender=journal.remote.to_dict(),
+                packet_sha256=intention.packet_sha256, packet_bytes=intention.packet_bytes,
+                application_expires_epoch_us=intention.application_expires_epoch_us,
+                application_deadline_monotonic_us=intention.application_deadline_monotonic_us,
+                host_boot_id=intention.host_boot_id, authority_digest=intention.authority_digest,
+                prepared_at_us=source['prepared_epoch_us'])
+            link = dict(record_id=journal.record_id, revision=source['revision'],
+                body_sha256=hashlib.sha256(_canonical(source)).hexdigest(),
+                context_sha256=journal.context.digest.hex(),
+                prepared_monotonic_us=source['prepared_monotonic_us'],
+                observed_monotonic_us=capsule['observed_monotonic_us'],
+                handshake_hash=capsule['handshake_hash'], outer_sha256=capsule['outer_sha256'],
+                intention=expected, latest_revision=source['revision'],
+                latest_body_sha256=hashlib.sha256(_canonical(source)).hexdigest())
+            record = self._read()
+            body = record['payload']['body']
+            if body['state'] == 'idle':
+                last = body['last_completed']
+                if last is not None and last['operation_id'] == intention.operation_id:
+                    _require(last['packet_sha256'] == intention.packet_sha256
+                             and _canonical(last['sender']) == _canonical(journal.remote.to_dict())
+                             and last['observed_at_us'] == capsule['observed_epoch_us']
+                             and (last['acknowledged'] or last['wire'] == capsule['wire'])
+                             and 'forward_journal' in last)
+                    prior = last['forward_journal']
+                    advanced = _advance_forward_link(prior, link)
+                    if advanced != prior:
+                        self._write(record['revision'], {**body,'last_completed':
+                            {**last,'forward_journal':advanced}})
+                    permitted()
+                    return 'idle'  # Original signed settlement remains intact.
+                _require(last is None or last['acknowledged'] is True)
+                capture = {**expected, 'captured_at_us':capsule['observed_epoch_us'],
+                           'wire':capsule['wire'], 'forward_journal':link}
+                self._write(record['revision'], {**body,'state':'captured','capture':capture})
+            else:
+                capture = body['capture']
+                _require(_canonical({k:capture[k] for k in expected}) == _canonical(expected))
+                if body['state'] == 'receiving':
+                    capture = {**capture,'captured_at_us':capsule['observed_epoch_us'],
+                               'wire':capsule['wire'],'forward_journal':link}
+                    self._write(record['revision'], {**body,'state':'captured','capture':capture})
+                else:
+                    _require(capture['captured_at_us'] == capsule['observed_epoch_us']
+                             and capture['wire'] == capsule['wire']
+                             and 'forward_journal' in capture)
+                    prior = capture['forward_journal']
+                    advanced = _advance_forward_link(prior, link)
+                    if advanced != prior:
+                        self._write(record['revision'], {**body,'capture':
+                            {**capture,'forward_journal':advanced}})
+                    permitted()
+                    return body['state']
+            permitted()
+            _require(journal._snapshot() == epoch)
+            return 'captured'
+
+        def finish_import():
+            _require(journal._snapshot() == epoch)
+            journal._time()
+            # Bookend the post-exit observations too: a snapshot callback can
+            # replace storage after supplying its earlier observation.
+            _require(journal._snapshot() == epoch)
+            permitted()  # Observations finish before the final read guard.
+
+        try:
+            # Keep both objects busy through every final observation/guard.
+            return self._run(import_record, post_exit=finish_import)
+        except BaseException as error:
+            self._uncertain = journal._uncertain = True
+            if not isinstance(error, Exception):
+                raise
+            raise CaptureError() from None
+        finally:
+            journal._busy = False
+            journal._fresh = original_fresh
+
+    def process_pending(self, inbox, *, operation_id):
+        """Explicit reconciliation; durable disposition precedes capture clear.
+
+        Historical lookup is read-only and never grants fresh admission. An
+        expired original application can settle an existing signed admission
+        or record a rejection, but cannot create a new inbox record.
+        """
+        def process():
+            _uuid(operation_id)
+            _require(type(inbox) is MeshInbox and inbox._store is self.store
+                     and inbox._recipient == self.recipient)
+            record = self._read()
+            body = record['payload']['body']
+            if body['state'] == 'idle':
+                last = body['last_completed']
+                if last is not None and last['operation_id'] == operation_id:
+                    self._guard(_peer(last['sender']))
+                    if not last['acknowledged'] and last['decision']['status'] in ('admitted', 'duplicate'):
+                        verified = inbox.reconcile_binary(to_binary(last['wire']), sender=_peer(last['sender']),
+                            observed_at=last['observed_at_us'] // 1000000,
+                            peer_check=self._peer_allowed)
+                        _require(type(verified) is IngestResult and verified.status == 'duplicate'
+                                 and verified.record_id == last['decision']['record_id']
+                                 and verified.remote_id == last['decision']['remote_id']
+                                 and verified.envelope_kind == last['decision']['envelope_kind'])
+                    return IngestResult(**_decision(last['decision']))
+                return None
+            _require(body['state'] in ('captured', 'processed'))
+            capture = body['capture']
+            _require(capture['operation_id'] == operation_id)
+            sender = _peer(capture['sender'])
+            self._guard(sender)
+            if body['state'] == 'captured':
+                packet = to_binary(capture['wire'])
+                peer_check = self._peer_allowed
+                decision = inbox.reconcile_binary(packet, sender=sender,
+                    observed_at=capture['captured_at_us'] // 1000000, peer_check=peer_check)
+                if decision is None:
+                    if self.boot_id != capture['host_boot_id']:
+                        decision = IngestResult('rejected', reason='original_boot_changed')
+                    elif (self._time() >= capture['application_expires_epoch_us']
+                            or self._monotonic() >= capture['application_deadline_monotonic_us']):
+                        decision = IngestResult('rejected', reason='application_expired')
+                    else:
+                        decision = inbox.ingest_binary(capture['operation_id'], packet,
+                            sender=sender, peer_check=lambda peer: peer_check(peer)
+                                and self._time() < capture['application_expires_epoch_us']
+                                and self._monotonic() < capture['application_deadline_monotonic_us']
+                                and self.boot_id == capture['host_boot_id'])
+                _require(type(decision) is IngestResult)
+                value = _decision(dict(status=decision.status, record_id=decision.record_id,
+                    remote_id=decision.remote_id, envelope_kind=decision.envelope_kind, reason=decision.reason))
+                self._guard(sender)
+                record = self._write(record['revision'], {**body, 'state': 'processed', 'decision': value})
+                body = record['payload']['body']
+            decision = _decision(body['decision'])
+            if decision['status'] in ('admitted', 'duplicate'):
+                verified = inbox.reconcile_binary(to_binary(capture['wire']), sender=sender,
+                    observed_at=capture['captured_at_us'] // 1000000,
+                    peer_check=self._peer_allowed)
+                _require(type(verified) is IngestResult and verified.status == 'duplicate'
+                         and verified.record_id == decision['record_id']
+                         and verified.remote_id == decision['remote_id']
+                         and verified.envelope_kind == decision['envelope_kind'])
+            self._guard(sender)
+            self._write(record['revision'], {**body, 'state': 'idle', 'capture': None, 'decision': None,
+                'last_completed': dict(operation_id=capture['operation_id'],
+                    packet_sha256=capture['packet_sha256'], decision=decision, acknowledged=False,
+                    sender=capture['sender'], observed_at_us=capture['captured_at_us'], wire=capture['wire'],
+                    **({'forward_journal':capture['forward_journal']} if 'forward_journal' in capture else {}))})
+            self._guard(sender)
+            return IngestResult(**decision)
+        return self._run(process)
+
+    def acknowledge(self, operation_id):
+        """Owner acknowledges capture settlement; no peer delivery/read receipt.
+
+        Retaining the last completion until this explicit acknowledgement keeps
+        a lost clear response from being displaced by another capture intention.
+        """
+        def acknowledge():
+            _uuid(operation_id)
+            record = self._read()
+            body = record['payload']['body']
+            last = body['last_completed']
+            _require(body['state'] == 'idle' and last is not None and last['operation_id'] == operation_id)
+            if not last['acknowledged']:
+                self._write(record['revision'], {**body,
+                    'last_completed': {**last, 'acknowledged': True, 'wire': None}})
+            return True
+        return self._run(acknowledge)
+
+    def close(self, timeout=5.0):
+        """Join this producer; never close the borrowed store or settle RF debt."""
+        _require(type(timeout) in (int, float) and math.isfinite(timeout) and 0 <= timeout <= 60)
+        with self._condition:
+            self._closing = True
+            joined = self._condition.wait_for(lambda: self._busy is None, timeout)
+            return joined and not self._uncertain and self._known in ('idle', 'captured', 'processed')

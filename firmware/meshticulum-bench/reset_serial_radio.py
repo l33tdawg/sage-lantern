@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Recorded MCU-only reset between finite benchmark batches; never flash or arm."""
 import array
 import fcntl
@@ -25,7 +27,7 @@ def main():
         assert not part.is_absolute() and '..' not in part.parts
         assert hashlib.sha256((root / part).read_bytes()).hexdigest() == pin
     sys.path.insert(0, str(root))
-    from software.experiments.meshticulum_bench.node import _serial, roles
+    from lantern_meshticulum.bench.node import _serial, roles
     before_services = roles(unit)
     host_boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
     channel, worker, before = _serial(unit)

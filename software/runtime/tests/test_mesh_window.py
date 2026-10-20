@@ -37,10 +37,11 @@ RADIO_KEY = SigningKey(b'r' * 32).verify_key.encode()
 
 def test_every_mesh_artifact_cap_is_one_shared_day():
     assert MAX_WINDOW_SECONDS == 24 * 60 * 60
-    assert mesh_contacts.MAX_TTL_SECONDS is MAX_WINDOW_SECONDS
-    assert mesh_envelope.MAX_LIFETIME_SECONDS is MAX_WINDOW_SECONDS
-    # the outbox imports that same object rather than keeping its own copy
-    assert mesh_outbox.MAX_WINDOW_SECONDS is MAX_WINDOW_SECONDS
+    # mesh_envelope is a canonical Meshticulum module alias. Same-valued
+    # integers from separate modules are not guaranteed to share identity.
+    assert mesh_contacts.MAX_TTL_SECONDS == MAX_WINDOW_SECONDS
+    assert mesh_envelope.MAX_LIFETIME_SECONDS == MAX_WINDOW_SECONDS
+    assert mesh_outbox.MAX_WINDOW_SECONDS == MAX_WINDOW_SECONDS
 
 
 def test_owner_supplied_card_ttl_accepts_a_day_and_refuses_a_second_more():

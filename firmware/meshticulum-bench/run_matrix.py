@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Run a finite, recorded single-radio matrix using the existing pinned operators.
 
 The sudo password is read once from the controlling terminal, kept only in

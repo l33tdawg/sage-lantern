@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Prepare finite pairwise RF runs after explicit location/antenna confirmation.
 
 Fresh independent keys and synthetic random payloads go only to the selected
@@ -24,10 +26,10 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / 'work/meshticulum-abc-deployment-20261009'
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'src'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from software.experiments.meshticulum_bench.serial_protocol import RadioProfile
-from software.experiments.meshticulum_bench.profiles import MODES, profile_for
+from meshticulum.bench.serial_protocol import RadioProfile
+from lantern_meshticulum.bench.profiles import MODES, profile_for
 from make_object import load_chunk, manifest_for, validate
 
 STAGE = '''import hashlib,json,os,stat,sys

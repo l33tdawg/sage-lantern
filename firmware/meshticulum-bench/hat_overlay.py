@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Plan/apply/undo C's one boot overlay. Never reboots or opens the radio.
 
 Run plan on C first and review its exact hashes. Apply requires that plan and

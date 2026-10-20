@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Install a hash-pinned, short-lived bench grant. Does not open a radio."""
 import base64
 import hashlib
@@ -52,9 +54,9 @@ def main():
         need(hashlib.sha256(read(bundle / part, 500000, root=True)).hexdigest() == expected,
              'runtime_source_changed')
     sys.path.insert(0, str(bundle))
-    from software.experiments.meshticulum_bench.node import roles
-    from software.experiments.meshticulum_bench.authority import canonical, _private_info
-    from software.experiments.meshticulum_bench.objects import VerifiedChunks
+    from lantern_meshticulum.bench.node import roles
+    from meshticulum.bench.authority import canonical, _private_info
+    from meshticulum.bench.objects import VerifiedChunks
     services = roles(unit)
     grant = package['grant']
     need(grant.get('schema') in ('meshticulum.bench-run.v1', 'meshticulum.service-run.v1'),
@@ -100,7 +102,7 @@ def main():
         need(payload is not None and len(payload) == grant['object']['bytes']
              and hashlib.sha256(payload).hexdigest() == grant['object']['sha256'], 'wrong_sender_payload')
         if service:
-            from software.experiments.meshticulum_bench.services import _shape
+            from meshticulum.bench.services import _shape
             _shape(payload, grant['service']['format'])
     else:
         need(payload is None and reuse is False, 'receiver_must_not_have_ip_payload')

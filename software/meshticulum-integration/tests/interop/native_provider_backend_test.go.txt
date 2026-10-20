@@ -1,0 +1,174 @@
+package rest
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// This separate process-selected test preserves the real shared replay guard.
+// It neither clears its cache nor changes its capacity, expiry or signatures.
+func TestMeshticulumNativeProviderReplayWindowBoundary(t *testing.T) {
+	fixture := newWorkflowTestFixture(t)
+	for index := 0; index < 10001; index++ {
+		name := "first"
+		if index%2 == 1 {
+			name = "second"
+		}
+		key := fixture.keys[name]
+		actor := appV23LookupVaultID(key)
+		request := signedGovernanceRequestAs(t, key, actor, http.MethodGet, "/v1/messages/storage", nil)
+		response := httptest.NewRecorder()
+		fixture.server.Router().ServeHTTP(response, request)
+		if index < 10000 {
+			require.Equal(t, http.StatusOK, response.Code, "fresh signed storage observation unexpectedly refused")
+		} else {
+			require.Equal(t, http.StatusServiceUnavailable, response.Code)
+			var problem struct {
+				Title string `json:"title"`
+			}
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &problem))
+			require.Equal(t, "Replay window saturated", problem.Title)
+			t.Log("NATIVE_PROVIDER_REPLAY_DIAGNOSTIC requests=10001 accepted=10000 status=503 gate=Replay_window_saturated")
+		}
+	}
+}
+
+func TestMeshticulumNativeProviderBackendCanary(t *testing.T) {
+	python, script := os.Getenv("MESHTICULUM_NATIVE_BACKEND_PYTHON"), os.Getenv("MESHTICULUM_NATIVE_BACKEND_SCRIPT")
+	require.NotEmpty(t, python)
+	require.NotEmpty(t, script)
+	seconds, err := strconv.Atoi(os.Getenv("MESHTICULUM_NATIVE_BACKEND_CHILD_SECONDS"))
+	require.NoError(t, err)
+	require.True(t, seconds >= 15 && seconds <= 1200, "bounded fixture execution required")
+	var firstURL, secondURL, firstDatabase, secondDatabase string
+	seeds := [][]byte{appV23LookupVaultKey("workflow-first").Seed(), appV23LookupVaultKey("workflow-second").Seed()}
+	independent := os.Getenv("MESHTICULUM_NATIVE_BACKEND_INDEPENDENT") == "1"
+	if independent {
+		// testing.T.Context is canceled before T.Cleanup. Keep a separately
+		// bounded owner context until both children have joined their cleanup.
+		endpointContext, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+20)*time.Second)
+		t.Cleanup(cancel)
+		first := startNativeEndpoint(t, endpointContext, "first", seconds+15)
+		second := startNativeEndpoint(t, endpointContext, "second", seconds+15)
+		require.NotEqual(t, first.Ready.PID, second.Ready.PID)
+		firstURL, secondURL = first.Ready.URL, second.Ready.URL
+		firstDatabase, secondDatabase = first.Ready.Database, second.Ready.Database
+	} else {
+		first, second := newWorkflowTestFixture(t), newWorkflowTestFixture(t)
+		firstDatabase, err = filepath.EvalSymlinks(first.databasePath)
+		require.NoError(t, err)
+		secondDatabase, err = filepath.EvalSymlinks(second.databasePath)
+		require.NoError(t, err)
+		firstHTTP, secondHTTP := httptest.NewServer(first.server.Router()), httptest.NewServer(second.server.Router())
+		defer firstHTTP.Close()
+		defer secondHTTP.Close()
+		firstURL, secondURL = firstHTTP.URL, secondHTTP.URL
+	}
+	configuration, err := json.Marshal(map[string]any{
+		"schema":    "lantern.meshticulum.native-provider-backend-input.v1",
+		"first_url": firstURL, "second_url": secondURL,
+		"first_seed":            hex.EncodeToString(seeds[0]),
+		"second_seed":           hex.EncodeToString(seeds[1]),
+		"databases":             []string{firstDatabase, secondDatabase},
+		"child_timeout_seconds": seconds,
+	})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Duration(seconds)*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, python, "-B", script)
+	child.Stdin = bytes.NewReader(configuration)
+	child.WaitDelay = 5 * time.Second
+	output, childErr := child.CombinedOutput()
+	// Child errors and output are not echoed: stdin contains fixture seeds.
+	if childErr != nil {
+		var failure struct {
+			Schema    string `json:"schema"`
+			ErrorType string `json:"error_type"`
+			Frames    []struct {
+				File string `json:"file"`
+				Line int    `json:"line"`
+			} `json:"frames"`
+			Diagnostics json.RawMessage `json:"request_diagnostics"`
+		}
+		if len(output) <= 32768 && json.Unmarshal(output, &failure) == nil &&
+			failure.Schema == "lantern.meshticulum.native-provider-backend-canary.v1" {
+			// Report only a static exception class, never SDK error text.
+			valid := len(failure.ErrorType) > 0 && len(failure.ErrorType) <= 80
+			for _, c := range failure.ErrorType {
+				valid = valid && (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_')
+			}
+			if valid {
+				t.Log("native provider fixture refusal class=" + failure.ErrorType)
+				for _, frame := range failure.Frames {
+					if len(frame.File) <= 100 && filepath.Base(frame.File) == frame.File && frame.Line > 0 && frame.Line < 1000000 {
+						t.Logf("native provider safe frame=%s:%d", frame.File, frame.Line)
+					}
+				}
+				// Python records only static phase/route names and integer counts.
+				// It does not retain headers, bodies, record IDs or response data.
+				if len(failure.Diagnostics) > 0 && len(failure.Diagnostics) <= 16384 {
+					var diagnostics map[string]any
+					if json.Unmarshal(failure.Diagnostics, &diagnostics) == nil {
+						t.Log("NATIVE_PROVIDER_REQUEST_DIAGNOSTICS " + string(failure.Diagnostics))
+					}
+				}
+			}
+		}
+	}
+	require.NoError(t, childErr, "native provider fixture child did not complete")
+	require.LessOrEqual(t, len(output), 32768, "bounded aggregate result required")
+	var outcome map[string]any
+	require.NoError(t, json.Unmarshal(output, &outcome), "aggregate fixture result invalid")
+	require.Equal(t, "lantern.meshticulum.native-provider-backend-canary.v1", outcome["schema"])
+	require.Equal(t, true, outcome["complete"])
+	for _, name := range []string{"private_transport_qualified", "native_accounting_qualified",
+		"native_owner_consent_qualified", "private_production_enabled", "radio_opened", "memory_erasure_qualified",
+		"noise_key_encodings_scanned", "noise_key_disk_persistence_qualified"} {
+		require.Equal(t, false, outcome[name], "qualification must remain false")
+	}
+	for _, name := range []string{"modeled_lifecycle", "modeled_accounting", "modeled_clock", "modeled_transport",
+		"real_rest_backend", "real_temporary_vault"} {
+		require.Equal(t, true, outcome[name], "fixture coverage incorrectly described")
+	}
+	require.Equal(t, float64(4), outcome["scan_file_count"])
+	secrets := [][]byte{[]byte("MESHTICULUM-GENERATED-CANARY-")}
+	for _, seed := range seeds {
+		secrets = append(secrets, seed, []byte(hex.EncodeToString(seed)), []byte(base64.StdEncoding.EncodeToString(seed)))
+	}
+	for _, database := range []string{firstDatabase, secondDatabase} {
+		for _, suffix := range []string{"", "-wal"} {
+			info, err := os.Stat(database + suffix)
+			require.NoError(t, err)
+			require.True(t, info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= 32*1024*1024)
+			if suffix == "-wal" {
+				require.Greater(t, info.Size(), int64(32), "populated WAL required")
+			}
+			body, err := os.ReadFile(database + suffix)
+			require.NoError(t, err)
+			for _, secret := range secrets {
+				require.False(t, bytes.Contains(body, secret), "fixture plaintext or signing seed persisted")
+			}
+		}
+	}
+	outcome["independent_go_main_wal_scan"] = true
+	outcome["independent_endpoint_processes"] = independent
+	encoded, err := json.Marshal(outcome)
+	require.NoError(t, err)
+	for _, secret := range secrets {
+		require.False(t, bytes.Contains(encoded, secret), "aggregate result contains fixture secret")
+	}
+	t.Log("NATIVE_PROVIDER_BACKEND_OUTCOME " + string(encoded))
+}

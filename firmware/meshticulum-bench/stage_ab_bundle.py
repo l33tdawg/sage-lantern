@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Stage a frozen archive through pinned management SSH; never flash or use sudo."""
 import hashlib
 import json

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sage-lantern-meshticulum"
+version = "0.1.0"
+readme = "README.md"
+license-files = ["LICENSE", "NOTICE"]
+description = "Lantern device policy, finite pilots and SAGE application adapters for Meshticulum"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{name = "SAGE Foundation"}, {name = "Dhillon Andrew Kannabhiran"}]
+dependencies = ["meshticulum @ git+https://github.com/l33tdawg/meshticulum.git@673eb60d24dc60f67371e24bc5c9caeec3a68508"]
+
+[project.optional-dependencies]
+sage = ["sage-agent-sdk==11.19.10+lantern.20260906", "httpx>=0.28,<1"]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+sage-lantern-meshticulum-service = "lantern_meshticulum.bench.service_node:main"
+
+[project.urls]
+Repository = "https://github.com/l33tdawg/sage-lantern"
+Meshticulum = "https://github.com/l33tdawg/meshticulum"
+"SAGE Foundation" = "https://sage-foundation.net/"
+SAGE = "https://github.com/l33tdawg/sage/"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["lantern_meshticulum*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+pythonpath = ["src", "."]

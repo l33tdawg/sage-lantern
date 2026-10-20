@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Extracted for Meshticulum; namespace/path/test adaptation. See docs/EXTRACTION.md.
 """Bounded disarmed USB ingress diagnostic. Sends only invalid-body STATUS.
 
 No ARM or TRANSMIT message is constructed. Compare large, escaped frames
@@ -23,8 +25,8 @@ def main():
         assert not Path(name).is_absolute() and '..' not in Path(name).parts
         assert hashlib.sha256((BUNDLE / name).read_bytes()).hexdigest() == pin
     sys.path.insert(0, str(BUNDLE))
-    from software.experiments.meshticulum_bench import node
-    from software.experiments.meshticulum_bench.serial_protocol import Frame, Message
+    from lantern_meshticulum.bench import node
+    from meshticulum.bench.serial_protocol import Frame, Message
     node.roles(sys.argv[1])
     channel, worker, before = node._serial(sys.argv[1])
     rows = []

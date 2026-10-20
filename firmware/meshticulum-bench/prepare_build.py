@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Freeze an isolated bench build using the retained, locally patched r7 BSP.
 
 Does not flash, fetch, alter the retained firmware source or erase partitions.
@@ -8,9 +9,10 @@ from pathlib import Path
 import hashlib
 import json
 import shutil
+from source_core import core_source
 
 ROOT = Path(__file__).resolve().parents[2]
-RETAINED = ROOT / 'work/ab-serial-20260927'
+RETAINED = (ROOT / 'work/ab-serial-20260927').resolve()
 SOURCE = RETAINED / 'firmware-source'
 DEST = ROOT / 'work/meshticulum-abc-deployment-20261009/firmware-build'
 HERE = Path(__file__).resolve().parent
@@ -36,6 +38,7 @@ def hashes(root, excluded=()):
 
 
 def main():
+    firmware_source = core_source() / 'firmware/meshticulum-bench'
     if DEST.exists():
         raise SystemExit('Build snapshot already exists; retain it and use a new evidence directory.')
     base = hashes(SOURCE, ('.pio', '.git'))
@@ -46,7 +49,7 @@ def main():
     app = DEST / 'examples/meshticulum_bench'
     app.mkdir()
     for name in ('main.cpp', 'protocol.hpp'):
-        shutil.copy2(HERE / name, app / name)
+        shutil.copy2(firmware_source / name, app / name)
     own = hashes(app)
     digest = hashlib.sha256(json.dumps(own, sort_keys=True).encode()).hexdigest()
     shared = '''platform_packages =

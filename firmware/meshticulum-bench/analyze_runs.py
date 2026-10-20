@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Summarize collected physical-run evidence, retaining failures and null metrics.
 
 This checks consistency of operator-collected records, not independent hardware

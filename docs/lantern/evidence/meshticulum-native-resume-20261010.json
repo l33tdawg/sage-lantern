@@ -1,0 +1,154 @@
+{
+  "campaign": {
+    "all_verification_before_original_expiry": true,
+    "cache_after_lora_resume": [
+      "6b6258073cbdbe777b7ff3d7b694c98e45453d7d73b35ded4186a3ac2c91a631",
+      "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+    ],
+    "cache_after_loss": [
+      "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+    ],
+    "cache_before_loss": [
+      "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+    ],
+    "campaign_id": "b0ce8f3080cb024e12fe488122ab23bb",
+    "complete": true,
+    "failed_received_stream_bytes": 512,
+    "failed_reply_durable_or_cached": false,
+    "failed_reply_journal_fenced": true,
+    "fresh_faster_ip_sample_observed": true,
+    "fresh_lora_resume_qualified": true,
+    "initial_verified_piece_preserved_after_loss": true,
+    "measured_ip_return_qualified": true,
+    "native_children_terminal_and_retired": 20,
+    "original_application_expires_epoch_us": 1791631408372519,
+    "original_expiry_extended": false,
+    "public_manifest_sha256": "cef51ba8abc16d869f3dd3fddecd9a337602fb8a20e0c69bca04a0cc18e0cafa",
+    "publisher_verified_pieces": {
+      "first": {
+        "chunk_sha256": "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa",
+        "original_application_expires_epoch_us": 1791631408372519,
+        "publisher_verified": true,
+        "request_to_verification_us": 9440090,
+        "transport": "tcp",
+        "useful_verified_bytes": 977,
+        "useful_verified_bytes_per_second": 103.49477600319489,
+        "verified_epoch_us": 1791631262509800
+      },
+      "fresh_ip_sample": {
+        "chunk_sha256": "9af80eeb491f4dd83d2f528799ace047a0f3ca12b12f0fce67795c72e565c3d8",
+        "original_application_expires_epoch_us": 1791631408372519,
+        "publisher_verified": true,
+        "request_to_verification_us": 9529958,
+        "transport": "tcp",
+        "useful_verified_bytes": 977,
+        "useful_verified_bytes_per_second": 102.51881487830272,
+        "verified_epoch_us": 1791631352906236
+      },
+      "resumed": {
+        "chunk_sha256": "6b6258073cbdbe777b7ff3d7b694c98e45453d7d73b35ded4186a3ac2c91a631",
+        "original_application_expires_epoch_us": 1791631408372519,
+        "publisher_verified": true,
+        "request_to_verification_us": 54349727,
+        "transport": "lora",
+        "useful_verified_bytes": 977,
+        "useful_verified_bytes_per_second": 17.976171251053387,
+        "verified_epoch_us": 1791631337972102
+      },
+      "return_piece": {
+        "chunk_sha256": "e88ca024f575c57584ae5a98b22e86f5dce731bac8a999b6af7f4b77b399b2cb",
+        "original_application_expires_epoch_us": 1791631408372519,
+        "publisher_verified": true,
+        "request_to_verification_us": 9949616,
+        "transport": "tcp",
+        "useful_verified_bytes": 977,
+        "useful_verified_bytes_per_second": 98.1947444001859,
+        "verified_epoch_us": 1791631367891793
+      }
+    },
+    "reused_verified_chunks": [
+      "c70ed601484d1bdd4dfd5463c0ea4889ee20982f9c9fe3c4c632f09c9b6cdaaa"
+    ],
+    "sessions": 10,
+    "useful_verified_bytes": 3908
+  },
+  "coordination": {
+    "handoff_clock_utc": "2026-10-10T11:28:51Z",
+    "reusable_authority": false,
+    "terminal_handoff_sent": true,
+    "window_end_utc": "2026-10-10T11:35:00Z",
+    "window_start_utc": "2026-10-10T11:20:00Z"
+  },
+  "date_utc": "2026-10-10",
+  "debt_handoff_audit": {
+    "all_persistent_journals_match_terminal_snapshots": true,
+    "all_radio_attempt_journals_unfenced": true,
+    "all_radio_children_disarmed": true,
+    "charged_radio_attempts": 33,
+    "database_writes": false,
+    "deadline_extension": false,
+    "grant_changes": false,
+    "per_unit_retired_children": {
+      "unit-a": 0,
+      "unit-b": 10,
+      "unit-c": 10
+    },
+    "reserved_estimated_airtime_us": 2233231,
+    "visible_radio_holders": 0
+  },
+  "execution_pins": {
+    "bundle_manifest_sha256": "15f64943b82546e1c338546dd4fbd9318fd69e945a1064687586e5a00abfc819",
+    "core_commit": "a89c1ca6fdf1865d61367cf3a8d59ac1ab50cb39",
+    "lantern_head_at_execution": "7d2b45e63e5eb92ba058af7dfc736472ceb601cc",
+    "lantern_runtime_code_commit": "379025e177619ee3ffd51ef8d5ae0b2bc27dd54e",
+    "runtime_sha256": "856570c771f1377630c8456774a33f55660fe787af9336f2164d55ae9d10561f"
+  },
+  "measurement_scope": "Four tiny public pieces and service-level request-to-independent-verification timings, including controller/SSH/native preparation and final radio ACK intervals. The faster-path decision compares current native samples; it is not sustained carrier capacity or a matched MeshCore/Reticulum benchmark.",
+  "native_management": {
+    "firmware_flashes": 0,
+    "installed_runtime_files": 71,
+    "local_owned_ssh_masters_terminal": 3,
+    "native_source_boot_process_bindings_checked": true,
+    "owned_connection_reuse_executed": true,
+    "private_services_enabled": false,
+    "production_service_lifetimes_unchanged": true
+  },
+  "prior_failure_retained": "The separate earlier 90-second lease refusal remains in meshticulum-native-mixed-20261010.json; it is not overwritten or relabeled as this campaign.",
+  "raw_evidence": {
+    "files_sha256": {
+      "native-resume-attempt-02/RESULT.json": "f399bf4bf9db2a374bdffcf0be0318573503e8b89f5c6fe94271ad62c36b5ea3",
+      "native-resume-attempt-02/management-0036.out": "5638a8939277c373007e5ad8746514540a9fd948200ec9294d65b8f3c13e8655",
+      "native-resume-attempt-02/management-0037.out": "7670909c68ccadcd91aa7a32aa73ecb487f2f853fde550a23fd0e033906aba32",
+      "native-resume-attempt-02/management-0062.out": "7670909c68ccadcd91aa7a32aa73ecb487f2f853fde550a23fd0e033906aba32",
+      "native-resume-attempt-02/management-0084.out": "7334160aeb1da39111283c80d68f21ea0ec61ff745d3a514bcaec404e65680bb",
+      "native-resume-attempt-02/management-0085.out": "622e1a0d170e1369b1ebf18d10506cbdaecd716a3b06ea5601a7d2923e741c49",
+      "native-resume-attempt-02/management-0107.out": "1306fdface9c8316e5c09f5bc5f003318f8e591fab38950f4fd97f2d8e793f9e",
+      "native-resume-attempt-02/management-0129.out": "3dbd48234a9b6d8ad91b18ae7a27c4bdf4a9fa67c184c3c469a56056f073db1e",
+      "native-window-handback-03/unit-a.json": "3ff9423355f18390599cc4732693b7c0e91f67dd739eb8927cf69a12d933fd8a",
+      "native-window-handback-03/unit-b.json": "dfb6914c53dc6c490dc9215fa3d391e4732d8cfda291c0d60ca00f26a4a19739",
+      "native-window-handback-03/unit-c.json": "f69e4875d05abd8acfc9ee4ae9b88ca92d232511850d1665dab06573f603dae4",
+      "native_resume_pilot-02.py": "d843cc404db2b048bd236991af478b69eecfa8a8b2d2df3fc93c62509f8a6f53",
+      "native_window_handback-03.py": "f1eede8de2121df53334e6ec5504fbf6268af4a390b4f156d4c03f83453abd0d",
+      "public-pilot-06/FIXTURE.json": "396fe955f4e6ef5771119d8e72f51757609baab853df80cccfc190c132da67a1"
+    },
+    "not_embedded_in_meshticulum_core": true,
+    "retained_privately": true
+  },
+  "remaining_gates": {
+    "clean_initial_history_published": false,
+    "distributed_artifact_notice_source_license_closure": false,
+    "full_deployed_firmware_source_equivalence_proved": false,
+    "matched_meshcore_reticulum_benchmarks_complete": false,
+    "private_native_owner_consent_provider_qualified": false,
+    "private_production_enabled": false,
+    "private_transport_qualified": false,
+    "public_alpha_ready": false
+  },
+  "schema": "lantern.meshticulum.native-public-resume-qualification.v1",
+  "unavailable_measurements": {
+    "kernel_retransmission_bytes": null,
+    "measured_eirp_dbm": null,
+    "measured_energy_joules": null,
+    "measured_rf_airtime_us": null
+  }
+}

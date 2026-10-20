@@ -44,6 +44,14 @@ units on the ROCK 5B+.** See the [device-role map](docs/lantern/DEVICE_ROLES.md)
 for verified readiness and remaining integration work. Unit C is the first unit
 running the 3B chat model as its live device lane; V79.6 remains the rollback.
 
+[Meshticulum](https://github.com/l33tdawg/meshticulum/tree/0e240641d04b373402267c68cdf261a516a5156e)
+owns the reusable transport, crypto, flow, drivers and resource protocols.
+Lantern consumes that pinned dependency and owns its
+[private/native integration](software/meshticulum-integration/README.md) and
+[device deployment tooling](firmware/meshticulum-bench/README.md). The dependency
+is Lantern → Meshticulum; see the [candidate boundary RFC](docs/lantern/MESHTICULUM_REPOSITORY_BOUNDARY.md)
+for ownership and open qualification gates.
+
 ## What we're building
 
 ### The SAGE project family

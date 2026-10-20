@@ -31,7 +31,7 @@ from sage_sdk import AgentIdentity, SageClient
 
 from .community_service import CommunityMeshProvider
 from .device_access import access_epoch, device_locked, MARKER, _marker_state
-from .mesh_community import MeshReceiveConsent, MeshRequestAccess
+from .mesh_community import MeshReceiveConsent, MeshRequestAccess, MeshLeaseRefused
 from .mesh_envelope import Peer
 from .mesh_outbox import MeshOutbox, SCHEMAS as OUTBOX_SCHEMAS
 from .mesh_inbox import MeshInbox
@@ -222,6 +222,9 @@ class HardwareRuntime:
         self._read_receipts = None
         self._public_contact_check = public_contact_check
         self._initializing = False
+        self._forward_children = None
+        self._forward_radio = None
+        self._forward_admitted = False
         # Set once the radio open loop is entered. A refusal raised before this
         # point wrote nothing, so it must not latch the unit (see provider()).
         self._wire_started = False
@@ -240,6 +243,33 @@ class HardwareRuntime:
             return self._lock_marker() is True and self._config_reader() == self.config
         except Exception:
             return False
+
+    def adopt_forward_radio(self, adoption):
+        """Explicit provisioned-radio adoption; default runtime opens nothing."""
+        from lantern_meshticulum.sage.radio_native_adoption import NativeRadioAdoption
+        require(type(adoption) is NativeRadioAdoption and adoption.owner.resource is self)
+        require(self._provider is None and self._coordinator is None and not self._initializing
+                and self._radio_observer is None and self._forward_radio is None)
+        return adoption.adopt(self)
+
+    def adopt_forward_relay_radio(self, adoption):
+        """Explicit adjacent-hop relay adoption under its separate native owner."""
+        from lantern_meshticulum.sage.forward_native_relay_radio import RelayRadioAdoption
+        require(type(adoption) is RelayRadioAdoption and adoption.owner.resource is self)
+        require(self._provider is None and self._coordinator is None and not self._initializing
+                and self._radio_observer is None and self._forward_radio is None)
+        return adoption.adopt(self)
+
+    def adopt_forward_relay_ip(self, adoption):
+        """Explicit IP leg for the same independently admitted native relay."""
+        from lantern_meshticulum.sage.forward_native_relay_ip import RelayIpAdoption
+        from lantern_meshticulum.sage.forward_native_relay_radio import RelayRadioAdoption
+        require(type(adoption) is RelayIpAdoption and adoption.owner.resource is self)
+        require(self._provider is None and self._coordinator is None and not self._initializing
+                and self._radio_observer is None and getattr(self, '_forward_relay_ip', None) is None)
+        radio = self._forward_radio
+        require(radio is None or type(radio) is RelayRadioAdoption and radio.owner is adoption.owner)
+        return adoption.adopt(self)
 
     def active(self):
         if self._provider is not None and not self._provider._runtime.admission_safe():
@@ -446,6 +476,7 @@ class HardwareRuntime:
         raise ProviderRefused()
 
     def provider(self, guard):
+        require(getattr(self, "_forward_radio", None) is None)
         # Fail-closed, but say which conjunct closed. Unit A answered 503 on
         # every community route for a day with `mesh_ipc_unavailable` and no
         # journal line naming the reason: the guard, the supervisor's
@@ -627,7 +658,10 @@ class HardwareRuntime:
                                   delivery_receipts_enabled=self.config.get("delivery_receipts_enabled", False))
 
     def capture_lease(self, consent):
-        require(self.active() and consent == self.consent())
+        # No lease has been issued at this read-only admission boundary.
+        # A known refusal must not be turned into an uncertain acquisition.
+        if not self.active() or consent != self.consent():
+            raise MeshLeaseRefused()
         return self._capture_lease(consent, 30, lambda: self.consent() == consent)
 
     def beacon(self, guard):
@@ -678,7 +712,11 @@ class HardwareRuntime:
         def transport(value):
             nonlocal ended
             if value == {"op": "acquire", "epoch": consent.revision}:
-                require(not ended and self.active() and consent_check() is True)
+                # This local factory has not returned a token or admitted a
+                # capture. Exceptions remain uncertain; only an observed
+                # refusal is classified as having acquired no lease.
+                if ended or not self.active() or consent_check() is not True:
+                    raise MeshLeaseRefused()
                 return {"lease": token}
             require(value.get("lease") == token)
             if value["op"] == "finish":
@@ -870,7 +908,17 @@ class HardwareRuntime:
         self._closing = True
         self._background_stop.set()
         deadline = time.monotonic() + timeout
-        if not self._mutex.acquire(timeout=max(0, timeout)):
+        forward = getattr(self, "_forward_children", None)
+        if getattr(self, "_forward_admitted", False) or forward is not None:
+            # Forward containment cannot run under the same mutex as its live
+            # native leases. Fence and join it before legacy resource shutdown.
+            from lantern_meshticulum.sage.forward_children import ForwardChildren
+            if (type(forward) is not ForwardChildren or forward.resource is not self
+                    or forward.close(max(0, deadline-time.monotonic())) is not True):
+                return False
+        if getattr(self, "_forward_radio", None) is not None:
+            return False
+        if not self._mutex.acquire(timeout=max(0, deadline-time.monotonic())):
             return False
         try:
             if self._closed:

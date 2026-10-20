@@ -660,6 +660,24 @@ def test_background_capture_uses_owned_root_lease_and_drains(runtime):
     assert resource._provider._runtime._poller is None
 
 
+def test_authenticated_ready_leaves_rearm_to_supervisor_and_preserves_unknown(controlled_background):
+    values, provider, original, calls = controlled_background
+    state, supervisor, resource, config, opened = values
+    caller = threading.get_ident()
+    assert resource.invoke("ready", {}, lambda: True) is True
+    assert provider._runtime._poller is None and calls == []
+    worker = _supervisor_tick(resource, original)
+    assert worker != caller and calls == [worker]
+    assert provider._runtime._poller.is_alive()
+    assert provider.pause_receiving(timeout=2) is True
+    provider._runtime._uncertain = True
+    with pytest.raises(Exception):
+        resource.invoke("ready", {}, lambda: True)
+    count = len(calls)
+    _supervisor_tick(resource, original)
+    assert provider._runtime._poller is None and len(calls) == count
+
+
 def test_supervisor_rearms_cleanly_paused_background_not_unknown(runtime):
     state, supervisor, resource, config, opened = runtime
     config["messaging_enabled"] = True
@@ -854,6 +872,90 @@ def test_owned_background_runtime_joins_during_stop_before_probe_close(runtime, 
     finally:
         owner.close()
 
+
+class _OneSupervisorTick:
+    def __init__(self):self.waits=0;self.stopped=False
+    def wait(self, seconds):
+        self.waits+=1
+        return self.stopped or self.waits>1
+    def set(self):self.stopped=True
+
+
+@pytest.fixture
+def controlled_background(request, monkeypatch):
+    original=HardwareRuntime._supervise_background
+    monkeypatch.setattr(HardwareRuntime,'_supervise_background',lambda self:None)
+    values=request.getfixturevalue('runtime')
+    state,supervisor,resource,config,opened=values
+    config['messaging_enabled']=True
+    assert resource.invoke('ready',{},lambda:True) is True
+    provider=resource._provider
+    assert provider.pause_receiving(timeout=2) is True
+    calls=[];restart=provider.restart_receiving
+    def record(**kwargs):
+        calls.append(threading.get_ident());return restart(**kwargs)
+    monkeypatch.setattr(provider,'restart_receiving',record)
+    return values,provider,original,calls
+
+
+def _supervisor_tick(resource, original):
+    stop=_OneSupervisorTick();saved=resource._background_stop;resource._background_stop=stop
+    errors=[]
+    def invoke():
+        try:original(resource)
+        except BaseException as error:errors.append(type(error).__name__)
+    thread=threading.Thread(target=invoke,name='controlled-mesh-supervisor')
+    try:
+        thread.start();thread.join(5)
+        assert not thread.is_alive() and not errors and stop.waits==2
+        return thread.ident
+    finally:
+        stop.set();thread.join(5);resource._background_stop=saved
+
+
+def test_supervisor_rearm_refuses_lost_owner_and_never_waits_for_request_mutex(controlled_background):
+    values,provider,original,calls=controlled_background
+    state,supervisor,resource,config,opened=values
+    assert resource._mutex.acquire(blocking=False)
+    try:_supervisor_tick(resource,original)
+    finally:resource._mutex.release()
+    assert not calls and provider._runtime._poller is None
+    supervisor.alive=False
+    _supervisor_tick(resource,original)
+    assert not calls and provider._runtime._poller is None and not state.transmits
+
+
+@pytest.mark.parametrize('boundary',['entry','acquire'])
+def test_known_capture_lease_refusal_before_token_return_is_not_unknown(runtime,monkeypatch,boundary):
+    from sage_lantern.mesh_community import MeshActionAuthority, MeshLeaseRefused
+    state,supervisor,resource,config,opened=runtime
+    config['messaging_enabled']=True
+    if boundary=='entry':supervisor.phase='draining'
+    else:
+        snapshot=resource.probe.snapshot
+        def revoke_before_acquire():
+            value=snapshot();supervisor.phase='draining';return value
+        monkeypatch.setattr(resource.probe,'snapshot',revoke_before_acquire)
+    with pytest.raises(MeshLeaseRefused):
+        with MeshActionAuthority().receive_grant(resource.actor,'receive',resource.consent,
+                resource.capture_lease,lambda:True):
+            pytest.fail('refused lease must never yield an admitted context')
+    assert not resource._uncertain and not state.transmits and opened==[]
+
+
+def test_lost_acquisition_return_after_token_issue_remains_unknown(runtime):
+    from sage_lantern.mesh_community import MeshActionAuthority
+    from sage_lantern.mesh_runtime import MeshLeaseUncertain
+    state,supervisor,resource,config,opened=runtime;config['messaging_enabled']=True;issued=[]
+    def lost(consent):
+        issued.append(resource.capture_lease(consent))
+        raise RuntimeError('fixture lost acquired lease return')
+    try:
+        with pytest.raises(MeshLeaseUncertain):
+            with MeshActionAuthority().receive_grant(resource.actor,'receive',resource.consent,lost,lambda:True):pass
+        assert len(issued)==1 and issued[0].check() is True and not state.transmits
+    finally:
+        for lease in issued:lease.close()
 
 # --- provider refusals: audible, and not a permanent latch -------------------
 #

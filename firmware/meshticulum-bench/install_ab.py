@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Root operator entry point for the frozen A/B app-only bench bundle.
 
 Invoked from a hash-verified root-owned bundle with an isolated Python that has
@@ -20,10 +21,10 @@ import time
 BUNDLE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BUNDLE))
 
-from meshticulum_bench import flash_app
-from meshticulum_bench.linux_hat import HardwareError, _existing_openers, require
-from meshticulum_bench.serial_port import usb_identity
-from meshticulum_bench.serial_protocol import Decoder, FirmwareIdentity, Frame, Message
+from meshticulum.bench import flash_app
+from meshticulum.bench.linux_hat import HardwareError, _existing_openers, require
+from meshticulum.bench.serial_port import usb_identity
+from meshticulum.bench.serial_protocol import Decoder, FirmwareIdentity, Frame, Message
 
 UNITS = {'unit-a': 'F8:5B:1B:A5:F6:08', 'unit-b': '44:1B:F6:62:56:54'}
 

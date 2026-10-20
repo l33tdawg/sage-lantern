@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Prevent PlatformIO firmware-only builds fetching an unused test framework.
 
 Host-native fault tests are executed by pytest with clang++; a PlatformIO test

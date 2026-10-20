@@ -1,0 +1,127 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Explicit native public-piece verification; opens no socket or radio."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+
+from lantern_meshticulum.ip.node import _facts, _read, _write, clock
+from meshticulum.ip.journal import private
+from lantern_meshticulum.bench.pilot_context import original_context
+from lantern_meshticulum.bench.pilot_provision import identifier
+from lantern_meshticulum.bench.pilot_resources import verify_chunk
+from meshticulum.bench.wire import require
+from meshticulum.bench.public_block import public32_service,public_mb1_service
+
+STATE = Path('/var/lib/meshticulum-bench')
+
+
+def verify(unit, campaign_id, request_run_id, response_run_id):
+    facts = _facts(unit)
+    root = STATE
+    campaign = root / 'campaigns' / identifier(campaign_id)
+    private(campaign.lstat(), True)
+    saved = json.loads(_read(campaign / 'context.json', 2048))
+    context = original_context(campaign, unit=unit, host_boot_id=facts['host_boot_id'],
+        resource_sha256=saved['resource_sha256'], expires_epoch_us=saved['application_expires_epoch_us'], clock=clock)
+    digest = context['resource_sha256']
+    public = root / 'public' / digest
+    private(public.lstat(), True)
+    trust = json.loads(_read(public / 'trust.json', 16384))
+    request_directory = root / 'runs' / identifier(request_run_id)
+    private(request_directory.lstat(), True)
+    fd = os.open(request_directory / 'active', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    mb1_caps=mb1_owner=mb1_transport=None
+    try:
+        private(os.fstat(fd))
+        identity = (os.fstat(fd).st_dev, os.fstat(fd).st_ino)
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        def current():
+            info = (request_directory / 'active').lstat()
+            private(info)
+            require((info.st_dev, info.st_ino) == identity and os.pread(fd, 16, 0) == b'active\n',
+                    'native_request_authority_retired_or_changed')
+        current()
+        receipt = json.loads(_read(request_directory / 'result.json', 100000))
+        plan = json.loads(_read(request_directory / 'grant.json', 16384))
+        require(receipt['schema'] in ('meshticulum.physical-service-run.v1', 'meshticulum.ip-public-node-run.v1')
+                and receipt['unit'] == unit and receipt['host_boot_id'] == facts['host_boot_id']
+                and receipt['sends'] is True and receipt['complete'] is True
+                and receipt['service_format'] == 'MR1.request'
+                and receipt['original_application_expires_epoch_us'] == context['application_expires_epoch_us'],
+                'native_verification_requires_original_sent_request')
+        def deadline_current():
+            epoch, mono = clock()
+            deadline = receipt['original_application_deadline_us']
+            require(type(deadline) is int and mono < deadline <= context['application_deadline_monotonic_us']
+                    and epoch < context['application_expires_epoch_us'], 'native_request_original_deadline_expired_or_extended')
+        deadline_current()
+        request = _read(request_directory / 'sender.bin', 1024)
+        require(len(request) == plan['object']['bytes'] and hashlib.sha256(request).hexdigest() == plan['object']['sha256'],
+                'native_request_changed')
+        parent_id=receipt.get('parent',{}).get('parent_id')
+        if public_mb1_service(plan.get('service',{})) is not None:
+            require(parent_id is not None,'native_mb1_parent_required')
+            from .pilot_parent_caps import ParentPolicy
+            from .profiles import GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND
+            saved_policy=ParentPolicy.from_dict(json.loads(_read(root/'parents'/identifier(parent_id)/'policy.json',20000)))
+            require(saved_policy.qualification_kind in (GFSK_MB1_BUNDLE_KIND,GFSK250_MB1_BUNDLE_KIND,GFSK250_FAST_BUNDLE_KIND),'native_mb1_parent_kind_changed')
+            from .pilot_native_caps import _open_existing
+            from .pilot_bundle import _NativeOwner
+            mb1_caps=_open_existing(root,parent_id,facts,clock)
+            mb1_owner=_NativeOwner(mb1_caps,clock);mb1_transport=mb1_owner.context.transport
+            stage=mb1_owner.stage(campaign_id,receipt['original_application_expires_epoch_us'])
+            require(request==mb1_transport.request(stage['index']),'native_mb1_original_request_changed')
+        result = verify_chunk(root, identifier(response_run_id), facts=facts, clock=clock,
+            request=request, campaign_id=campaign_id, manifest_sha256=digest,
+            destination=public / 'received', trust=trust,
+            request_deadline_us=receipt['original_application_deadline_us'],
+            public32=public32_service(plan.get('service',{})),mb1_transport=mb1_transport,mb1_owner=mb1_owner)
+        current()
+        deadline_current()
+        require(json.loads(_read(request_directory / 'result.json', 100000)) == receipt
+                and json.loads(_read(request_directory / 'grant.json', 16384)) == plan
+                and _read(request_directory / 'sender.bin', 1024) == request, 'native_request_changed_during_verification')
+        epoch,mono=clock()
+        require(epoch<result['original_application_expires_epoch_us']
+                and mono<result['original_application_deadline_us'],'native_piece_receipt_deadline_expired')
+        result.update(verified_epoch_us=epoch,verified_monotonic_us=mono)
+        from .pilot_native_caps import _open_existing
+        from .pilot_bundle import BUNDLE_KINDS,accept_native_part
+        # Native policy is read from the original protected parent, never the
+        # result DTO. Single32 and legacy results keep their existing shape.
+        parent_id=receipt.get('parent',{}).get('parent_id')
+        if parent_id is not None:
+            from .pilot_parent_caps import ParentPolicy
+            saved_policy=ParentPolicy.from_dict(json.loads(_read(root/'parents'/identifier(parent_id)/'policy.json',20000)))
+            if saved_policy.qualification_kind in BUNDLE_KINDS:
+                caps=mb1_caps if mb1_caps is not None else _open_existing(root,parent_id,facts,clock)
+                try:result['bundle_part']=accept_native_part(caps,state=root,facts=facts,campaign_id=campaign_id,
+                    request_run_id=request_run_id,response_run_id=response_run_id,verified=result,clock=clock)
+                finally:
+                    if mb1_caps is None:require(caps.close(),'bundle_owner_close_unproved')
+        if mb1_caps is not None and mb1_caps.policy.qualification_kind == GFSK250_FAST_BUNDLE_KIND:
+            from .fast_bundle import verified_part_proof
+            result['fast_progress_proof'] = verified_part_proof(mb1_caps,response_run_id,result)
+        _write(root / 'runs' / response_run_id / 'verified-piece.json', json.dumps(result, sort_keys=True).encode() + b'\n')
+        return result
+    finally:
+        try:
+            if mb1_caps is not None:require(mb1_caps.close(),'bundle_owner_close_unproved')
+        finally:os.close(fd)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--unit', required=True, choices=('unit-a', 'unit-b', 'unit-c'))
+    parser.add_argument('--campaign-id', required=True)
+    parser.add_argument('--request-run-id', required=True)
+    parser.add_argument('--response-run-id', required=True)
+    args = parser.parse_args()
+    print(json.dumps(verify(args.unit, args.campaign_id, args.request_run_id, args.response_run_id), sort_keys=True))
+
+
+if __name__ == '__main__':
+    main()
