@@ -27,6 +27,7 @@ REQUIRED = {
     "etc/guarded-launch-policy.json": 0o600,
     "etc/native-policy.json": 0o600,
     "libexec/capture-selection-cli.py": 0o644,
+    "libexec/early_boot_admission.py": 0o644,
     "libexec/frozen_gnome_consumer.py": 0o644,
     "libexec/launch_selection.py": 0o644,
     "libexec/launch_settlement_recorder.py": 0o644,

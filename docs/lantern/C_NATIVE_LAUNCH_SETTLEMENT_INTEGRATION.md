@@ -118,6 +118,12 @@ BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
 hashes; source commit; and rejection of missing, extra, changed or symlinked
 files. It neither signs the manifest nor installs the bundle.
 
+`early_boot_admission.py` adds the source early-boot gate: current boot ID,
+initial UID mapping, protected policy generation and absence of any UID-1000
+process. The authority retains the admission receipt and refuses launch if the
+boot changes. The source gate is not yet invoked before every UID-1000 process
+by the native boot chain.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -141,20 +147,24 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   only after durable attempt or settlement transitions.
 - an exact native-bundle manifest/verification source contract with a fixed
   required file set and metadata closure.
+- an early-boot admission receipt requiring a clean UID-1000 namespace for the
+  current boot.
 
 ## Required implementation order
 
 1. Turn the compiled replay broker into the fitted Linux broker and install its
    fixed policy, socket and sidecar assets as one reviewed closure.
-2. Turn the isolated capture consumer and fixed policy into a root-owned
+2. Install and enforce the early-boot admission barrier before GDM or any
+   other UID-1000 process reaches the broker.
+3. Turn the isolated capture consumer and fixed policy into a root-owned
    installed dependency closure; never accept capture ID, generation or policy
    digest from bridge JSON or user-writable state.
-3. Serialize the release-attempt anchor and settlement journal through the
+4. Serialize the release-attempt anchor and settlement journal through the
    native owner. Preserve an unresolved attempt across supervisor crash, boot,
    cancellation and protection-store rollback.
-4. Bind the integrated anchor to a separate protected monotonic store and
+5. Bind the integrated anchor to a separate protected monotonic store and
    trusted owner identity. A same-store file alone is not rollback resistance.
-5. Replay failures before and after each durable write, after child exit, at
+6. Replay failures before and after each durable write, after child exit, at
    release-callback return, during supervisor restart and with stale or reused
    child identities.
 

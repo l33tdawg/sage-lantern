@@ -32,6 +32,7 @@ REQUIRED = {'/usr/local/libexec/sage-lantern-guarded-session-authority',
     '/usr/local/libexec/desktop-native-adapter.py',
     '/usr/local/libexec/sage-lantern-guarded-session-bridge',
     '/usr/local/libexec/capture-selection-cli.py',
+    '/usr/local/libexec/early_boot_admission.py',
     '/usr/local/libexec/frozen_gnome_consumer.py',
     '/usr/local/libexec/launch_selection.py',
     '/usr/local/libexec/launch_settlement_recorder.py',
@@ -98,7 +99,8 @@ def load_launch_policy(path, adapter):
     return {**value, **native}, check, hashlib.sha256(body).hexdigest()
 
 
-def load_settlement_runtime(source, journal_root, anchor_root, capture_policy):
+def load_settlement_runtime(source, journal_root, anchor_root, capture_policy,
+                            *, expected_uid=1000, early_root="/"):
     """Load and compose the reviewed source-only settlement owner."""
     source = Path(source)
     if not source.is_absolute() or not source.is_dir():
@@ -113,6 +115,8 @@ def load_settlement_runtime(source, journal_root, anchor_root, capture_policy):
         "recorder": ("sage_lantern_launch_settlement_recorder",
                      "launch_settlement_recorder.py"),
         "selection": ("sage_lantern_launch_selection", "launch_selection.py"),
+        "early": ("sage_lantern_early_boot_admission",
+                  "early_boot_admission.py"),
     }
     loaded = {}
     for name, (module_name, filename) in names.items():
@@ -141,7 +145,11 @@ def load_settlement_runtime(source, journal_root, anchor_root, capture_policy):
     selection = loaded["selection"].provider_from_capture(
         str(capture_policy), read_file=trusted_file,
         platform_identity=identity)
-    return selection, recorder, owner.recover
+    admission = loaded["early"].observe(
+        early_root, expected_uid=expected_uid, generation=1)
+    admission_check = lambda: loaded["early"].receipt_current(
+        admission, early_root)
+    return selection, recorder, owner.recover, admission_check
 
 
 def activation_check(policy, digest):
@@ -181,16 +189,19 @@ def remove_own_socket(path, identity):
 class Authority:
     def __init__(self, policy, check, digest, adapter, ready,
                  selection_provider=None, broker_factory=None,
-                 settlement_recorder=None, settlement_recovery=None):
+                 settlement_recorder=None, settlement_recovery=None,
+                 admission_check=None):
         self.policy, self.check, self.digest = policy, check, digest
         self.adapter, self.ready = adapter, ready
         self.selection_provider = selection_provider or (lambda: None)
         self.selection = None
         self.settlement_recovery = settlement_recovery
+        self.admission_check = admission_check
         self.recovery_confirmed = broker_factory is None
         if broker_factory is None:
             self.launch = LaunchOnce(self.prepare)
-        elif settlement_recorder is None or settlement_recovery is None:
+        elif (settlement_recorder is None or settlement_recovery is None
+              or admission_check is None):
             raise NativeError("settlement_owner_required")
         else:
             self.launch = BrokerLaunchOnce(
@@ -205,7 +216,9 @@ class Authority:
     def prepare(self):
         if (self.held.is_set() or not self.check() or not activation_check(self.policy, self.digest)
                 or existing_compositor(self.policy['uid'])
-                or not self.recovery_confirmed):
+                or not self.recovery_confirmed
+                or (self.admission_check is not None
+                    and not self.admission_check())):
             raise NativeError()
         selection = self.selection_provider()
         if (selection is None
@@ -380,9 +393,9 @@ def main(argv=None):
         raise NativeError()
     adapter = adapter_module()
     policy, check, digest = load_launch_policy(args.policy, adapter)
-    selection_provider = broker_factory = settlement_recorder = recovery = None
+    selection_provider = broker_factory = settlement_recorder = recovery = admission = None
     if args.loader_broker is not None:
-        selection_provider, settlement_recorder, recovery = load_settlement_runtime(
+        selection_provider, settlement_recorder, recovery, admission = load_settlement_runtime(
             args.settlement_source, args.settlement_root,
             args.settlement_anchor, args.capture_policy)
         broker_factory = lambda: LoaderBroker.connect(args.loader_broker)
@@ -396,7 +409,8 @@ def main(argv=None):
             selection_provider=selection_provider,
             broker_factory=broker_factory,
             settlement_recorder=settlement_recorder,
-            settlement_recovery=recovery)
+            settlement_recovery=recovery,
+            admission_check=admission)
         if not authority.recover():
             authority.hold()
         stop = threading.Event()
