@@ -173,7 +173,7 @@ bundle.
 A read-only Unit C check found kernel BTF `6.1.115-vendor-rk35xx` at
 `9392c4db…f15c60` and no `/dev/tpm*` device. Building that exact BTF produced
 a 13-hook object at `4f930d4c…427e39`; the corresponding review-only
-24-file bundle manifest is `8cb6d887…b440`. The target capture policy is
+24-file bundle manifest is `4a763340…43fb1`. The target capture policy is
 absent, so that input remains synthetic; the overlay/library and native/guarded
 policies are derived from read-only target bytes. The result still cannot be
 installed without an authorized capture policy and boot-window review. Evidence:
