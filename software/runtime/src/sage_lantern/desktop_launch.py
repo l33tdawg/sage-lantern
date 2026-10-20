@@ -8,6 +8,7 @@ import re
 import socket
 import struct
 import subprocess
+import uuid
 
 from .desktop_native import NativeError, process_snapshot, session_snapshot
 
@@ -105,10 +106,12 @@ def ready_datagram(body, ancillary, flags, pid, uid):
 
 class LaunchOnce:
     """A daemon lifetime permits one launch attempt. Failure never restarts apps."""
-    def __init__(self, prepare, spawn=spawn_shell):
+    def __init__(self, prepare, spawn=spawn_shell, pidfd_open=None):
         self.prepare, self.spawn = prepare, spawn
+        self.pidfd_open = pidfd_open or getattr(os, 'pidfd_open', None)
         self.attempted = False
         self.child = None
+        self.fd = None
 
     def start(self):
         if self.attempted:
@@ -116,4 +119,47 @@ class LaunchOnce:
         policy, session = self.prepare()  # Failed preflight may be retried; never spawn.
         self.attempted = True
         self.child = self.spawn(policy, session)
+        if not callable(self.pidfd_open):
+            raise NativeError('pidfd_unavailable')
+        self.fd = self.pidfd_open(self.child.pid)
+        return policy, session, self.child
+
+
+class BrokerLaunchOnce:
+    """Stage a stopped child through the broker before the one release call."""
+    def __init__(self, prepare, broker_factory, record, selection):
+        self.prepare = prepare
+        self.broker_factory = broker_factory
+        self.record = record
+        self.selection = selection
+        self.attempted = False
+        self.child = None
+        self.fd = None
+        self.broker = None
+
+    def start(self):
+        if self.attempted:
+            raise NativeError('held')
+        policy, session = self.prepare()
+        selection = self.selection()
+        if selection is None:
+            raise NativeError('capture_selection_required')
+        self.attempted = True
+        self.broker = self.broker_factory()
+        try:
+            self.child = self.broker.stage_until_recorded(
+                lambda child: self.record(child, selection),
+                launch_id=str(uuid.uuid4()),
+                capture_id=selection.capture_id,
+                generation=selection.generation,
+                policy_sha256=selection.policy_sha256)
+        except BaseException:
+            if self.broker.staged is not None:
+                self.child = self.broker.staged
+                self.fd = self.child.pidfd
+            raise
+        finally:
+            self.broker.close()
+            self.broker = None
+        self.fd = self.child.pidfd
         return policy, session, self.child

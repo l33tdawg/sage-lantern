@@ -8,9 +8,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from sage_lantern.desktop_launch import (BRIDGE, NOTIFY, ROOT_CGROUP, LaunchOnce,
-    active_session, bridge_peer, existing_compositor, ready_datagram, shell_environment,
-    spawn_shell)
+from sage_lantern.desktop_launch import (BRIDGE, NOTIFY, ROOT_CGROUP,
+    BrokerLaunchOnce, LaunchOnce, active_session, bridge_peer,
+    existing_compositor, ready_datagram, shell_environment, spawn_shell)
 from sage_lantern.desktop_native import NativeError, PeerAnchor
 from test_desktop_native import peer
 
@@ -119,8 +119,11 @@ def test_launch_failure_never_restarts_replaces_or_kills_a_child():
 
 def test_live_child_is_never_replaced_or_terminated():
     child = Mock(pid=123)
-    once = LaunchOnce(lambda: (policy(), session()), Mock(return_value=child))
+    once = LaunchOnce(
+        lambda: (policy(), session()), Mock(return_value=child),
+        pidfd_open=lambda pid: 7)
     assert once.start()[2] is child
+    assert once.fd == 7
     with pytest.raises(NativeError):
         once.start()
     child.kill.assert_not_called()
@@ -163,6 +166,7 @@ def test_authority_requires_fresh_non_authorizing_capture_selection(monkeypatch)
     monkeypatch.setattr(module, 'activation_check', lambda *_: True)
     monkeypatch.setattr(module, 'existing_compositor', lambda *_: False)
     monkeypatch.setattr(module, 'active_session', lambda *_: session())
+    monkeypatch.setattr(module, 'active_session', lambda *_: session())
     selection = SimpleNamespace(
         machine_id='a' * 32,
         boot_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -181,6 +185,57 @@ def test_authority_requires_fresh_non_authorizing_capture_selection(monkeypatch)
     authority.selection_provider = lambda: selection
     assert authority.prepare() == (policy(), session())
     assert authority.selection is selection
+
+
+def test_broker_authority_requires_recorder_and_uses_staged_pidfd():
+    module = authority_module()
+    with pytest.raises(NativeError, match='settlement_owner_required'):
+        module.Authority(
+            policy(), lambda: True, 'a' * 64, Mock(), Mock(),
+            broker_factory=Mock())
+    selection = SimpleNamespace(
+        capture_id='cccccccc-dddd-eeee-ffff-aaaaaaaaaaaa',
+        generation=7, policy_sha256='d' * 64)
+    child = SimpleNamespace(pid=123, pidfd=9)
+    broker = Mock()
+    calls = []
+    def stage(record, **kwargs):
+        calls.append(kwargs)
+        assert record(child) is True
+        return child
+    broker.stage_until_recorded.side_effect = stage
+    once = BrokerLaunchOnce(
+        lambda: (policy(), session()), lambda: broker,
+        lambda staged, selected: selected is selection, lambda: selection)
+    assert once.start()[2] is child
+    assert once.fd == 9
+    assert calls[0]['capture_id'] == selection.capture_id
+    assert calls[0]['generation'] == 7
+    broker.close.assert_called_once()
+
+
+def test_broker_authority_requires_clean_startup_recovery(monkeypatch):
+    module = authority_module()
+    monkeypatch.setattr(module, 'activation_check', lambda *_: True)
+    monkeypatch.setattr(module, 'existing_compositor', lambda *_: False)
+    monkeypatch.setattr(module, 'active_session', lambda *_: session())
+    selection = SimpleNamespace(
+        machine_id='a' * 32,
+        boot_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        capture_id='cccccccc-dddd-eeee-ffff-aaaaaaaaaaaa',
+        generation=7, policy_sha256='d' * 64, runtime_authorized=False)
+    authority = module.Authority(
+        policy(), lambda: True, 'a' * 64, Mock(), Mock(),
+        selection_provider=lambda: selection,
+        broker_factory=Mock(),
+        settlement_recorder=lambda *_: True,
+        settlement_recovery=lambda: (SimpleNamespace(status='uncertain'),))
+    assert authority.recover() is False
+    with pytest.raises(NativeError):
+        authority.prepare()
+    authority.settlement_recovery = lambda: ()
+    assert authority.recover() is True
+    assert authority.prepare() == (policy(), session())
 
 
 def test_authority_hold_closes_grants_without_process_termination():

@@ -19,7 +19,8 @@ import threading
 import time
 
 from sage_lantern.desktop_launch import (ROOT_CGROUP, CONTROL, NOTIFY, LaunchOnce,
-    active_session, bridge_peer, existing_compositor, ready_datagram)
+    BrokerLaunchOnce, active_session, bridge_peer, existing_compositor,
+    ready_datagram)
 from sage_lantern.desktop_native import (BrokerClient, NativeError, PeerAnchor,
     decode, kernel_peer, pidfd_alive, trusted_file)
 from sage_lantern.desktop_control import unique_object
@@ -120,12 +121,22 @@ def remove_own_socket(path, identity):
 
 class Authority:
     def __init__(self, policy, check, digest, adapter, ready,
-                 selection_provider=None):
+                 selection_provider=None, broker_factory=None,
+                 settlement_recorder=None, settlement_recovery=None):
         self.policy, self.check, self.digest = policy, check, digest
         self.adapter, self.ready = adapter, ready
         self.selection_provider = selection_provider or (lambda: None)
         self.selection = None
-        self.launch = LaunchOnce(self.prepare)
+        self.settlement_recovery = settlement_recovery
+        self.recovery_confirmed = broker_factory is None
+        if broker_factory is None:
+            self.launch = LaunchOnce(self.prepare)
+        elif settlement_recorder is None or settlement_recovery is None:
+            raise NativeError("settlement_owner_required")
+        else:
+            self.launch = BrokerLaunchOnce(
+                self.prepare, broker_factory, settlement_recorder,
+                lambda: self.selection)
         self.anchor = self.fd = self.native = self.worker = None
         self.seat = None
         self.gate = threading.Lock()
@@ -134,7 +145,8 @@ class Authority:
 
     def prepare(self):
         if (self.held.is_set() or not self.check() or not activation_check(self.policy, self.digest)
-                or existing_compositor(self.policy['uid'])):
+                or existing_compositor(self.policy['uid'])
+                or not self.recovery_confirmed):
             raise NativeError()
         selection = self.selection_provider()
         if (selection is None
@@ -148,6 +160,22 @@ class Authority:
             raise NativeError("capture_selection_required")
         self.selection = selection
         return self.policy, active_session(self.policy['uid'])
+
+    def recover(self):
+        """Settle every durable pre-release attempt before accepting a launch."""
+        if self.settlement_recovery is None:
+            self.recovery_confirmed = True
+            return True
+        try:
+            outcomes = self.settlement_recovery()
+        except Exception:
+            return False
+        if outcomes is None:
+            return False
+        if any(getattr(item, "status", None) != "settled" for item in outcomes):
+            return False
+        self.recovery_confirmed = True
+        return True
 
     def valid(self):
         try:
@@ -178,8 +206,12 @@ class Authority:
 
     def start(self, connection):
         with self.gate:
-            policy, session, child = self.launch.start()
-            self.fd = os.pidfd_open(child.pid)
+            try:
+                policy, session, child = self.launch.start()
+            except BaseException:
+                self.fd = getattr(self.launch, "fd", None)
+                raise
+            self.fd = self.launch.fd
             self.anchor = PeerAnchor.enroll(child.pid, policy['uid'], session['Id'],
                 policy['overlay'], policy['executable_sha256'], parent=os.getpid(), notify=NOTIFY)
             if not self.valid():
@@ -282,6 +314,8 @@ def main(argv=None):
         ready.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
         control, control_identity = bound_socket(CONTROL, policy['uid'], socket.SOCK_STREAM)
         authority = Authority(policy, check, digest, adapter, ready)
+        if not authority.recover():
+            authority.hold()
         stop = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
         signal.signal(signal.SIGINT, lambda *_: stop.set())

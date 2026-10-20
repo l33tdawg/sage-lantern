@@ -29,12 +29,13 @@ still returns `EOPNOTSUPP`.
 
 ## Why settlement is not wired around the live exec
 
-1. **The stopped-child settlement callback is not connected to a live
-   authority.** The C loader now requires `record_attempt()` after all frozen
-   child/map checks and before its sole release callback. The Linux backend
-   deliberately returns `EOPNOTSUPP` there, and the Python authority still uses
-   `spawn_shell()` rather than the loader. Recording after that direct exec
-   would leave a crash window in which a live child has no obligation.
+1. **The native stopped-child broker server does not exist yet.** The C loader
+   requires `record_attempt()` after all frozen child/map checks and before its
+   sole release callback. The Python authority now has a broker-backed launch
+   path that stages the stopped child, records it and releases only after an
+   exact acknowledgment. The Linux backend still returns `EOPNOTSUPP`, and
+   `main` supplies neither the broker connection nor a fitted settlement
+   recorder, so the direct `spawn_shell()` remains the only configured path.
 2. **The authority has no trusted capture-selection provider.** The source
    selection contract now validates an eligible frozen-consumer decision
    against the exact root-owned policy bytes and current machine/boot. The
@@ -99,6 +100,18 @@ recording fails, and sends `release` only after the callback returns exactly
 `True`. The native broker server, authority use of this client and startup
 recovery invocation remain open.
 
+`BrokerLaunchOnce` is now the authority alternative to `spawn_shell()`. It
+binds the staged child to the current frozen selection, requires an injected
+settlement recorder, preserves the staged pidfd on release uncertainty, and
+keeps the daemon's one-attempt/no-restart behavior.
+
+The broker authority also requires a startup recovery callback. It probes every
+durable pre-release attempt before `prepare()` can spawn and stays held if any
+result is uncertain. A compiled native replay now exercises the actual
+`loader.c` core over the broker socket: the child stops, the descriptor is
+passed, `record_attempt` waits for the client's release acknowledgment, and an
+abort kills only the still-stopped child.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -112,6 +125,10 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   release and a callback refusal prevents release.
 - strict frozen-capture selection binding and authority refusal without it.
 - strict loader-broker framing, pidfd handoff and record-before-release order.
+- an authority broker path that cannot be constructed without a settlement
+  recorder and preserves the staged pidfd on uncertainty.
+- a clean-recovery gate before broker-backed launch and a compiled native
+  stopped-child/handoff/release replay.
 
 ## Required implementation order
 
@@ -122,9 +139,9 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 2. Record the persistent child identity at attempt time using boot ID, PID and
    process start time, or a native pidfd handoff that remains valid after
    authority restart. A reused numeric PID/FD must not match.
-3. Implement the native broker server around the stopped-child loader, connect
-   its `record_attempt` callback to a fitted settlement owner, and make the
-   Python authority invoke the broker instead of `spawn_shell()`. Do not insert
+3. Turn the compiled replay broker into the fitted Linux broker, connect its
+   `record_attempt` callback to the settlement owner, and configure `main` to
+   select `BrokerLaunchOnce` instead of `spawn_shell()`. Do not insert
    settlement after a live exec.
 4. Put the isolated frozen-consumer process behind a fixed root-owned provider
    and connect it to `Authority.selection_provider`; never accept capture ID,
