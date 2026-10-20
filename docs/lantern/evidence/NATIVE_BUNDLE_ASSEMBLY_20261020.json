@@ -6,6 +6,8 @@
   "signed": false,
   "installed": false,
   "runtime_authorized": false,
+  "superseded_by": "docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json",
+  "superseded_reason": "The later target-BTF assembly uses the corrected /usr/local/libexec closure and the target vendor BTF.",
   "bundle_files": 18,
   "bpf_hook_sections": 13,
   "manifest_sha256": "d076a963ac857986dc635eb1ef8fa1f2f288c21bec21dff4883b1718911cb30e",
