@@ -138,6 +138,10 @@ open.
 BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
 hashes; source commit; and rejection of missing, extra, changed or symlinked
 files. It neither signs the manifest nor installs the bundle.
+`scripts/lantern/stage-native-bundle.py` seals an already-reviewed tree with
+that manifest once; it refuses a tree that already contains a manifest, so a
+retry cannot silently replace the bundle identity. The stager does not build
+the broker, object or policies and does not sign or install the result.
 
 `broker_agent.c` supplies the fitted-agent source around the Linux backend:
 it loads digest-bound object/shell/pin inputs, accepts the one staged request,

@@ -70,6 +70,18 @@ class NativeBundleTests(unittest.TestCase):
             check=True, capture_output=True, text=True)
         self.assertEqual(result.stdout.strip(), SOURCE)
 
+    def test_stage_script_seals_once(self):
+        script = ROOT / "scripts/lantern/stage-native-bundle.py"
+        command = [
+            sys.executable, str(script), str(self.root),
+            "--source-commit", SOURCE, "--expected-uid", str(os.geteuid())]
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        self.assertEqual(result.stdout.strip(), SOURCE)
+        self.assertTrue((self.root / B.MANIFEST).is_file())
+        again = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(again.returncode, 1)
+        self.assertIn("bundle_manifest_already_present", again.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
