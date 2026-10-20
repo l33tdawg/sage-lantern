@@ -148,9 +148,10 @@ that manifest once; it refuses a tree that already contains a manifest, so a
 retry cannot silently replace the bundle identity. The stager does not build
 the broker, object or policies and does not sign or install the result.
 
-`scripts/lantern/assemble-native-bundle.py` composes an exact 18-file review
-tree from a compiled broker, a compiled BPF object and three explicitly
-supplied policy files. It validates the 13 LSM sections and the manifest. The
+`scripts/lantern/assemble-native-bundle.py` composes an exact 24-file review
+tree from a compiled broker, a compiled BPF object, a target-derived GNOME
+overlay/library and explicitly supplied policy files. It validates the 13 LSM
+sections and the manifest. The
 review-only assembly evidence is
 `docs/lantern/evidence/NATIVE_BUNDLE_ASSEMBLY_20261020.json`; it used synthetic
 policy fixtures and builder-kernel BTF, so it is not a Unit C deployment
@@ -159,9 +160,10 @@ bundle.
 A read-only Unit C check found kernel BTF `6.1.115-vendor-rk35xx` at
 `9392c4db…f15c60` and no `/dev/tpm*` device. Building that exact BTF produced
 a 13-hook object at `4f930d4c…427e39`; the corresponding review-only
-18-file bundle manifest is `8f71fe74…66c6`. The target protected policies are
-absent, so this target-BTF bundle still uses synthetic policy fixtures and
-cannot be installed. Evidence:
+24-file bundle manifest is `8cb6d887…b440`. The target capture policy is
+absent, so that input remains synthetic; the overlay/library and native/guarded
+policies are derived from read-only target bytes. The result still cannot be
+installed without an authorized capture policy and boot-window review. Evidence:
 `docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json`.
 
 `broker_agent.c` supplies the fitted-agent source around the Linux backend:

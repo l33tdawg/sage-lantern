@@ -9,8 +9,13 @@
   "bpf_object_size": 806800,
   "bpf_hook_sections": 13,
   "broker_sha256": "27015a2d71a2f9661191a2edaea39b9922f785d6a55a6d77b024027af089cea4",
-  "bundle_files": 18,
-  "bundle_manifest_sha256": "8f71fe745e4b440d029f647f921e5287961bd07d260bb7fe7f700c03afce66c6",
+  "bundle_files": 24,
+  "bundle_manifest_sha256": "8cb6d887a1defcbb53a8dea382b6cd96a890aa0b9b51a76e89a74d07036ba440",
+  "gnome_library_sha256": "d492a9c4d7c683149518c246fda3bd8cee2c73f4b4a54697ad8fd29604b98c21",
+  "gnome_overlay_manifest_sha256": "f85c267edd6394e9601a64ddfdca7733dcf52b9cca9916040ad0ca6e45781c72",
+  "native_policy_sha256": "d2d1407e636e843fc6a3d760c96626d03abb1b0b7590b3ddb8c9eec41c8df8e0",
+  "guarded_launch_policy_sha256": "b14a513d0d414701d987c90a4781c32c033c1b48ccc2b680e969bfd80a9155cc",
+  "capture_policy_synthetic_sha256": "ee1cf637807d7f1f2d0457fe925140a1e3a6c11715ddf92e2643e10d92396ab1",
   "source_commit": "0fb2a912db52ef58b4a89187d2227b03ef6cd583",
   "review_only": true,
   "signed": false,
@@ -24,7 +29,7 @@
   ],
   "limitations": [
     "The BPF object was compiled from the target vendor BTF but was not loaded or verified by the target kernel.",
-    "The bundle used synthetic policy fixtures because the target protected policies were absent.",
+    "The overlay/library and native/guard-launch policies were derived from read-only target bytes, but the capture policy and its capture record are synthetic because they are absent on the target.",
     "The target has no TPM character device visible in the read-only check.",
     "The broker, object and bundle were not installed, activated or accepted on Unit C."
   ]
