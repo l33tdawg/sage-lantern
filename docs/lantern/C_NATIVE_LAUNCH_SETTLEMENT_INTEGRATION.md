@@ -139,6 +139,19 @@ has not been provisioned or exercised against a TPM. RPMB and other hardware
 owners, NV-index attributes, provisioning and cold-power/rollback drills remain
 open.
 
+For units without a TPM, `NvmeSmartCounter` uses the existing NVMe controller's
+monotonic `Data Units Written` telemetry. A private witness write is fsynced and
+the adapter waits for the controller-reported value to increase; the device
+serial is pinned and the anchor counter must never move backward. This is a
+no-purchase software path, but it trusts the NVMe controller/telemetry and is
+not RPMB authentication or a hardware-security proof.
+
+On Unit C, a temporary 1 MiB witness on `/var/tmp` (the root NVMe filesystem)
+advanced `Data Units Written` from 688434 to 688437. The same probe on `/tmp`
+failed closed because `/tmp` is tmpfs. Both temporary files were removed and no
+service was installed or activated. Evidence:
+`docs/lantern/evidence/NVME_COUNTER_UNIT_C_20261020.json`.
+
 `native_bundle.py` defines the exact native bundle closure: required broker,
 BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
 hashes; source commit; and rejection of missing, extra, changed or symlinked

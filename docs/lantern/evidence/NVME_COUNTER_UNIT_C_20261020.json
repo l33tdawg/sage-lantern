@@ -1,0 +1,31 @@
+{
+  "schema": "sage.lantern.nvme-counter-evidence.v1",
+  "generated_at": "2026-10-20T06:05:00Z",
+  "device": "lantern-c",
+  "controller_model": "Netac NVMe SSD 256GB",
+  "controller_rpmb_field": "0x00004466",
+  "smartctl_version": "7.5",
+  "witness_filesystem": "/dev/nvme0n1p1 ext4",
+  "tmpfs_probe": {
+    "path": "/tmp/nvme-witness",
+    "result": "refused_counter_not_advanced",
+    "reason": "tmpfs does not issue the witness write to the NVMe controller"
+  },
+  "nvme_probe": {
+    "path": "/var/tmp/sage-nvme-witness",
+    "witness_bytes": 1048576,
+    "before": 688434,
+    "after": 688437,
+    "advanced": true,
+    "temporary_files_removed": true
+  },
+  "review_only": true,
+  "runtime_authorized": false,
+  "installed": false,
+  "limitations": [
+    "Data Units Written is controller telemetry, not TPM/RPMB authentication.",
+    "The adapter pins the NVMe serial but trusts the storage controller and firmware.",
+    "The temporary witness probe was not a service install, activation or boot-gate test.",
+    "No cold-power rollback simulation or complete launch sequence was run."
+  ]
+}
