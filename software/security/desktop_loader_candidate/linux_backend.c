@@ -274,10 +274,43 @@ static int stopped(void *context, const struct lantern_child *child)
         return -EPERM;
     return 0;
 }
+static int child_start_ticks(pid_t pid, uint64_t *value)
+{
+    char path[64], buffer[4096], *cursor, *end;
+    ssize_t count;
+    int fd;
+    if (pid <= 1 || !value) return -EINVAL;
+    if (snprintf(path, sizeof(path), "/proc/%ld/stat", (long)pid) >=
+        (int)sizeof(path)) return -EINVAL;
+    fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -EPERM;
+    count = read(fd, buffer, sizeof(buffer) - 1);
+    close(fd);
+    if (count <= 0 || count >= (ssize_t)sizeof(buffer)) return -EPERM;
+    buffer[count] = '\0';
+    end = strrchr(buffer, ')');
+    if (!end) return -EPERM;
+    cursor = end + 1;
+    /* The post-comm fields begin with state (field 3). Start time is field
+     * 22, so skip 19 complete fields and parse the next token. */
+    for (unsigned field = 0; field < 19; field++) {
+        while (*cursor == ' ') cursor++;
+        if (!*cursor) return -EPERM;
+        while (*cursor && *cursor != ' ') cursor++;
+    }
+    while (*cursor == ' ') cursor++;
+    if (*cursor < '1' || *cursor > '9') return -EPERM;
+    errno = 0;
+    unsigned long long parsed = strtoull(cursor, &end, 10);
+    if (errno || end == cursor || (*end && *end != ' ') || !parsed)
+        return -EPERM;
+    *value = (uint64_t)parsed;
+    return 0;
+}
 static int spawn_stopped(void *context, struct lantern_child *child)
 {
     struct lantern_linux *c = context; struct rlimit core = {0, 0};
-    int pipefd[2], fd; pid_t pid; uint64_t cookie;
+    int pipefd[2], fd; pid_t pid; uint64_t cookie, start_ticks;
     if (!live(c) || c->spawned || c->shell_fd < 0 || shell_digest(c) || !c->environment ||
         getrandom(&cookie, sizeof(cookie), 0) != sizeof(cookie) || !cookie) return -EPERM;
     c->spawned = 1;
@@ -313,7 +346,9 @@ static int spawn_stopped(void *context, struct lantern_child *child)
         fexecve(c->shell_fd, argv, c->environment);
 child_failed:
         failure = errno ? errno : EPERM;
-        (void)write(pipefd[1], &failure, sizeof(failure)); _exit(127);
+        ssize_t written = write(pipefd[1], &failure, sizeof(failure));
+        (void)written;
+        _exit(127);
     }
     close(pipefd[1]);
     if (pid < 0) { close(pipefd[0]); return err(); }
@@ -321,7 +356,12 @@ child_failed:
     if (fd < 0) { /* Only our unreleased child; no numeric-PID adoption. */
         kill(pid, SIGKILL); waitpid(pid, NULL, 0); close(pipefd[0]); return err();
     }
-    c->owned_child = (struct lantern_child){fd, pid, cookie}; c->exec_error_fd = pipefd[0];
+    if (child_start_ticks(pid, &start_ticks)) {
+        kill(pid, SIGKILL); waitpid(pid, NULL, 0);
+        close(fd); close(pipefd[0]); return -EPERM;
+    }
+    c->owned_child = (struct lantern_child){fd, pid, start_ticks, cookie};
+    c->exec_error_fd = pipefd[0];
     struct timespec pause = {0, 10000000};
     /* Bounded startup wait; a stalled child never blocks the supervisor
      * indefinitely. The future serialized event loop owns cancellation. */
@@ -367,9 +407,9 @@ static int frozen(void *context, int pidfd, const struct lantern_guard_grant *gr
 }
 static int record_attempt(void *context, const struct lantern_child *child)
 {
-    (void)context; (void)child;
-    /* No fitted settlement owner exists. Refuse before the release callback. */
-    return -EOPNOTSUPP;
+    struct lantern_linux *c = context;
+    if (!live(c) || !c->record_callback) return -EOPNOTSUPP;
+    return c->record_callback(c->record_context, child);
 }
 static int release(void *context, const struct lantern_child *child)
 {

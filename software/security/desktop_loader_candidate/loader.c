@@ -93,7 +93,8 @@ int lantern_launch(struct lantern_loader *s, const struct lantern_ops *o, void *
         return failed(s, o, ctx);
     s->attempted = 1; /* Includes failed spawn: never retry/adopt a replacement. */
     if (o->spawn_stopped(ctx, &s->child) || s->phase != LANTERN_PINNED || s->child.pidfd < 0 ||
-        s->child.pid <= 1 || !s->child.cookie || o->stopped(ctx, &s->child) ||
+        s->child.pid <= 1 || !s->child.start_ticks || !s->child.cookie ||
+        o->stopped(ctx, &s->child) ||
         s->phase != LANTERN_PINNED)
         return failed(s, o, ctx);
     s->phase = LANTERN_CHILD_STOPPED;

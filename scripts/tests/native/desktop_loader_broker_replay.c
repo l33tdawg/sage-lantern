@@ -98,7 +98,7 @@ static int spawn_stopped(void *context, struct lantern_child *child)
     }
     b->child_pid = pid;
     b->passed_fd = passed;
-    *child = (struct lantern_child){passed, pid, 9001};
+    *child = (struct lantern_child){passed, pid, 456, 9001};
     return 0;
 }
 static int stopped(void *context, const struct lantern_child *child)

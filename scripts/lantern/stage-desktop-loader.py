@@ -10,12 +10,19 @@ FLAGS = ("installed_on_c", "kernel_enforcement_qualified", "alternate_launch_clo
          "candidate_seat_qualified", "desktop_pin_accepted", "deployable")
 SOURCES = (
     *("software/security/desktop_loader_candidate/" + name for name in
-      ("loader.h", "loader.c", "linux_backend.h", "linux_backend.c", "inspect.c", "README.md")),
+      ("loader.h", "loader.c", "linux_backend.h", "linux_backend.c",
+       "broker_agent.c", "inspect.c", "README.md")),
     "software/security/desktop_guard_policy.h",
     "scripts/tests/native/desktop_loader_replay.c",
     "scripts/tests/native/desktop_loader_linux_replay.c",
+    "scripts/tests/native/desktop_loader_broker_replay.c",
+    "scripts/tests/native/desktop_loader_child_identity_replay.c",
     "scripts/tests/test_desktop_loader_candidate.py",
+    "scripts/tests/test_native_broker_build.py",
     "scripts/tests/test_stage_desktop_loader.py",
+    "scripts/lantern/build-native-broker.sh",
+    "scripts/lantern/build-native-broker-in-container.sh",
+    "scripts/lantern/native-broker-builder.Dockerfile",
     "scripts/lantern/stage-desktop-loader.py",
     "docs/lantern/DESKTOP_LOADER_CANDIDATE.md",
 )

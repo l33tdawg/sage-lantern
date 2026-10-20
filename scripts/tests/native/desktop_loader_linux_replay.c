@@ -75,7 +75,7 @@ int main(int argc, char **argv)
     c.shell_fd = root_open("/review-fixtures/file", O_RDONLY); CHECK(c.shell_fd >= 0);
     CHECK(EVP_Digest("altered", 7, c.policy.shell_sha256, &digest_size, EVP_sha256(), NULL));
     char *environment[] = {"PATH=/usr/bin:/bin", NULL}; c.environment = environment;
-    struct lantern_child child = {-1, 0, 0};
+    struct lantern_child child = {-1, 0, 0, 0};
     CHECK(!spawn_stopped(&c, &child));
     CHECK(child.pid > 1 && child.pidfd >= 0 && child.cookie);
     CHECK(!stopped(&c, &child));

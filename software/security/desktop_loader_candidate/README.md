@@ -10,9 +10,12 @@ pinned and positively attested before it permits one child creation attempt.
 It writes that child's grant using its pidfd, reads it back, freezes the map,
 checks that a same-value userspace write is denied, then rechecks the stopped
 child and all pins, durably records the settlement attempt through
-`record_attempt`, and only then requests release. The Linux backend currently
-refuses `record_attempt` with `EOPNOTSUPP`; no unfitted owner can release the
-child. Failure fences admission and retains pins. Release uncertainty is
+`record_attempt`, and only then requests release. The Linux backend invokes
+the broker's injected record callback only after it has obtained the child's
+PID/start-time identity; an absent callback still refuses with
+`EOPNOTSUPP`. The fitted broker source supplies that callback, while
+`prepare()` continues to return `EOPNOTSUPP`, so no unfitted owner can release
+the child. Failure fences admission and retains pins. Release uncertainty is
 sticky: repeated cancellation never turns it into permission to terminate a
 potentially running session.
 
@@ -37,11 +40,25 @@ Run the portable replay from the repository root:
 python3 -m pytest -q scripts/tests/test_desktop_loader_candidate.py
 ```
 
-The isolated ARM64 build/replay script and compiler definition are in
-`work/c-desktop-loader-20261002/build/`. It uses no network or capabilities at
-execution, reads repository sources through a read-only mount, and writes only
-new build evidence. Its disposable stopped child is killed before UID drop or
-exec. No compositor, user session or BPF policy is launched by the tests.
+The source build has two entry points:
+
+```
+scripts/lantern/build-native-broker.sh OUTPUT
+scripts/lantern/build-native-broker-in-container.sh OUTPUT
+```
+
+The first is the Linux-host build. On macOS or another non-Linux host the
+second uses the pinned ARM64 builder in
+`scripts/lantern/native-broker-builder.Dockerfile`, runs the compile with
+network access disabled, and copies the resulting binary to `OUTPUT`. The
+builder installs the declared libbpf, libelf, zlib, OpenSSL and C toolchain
+packages. It is a source-build check, not a C device measurement and not a
+claim that the kernel verifier accepted any program.
+
+The previous isolated ARM64 replay and compiler definition remain under
+`work/c-desktop-loader-20261002/build/` in the full evidence checkout. Its
+disposable stopped child is killed before UID drop or exec. No compositor,
+user session or BPF policy is launched by these checks.
 
 The root early-boot session admission barrier, qualified asset/environment and
 GNOME plan, authenticated activation policy, native broker/seat integration,

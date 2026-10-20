@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -151,6 +152,48 @@ class OwnerTests(unittest.TestCase):
         outcomes = owner.recover()
         self.assertEqual(len(outcomes), 1)
         self.assertEqual(outcomes[0].status, "uncertain")
+
+    def test_anchor_is_advanced_for_attempt_and_settlement(self):
+        anchor_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, anchor_dir, True)
+        Path(anchor_dir).chmod(0o700)
+        store = O.A.FileAnchorStore(anchor_dir)
+        owner = O.SettlementOwner(self.journal, self.probe, store)
+        self.assertTrue(owner.initialize_anchor())
+        self.assertEqual(owner.anchor_value.generation, 1)
+        obligation, _ = owner.track_release(
+            self.release(), CAPTURE, POLICY,
+            (L.ResourceRef("child", "child:123:456"),))
+        self.assertEqual(owner.anchor_value.generation, 2)
+        self.assertEqual(len(owner.anchor_value.release_sha256), 64)
+        self.assertEqual(owner.settle(obligation).status, "settled")
+        self.assertEqual(owner.anchor_value.generation, 3)
+        reopened = O.SettlementOwner(
+            J.SettlementJournal(
+                J.FileJournalBackend(self.journal_dir),
+                L.SettlementAuthority(ProbeBackend(self.probe))),
+            self.probe, O.A.FileAnchorStore(anchor_dir))
+        self.assertEqual(reopened.recover(), ())
+
+    def test_anchor_mismatch_blocks_recovery_and_new_attempts(self):
+        anchor_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, anchor_dir, True)
+        Path(anchor_dir).chmod(0o700)
+        store = O.A.FileAnchorStore(anchor_dir)
+        owner = O.SettlementOwner(self.journal, self.probe, store)
+        self.assertTrue(owner.initialize_anchor())
+        owner.track_release(
+            self.release(), CAPTURE, POLICY,
+            (L.ResourceRef("child", "child:123:456"),))
+        record_path = Path(self.journal_dir) / (
+            owner.journal.pending()[0].obligation_sha256 + ".json")
+        record_path.unlink()
+        self.assertEqual(owner.recover()[0].reason, "settlement_anchor_mismatch")
+        with self.assertRaisesRegex(
+                L.SettlementRefused, "settlement_anchor_mismatch"):
+            owner.track_release(
+                self.release(), CAPTURE, POLICY,
+                (L.ResourceRef("child", "child:789:987"),))
 
 
 if __name__ == "__main__":

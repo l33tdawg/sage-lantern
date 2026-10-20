@@ -42,7 +42,7 @@ static int attest(void *v, const struct lantern_binding *b, uint32_t id)
 static int spawn(void *v, struct lantern_child *c)
 {
     struct fake *f = v; f->spawned++;
-    *c = (struct lantern_child){7, 123, 99}; return point(v);
+    *c = (struct lantern_child){7, 123, 456, 99}; return point(v);
 }
 static int stopped(void *v, const struct lantern_child *c)
 { (void)c; struct fake *f = v; int result = point(v); return f->dead_child ? -ESRCH : result; }

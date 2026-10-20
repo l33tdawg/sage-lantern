@@ -231,7 +231,8 @@ def test_broker_authority_requires_clean_startup_recovery(monkeypatch):
         selection_provider=lambda: selection,
         broker_factory=Mock(),
         settlement_recorder=lambda *_: True,
-        settlement_recovery=lambda: (SimpleNamespace(status='uncertain'),))
+        settlement_recovery=lambda: (SimpleNamespace(status='uncertain'),),
+        admission_check=lambda: True)
     assert authority.recover() is False
     with pytest.raises(NativeError):
         authority.prepare()
@@ -243,10 +244,21 @@ def test_broker_authority_requires_clean_startup_recovery(monkeypatch):
 def test_settlement_runtime_composes_provider_recorder_and_recovery(tmp_path):
     module = authority_module()
     tmp_path.chmod(0o700)
-    selection, recorder, recovery = module.load_settlement_runtime(
+    anchor = tmp_path / 'anchor'
+    anchor.mkdir(mode=0o700)
+    early = tmp_path / 'early'
+    boot = early / 'proc/sys/kernel/random/boot_id'
+    boot.parent.mkdir(parents=True)
+    boot.write_text('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n')
+    uid_map = early / 'proc/self/uid_map'
+    uid_map.parent.mkdir(parents=True)
+    uid_map.write_text('0 0 4294967295\n')
+    selection, recorder, recovery, admission = module.load_settlement_runtime(
         ROOT / 'software/security/desktop_loader_candidate',
-        tmp_path, '/synthetic/capture-policy.json')
+        tmp_path, anchor, '/synthetic/capture-policy.json',
+        early_root=early)
     assert callable(selection) and callable(recorder) and callable(recovery)
+    assert admission() is True
     assert recovery() == ()
 
 
