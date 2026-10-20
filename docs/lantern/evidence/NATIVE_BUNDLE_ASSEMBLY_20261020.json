@@ -1,0 +1,26 @@
+{
+  "schema": "sage.lantern.native-bundle-assembly-evidence.v1",
+  "generated_at": "2026-10-20T05:11:00Z",
+  "source_commit": "0fb2a912db52ef58b4a89187d2227b03ef6cd583",
+  "review_only": true,
+  "signed": false,
+  "installed": false,
+  "runtime_authorized": false,
+  "bundle_files": 18,
+  "bpf_hook_sections": 13,
+  "manifest_sha256": "d076a963ac857986dc635eb1ef8fa1f2f288c21bec21dff4883b1718911cb30e",
+  "inputs": {
+    "broker_sha256": "27015a2d71a2f9661191a2edaea39b9922f785d6a55a6d77b024027af089cea4",
+    "bpf_object_sha256": "2f332828617ecd65bf2fde690e075dfda460613b74e33dc0b0368b338b2025e6",
+    "capture_policy_sha256": "ee1cf637807d7f1f2d0457fe925140a1e3a6c11715ddf92e2643e10d92396ab1",
+    "guarded_launch_policy_sha256": "fbaf962278c6bf2eed52d007e5a3bb818a90efbee37d22495cfdf56734894dd2",
+    "native_policy_sha256": "42f031201dab3926cb144222ebbe49bbb5ce34247a4d6c3203ce402da496b127"
+  },
+  "limitations": [
+    "Broker and BPF object were built in an isolated ARM64 Linux builder, not on Unit C.",
+    "The BPF object used LinuxKit builder BTF, not Unit C's vendor kernel BTF.",
+    "Policy files were synthetic schema fixtures, not live Unit C capture, launch or native policies.",
+    "The manifest is unsigned and has not been installed, activated or accepted on a device.",
+    "No kernel verifier, attach, deny/allow, seat, privacy or physical acceptance was performed."
+  ]
+}

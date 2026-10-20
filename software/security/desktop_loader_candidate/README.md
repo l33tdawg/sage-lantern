@@ -60,6 +60,12 @@ The previous isolated ARM64 replay and compiler definition remain under
 disposable stopped child is killed before UID drop or exec. No compositor,
 user session or BPF policy is launched by these checks.
 
+Build the disabled BPF object separately on Linux with
+`scripts/lantern/build-native-bpf.sh OUTPUT BTF`. The script requires
+`bpftool`, Clang and LLVM, generates `vmlinux.h` from the supplied BTF, and
+produces the object without loading or attaching it. Use Unit C's exact BTF
+for target qualification; a host-builder object is not a vendor-kernel result.
+
 The root early-boot session admission barrier now has a source oneshot unit
 ordered before display-manager, getty and SSH, and a protected receipt that the
 broker-backed authority re-reads. Its actual boot graph, every alternate entry

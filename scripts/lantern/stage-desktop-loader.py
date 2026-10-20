@@ -25,8 +25,11 @@ SOURCES = (
     "scripts/tests/test_stage_desktop_loader.py",
     "scripts/lantern/build-native-broker.sh",
     "scripts/lantern/build-native-broker-in-container.sh",
+    "scripts/lantern/build-native-bpf.sh",
+    "scripts/lantern/assemble-native-bundle.py",
     "scripts/lantern/native-broker-builder.Dockerfile",
     "scripts/lantern/stage-native-bundle.py",
+    "docs/lantern/evidence/NATIVE_BUNDLE_ASSEMBLY_20261020.json",
     "scripts/lantern/stage-desktop-loader.py",
     "docs/lantern/DESKTOP_LOADER_CANDIDATE.md",
 )
