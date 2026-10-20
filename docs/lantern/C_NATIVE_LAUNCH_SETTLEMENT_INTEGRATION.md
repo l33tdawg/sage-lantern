@@ -154,7 +154,7 @@ bundle.
 A read-only Unit C check found kernel BTF `6.1.115-vendor-rk35xx` at
 `9392c4db…f15c60` and no `/dev/tpm*` device. Building that exact BTF produced
 a 13-hook object at `4f930d4c…427e39`; the corresponding review-only
-18-file bundle manifest is `557ca0b4…58915`. The target protected policies are
+18-file bundle manifest is `8f71fe74…66c6`. The target protected policies are
 absent, so this target-BTF bundle still uses synthetic policy fixtures and
 cannot be installed. Evidence:
 `docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json`.

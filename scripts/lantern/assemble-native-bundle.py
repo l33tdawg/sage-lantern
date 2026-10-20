@@ -97,7 +97,7 @@ def assemble(args):
             "etc/native-policy.json": (native, 0o600),
         }
         for name, source in LIBS.items():
-            targets["libexec/" + name] = (SOURCE / source, 0o644)
+            targets["usr/local/libexec/" + name] = (SOURCE / source, 0o644)
         for name in UNITS:
             targets["lib/systemd/system/" + name] = (
                 SYSTEMD / name, 0o644)

@@ -36,16 +36,16 @@ class NativeBundleTests(unittest.TestCase):
     def test_changed_missing_extra_and_symlink_refuse(self):
         value = B.build(self.root, SOURCE)
         B.write(self.root, value)
-        target = self.root / "libexec/native_probe.py"
+        target = self.root / "usr/local/libexec/native_probe.py"
         target.write_bytes(b"changed\n")
         with self.assertRaisesRegex(B.BundleRefused, "bundle_manifest_mismatch"):
             B.verify(self.root)
-        target.write_bytes(b"libexec/native_probe.py\n")
+        target.write_bytes(b"usr/local/libexec/native_probe.py\n")
         (self.root / "extra.txt").write_text("extra")
         with self.assertRaisesRegex(B.BundleRefused, "bundle_file_set_mismatch"):
             B.verify(self.root)
         (self.root / "extra.txt").unlink()
-        (self.root / "libexec/link.py").symlink_to("native_probe.py")
+        (self.root / "usr/local/libexec/link.py").symlink_to("native_probe.py")
         with self.assertRaisesRegex(B.BundleRefused, "bundle_symlink_present"):
             B.build(self.root, SOURCE)
 
