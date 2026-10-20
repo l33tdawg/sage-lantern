@@ -35,7 +35,12 @@ class SettlementOwner:
         self.probe = probe
         self.anchor = anchor
         self.owner_sha256 = None if owner is None else A.owner_digest(owner)
-        self.anchor_value = None if anchor is None else anchor.read()
+        try:
+            self.anchor_value = None if anchor is None else anchor.read()
+        except (A.AnchorRefused, OSError):
+            # A stale/missing counter or malformed seal is an uncertain
+            # recovery state, never an empty journal that permits a new launch.
+            self.anchor_value = None
 
     def initialize_anchor(self):
         """Provision an empty journal seal once; never rebase existing work."""

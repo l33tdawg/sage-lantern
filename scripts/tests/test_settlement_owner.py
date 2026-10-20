@@ -246,6 +246,89 @@ class OwnerTests(unittest.TestCase):
         self.assertEqual(owner.settle(obligation).status, "settled")
         self.assertEqual(owner.anchor_value.counter_value, 6)
 
+    def test_counter_bound_restart_settles_the_durable_attempt(self):
+        class Counter:
+            def __init__(self):
+                self.value = 4
+
+            def read(self):
+                return O.A.CounterValue(self.value)
+
+            def advance(self, expected):
+                if expected != self.value:
+                    raise O.A.CounterRefused("counter_race")
+                self.value += 1
+                return O.A.CounterValue(self.value)
+
+        anchor_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, anchor_dir, True)
+        Path(anchor_dir).chmod(0o700)
+        counter = Counter()
+        store = O.A.FileAnchorStore(anchor_dir, counter=counter)
+        owner = O.SettlementOwner(self.journal, self.probe, store)
+        self.assertTrue(owner.initialize_anchor())
+        obligation, _ = owner.track_release(
+            self.release(), CAPTURE, POLICY,
+            (L.ResourceRef("child", "child:123:456"),))
+        reopened = O.SettlementOwner(
+            J.SettlementJournal(
+                J.FileJournalBackend(self.journal_dir),
+                L.SettlementAuthority(ProbeBackend(self.probe))),
+            self.probe, store)
+        outcomes = reopened.recover()
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].status, "settled")
+        self.assertEqual(counter.value, 6)
+
+    def test_counter_ahead_after_interrupted_anchor_write_is_uncertain(self):
+        class Counter:
+            def __init__(self):
+                self.value = 4
+
+            def read(self):
+                return O.A.CounterValue(self.value)
+
+            def advance(self, expected):
+                if expected != self.value:
+                    raise O.A.CounterRefused("counter_race")
+                self.value += 1
+                return O.A.CounterValue(self.value)
+
+        anchor_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, anchor_dir, True)
+        Path(anchor_dir).chmod(0o700)
+        counter = Counter()
+        store = O.A.FileAnchorStore(anchor_dir, counter=counter)
+        owner = O.SettlementOwner(self.journal, self.probe, store)
+        self.assertTrue(owner.initialize_anchor())
+        write = store._write
+        store._write = lambda _value: (_ for _ in ()).throw(
+            O.A.AnchorRefused("simulated_anchor_write_failure"))
+        try:
+            with self.assertRaises(O.L.SettlementRefused):
+                owner.track_release(
+                    self.release(), CAPTURE, POLICY,
+                    (L.ResourceRef("child", "child:123:456"),))
+        finally:
+            store._write = write
+        reopened = O.SettlementOwner(
+            J.SettlementJournal(
+                J.FileJournalBackend(self.journal_dir),
+                L.SettlementAuthority(ProbeBackend(self.probe))),
+            self.probe, store)
+        outcomes = reopened.recover()
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].status, "uncertain")
+        self.assertEqual(outcomes[0].reason, "settlement_anchor_mismatch")
+        with self.assertRaisesRegex(
+                O.L.SettlementRefused, "settlement_anchor_mismatch"):
+            reopened.track_release(
+                Release(
+                    Selection(Identity(MACHINE, BOOT), 9, 7, "3" * 64),
+                    "ffffffff-aaaa-bbbb-cccc-dddddddddddd"),
+                CAPTURE, POLICY,
+                (L.ResourceRef("child", "child:789:987"),))
+
 
 if __name__ == "__main__":
     unittest.main()
