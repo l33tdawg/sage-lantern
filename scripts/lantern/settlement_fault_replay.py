@@ -279,6 +279,61 @@ def stale_counter():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def counter_read_failure():
+    tmp = tempfile.mkdtemp(prefix="settlement-counter-read-")
+    try:
+        store = A.FileAnchorStore(tmp, counter=A.UnavailableCounter())
+        try:
+            store.create(A.AnchorValue(1, "a" * 64, 0))
+        except A.AnchorRefused as error:
+            return {"status": "refused", "reason": str(error)}
+        return {"status": "unexpected_success"}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def counter_advance_failure():
+    tmp = tempfile.mkdtemp(prefix="settlement-counter-advance-")
+    try:
+        counter = Counter(4)
+        store = A.FileAnchorStore(tmp, counter=counter)
+        first = store.create(A.AnchorValue(1, "a" * 64, 0))
+        def fail(_value):
+            counter.value += 1
+            raise A.CounterRefused("simulated_counter_advance_failure")
+        counter.advance = fail
+        try:
+            store.compare_exchange(first, A.AnchorValue(2, "b" * 64, 0))
+        except A.AnchorRefused as error:
+            advance = str(error)
+        try:
+            store.read()
+        except A.AnchorRefused as error:
+            readback = str(error)
+        return {"advance": advance, "readback": readback}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def owner_substitution():
+    tmp = tempfile.mkdtemp(prefix="settlement-owner-replay-")
+    try:
+        owner = A.OwnerIdentity(
+            "a" * 32, "sage-native-owner", "b" * 64, 0)
+        other = A.OwnerIdentity(
+            "a" * 32, "other-owner", "b" * 64, 0)
+        store = A.FileAnchorStore(tmp, owner=owner)
+        store.create(A.AnchorValue(
+            1, "a" * 64, 0, owner_sha256=A.owner_digest(owner)))
+        try:
+            A.FileAnchorStore(tmp, owner=other).read()
+        except A.AnchorRefused as error:
+            return {"status": "refused", "reason": str(error)}
+        return {"status": "unexpected_success"}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 CASES = [
     ("normal", normal),
     ("create_failure_before_replace", create_fail_before),
@@ -293,6 +348,9 @@ CASES = [
     ("unavailable_backend", unavailable),
     ("counter_write_failure", counter_write_failure),
     ("stale_counter", stale_counter),
+    ("counter_read_failure", counter_read_failure),
+    ("counter_advance_failure", counter_advance_failure),
+    ("owner_substitution", owner_substitution),
 ]
 
 
