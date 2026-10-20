@@ -15,21 +15,34 @@ import socket
 import socketserver
 import stat
 import struct
+import sys
 import threading
 import time
 
 from sage_lantern.desktop_launch import (ROOT_CGROUP, CONTROL, NOTIFY, LaunchOnce,
-    active_session, bridge_peer, existing_compositor, ready_datagram)
+    BrokerLaunchOnce, active_session, bridge_peer, existing_compositor,
+    ready_datagram)
 from sage_lantern.desktop_native import (BrokerClient, NativeError, PeerAnchor,
     decode, kernel_peer, pidfd_alive, trusted_file)
 from sage_lantern.desktop_control import unique_object
 from sage_lantern.desktop_seat import SeatAnchor
+from sage_lantern.loader_broker import LoaderBroker
 
 REQUIRED = {'/usr/local/libexec/sage-lantern-guarded-session-authority',
     '/usr/local/libexec/desktop-native-adapter.py',
     '/usr/local/libexec/sage-lantern-guarded-session-bridge',
+    '/usr/local/libexec/capture-selection-cli.py',
+    '/usr/local/libexec/frozen_gnome_consumer.py',
+    '/usr/local/libexec/launch_selection.py',
+    '/usr/local/libexec/launch_settlement_recorder.py',
+    '/usr/local/libexec/lifecycle_settlement.py',
+    '/usr/local/libexec/linux_probe.py',
+    '/usr/local/libexec/native_probe.py',
+    '/usr/local/libexec/settlement_journal.py',
+    '/usr/local/libexec/settlement_owner.py',
     *('/opt/sage-lantern/venv/lib/python3.11/site-packages/sage_lantern/' + name + '.py'
-      for name in ('__init__', 'desktop_launch', 'desktop_native', 'desktop_control', 'desktop_seat'))}
+      for name in ('__init__', 'desktop_launch', 'desktop_native',
+                   'desktop_control', 'desktop_seat', 'loader_broker'))}
 
 
 def adapter_module():
@@ -84,6 +97,46 @@ def load_launch_policy(path, adapter):
     return {**value, **native}, check, hashlib.sha256(body).hexdigest()
 
 
+def load_settlement_runtime(source, journal_root, capture_policy):
+    """Load and compose the reviewed source-only settlement owner."""
+    source = Path(source)
+    if not source.is_absolute() or not source.is_dir():
+        raise NativeError()
+    names = {
+        "lifecycle": "lifecycle_settlement.py",
+        "journal": "settlement_journal.py",
+        "probe": "linux_probe.py",
+        "owner": "settlement_owner.py",
+        "recorder": "launch_settlement_recorder.py",
+        "selection": "launch_selection.py",
+    }
+    loaded = {}
+    for name, filename in names.items():
+        path = source / filename
+        spec = importlib.util.spec_from_file_location(
+            f"guarded_settlement_{name}", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        loaded[name] = module
+    lifecycle = loaded["lifecycle"]
+    journal = loaded["journal"].SettlementJournal(
+        loaded["journal"].FileJournalBackend(journal_root),
+        lifecycle.SettlementAuthority())
+    probe = loaded["probe"].LinuxProbe("/")
+    owner = loaded["owner"].SettlementOwner(journal, probe)
+    recorder = loaded["recorder"].LaunchSettlementRecorder(owner)
+    def identity():
+        machine = trusted_file("/etc/machine-id").decode("ascii").strip()
+        boot = trusted_file(
+            "/proc/sys/kernel/random/boot_id").decode("ascii").strip()
+        return machine, boot
+    selection = loaded["selection"].provider_from_capture(
+        str(capture_policy), read_file=trusted_file,
+        platform_identity=identity)
+    return selection, recorder, owner.recover
+
+
 def activation_check(policy, digest):
     value = json.loads(trusted_file(policy['activation_file']))
     return value == dict(schema='sage.lantern.desktop-pin-activation.v1',
@@ -119,10 +172,23 @@ def remove_own_socket(path, identity):
 
 
 class Authority:
-    def __init__(self, policy, check, digest, adapter, ready):
+    def __init__(self, policy, check, digest, adapter, ready,
+                 selection_provider=None, broker_factory=None,
+                 settlement_recorder=None, settlement_recovery=None):
         self.policy, self.check, self.digest = policy, check, digest
         self.adapter, self.ready = adapter, ready
-        self.launch = LaunchOnce(self.prepare)
+        self.selection_provider = selection_provider or (lambda: None)
+        self.selection = None
+        self.settlement_recovery = settlement_recovery
+        self.recovery_confirmed = broker_factory is None
+        if broker_factory is None:
+            self.launch = LaunchOnce(self.prepare)
+        elif settlement_recorder is None or settlement_recovery is None:
+            raise NativeError("settlement_owner_required")
+        else:
+            self.launch = BrokerLaunchOnce(
+                self.prepare, broker_factory, settlement_recorder,
+                lambda: self.selection)
         self.anchor = self.fd = self.native = self.worker = None
         self.seat = None
         self.gate = threading.Lock()
@@ -131,9 +197,37 @@ class Authority:
 
     def prepare(self):
         if (self.held.is_set() or not self.check() or not activation_check(self.policy, self.digest)
-                or existing_compositor(self.policy['uid'])):
+                or existing_compositor(self.policy['uid'])
+                or not self.recovery_confirmed):
             raise NativeError()
+        selection = self.selection_provider()
+        if (selection is None
+                or getattr(selection, "runtime_authorized", None) is not False
+                or not getattr(selection, "machine_id", None)
+                or not getattr(selection, "boot_id", None)
+                or not getattr(selection, "capture_id", None)
+                or type(getattr(selection, "generation", None)) is not int
+                or getattr(selection, "generation") < 1
+                or not getattr(selection, "policy_sha256", None)):
+            raise NativeError("capture_selection_required")
+        self.selection = selection
         return self.policy, active_session(self.policy['uid'])
+
+    def recover(self):
+        """Settle every durable pre-release attempt before accepting a launch."""
+        if self.settlement_recovery is None:
+            self.recovery_confirmed = True
+            return True
+        try:
+            outcomes = self.settlement_recovery()
+        except Exception:
+            return False
+        if outcomes is None:
+            return False
+        if any(getattr(item, "status", None) != "settled" for item in outcomes):
+            return False
+        self.recovery_confirmed = True
+        return True
 
     def valid(self):
         try:
@@ -164,8 +258,12 @@ class Authority:
 
     def start(self, connection):
         with self.gate:
-            policy, session, child = self.launch.start()
-            self.fd = os.pidfd_open(child.pid)
+            try:
+                policy, session, child = self.launch.start()
+            except BaseException:
+                self.fd = getattr(self.launch, "fd", None)
+                raise
+            self.fd = self.launch.fd
             self.anchor = PeerAnchor.enroll(child.pid, policy['uid'], session['Id'],
                 policy['overlay'], policy['executable_sha256'], parent=os.getpid(), notify=NOTIFY)
             if not self.valid():
@@ -254,7 +352,19 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--policy', type=Path, required=True)
+    parser.add_argument("--capture-policy", type=Path)
+    parser.add_argument("--loader-broker")
+    parser.add_argument("--settlement-root", type=Path)
+    parser.add_argument("--settlement-source", type=Path,
+        default=Path(__file__).resolve().parents[2] /
+            "software/security/desktop_loader_candidate")
     args = parser.parse_args(argv)
+    broker_values = (args.capture_policy, args.loader_broker,
+                     args.settlement_root)
+    if any(value is not None for value in broker_values) and not all(
+            value is not None for value in broker_values):
+        parser.error("capture-policy, loader-broker and settlement-root "
+                     "must be supplied together")
     status = Path('/proc/self/status').read_text()
     if (os.geteuid() != 0 or not hasattr(os, 'pidfd_open') or 'NoNewPrivs:\t1\n' not in status
             or resource.getrlimit(resource.RLIMIT_CORE) != (0, 0)
@@ -262,12 +372,24 @@ def main(argv=None):
         raise NativeError()
     adapter = adapter_module()
     policy, check, digest = load_launch_policy(args.policy, adapter)
+    selection_provider = broker_factory = settlement_recorder = recovery = None
+    if args.loader_broker is not None:
+        selection_provider, settlement_recorder, recovery = load_settlement_runtime(
+            args.settlement_source, args.settlement_root, args.capture_policy)
+        broker_factory = lambda: LoaderBroker.connect(args.loader_broker)
     ready, ready_identity = bound_socket(NOTIFY, policy['uid'], socket.SOCK_DGRAM)
     authority = None
     try:
         ready.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
         control, control_identity = bound_socket(CONTROL, policy['uid'], socket.SOCK_STREAM)
-        authority = Authority(policy, check, digest, adapter, ready)
+        authority = Authority(
+            policy, check, digest, adapter, ready,
+            selection_provider=selection_provider,
+            broker_factory=broker_factory,
+            settlement_recorder=settlement_recorder,
+            settlement_recovery=recovery)
+        if not authority.recover():
+            authority.hold()
         stop = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
         signal.signal(signal.SIGINT, lambda *_: stop.set())
