@@ -31,6 +31,7 @@ SOURCES = (
     "scripts/lantern/stage-native-bundle.py",
     "docs/lantern/evidence/NATIVE_BUNDLE_ASSEMBLY_20261020.json",
     "docs/lantern/evidence/NATIVE_BUNDLE_UNIT_C_BTF_20261020.json",
+    "docs/lantern/evidence/NATIVE_BOOT_CHAIN_UNIT_C_20261020.json",
     "scripts/lantern/stage-desktop-loader.py",
     "docs/lantern/DESKTOP_LOADER_CANDIDATE.md",
 )

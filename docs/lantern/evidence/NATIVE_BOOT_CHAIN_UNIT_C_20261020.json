@@ -1,0 +1,27 @@
+{
+  "schema": "sage.lantern.native-boot-chain-evidence.v1",
+  "generated_at": "2026-10-20T05:27:00Z",
+  "device": "lantern-c",
+  "default_target": "graphical.target",
+  "display_manager": {
+    "id": "gdm.service",
+    "load_state": "loaded",
+    "active_state": "active",
+    "unit_file_state": "disabled",
+    "fragment_path": "/usr/lib/systemd/system/gdm.service"
+  },
+  "ssh": {
+    "service_active": "active",
+    "service_unit_file_state": "disabled",
+    "socket_active": "active",
+    "socket_unit_file_state": "enabled"
+  },
+  "getty_target_active": true,
+  "native_units_absent": [
+    "sage-lantern-early-boot-admission.service",
+    "sage-lantern-guarded-session.service"
+  ],
+  "conclusion": "The source admission unit is not installed or enabled. The target currently starts GDM and SSH without the native early-boot barrier.",
+  "read_only": true,
+  "runtime_authorized": false
+}
