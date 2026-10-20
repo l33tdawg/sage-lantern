@@ -105,6 +105,13 @@ broker socket and settlement root as one required configuration group; when
 present it selects `BrokerLaunchOnce`, installs the recorder and runs startup
 recovery before serving launch requests.
 
+`settlement_anchor.py` adds an independently stored monotonic seal over the
+complete recoverable journal and optional outstanding-release digest. It
+detects changed, missing or reordered record sets and refuses generation
+rollback in its CAS API. The store is still a private file in source; it is not
+bound to a separate monotonic hardware owner and is not yet consulted by the
+settlement owner.
+
 Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 
 - track and settle with the durable file journal;
@@ -122,6 +129,8 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
   recorder and preserves the staged pidfd on uncertainty.
 - a clean-recovery gate before broker-backed launch and a compiled native
   stopped-child/handoff/release replay.
+- an independent journal anchor that detects record-set changes, release
+  identity changes and generation rollback at its CAS boundary.
 
 ## Required implementation order
 
@@ -133,8 +142,9 @@ Focused controls in `scripts/tests/test_settlement_owner.py` cover:
 3. Serialize the release-attempt anchor and settlement journal through the
    native owner. Preserve an unresolved attempt across supervisor crash, boot,
    cancellation and protection-store rollback.
-4. Add a protected append-only pending-work/rollback boundary around the
-   recoverable journal records and a bound owner identity.
+4. Bind the new anchor to the settlement owner and a separate protected
+   monotonic store, then add a bound owner identity. A same-store file alone is
+   not rollback resistance.
 5. Replay failures before and after each durable write, after child exit, at
    release-callback return, during supervisor restart and with stale or reused
    child identities.
