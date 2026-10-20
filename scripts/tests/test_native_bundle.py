@@ -2,6 +2,7 @@
 from pathlib import Path
 import importlib.util
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,6 +60,15 @@ class NativeBundleTests(unittest.TestCase):
         value["files"].pop("bin/sage-lantern-desktop-loader")
         with self.assertRaisesRegex(B.BundleRefused, "bundle_manifest_schema_invalid"):
             B.write(self.root, value)
+
+    def test_review_verifier_accepts_exact_bundle(self):
+        B.write(self.root, B.build(self.root, SOURCE))
+        result = subprocess.run([
+            sys.executable,
+            str(ROOT / "scripts/lantern/verify-native-bundle.py"),
+            str(self.root), "--expected-uid", str(os.geteuid())],
+            check=True, capture_output=True, text=True)
+        self.assertEqual(result.stdout.strip(), SOURCE)
 
 
 if __name__ == "__main__":

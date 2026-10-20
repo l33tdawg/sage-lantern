@@ -118,6 +118,12 @@ BPF object, policies and libexec modules; fixed modes; byte sizes; SHA-256
 hashes; source commit; and rejection of missing, extra, changed or symlinked
 files. It neither signs the manifest nor installs the bundle.
 
+`broker_agent.c` supplies the fitted-agent source around the Linux backend:
+it loads digest-bound object/shell/pin inputs, accepts the one staged request,
+and forwards `record_attempt` over the same broker socket. The Linux backend's
+early-boot `prepare` still returns `EOPNOTSUPP`; the compiled binary is a
+required bundle member but has not been built or qualified on C.
+
 `early_boot_admission.py` adds the source early-boot gate: current boot ID,
 initial UID mapping, protected policy generation and absence of any UID-1000
 process. The authority retains the admission receipt and refuses launch if the

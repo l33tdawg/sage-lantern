@@ -367,9 +367,9 @@ static int frozen(void *context, int pidfd, const struct lantern_guard_grant *gr
 }
 static int record_attempt(void *context, const struct lantern_child *child)
 {
-    (void)context; (void)child;
-    /* No fitted settlement owner exists. Refuse before the release callback. */
-    return -EOPNOTSUPP;
+    struct lantern_linux *c = context;
+    if (!live(c) || !c->record_callback) return -EOPNOTSUPP;
+    return c->record_callback(c->record_context, child);
 }
 static int release(void *context, const struct lantern_child *child)
 {

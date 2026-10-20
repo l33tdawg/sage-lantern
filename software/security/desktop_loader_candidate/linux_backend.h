@@ -15,6 +15,8 @@ struct lantern_linux {
     struct lantern_child owned_child;
     struct lantern_policy policy;
     char pins[PATH_MAX];
+    int (*record_callback)(void *, const struct lantern_child *);
+    void *record_context;
     /* Fixed environment supplied from the authenticated root launch policy,
      * not inherited. Caller must additionally validate native overlay assets,
      * environment, session, early-boot gate and ancestry via integration. */
