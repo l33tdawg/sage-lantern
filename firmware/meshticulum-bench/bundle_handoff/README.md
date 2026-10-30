@@ -434,3 +434,23 @@ no native queue capacity, grant attempts, airtime, deadline or authority.
 The controller does not implement the scheduling feature itself; the exact
 pinned SDK must do so. Source controls remain separate from any future
 physical throughput qualification.
+
+The reviewed v6 SDK input is clean commit
+`7ac7daf02629b5b4cdf23d1cfaadc0152c0ce1dc` (tree
+`adbe1b0b6b8e172005711f133e7ebbd5387c1e85`). Its 305,472-byte wheel has
+SHA-256 `0b2466dbb4a7004dd99f2608cba77b9a514292152815fc71747711b5f4909934`.
+All 75 runtime files, including 71 Python files, independently match that
+checkout. The wheel-verification record is pinned by SHA-256
+`3d0affd512ff901aea6de3d297519c1783dc7b8a75e8949fe22f034f9ffc4bbf`.
+These pins identify the candidate; they do not authorize installation or RF.
+
+The 16 paired source scenarios complete with and without the option. They do
+not show a general speedup: clean and six-DATA-loss cases have identical modeled
+time, while injected host-work sensitivities include both improvements and a
+small regression. The model includes real flow, owner, encryption and journals,
+but idealizes native receive/setup and excludes real process startup, CPU and
+fsync time. It also does not run the complete bundle publication path. Those
+modeled gains are not measured file goodput. This v6 candidate has no physical
+throughput result; the 2,800 B/s checkpoint and 3,000 useful-file B/s target,
+including process startup, remain unachieved. The v5 hardware record above
+remains a separate sample.
