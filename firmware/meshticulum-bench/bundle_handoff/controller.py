@@ -11,6 +11,10 @@ exactly useful_bytes, at most 1,000,000 bytes. Omission generates random bytes;
 explicit null is invalid. Preparation still creates a fresh pack ID/signature,
 and separate issuance still creates fresh sessions and grants. Reusing input
 bytes conveys no authority or performance evidence from the earlier run.
+
+Optional preamble_symbols selects exact integer 12 (default) or 32 for the
+SF5 source experiment. The admitted waveform, grant profile and cold native/
+host estimates use that same selection; all original caps remain unchanged.
 """
 import argparse
 import base64
@@ -116,16 +120,29 @@ def checked_data_burst(config):
         need(canonical(policy)==canonical(expected),'sdk_train_policy_mismatch')
     return policy
 
+def sf5_radio_parameters(policy, *, preamble_symbols=12):
+    """Build one exact profile/admission pair without writing or issuing work."""
+    from meshticulum.bench.admission import RadioAdmission
+    from meshticulum.bench.serial_protocol import RadioProfile
+    preamble=c.checked_preamble_symbols(preamble_symbols)
+    profile=dict(frequency_hz=921375000,bandwidth_hz=500000,spreading_factor=5,coding_rate=5,
+        chip_power_dbm=0,preamble=preamble,sync_word=66,lease_ms=policy['radio_lease_ms'],
+        max_boot_attempts=policy['max_boot_attempts'],max_boot_estimated_airtime_us=policy['max_boot_estimated_airtime_us'])
+    admission=dict(country='MY',waveforms=[[921375000,500000,5,5,0,preamble,66]],min_lease_ms=10000,
+        max_lease_ms=180000,max_boot_attempts=policy['max_boot_attempts'],
+        max_boot_estimated_airtime_us=policy['max_boot_estimated_airtime_us'])
+    RadioAdmission(**{**admission,'waveforms':tuple(tuple(x) for x in admission['waveforms'])}).check('MY',True,RadioProfile(**profile))
+    return profile,admission
+
 def prepare(config_path,output):
     raw=Path(config_path).read_bytes();config=json.loads(raw)
     need(config['schema']=='meshticulum.alpha3-individual-input.v1','new_config_required')
     need({config['sender'],config['receiver']}==set(UNITS),'this_adapter_is_ab_only')
     need(config['comparison_mode'] in ('baseline','queued') and type(config['profile_host']) is bool,'mode_required')
+    preamble=c.checked_preamble_symbols(config.get('preamble_symbols',12))
     core=Path(config['core']['path']).resolve();commit=config['core']['commit'];sdk(core,commit)
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from meshticulum.resources import byte_bundle,knowledge_pack as kp
-    from meshticulum.bench.admission import RadioAdmission
-    from meshticulum.bench.serial_protocol import RadioProfile
     import radio_bundle,radio_file
     burst_policy=checked_data_burst(config)
     wheel=pinned(config['candidate_wheel'],2_000_000)
@@ -156,13 +173,7 @@ def prepare(config_path,output):
     need(60000<=policy['radio_lease_ms']<=180000 and 60<=policy['scope_seconds']<=1200
          and policy['radio_lease_ms']+10000<policy['scope_seconds']*1000
          and policy['max_frames']<=512,'finite_policy_required')
-    profile=dict(frequency_hz=921375000,bandwidth_hz=500000,spreading_factor=5,coding_rate=5,
-        chip_power_dbm=0,preamble=12,sync_word=66,lease_ms=policy['radio_lease_ms'],
-        max_boot_attempts=policy['max_boot_attempts'],max_boot_estimated_airtime_us=policy['max_boot_estimated_airtime_us'])
-    admission=dict(country='MY',waveforms=[[921375000,500000,5,5,0,12,66]],min_lease_ms=10000,
-        max_lease_ms=180000,max_boot_attempts=policy['max_boot_attempts'],
-        max_boot_estimated_airtime_us=policy['max_boot_estimated_airtime_us'])
-    RadioAdmission(**{**admission,'waveforms':tuple(tuple(x) for x in admission['waveforms'])}).check('MY',True,RadioProfile(**profile))
+    profile,admission=sf5_radio_parameters(policy,preamble_symbols=preamble)
     size=c.integer(config['useful_bytes'],1);need(size<=1_000_000,'workload_too_large')
     part_bytes=c.integer(config['part_bytes'],1);need(part_bytes<=23900,'fixture_part_size')
     count=math.ceil(size/part_bytes)
@@ -180,7 +191,8 @@ def prepare(config_path,output):
         responses.append(dict(part=i,useful_bytes=min(part_bytes,size-i*part_bytes),
             response_bytes=len(response),response_sha256=sha(response),
             cold_cost=c.part_cost(len(response),extra_data_attempts=config.get('extra_data_attempts',8),
-                                 receiver_ack_allowance=config.get('receiver_ack_allowance',64))))
+                                 receiver_ack_allowance=config.get('receiver_ack_allowance',64),
+                                 preamble_symbols=profile['preamble'])))
     native={u:dict(attempts=o['radio']['boot_attempts'],estimated_airtime_us=o['radio']['boot_reserved_estimated_airtime_us']) for u,o in observations.items()}
     roles=operation_limits(dict(policy=policy))
     operation={u:roles['sender' if u==config['sender'] else 'receiver'] for u in UNITS}

@@ -144,14 +144,37 @@ separately. Original epoch and monotonic bounds both remain in force, including
 across management messages and part transitions. Wall rollback, re-entry or a
 new process cannot extend the file window.
 
-## Frozen SF5 plan and its limits
+## Default SF5 plan and its limits
 
-The frozen source selects LoRa **SF5/BW500 kHz, CR4/5, preamble 12**, at
+The default plan selects LoRa **SF5/BW500 kHz, CR4/5, preamble 12**, at
 921.375 MHz, sync word 0x42 and requested chip power 0 dBm. It is the fastest
 LoRa profile supported by the selected public SDK and recorded firmware source.
 It still requires exact current waveform/power admission. The unchanged queue
 policy is depth four, 5 ms inter-packet RX and 100 ms reverse listening; USB
 write pacing remains 64 bytes/2 ms.
+
+New configurations may explicitly select `preamble_symbols: 32` for a separate
+source experiment. Only exact integers `12` and `32` are accepted; omission and
+explicit `12` preserve the preceding profile, admission and cold-cost bytes.
+Null, booleans, strings, floats and other lengths fail before SDK/evidence
+loading or output creation. The selection changes no other waveform value,
+power, queue policy, guard, original deadline or attempt/airtime cap.
+
+The prepared radio profile and its sole admitted waveform use the selected
+preamble. Every part grant binds that profile through the existing SDK route
+and profile digests; the scope binds the prepared record and exact grants.
+Cold planning uses the same selection for DATA, ACK and final CONTROL, including
+native estimates, host floating-point-ceil reservations and scheduler costs.
+An allowance that fits only the shorter preamble is refused; it is not widened.
+At SF5/BW500 each symbol is 64 µs, so 20 extra symbols add **1,280 estimated µs
+per packet**, including ACKs. This is an airtime calculation, not a performance
+gain or a cause identified for earlier losses.
+
+The source controls compare all 255 packet lengths against the exact SDK
+estimator and exercise matching/mismatched admission, peer grant digests,
+unchanged finite limits and budget refusal. No firmware change, preparation,
+scope issuance or physical qualification is implied by this option. Any actual
+comparison requires a new reviewed finite case and retains all earlier debt.
 
 New input configurations can explicitly set `train_depth: 8` for the negotiated
 scalar eight-frame source candidate. Omission preserves the exact four-frame
