@@ -63,31 +63,40 @@ def sequence(*, pairs=2, sender='unit-b', receiver='unit-a'):
             'Recovery cases require exact injection/cleanup source before execution.'])
 
 
-def airtime_us(size):
-    """SF5/BW500/CR4:5/preamble12 estimate; not measured airtime."""
+def checked_preamble_symbols(value=12):
+    """Only the default or the explicit source experiment is admitted here."""
+    need(type(value) is int and value in (12, 32), 'invalid_preamble_symbols')
+    return value
+
+
+def airtime_us(size, *, preamble_symbols=12):
+    """SF5/BW500/CR4:5 estimate for the selected preamble; not measured airtime."""
+    preamble = checked_preamble_symbols(preamble_symbols)
     integer(size, 1)
     need(size <= 255, 'frame_too_large')
     coded = (8 * size + 36 - 20 + 19) // 20
-    return (105 + 20 * coded) * 16
+    return (105 + 20 * coded) * 16 + (preamble - 12) * 64
 
 
-def reservation_us(size):
+def reservation_us(size, *, preamble_symbols=12):
     # Match the SDK worker's actual floating-point ceil. Integer 11/10 can
     # underestimate this by one microsecond (for example a 70-byte SF5 ACK).
-    return math.ceil(airtime_us(size) * 1.10) + 1000
+    return math.ceil(airtime_us(size, preamble_symbols=preamble_symbols) * 1.10) + 1000
 
 
-def costs(wire_sizes):
+def costs(wire_sizes, *, preamble_symbols=12):
     """Keep worker/native cost and frozen scheduler double charging separate."""
     need(type(wire_sizes) is list and wire_sizes, 'frame_sizes_required')
+    preamble = checked_preamble_symbols(preamble_symbols)
     worker = native = debt_own = debt_shared = 0
     peak_own = peak_shared = 1
-    own, shared = reservation_us(255), reservation_us(255) + reservation_us(70)
+    own = reservation_us(255, preamble_symbols=preamble)
+    shared = own + reservation_us(70, preamble_symbols=preamble)
     for size in wire_sizes:
         peak_own = max(peak_own, worker + debt_own + own + 1)
         peak_shared = max(peak_shared, worker + debt_shared + shared + 1)
-        worker += reservation_us(size)
-        native += airtime_us(size)
+        worker += reservation_us(size, preamble_symbols=preamble)
+        native += airtime_us(size, preamble_symbols=preamble)
         debt_own += own
         debt_shared += shared
         peak_own = max(peak_own, worker + debt_own + 1)
@@ -97,7 +106,9 @@ def costs(wire_sizes):
         frozen_minimum_shared_us=peak_shared)
 
 
-def part_cost(response_bytes, *, extra_data_attempts=8, receiver_ack_allowance=64):
+def part_cost(response_bytes, *, extra_data_attempts=8, receiver_ack_allowance=64,
+              preamble_symbols=12):
+    preamble = checked_preamble_symbols(preamble_symbols)
     integer(response_bytes, 1)
     integer(extra_data_attempts)
     integer(receiver_ack_allowance, 1)
@@ -109,7 +120,8 @@ def part_cost(response_bytes, *, extra_data_attempts=8, receiver_ack_allowance=6
     frames += [255] * extra_data_attempts + [79]  # authenticated receipt confirmation
     return dict(response_bytes=response_bytes, data_frames=data_count,
         max_frames=max(64, len(frames), receiver_ack_allowance),
-        sender=costs(frames), receiver=costs([70] * receiver_ack_allowance),
+        sender=costs(frames, preamble_symbols=preamble),
+        receiver=costs([70] * receiver_ack_allowance, preamble_symbols=preamble),
         extra_data_attempts=extra_data_attempts,
         receiver_ack_allowance=receiver_ack_allowance,
         source_estimates_only=True)
