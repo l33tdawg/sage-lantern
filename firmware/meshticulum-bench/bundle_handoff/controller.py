@@ -97,7 +97,15 @@ def checked_data_burst(config):
     from meshticulum.bench import burst_protocol
     policy=selected_data_burst(config)
     if policy is not None:
-        if 'selective_repeat_retry' in config:
+        if 'train_frames' in config:
+            selector=getattr(burst_protocol,'policy_for_train12',None)
+            need(callable(selector),'sdk_train12_policy_unavailable')
+            expected=selector()
+        elif 'selective_repair_train' in config:
+            selector=getattr(burst_protocol,'policy_for_repair_train',None)
+            need(callable(selector),'sdk_repair_train_policy_unavailable')
+            expected=selector()
+        elif 'selective_repeat_retry' in config:
             selector=getattr(burst_protocol,'policy_for_repeat_retry',None)
             need(callable(selector),'sdk_repeat_retry_policy_unavailable')
             expected=selector()
