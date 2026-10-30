@@ -10,7 +10,8 @@ _DEFAULT_FLOW_WINDOW=object()
 def data_burst_policy(depth=4,*,flow_window_frames=_DEFAULT_FLOW_WINDOW,
                       selective_repair_fill=_DEFAULT_FLOW_WINDOW,
                       selective_terminal_retry=_DEFAULT_FLOW_WINDOW,
-                      scalar_fill_pair=_DEFAULT_FLOW_WINDOW):
+                      scalar_fill_pair=_DEFAULT_FLOW_WINDOW,
+                      selective_repeat_retry=_DEFAULT_FLOW_WINDOW):
     need(type(depth) is int and depth in (4,8),'invalid_train_depth')
     policy=dict(DATA_BURST_POLICY)
     if depth==8:
@@ -36,6 +37,11 @@ def data_burst_policy(depth=4,*,flow_window_frames=_DEFAULT_FLOW_WINDOW,
              'invalid_scalar_fill_pair')
         need(selective_terminal_retry is True,'scalar_fill_pair_requires_terminal_retry')
         policy.update(schema='meshticulum.data-burst-policy.v6',scalar_fill_pair=True)
+    if selective_repeat_retry is not _DEFAULT_FLOW_WINDOW:
+        need(type(selective_repeat_retry) is bool and selective_repeat_retry is True,
+             'invalid_selective_repeat_retry')
+        need(scalar_fill_pair is True,'repeat_retry_requires_scalar_fill_pair')
+        policy.update(schema='meshticulum.data-burst-policy.v7',selective_repeat_retry=True)
     return policy
 
 def selected_data_burst(config):
@@ -69,6 +75,16 @@ def selected_data_burst(config):
                                 selective_repair_fill=config['selective_repair_fill'],
                                 selective_terminal_retry=config['selective_terminal_retry'],
                                 scalar_fill_pair=config['scalar_fill_pair'])
+    if 'selective_repeat_retry' in config:
+        need(mode=='queued' and 'train_depth' in config and depth==8
+             and 'flow_window_frames' in config and 'selective_repair_fill' in config
+             and 'selective_terminal_retry' in config and 'scalar_fill_pair' in config,
+             'repeat_retry_requires_explicit_queued_scalar_fill_pair')
+        policy=data_burst_policy(depth,flow_window_frames=config['flow_window_frames'],
+                                selective_repair_fill=config['selective_repair_fill'],
+                                selective_terminal_retry=config['selective_terminal_retry'],
+                                scalar_fill_pair=config['scalar_fill_pair'],
+                                selective_repeat_retry=config['selective_repeat_retry'])
     return policy if mode=='queued' else None
 
 def operation_limits(prepared):
@@ -86,7 +102,10 @@ def validate_mode_binding(prepared, scope=None):
               data_burst_policy(8,flow_window_frames=32,selective_repair_fill=True,
                                 selective_terminal_retry=True),
               data_burst_policy(8,flow_window_frames=32,selective_repair_fill=True,
-                                selective_terminal_retry=True,scalar_fill_pair=True))
+                                selective_terminal_retry=True,scalar_fill_pair=True),
+              data_burst_policy(8,flow_window_frames=32,selective_repair_fill=True,
+                                selective_terminal_retry=True,scalar_fill_pair=True,
+                                selective_repeat_retry=True))
     need((value is None if mode=='baseline' else type(value) is dict and
           any(canonical(value)==canonical(policy) for policy in policies)),
          'mode_policy_changed')

@@ -242,6 +242,9 @@ def _flow_report(value):
                               'host_phase_timings_unavailable'))
     if type(value) is not dict:
         return result
+    epochs = value.get('repeat_retry_epochs')
+    if type(epochs) is int and 0 <= epochs < 2**63:
+        result['repeat_retry_epochs'] = epochs
     counters = ('pending_DATA_refused queue_UNKNOWN tx_QUEUED tx_RF_DONE tx_NOT_SENT '
                 'tx_UNKNOWN tx_DRIVER_REFUSED rx_CONTROL rx_refused rx_DATA rx_ACK '
                 'rx_ACK_startup rx_ACK_progress rx_ACK_fresh_credit rx_ACK_unchanged rx_ACK_ignored '

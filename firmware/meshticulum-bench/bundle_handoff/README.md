@@ -450,7 +450,34 @@ time, while injected host-work sensitivities include both improvements and a
 small regression. The model includes real flow, owner, encryption and journals,
 but idealizes native receive/setup and excludes real process startup, CPU and
 fsync time. It also does not run the complete bundle publication path. Those
-modeled gains are not measured file goodput. This v6 candidate has no physical
-throughput result; the 2,800 B/s checkpoint and 3,000 useful-file B/s target,
+modeled gains are not measured file goodput. The later
+[v6 physical sample](https://github.com/l33tdawg/meshticulum/blob/main/benchmarks/2026-10-30-sf5-scalar-fill-pair-profile/README.md)
+is separate evidence. The 2,800 B/s checkpoint and 3,000 useful-file B/s target,
 including process startup, remain unachieved. The v5 hardware record above
 remains a separate sample.
+
+
+## Explicit selective-repeat-retry candidate
+
+`selective_repeat_retry: true` requires the complete explicit v6 selection:
+queued mode, `train_depth: 8`, `flow_window_frames: 32`,
+`selective_repair_fill: true`, `selective_terminal_retry: true` and
+`scalar_fill_pair: true`. Preparation requires the pinned SDK's
+`policy_for_repeat_retry()` and an exact canonical v7 policy containing
+`selective_repeat_retry: true`. Missing support refuses preparation before
+wheel/evidence processing or output creation. Omitting the new option preserves
+the serialized v1–v6 policies, including v6 on an older SDK.
+
+The prepared record, original scope and every part grant bind the same complete
+policy. Partial, coerced, downgraded or widened policies are rejected. This
+adapter adds no attempts, airtime, native capacity, renewed clocks or authority;
+it only admits the separately reviewed SDK policy. Original budgets, debt,
+UNKNOWN handling and per-part closure remain with their existing owners.
+
+Failure diagnostics retain `repeat_retry_epochs` from either flow snapshot only
+when it is an exact nonnegative integer below `2^63`. Missing legacy fields stay
+absent; proof positions, payloads and arbitrary metadata are not exported.
+
+This is a source-only candidate. It has no pinned released SDK or wheel and no
+physical throughput result. The ongoing header-preserve comparison remains on
+its existing v6 SDK and does not use this option.
