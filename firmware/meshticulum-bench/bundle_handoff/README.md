@@ -23,7 +23,7 @@ entry point, default approved configuration or retry campaign.
 
 ## Exact SDK dependency
 
-The reviewed candidate is the public SDK commit
+The original handoff candidate was public SDK commit
 `541a3796454291b1d8cb573b5e5e60dd4fc4d1ac`, with candidate wheel SHA-256
 `cab6694a2004916af169b929b55bc7e3acd5c0971f8af1210428ffbabf346f1d`.
 The wheel metadata remains `meshticulum==1.0.0a3`; the version string alone does
@@ -257,5 +257,20 @@ handover when supplied by the reviewed SDK revision; neither proves receipt.
 A missing field stays absent. New preparation pins this updated adapter. The
 first 3 kB ACK-policy trial used its earlier frozen copy, before the budget-skip
 and selective-retry counter projection additions; full success snapshots already
-retained their own SDK fields. The later 2 kB trial, if executed, needs its own
-exact prepared adapter and candidate-wheel record.
+retained their own SDK fields. The later 2 kB trial used this exact batch adapter, with its own prepared artifact record.
+
+
+The selective-recovery trial used SDK commit
+`5431846ee47a702a07994c1b3456c7da01776b20`, unpublished wheel SHA-256
+`d8ec8d20f59e783d9f7be4a69bb70a4d7b7ed7ccebe0b05ff1fce89a3ddd6438`,
+and batch-adapter SHA-256
+`a37f69ae50b4e2fd1681ad210b628624b09f3d68c198ff87793f86afb626e3b5`.
+It completed one 2,000-byte file in 2.554067 seconds from sender process launch
+to authenticated receipt, with one selective retry submitted 16.725 ms after
+SACK proof. All 72 runtime files per isolated environment matched the candidate;
+both endpoints exited zero and closed owned hardware. All 22 physical attempts
+and paid debt reconcile. This is one small file with one repair, not a paired
+profile speed comparison or sustained capacity result. The public
+[recovery record](https://github.com/l33tdawg/meshticulum/tree/main/benchmarks/2026-10-30-sf5-recovery)
+retains exact boundaries, the earlier 3 kB ACK-policy trial and source controls.
+The published alpha.3 artifacts and other Lantern integration locks are unchanged.
