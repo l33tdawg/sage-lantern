@@ -5,12 +5,18 @@ from campaign import need,digest,sha,canonical
 ACK_GRACE_US=20_000_000
 UNITS=("unit-a","unit-b")
 DATA_BURST_POLICY=dict(schema="meshticulum.data-burst-policy.v1",handover="irrevocably-charged-at-queue-acceptance",max_depth=4,max_hold_us=2_000_000,inter_packet_rx_us=5_000,reverse_listen_us=100_000)
+_DEFAULT_FLOW_WINDOW=object()
 
-def data_burst_policy(depth=4):
+def data_burst_policy(depth=4,*,flow_window_frames=_DEFAULT_FLOW_WINDOW):
     need(type(depth) is int and depth in (4,8),'invalid_train_depth')
     policy=dict(DATA_BURST_POLICY)
     if depth==8:
         policy.update(schema='meshticulum.data-burst-policy.v2',max_depth=8,train_frames=8)
+    if flow_window_frames is not _DEFAULT_FLOW_WINDOW:
+        need(type(flow_window_frames) is int and flow_window_frames==32,
+             'invalid_flow_window_frames')
+        need(depth==8,'logical_window_requires_train_eight')
+        policy.update(schema='meshticulum.data-burst-policy.v3',flow_window_frames=32)
     return policy
 
 def selected_data_burst(config):
@@ -18,6 +24,10 @@ def selected_data_burst(config):
     depth=config.get('train_depth',4)
     policy=data_burst_policy(depth)
     need(mode=='queued' or depth==4,'baseline_train_depth_changed')
+    if 'flow_window_frames' in config:
+        need(mode=='queued' and 'train_depth' in config and depth==8,
+             'logical_window_requires_explicit_queued_eight')
+        policy=data_burst_policy(depth,flow_window_frames=config['flow_window_frames'])
     return policy if mode=='queued' else None
 
 def operation_limits(prepared):
@@ -29,8 +39,10 @@ def operation_limits(prepared):
 def validate_mode_binding(prepared, scope=None):
     mode=prepared['comparison_mode'];need(mode in ('baseline','queued'),'invalid_mode')
     value=prepared['data_burst']
+    policies=(data_burst_policy(4),data_burst_policy(8),
+              data_burst_policy(8,flow_window_frames=32))
     need((value is None if mode=='baseline' else type(value) is dict and
-          any(canonical(value)==canonical(data_burst_policy(depth)) for depth in (4,8))),
+          any(canonical(value)==canonical(policy) for policy in policies)),
          'mode_policy_changed')
     if scope is not None:
         need(scope['comparison_mode']==mode and canonical(scope['data_burst'])==canonical(value),'scope_mode_changed')
