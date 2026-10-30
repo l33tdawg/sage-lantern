@@ -366,3 +366,11 @@ An active partial repair train now takes the existing reverse hold after its
 final new DATA. Independent direct and deferred handover controls reproduce
 the old defect and pass with the correction. The source model and tests do not
 establish physical performance for v4.
+
+The first matched v4 hardware sample then completed the same 23,900 useful bytes
+in 19.537686 seconds from sender process startup through authenticated receipt,
+or 1,223.28 useful B/s. All nine recorded repair-fill turns carried a selective
+repair followed by seven new DATA frames. This sample needed 13 DATA retries,
+versus 10 previously, with different loss positions; it does not isolate a
+causal speed change. Both endpoints drained and closed, all paid attempts
+reconciled, and the original scope expired. The 3,000 B/s goal remains open.
