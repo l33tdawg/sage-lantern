@@ -348,8 +348,8 @@ The SDK candidate can fill the remaining positions of an eight-frame train
 with new DATA after one selective repair when current canonical credit permits.
 The original scope and every part grant bind that option. This adds no retry
 opportunity, credit or attempt/airtime allowance, and retains native listening
-floors, finite deadlines and debt. Physical performance for this option remains
-pending; the earlier v3/window32 sample measured 1,276.92 useful B/s.
+floors, finite deadlines and debt. The earlier v3/window32 sample measured
+1,276.92 useful B/s; the first v4 sample is recorded below.
 
 The initial source-only repair-fill candidate used exact SDK commit
 `530fe62df03c3d235f04c892b23966100d659f51`, with a 302,742-byte wheel,
@@ -366,3 +366,11 @@ An active partial repair train now takes the existing reverse hold after its
 final new DATA. Independent direct and deferred handover controls reproduce
 the old defect and pass with the correction. The source model and tests do not
 establish physical performance for v4.
+
+The first matched v4 hardware sample then completed the same 23,900 useful bytes
+in 19.537686 seconds from sender process startup through authenticated receipt,
+or 1,223.28 useful B/s. All nine recorded repair-fill turns carried a selective
+repair followed by seven new DATA frames. This sample needed 13 DATA retries,
+versus 10 previously, with different loss positions; it does not isolate a
+causal speed change. Both endpoints drained and closed, all paid attempts
+reconciled, and the original scope expired. The 3,000 B/s goal remains open.
