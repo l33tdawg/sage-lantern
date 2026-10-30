@@ -335,3 +335,18 @@ and ACK losses differed from the earlier policy; repeated capacity and the
 3,000 B/s goal remain unqualified.
 The matched R11 eight-frame sample completed at 1,053.28 useful B/s including
 startup with different loss from the earlier sample. Neither reached 3,000 B/s.
+
+## Explicit selective-repair fill candidate
+
+A new input can set `selective_repair_fill: true` only together with queued
+mode, explicit `train_depth: 8` and `flow_window_frames: 32`. It selects the
+SDK's exact v4 policy through `policy_for_repair_fill()`. Missing support or
+changed policy bytes refuse preparation; false, null and coerced values are
+invalid. Omitting the field preserves all existing policy selections.
+
+The SDK candidate can fill the remaining positions of an eight-frame train
+with new DATA after one selective repair when current canonical credit permits.
+The original scope and every part grant bind that option. This adds no retry
+opportunity, credit or attempt/airtime allowance, and retains native listening
+floors, finite deadlines and debt. Physical performance for this option remains
+pending; the earlier v3/window32 sample measured 1,276.92 useful B/s.
