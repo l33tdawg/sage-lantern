@@ -237,17 +237,58 @@ def _phase_report(value):
 
 def _flow_report(value):
     result = _numbers(value, ('complete', 'received_bytes', 'retransmits', 'acked_frames',
-                              'duplicates', 'startup_pending', 'host_phase_timings_unavailable'))
+                              'duplicates', 'startup_pending', 'fast_retry_offers', 'fast_retransmits',
+                              'host_phase_timings_unavailable'))
     if type(value) is not dict:
         return result
     counters = ('pending_DATA_refused queue_UNKNOWN tx_QUEUED tx_RF_DONE tx_NOT_SENT '
-                'tx_UNKNOWN tx_DRIVER_REFUSED rx_CONTROL rx_refused rx_DATA rx_ACK').split()
+                'tx_UNKNOWN tx_DRIVER_REFUSED rx_CONTROL rx_refused rx_DATA rx_ACK '
+                'rx_ACK_startup rx_ACK_progress rx_ACK_fresh_credit rx_ACK_unchanged rx_ACK_ignored '
+                'tx_ACK_RF_DONE_startup tx_ACK_RF_DONE_new tx_ACK_RF_DONE_unchanged '
+                'final_ACK_reannouncement_requested final_ACK_reannouncement_satisfied '
+                'final_ACK_reannouncement_budget_unavailable').split()
     result['counts'] = _numbers(value.get('counts'), counters)
     result['attempt_journal'] = _numbers(value.get('attempt_journal'),
         ('attempts', 'reserved_estimated_airtime_us', 'fenced', 'recovered_unknown'))
     result['physical_queue'] = _numbers(value.get('physical_queue'), ('pending', 'worker_pending'))
     result['host_phase_timings'] = _phase_report(value.get('host_phase_timings'))
+    result['ack_events_retained_tail'] = _ack_events(value.get('events'))
     return result
+
+
+def _ack_events(events):
+    """At most 64 selected ACK metadata rows from the already bounded flow tail."""
+    if type(events) is not list:
+        return []
+    result = []
+    integers = ('mono_us', 'ack_seq', 'ack_sack', 'ack_credit', 'ack_revision',
+                'acked_frames_delta', 'ack_burst_received')
+    for event in events[-512:]:
+        if (type(event) is not dict or type(event.get('outer_kind')) is not str
+                or event['outer_kind'] != 'ACK'):
+            continue
+        kind = event.get('event')
+        if type(kind) is not str:
+            continue
+        labels = {}
+        if kind == 'rx' and type(event.get('ack_effect')) is str and event['ack_effect'] in (
+                'startup', 'progress', 'fresh_credit', 'unchanged', 'ignored'):
+            labels['ack_effect'] = event['ack_effect']
+        elif (kind == 'tx' and type(event.get('ack_snapshot')) is str
+              and event['ack_snapshot'] in ('startup', 'new', 'unchanged')):
+            labels['ack_snapshot'] = event['ack_snapshot']
+            if (type(event.get('ack_wait_reason')) is str and event['ack_wait_reason'] in
+                    ('startup', 'full_train', 'complete', 'quiet', 'persistence')):
+                labels['ack_wait_reason'] = event['ack_wait_reason']
+            if (type(event.get('outcome')) is str and event['outcome'] in
+                    ('RF_DONE', 'NOT_SENT', 'REFUSED', 'UNKNOWN')):
+                labels['outcome'] = event['outcome']
+        else:
+            continue
+        result.append(dict(event=kind, outer_kind='ACK', **labels, **{
+            name: event[name] for name in integers if type(event.get(name)) is int
+            and 0 <= event[name] < 2**63}))
+    return result[-64:]
 
 
 def diagnostic_report(report, request, unit, error):
