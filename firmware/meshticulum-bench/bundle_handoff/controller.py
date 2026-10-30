@@ -4,6 +4,13 @@ prepare is local/source-only. stage installs a pinned wheel without opening a
 radio. issue writes fresh local grants; run consumes them once. No action
 automatically advances to another operation, retries failures, or resets debt.
 Passwords enter only through stdin and the reviewed bounded sudo transport.
+
+An optional config useful_input={"path": "...", "sha256": "..."} reuses only
+the pinned useful bytes for a matched workload. It must be a regular file of
+exactly useful_bytes, at most 1,000,000 bytes. Omission generates random bytes;
+explicit null is invalid. Preparation still creates a fresh pack ID/signature,
+and separate issuance still creates fresh sessions and grants. Reusing input
+bytes conveys no authority or performance evidence from the earlier run.
 """
 import argparse
 import base64
@@ -43,6 +50,36 @@ def scope_rpc_seconds(scope, now_epoch, now_mono):
     return math.ceil(remaining/1000000)+8
 
 def pinned(spec,limit=4_000_000):return read_pinned(spec['path'],spec['sha256'],limit)
+
+def useful_data(config,size):
+    """Select a bounded workload without changing signing or grant state."""
+    c.integer(size,1);need(size<=1_000_000,'workload_too_large')
+    if 'useful_input' not in config:
+        return secrets.token_bytes(size)
+    spec=config['useful_input']
+    need(type(spec) is dict and set(spec)=={'path','sha256'},'invalid_useful_input')
+    need(type(spec['path']) is str and bool(spec['path']) and '\x00' not in spec['path'],
+         'invalid_useful_input_path')
+    pin=c.digest(spec['sha256']);path=Path(spec['path'])
+    need(stat.S_ISREG(path.lstat().st_mode),'invalid_useful_input_file')
+    # A regular path can be replaced after lstat. Nonblocking open prevents a
+    # replacement FIFO from waiting for a writer before fstat can reject it.
+    fd=os.open(path,os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        before=os.fstat(fd)
+        need(stat.S_ISREG(before.st_mode) and before.st_nlink==1
+             and 0<before.st_size<=1_000_000,'invalid_input_file')
+        data=os.read(fd,1_000_001)
+        after=os.fstat(fd)
+        stamp=lambda x:(x.st_dev,x.st_ino,x.st_mode,x.st_uid,x.st_gid,
+                        x.st_nlink,x.st_size,x.st_mtime_ns,x.st_ctime_ns)
+        need(stamp(before)==stamp(after)==stamp(path.lstat())
+             and len(data)==before.st_size,'input_changed')
+        need(sha(data)==pin,'input_pin_mismatch')
+    finally:
+        os.close(fd)
+    need(len(data)==size,'useful_input_size_mismatch')
+    return data
 
 def sdk(core,commit):
     need(subprocess.check_output(['git','-C',str(core),'rev-parse','HEAD'],text=True).strip()==commit,'candidate_commit_changed')
@@ -104,7 +141,7 @@ def prepare(config_path,output):
     count=math.ceil(size/part_bytes)
     need(count*ACK_GRACE_US+5_000_000<policy['scope_seconds']*1000000<=radio_bundle.max_file_window_us(count),'whole_file_window_cannot_fit')
     need(type(config['order']) is list and all(type(i) is int for i in config['order']) and sorted(config['order'])==list(range(count)),'exact_part_permutation_required')
-    run_id=secrets.token_hex(16);data=secrets.token_bytes(size);key=Ed25519PrivateKey.generate()
+    run_id=secrets.token_hex(16);data=useful_data(config,size);key=Ed25519PrivateKey.generate()
     from small_fixture import build_bundle
     manifest,chunks,signature=build_bundle(data,part_bytes=part_bytes,pack_id='handoff-'+run_id,
         created_at=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),private_key=key)

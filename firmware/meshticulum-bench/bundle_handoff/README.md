@@ -46,6 +46,16 @@ All 71 runtime Python files match that checkout. This identifies source inputs;
 it supplies no hardware or throughput qualification and does not replace the
 historical wheel identity above.
 
+The R11 selective-repair candidate targets public SDK commit
+`bb5b2bcb1f827ca7fe5a8c68f5f5b158c33cc24a`. Its separate wheel is 301,764 bytes,
+SHA-256 `a7dd6ba38063781d20ecb424ec1dc7337eb2b70f2430db8611221a49b1257e74`;
+all 75 runtime files, including 71 Python files, match that checkout. R11 retains
+the current retry interval after a selective fast repair; ordinary timeout
+repairs retain exponential backoff. The prior R10 eight-frame hardware sample
+completed at 801.42 useful B/s across sender startup through authenticated
+receipt. That result remains attributed to its original source and wheel. R11
+hardware throughput remains unmeasured.
+
 ## Source inventory
 
 | Files | Responsibility |
@@ -88,8 +98,14 @@ PYTHONPATH="$MESHTICULUM_SOURCE/src" "$SOURCE_TEST_PYTHON" \
   --config "$APPROVED_CONFIG" --output "$NEW_RUN_DIRECTORY"
 ```
 
-`prepare` is local. It creates a fresh random signed public file, verifies its
-exact response geometry, pins source/artifacts and freezes the run directory.
+`prepare` is local. By default it creates fresh random useful bytes. An optional
+`useful_input` object containing exactly `path` and `sha256` can select a pinned
+regular file of exactly `useful_bytes`, from 1 to 1,000,000 bytes, for a matched
+workload. Explicit null, aliases, changed files and hash or size mismatches are
+refused. Preparation always creates a fresh signed pack identity and key;
+issuance still creates fresh sessions and grants. Reusing useful bytes carries
+no authority or performance evidence from the earlier operation. Preparation
+verifies exact response geometry, pins source/artifacts and freezes the run directory.
 It does not install anything, claim a grant or open hardware.
 
 ```sh
