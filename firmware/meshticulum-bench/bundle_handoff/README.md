@@ -38,6 +38,24 @@ Lantern. The harness's exact candidate requirement is separate from Lantern's
 other integration source lock; copying this directory does not update that lock
 or qualify another application runtime.
 
+The opt-in eight-frame and 26-phase timing adapter below targets public SDK
+commit `badb99b2d48781434166cd1a195e964faa74c0f0`. Its locally built candidate
+wheel is 300,787 bytes, SHA-256
+`d3ec16c70ab07c66685f8bab32acf18bbc718e1ea104018a6d7b24162be564de`.
+All 71 runtime Python files match that checkout. This identifies source inputs;
+it supplies no hardware or throughput qualification and does not replace the
+historical wheel identity above.
+
+The R11 selective-repair candidate targets public SDK commit
+`bb5b2bcb1f827ca7fe5a8c68f5f5b158c33cc24a`. Its separate wheel is 301,764 bytes,
+SHA-256 `a7dd6ba38063781d20ecb424ec1dc7337eb2b70f2430db8611221a49b1257e74`;
+all 75 runtime files, including 71 Python files, match that checkout. R11 retains
+the current retry interval after a selective fast repair; ordinary timeout
+repairs retain exponential backoff. The prior R10 eight-frame hardware sample
+completed at 801.42 useful B/s across sender startup through authenticated
+receipt. That result remains attributed to its original source and wheel. R11
+hardware throughput remains unmeasured.
+
 ## Source inventory
 
 | Files | Responsibility |
@@ -80,8 +98,14 @@ PYTHONPATH="$MESHTICULUM_SOURCE/src" "$SOURCE_TEST_PYTHON" \
   --config "$APPROVED_CONFIG" --output "$NEW_RUN_DIRECTORY"
 ```
 
-`prepare` is local. It creates a fresh random signed public file, verifies its
-exact response geometry, pins source/artifacts and freezes the run directory.
+`prepare` is local. By default it creates fresh random useful bytes. An optional
+`useful_input` object containing exactly `path` and `sha256` can select a pinned
+regular file of exactly `useful_bytes`, from 1 to 1,000,000 bytes, for a matched
+workload. Explicit null, aliases, changed files and hash or size mismatches are
+refused. Preparation always creates a fresh signed pack identity and key;
+issuance still creates fresh sessions and grants. Reusing useful bytes carries
+no authority or performance evidence from the earlier operation. Preparation
+verifies exact response geometry, pins source/artifacts and freezes the run directory.
 It does not install anything, claim a grant or open hardware.
 
 ```sh
@@ -128,6 +152,17 @@ LoRa profile supported by the selected public SDK and recorded firmware source.
 It still requires exact current waveform/power admission. The unchanged queue
 policy is depth four, 5 ms inter-packet RX and 100 ms reverse listening; USB
 write pacing remains 64 bytes/2 ms.
+
+New input configurations can explicitly set `train_depth: 8` for the negotiated
+scalar eight-frame source candidate. Omission preserves the exact four-frame
+policy. Eight selects the public SDK's exact v2 policy, with `max_depth` and
+`train_frames` both eight; preparation checks identical SDK policy bytes, and
+the original scope and every part grant must bind that same selection. A
+baseline input cannot select eight. Partial policies, changed guards and
+four/eight scope or grant mismatches are refused. This source option requires
+matching new firmware capability and fresh build, install and RF qualification;
+it does not widen historical grants or certify a throughput result. Hold times,
+USB pacing, per-boot caps and all retained debt remain unchanged.
 
 The associated cold plan is **50,000 useful bytes, five 10,000-byte parts,
 A→B, order 4, 2, 0, 3, 1**, with host profiling enabled. It proposes a fresh

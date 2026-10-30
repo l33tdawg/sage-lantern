@@ -224,7 +224,8 @@ def _phase_report(value):
              'queue_admission_wait queue_terminal_settle release_request release_roundtrip '
              'release_commit journal_transaction serial_write serial_wait_writable serial_os_write '
              'serial_pacing_sleep serial_read serial_read_wait serial_os_read flow_step '
-             'flow_accounting flow_receive flow_dispatch flow_pump host_loop_sleep').split()
+             'flow_accounting flow_receive flow_dispatch flow_pump host_loop_sleep '
+             'cipher_seal cipher_open').split()
     rows = value.get('phases')
     if (value.get('schema') != 'meshticulum.host-phase-timing.v1'
             or value.get('clock') != 'time.perf_counter_ns' or value.get('inclusive') is not True
