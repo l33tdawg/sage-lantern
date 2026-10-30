@@ -91,7 +91,11 @@ def checked_data_burst(config):
     from meshticulum.bench import burst_protocol
     policy=selected_data_burst(config)
     if policy is not None:
-        if 'flow_window_frames' in config:
+        if 'selective_repair_fill' in config:
+            selector=getattr(burst_protocol,'policy_for_repair_fill',None)
+            need(callable(selector),'sdk_repair_fill_policy_unavailable')
+            expected=selector()
+        elif 'flow_window_frames' in config:
             selector=getattr(burst_protocol,'policy_for_flow_window',None)
             need(callable(selector),'sdk_flow_window_policy_unavailable')
             expected=selector(config['flow_window_frames'])

@@ -335,3 +335,42 @@ and ACK losses differed from the earlier policy; repeated capacity and the
 3,000 B/s goal remain unqualified.
 The matched R11 eight-frame sample completed at 1,053.28 useful B/s including
 startup with different loss from the earlier sample. Neither reached 3,000 B/s.
+
+## Explicit selective-repair fill candidate
+
+A new input can set `selective_repair_fill: true` only together with queued
+mode, explicit `train_depth: 8` and `flow_window_frames: 32`. It selects the
+SDK's exact v4 policy through `policy_for_repair_fill()`. Missing support or
+changed policy bytes refuse preparation; false, null and coerced values are
+invalid. Omitting the field preserves all existing policy selections.
+
+The SDK candidate can fill the remaining positions of an eight-frame train
+with new DATA after one selective repair when current canonical credit permits.
+The original scope and every part grant bind that option. This adds no retry
+opportunity, credit or attempt/airtime allowance, and retains native listening
+floors, finite deadlines and debt. The earlier v3/window32 sample measured
+1,276.92 useful B/s; the first v4 sample is recorded below.
+
+The initial source-only repair-fill candidate used exact SDK commit
+`530fe62df03c3d235f04c892b23966100d659f51`, with a 302,742-byte wheel,
+SHA-256 `b3cef9b777a5757aedb30539e01a78a271e9931bf32780cfa24ecccf78290f9a`.
+Review found that a final new DATA handover could cross another frame's retry
+deadline and admit that retry into a partial repair train. That candidate was
+not run on hardware; its source and wheel remain retained.
+
+The corrected candidate is SDK commit
+`79cbcd7e3b6c892fc2c3372d5aa474fe58419d02`, with a 302,855-byte wheel,
+SHA-256 `7c043840a72f1912f5caf8f1d869c3086fe3d0a8cacc5974ec5dae8123e274e7`.
+All 75 runtime files, including 71 Python files, match that clean checkout.
+An active partial repair train now takes the existing reverse hold after its
+final new DATA. Independent direct and deferred handover controls reproduce
+the old defect and pass with the correction. The source model and tests do not
+establish physical performance for v4.
+
+The first matched v4 hardware sample then completed the same 23,900 useful bytes
+in 19.537686 seconds from sender process startup through authenticated receipt,
+or 1,223.28 useful B/s. All nine recorded repair-fill turns carried a selective
+repair followed by seven new DATA frames. This sample needed 13 DATA retries,
+versus 10 previously, with different loss positions; it does not isolate a
+causal speed change. Both endpoints drained and closed, all paid attempts
+reconciled, and the original scope expired. The 3,000 B/s goal remains open.
