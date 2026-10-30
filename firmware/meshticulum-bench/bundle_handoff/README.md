@@ -523,3 +523,46 @@ absent; proof positions, payloads and arbitrary metadata are not exported.
 This is a source-only candidate. It has no pinned released SDK or wheel and no
 physical throughput result. The ongoing header-preserve comparison remains on
 its existing v6 SDK and does not use this option.
+
+## Explicit terminal-repair and twelve-frame train candidates
+
+`selective_repair_train: true` requires the complete explicit v7 selection above,
+including `selective_repeat_retry: true`. It selects the SDK's exact
+`policy_for_repair_train()` v8 record. The original FINAL must already have
+canonical peer receipt before the SDK can group distinct proven terminal holes;
+this adapter does not manufacture repair evidence or change retry timers.
+
+Adding the exact integer `train_frames: 12` to that complete v8 input selects
+`policy_for_train12()` and the exact v9 record. `train_depth: 8` continues to
+mean eight retained physical slots; logical credit/reassembly remains 32. The
+new field accepts only 12, never a boolean, float or inferred prerequisite.
+Omitting both additions preserves every serialized v1–v7 policy. V8 retains
+eight-frame trains; v9 permits twelve scalar admissions as earlier records are
+durably released, under the same original common two-second deadline.
+
+Preparation compares the complete canonical SDK policy before wheel/evidence
+processing or output creation. The same bytes bind the prepared record, fresh
+scope and every part grant. Missing SDK selectors or any policy/guard mismatch
+refuse. V9 also needs the SDK worker's exact `MBT1` eight-slot/twelve-train native
+capability and 50-byte OPEN; the existing installed firmware cannot acquire that
+capability through this private configuration. The source-tested SDK input is
+`8ea30fb4b8a289923b1be461e1296ab6388903a8`; this note is not installation or RF
+authorization.
+
+The campaign planner remains byte-for-byte unchanged. Its cold reservation uses
+explicit DATA retry and ACK allowances, not `ceil(DATA/train_frames)`. For the
+23,900-useful-byte/24,565-response-byte fixture with 31 extra DATA attempts, it
+still reserves all 160 sender attempts and all 64 receiver ACK attempts. At
+preamble 12 these model 6,212,641/835,648 host-estimated µs (sender/receiver);
+at preamble 32 they model 6,437,921/925,760 µs. The full original 8,000,000/
+3,000,000 µs role claims remain required. A longer train does not reduce either
+held claim or refund old debt, and 64 ACKs is a hard allowance, not a guarantee
+of completion under arbitrary loss. Sync 66/18 does not change these estimates.
+
+Default preamble 12 and sync 66, explicit preamble 32 and sync 18, per-frame
+sealing/accounting, original authority, receive floors, caps, scope duration,
+UNKNOWN handling and closure are unchanged. Only `common.py` policy binding and
+`controller.py` selector checks change among the twelve harness runtime files.
+The source controls cover exact legacy bytes, both new selectors, older-SDK
+refusal, real synthetic peer grants, all four preamble/sync combinations and
+unchanged cold costs. No preparation, device work or physical gain is claimed.
