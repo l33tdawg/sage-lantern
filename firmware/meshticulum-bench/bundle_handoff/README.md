@@ -400,3 +400,19 @@ All 75 runtime files, including 71 Python files, match that checkout. Its seven
 firmware source files also match the reviewed MNR1 preparation; the generated
 eighth input keeps the existing 2 MHz SPI setting. Source models remain
 separate from physical delivery evidence.
+
+## Explicit scalar-fill-pair candidate
+
+`scalar_fill_pair: true` requires explicit queued mode, `train_depth: 8`,
+`flow_window_frames: 32`, `selective_repair_fill: true` and
+`selective_terminal_retry: true`. Preparation requires the SDK's
+`policy_for_scalar_fill_pair()` and compares its complete canonical v6 policy.
+The prepared record, original scope and every part grant must bind those same
+bytes. Missing SDK support or a partial, coerced or widened policy refuses
+preparation. Omitting the option preserves v1–v5 selection.
+
+This is admission for the SDK's bounded scalar-fill-pair experiment. It adds
+no native queue capacity, grant attempts, airtime, deadline or authority.
+The controller does not implement the scheduling feature itself; the exact
+pinned SDK must do so. Source controls remain separate from any future
+physical throughput qualification.
