@@ -392,3 +392,11 @@ proven. The adapter must also release and verify physical drain before each
 offer. Bulk recovery still requires three later receipts; retry ceilings,
 backoff, authority, debt and native listening guards remain in force. Physical
 performance for v5 is pending.
+
+The reviewed v5 SDK input is clean commit
+`f168a6a66a15054e909e3d9555ea6e5089c0b14e`, with a 304,608-byte wheel,
+SHA-256 `13d722a70affe4177b4a8e30be46b455d9820d63d7981ed70452ba1bd5dbd3d3`.
+All 75 runtime files, including 71 Python files, match that checkout. Its seven
+firmware source files also match the reviewed MNR1 preparation; the generated
+eighth input keeps the existing 2 MHz SPI setting. Source models remain
+separate from physical delivery evidence.
