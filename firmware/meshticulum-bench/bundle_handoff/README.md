@@ -566,3 +566,47 @@ UNKNOWN handling and closure are unchanged. Only `common.py` policy binding and
 The source controls cover exact legacy bytes, both new selectors, older-SDK
 refusal, real synthetic peer grants, all four preamble/sync combinations and
 unchanged cold costs. No preparation, device work or physical gain is claimed.
+
+## Explicit historical closure (source candidate)
+
+`historical_closure` is optional. It requires the exact reviewed codec source
+`3aea3c585e030c5163992cbf76a196c51c04559cf6cb96dd06c853be22747d42`.
+An unset or changed source pin refuses before evidence reads or operations.
+Omission keeps the existing
+twelve-file controller inventory and adds no fields to PREPARED, the campaign
+window, or SCOPE.
+
+The exact input object has schema `meshticulum.campaign-historical-closure.v1`
+and three references: `root_index`, `previous_prepared`, and
+`root_reconciliation`. Each reference has only an absolute canonical `path`,
+lowercase `sha256`, and exact integer `bytes`. The root index must also be in
+the direct `historical_evidence` list. The other two documents and the retained
+previous scope must be leaves in the expanded closure. This is an evidence
+representation; it grants no radio authority or budget refund.
+
+Selecting this option copies and pins the exact standalone
+`history_encoding.py` as a thirteenth local controller source.
+The consumer resolves one bounded index graph and verifies every expanded
+file's size, hash and bytes through nonblocking, no-symlink regular-file reads.
+All previous PREPARED references must resolve. If the previous trial itself
+used a closure, its exact root index must be a traversed parent in the same
+global graph; retaining the old index merely as an ordinary file is refused.
+No recursive traversal resets the global budget.
+
+Direct campaign history remains at most 512 references. Each index remains at
+most 500 files and 128 MiB; the shared closure permits at most 2,048 expanded
+files and 512 MiB, eight index documents, depth twelve and 16 MB of index
+metadata. The accepted codec imposes its own reconstruction limits separately.
+The campaign consumer does not decode deployment archives or run stored code.
+
+The canonical validation summary, three input references and exact codec hash
+are bound into PREPARED, its campaign window and SCOPE. Every local preparation,
+load, stage, issuance and run boundary revalidates the leaves. Window/scope
+agreement is checked before grants or SCOPE_CONSUMED. The pinned reconciliation
+must identify the preceding PREPARED and scope, retain both original expired
+clocks, confirm closure, and preserve no automatic retry, zero refunds and
+unknown historical cost. Original radio profiles, policies, caps and deadlines
+remain governed by the existing checks.
+
+`test_history_closure.py` uses temporary evidence and mocked operations. Those
+controls are source validation, with no installation, radio or throughput claim.

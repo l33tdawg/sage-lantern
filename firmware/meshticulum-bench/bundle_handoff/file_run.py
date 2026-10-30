@@ -9,15 +9,21 @@ import threading
 
 def run_file(api, prepared, password, scope_pin):
     a, p = api, prepared
-    scope = json.loads(a.read_pinned(a.BASE/'SCOPE.json', scope_pin))
+    closure='historical_closure' in p
+    if closure:a.validate_historical_closure(p)
+    parse=a.strict_json if closure else json.loads
+    scope = parse(a.read_pinned(a.BASE/'SCOPE.json', scope_pin))
     a.need(scope['prepared_sha256'] == a.sha(a.canonical(p)), 'scope_prepared_changed')
     a.need(scope['order'] == p['order'], 'scope_order_changed')
     a.validate_mode_binding(p, scope)
     a.validate_window(scope, *a.clock(), a.boot_id(), reserve_us=p['part_count']*a.ACK_GRACE_US+5_000_000)
     directory = Path(p['campaign_directory'])
-    claim = json.loads((directory/'CAMPAIGN_CLAIM_0.json').read_bytes())
+    claim = parse((directory/'CAMPAIGN_CLAIM_0.json').read_bytes())
     a.need(claim['scope_sha256'] == scope_pin and claim['reserved'] == p['run_budget'], 'claim_required')
-    window = json.loads(a.read_pinned(directory/'CAMPAIGN_WINDOW.json', claim['campaign_window_sha256']))
+    window = parse(a.read_pinned(directory/'CAMPAIGN_WINDOW.json', claim['campaign_window_sha256']))
+    # Also reject an unexpected closure on an otherwise legacy scope/window.
+    if closure or 'historical_closure' in scope or 'historical_closure' in window:
+        a.bind_historical_closure(p,scope,window)
     a.validate_window(window, *a.clock(), a.boot_id())
     a.write_new(a.BASE/'SCOPE_CONSUMED.json', dict(scope_sha256=scope_pin, consumed_epoch_us=a.clock()[0]))
     order = p['order']; rows = [dict(part=i, complete=False, endpoints={}) for i in order]

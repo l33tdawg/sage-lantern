@@ -1,11 +1,100 @@
 """Fresh individual-run helpers. No historical scope is reused."""
-import os,stat,json,hashlib,struct
+import os,stat,json,hashlib,struct,math
 from pathlib import Path
+from pathlib import PurePosixPath
 from campaign import need,digest,sha,canonical
 ACK_GRACE_US=20_000_000
 UNITS=("unit-a","unit-b")
 DATA_BURST_POLICY=dict(schema="meshticulum.data-burst-policy.v1",handover="irrevocably-charged-at-queue-acceptance",max_depth=4,max_hold_us=2_000_000,inter_packet_rx_us=5_000,reverse_listen_us=100_000)
 _DEFAULT_FLOW_WINDOW=object()
+
+def strict_json(raw):
+    """Bounded evidence JSON: no duplicate keys or non-finite constants."""
+    need(type(raw) is bytes and 0<len(raw)<=8_000_000,'invalid_evidence_json_size')
+    def pairs(items):
+        result={}
+        for key,value in items:
+            need(key not in result,'duplicate_evidence_key');result[key]=value
+        return result
+    def constant(value):raise ValueError('invalid_evidence_constant')
+    try:value=json.loads(raw,object_pairs_hook=pairs,parse_constant=constant)
+    except (RecursionError,UnicodeError) as error:raise ValueError('invalid_evidence_json') from error
+    pending=[(value,0)];count=0
+    while pending:
+        item,depth=pending.pop();count+=1
+        need(depth<=32 and count<=200_000,'evidence_json_complexity')
+        if type(item) in (dict,list):
+            need(count+len(pending)+len(item)<=200_000,'evidence_json_complexity')
+            pending.extend((v,depth+1) for v in (item.values() if type(item) is dict else item))
+        elif type(item) is float:need(math.isfinite(item),'invalid_evidence_number')
+    return value
+
+def history_path(value):
+    need(type(value) is str and 0<len(value)<=4096 and value.startswith('/')
+         and not value.startswith('//') and '\x00' not in value
+         and str(PurePosixPath(value))==value and '..' not in PurePosixPath(value).parts,
+         'unsafe_history_path')
+    return value
+
+def history_ref(value,*,sized=True):
+    need(type(value) is dict and set(value)==({'path','sha256','bytes'} if sized else {'path','sha256'}),
+         'invalid_history_reference')
+    history_path(value['path']);digest(value['sha256'])
+    if sized:need(type(value['bytes']) is int and 0<value['bytes']<=8_000_000,'invalid_history_size')
+    return value
+
+def read_history(path,pin,*,size=None,limit=8_000_000):
+    """Read one exact regular leaf through non-symlink directory descriptors.
+
+    Nonblocking final open refuses FIFO replacement without waiting. A second
+    path walk after reading checks that the pathname still names the same file.
+    No closure payload is executed or extracted.
+    """
+    history_path(path);digest(pin)
+    need(type(limit) is int and 0<limit<=8_000_000,'invalid_history_limit')
+    if size is not None:need(type(size) is int and 0<size<=limit,'invalid_history_size')
+    parts=PurePosixPath(path).parts[1:]
+    need(bool(parts),'unsafe_history_path')
+    def opened():
+        directory=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
+        try:
+            for part in parts[:-1]:
+                child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,
+                              dir_fd=directory)
+                os.close(directory);directory=child
+            return os.open(parts[-1],os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC,
+                           dir_fd=directory)
+        finally:os.close(directory)
+    stamp=lambda s:(s.st_dev,s.st_ino,s.st_mode,s.st_uid,s.st_gid,s.st_nlink,
+                    s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    fd=opened()
+    try:
+        before=os.fstat(fd)
+        need(stat.S_ISREG(before.st_mode) and before.st_nlink==1
+             and 0<before.st_size<=limit,'invalid_history_file')
+        need(size is None or before.st_size==size,'history_size_changed')
+        chunks=[];remaining=before.st_size+1
+        while remaining:
+            chunk=os.read(fd,min(remaining,65536))
+            if not chunk:break
+            chunks.append(chunk);remaining-=len(chunk)
+        raw=b''.join(chunks)
+        need(len(raw)==before.st_size and stamp(before)==stamp(os.fstat(fd)),'history_file_changed')
+        check=opened()
+        try:need(stamp(before)==stamp(os.fstat(check)),'history_path_changed')
+        finally:os.close(check)
+        need(sha(raw)==pin,'history_pin_changed')
+        return raw
+    finally:os.close(fd)
+
+def bind_historical_closure(prepared,*others):
+    """Exact optional metadata binding; this does not validate leaf bytes."""
+    present='historical_closure' in prepared
+    for value in others:
+        need(('historical_closure' in value)==present,'history_closure_binding_changed')
+        if present:
+            need(canonical(value['historical_closure'])==canonical(prepared['historical_closure']),
+                 'history_closure_binding_changed')
 
 def data_burst_policy(depth=4,*,flow_window_frames=_DEFAULT_FLOW_WINDOW,
                       selective_repair_fill=_DEFAULT_FLOW_WINDOW,
@@ -137,6 +226,7 @@ def validate_mode_binding(prepared, scope=None):
          'mode_policy_changed')
     if scope is not None:
         need(scope['comparison_mode']==mode and canonical(scope['data_burst'])==canonical(value),'scope_mode_changed')
+        bind_historical_closure(prepared,scope)
     return mode
 
 def validate_plan_mode(plan, prepared):
