@@ -430,7 +430,7 @@ def failure_report():
         parts=[dict(part=4, complete=True, payload='private-body')],
         last_part_metrics=dict(part=4, completed=False, physical_diagnostics=[{'packet': 'private-packet'}],
             worker_ready={'epoch_us': 5, 'monotonic_us': 6},
-            flow_snapshot=dict(received_bytes=16, retransmits=5,
+            flow_snapshot=dict(received_bytes=16, retransmits=5, fast_retry_offers=2, fast_retransmits=1,
                 counts={'tx_RF_DONE': 34, 'private_key': 123}, events=[{'secret': 'private-event'}],
                 attempt_journal=dict(attempts=34, reserved_estimated_airtime_us=1329536,
                                      fenced=False, recovered_unknown=0, path='/private/journal'),
@@ -452,6 +452,8 @@ def test_failure_file_is_durable_bounded_metadata_only(tmp_path, monkeypatch):
     assert len(raw) <= sdk.MAX_DIAGNOSTICS_BYTES and b'private' not in raw
     assert value['scope_sha256'] == PIN and value['unit'] == 'A' and value['complete'] is False
     assert value['last_part_metrics']['flow_snapshot']['attempt_journal']['attempts'] == 34
+    assert value['last_part_metrics']['flow_snapshot']['fast_retry_offers'] == 2
+    assert value['last_part_metrics']['flow_snapshot']['fast_retransmits'] == 1
     assert len(calls) == 2 and stat.S_ISREG(calls[0]) and stat.S_ISDIR(calls[1])
     assert stat.S_IMODE(path.stat().st_mode) == 0o600 and path.stat().st_nlink == 1
 
@@ -464,6 +466,43 @@ def test_diagnostic_projection_retains_all_fixed_host_phases():
     result = sdk.diagnostic_report(report, request(), 'A', EOFError())
     assert result['last_part_metrics']['host_phase_timings'] == phases
     assert len(phases['phases']) == 24
+
+
+def test_failure_projection_retains_ack_effects_and_only_bounded_metadata():
+    report = failure_report()
+    flow = report['last_part_metrics']['flow_snapshot']
+    flow['counts'].update(rx_ACK_startup=1, rx_ACK_progress=2, rx_ACK_fresh_credit=3,
+        rx_ACK_unchanged=4, rx_ACK_ignored=5, tx_ACK_RF_DONE_startup=1,
+        tx_ACK_RF_DONE_new=2, tx_ACK_RF_DONE_unchanged=3,
+        final_ACK_reannouncement_requested=1, final_ACK_reannouncement_satisfied=1,
+        final_ACK_reannouncement_budget_unavailable=1)
+    flow['events'] = [dict(event='rx', outer_kind='ACK', mono_us=i, ack_effect='unchanged',
+        acked_frames_delta=0, ack_seq=1, ack_sack=0, ack_credit=4, ack_revision=2,
+        packet_sha256='private-packet', request='private-request', payload='private-data')
+        for i in range(70)]
+    flow['events'] += [dict(event='tx', outer_kind='ACK', ack_snapshot='new',
+        ack_wait_reason='complete', outcome='RF_DONE', mono_us=71, ack_burst_received=1),
+        dict(event='rx', outer_kind='DATA', payload='private-data'),
+        dict(event='rx', outer_kind='ACK', ack_effect='private-reason')]
+    value = sdk.diagnostic_report(report, request(), 'A', EOFError())
+    actual = value['last_part_metrics']['flow_snapshot']
+    assert actual['counts'] == {key: item for key, item in flow['counts'].items() if key != 'private_key'}
+    assert actual['counts']['final_ACK_reannouncement_budget_unavailable'] == 1
+    tail = actual['ack_events_retained_tail']
+    assert len(tail) == 64 and tail[0]['mono_us'] == 7
+    assert tail[-1] == dict(event='tx', outer_kind='ACK', ack_snapshot='new',
+        ack_wait_reason='complete', outcome='RF_DONE', mono_us=71, ack_burst_received=1)
+    assert 'private' not in json.dumps(value)
+
+
+def test_ack_projection_does_not_invent_missing_or_invalid_fields():
+    assert sdk._ack_events(None) == []
+    assert sdk._ack_events([dict(event='rx', outer_kind='ACK')]) == []
+    rows = sdk._ack_events([dict(event='rx', outer_kind='ACK', ack_effect='progress',
+        acked_frames_delta=True, ack_seq=-1, ack_sack=2**63, ack_credit=float('nan'),
+        ack_revision='private', mono_us=10)])
+    assert rows == [dict(event='rx', outer_kind='ACK', ack_effect='progress', mono_us=10)]
+    assert sdk._ack_events([dict(event='rx', outer_kind='ACK', ack_effect='unchanged')] + [{}] * 512) == []
 
 
 def test_diagnostic_partial_writes_finish_within_same_file(tmp_path, monkeypatch):

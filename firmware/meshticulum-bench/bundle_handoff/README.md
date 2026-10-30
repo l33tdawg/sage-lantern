@@ -23,7 +23,7 @@ entry point, default approved configuration or retry campaign.
 
 ## Exact SDK dependency
 
-The reviewed candidate is the public SDK commit
+The original handoff candidate was public SDK commit
 `541a3796454291b1d8cb573b5e5e60dd4fc4d1ac`, with candidate wheel SHA-256
 `cab6694a2004916af169b929b55bc7e3acd5c0971f8af1210428ffbabf346f1d`.
 The wheel metadata remains `meshticulum==1.0.0a3`; the version string alone does
@@ -209,6 +209,27 @@ missing report means diagnostics were unavailable; it is never zero debt or
 successful cleanup. Original journals and endpoint closure evidence remain the
 accounting authority.
 
+The current source additionally retains fixed ACK-effect and completed-ACK
+snapshot counters from the SDK flow report. Its `ack_events_retained_tail`
+contains at most 64 ACK metadata rows selected from the SDK's 512-event tail:
+local host timestamp, fixed effect/snapshot/wait labels, canonical ACK integers,
+retired-frame delta and local burst occupancy. It excludes packet hashes,
+request IDs, payloads and arbitrary reason strings. Older or missing ACK fields
+remain absent; the tail is not a complete event count. Ordinary endpoint results
+already retain their generic flow snapshots. This adds no timing collector or
+clock reads and does not change the radio/session path. Cross-endpoint host and
+MCU timestamps still cannot prove a collision without a valid common clock
+basis or independent RF observation.
+
+`final_ACK_reannouncement_budget_unavailable` records a conservative skip of the
+optional final-ACK repeat when attempt, airtime, ledger or retained-handle
+headroom is unavailable. The skip spends no new attempt and supplies no extra
+authority. The failure projection now retains this fixed counter too. That
+projection-only addition was made after the `run-00-recovery` harness was
+frozen; its exact adapter hash and source copy remain unchanged. Ordinary full
+flow snapshots already retain the counter, so the frozen run's reports need no
+retroactive rewriting.
+
 ## Source controls
 
 From the Lantern root, with the exact public SDK source available:
@@ -226,3 +247,30 @@ mode/window bindings, role limits, debt completeness, ordered coordination,
 control faults, finite process cleanup and iterator closure. Physical evidence
 must remain a separate artifact tied to exact installed bytes and a consumed
 finite scope; source test success cannot replace it.
+
+
+The failure projection also retains fixed ACK-effect counters and at most 64
+ACK metadata rows from the SDK's last 512 events. It excludes packet hashes,
+request identifiers, payloads and arbitrary error text. Optional scalar
+`fast_retry_offers` and `fast_retransmits` distinguish logical offers from actual
+handover when supplied by the reviewed SDK revision; neither proves receipt.
+A missing field stays absent. New preparation pins this updated adapter. The
+first 3 kB ACK-policy trial used its earlier frozen copy, before the budget-skip
+and selective-retry counter projection additions; full success snapshots already
+retained their own SDK fields. The later 2 kB trial used this exact batch adapter, with its own prepared artifact record.
+
+
+The selective-recovery trial used SDK commit
+`5431846ee47a702a07994c1b3456c7da01776b20`, unpublished wheel SHA-256
+`d8ec8d20f59e783d9f7be4a69bb70a4d7b7ed7ccebe0b05ff1fce89a3ddd6438`,
+and batch-adapter SHA-256
+`a37f69ae50b4e2fd1681ad210b628624b09f3d68c198ff87793f86afb626e3b5`.
+It completed one 2,000-byte file in 2.554067 seconds from sender process launch
+to authenticated receipt, with one selective retry submitted 16.725 ms after
+SACK proof. All 72 runtime files per isolated environment matched the candidate;
+both endpoints exited zero and closed owned hardware. All 22 physical attempts
+and paid debt reconcile. This is one small file with one repair, not a paired
+profile speed comparison or sustained capacity result. The public
+[recovery record](https://github.com/l33tdawg/meshticulum/tree/main/benchmarks/2026-10-30-sf5-recovery)
+retains exact boundaries, the earlier 3 kB ACK-policy trial and source controls.
+The published alpha.3 artifacts and other Lantern integration locks are unchanged.
