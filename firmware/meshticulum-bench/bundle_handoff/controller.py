@@ -42,6 +42,149 @@ from transport import rpc
 BASE=Path(__file__).resolve().parent
 HARNESSES=('campaign.py','common.py','controller.py','transport.py','remote.py',
            'file_run.py','remote_file_body.py','sdk_entry.py','sdk_batch_entry.py','small_fixture.py','install_environment.py','verify_environment.py')
+# Exact shared codec accepted in ROOT_CODEC_ACCEPTANCE.json (64223210a8ee...).
+# The code is copied unchanged; this hash does not authorize a campaign.
+HISTORY_CODEC_SHA256='3aea3c585e030c5163992cbf76a196c51c04559cf6cb96dd06c853be22747d42'
+HISTORY_CLOSURE_SCHEMA='meshticulum.campaign-historical-closure.v1'
+HISTORY_CLOSURE_KEYS={'schema','root_index','previous_prepared','root_reconciliation'}
+
+def closure_codec():
+    need(HISTORY_CODEC_SHA256 is not None,'history_codec_not_accepted')
+    digest(HISTORY_CODEC_SHA256)
+    raw=read_history(str(BASE/'history_encoding.py'),HISTORY_CODEC_SHA256,limit=2_000_000)
+    namespace={'__name__':'_checked_campaign_history','__file__':str(BASE/'history_encoding.py')}
+    # Execute only the exact approved local source bytes, never an indexed leaf.
+    exec(compile(raw,str(BASE/'history_encoding.py'),'exec'),namespace)
+    need(callable(namespace.get('checked_closure')),'history_codec_api_missing')
+    return namespace['checked_closure'],raw
+
+def controller_harnesses(value):
+    return HARNESSES+(('history_encoding.py',) if 'historical_closure' in value else ())
+
+def _history_rows(value):
+    need(type(value) is list and 0<len(value)<=512,'invalid_direct_history')
+    result={}
+    for entry in value:
+        history_ref(entry,sized=False)
+        need(entry['path'] not in result,'duplicate_direct_history')
+        result[entry['path']]=entry['sha256']
+    return result
+
+def _closure_input(value):
+    need(type(value) is dict and set(value)==HISTORY_CLOSURE_KEYS
+         and value['schema']==HISTORY_CLOSURE_SCHEMA,'invalid_historical_closure')
+    for key in HISTORY_CLOSURE_KEYS-{'schema'}:history_ref(value[key])
+    need(value['root_index']['bytes']<=2_000_000,'history_index_too_large')
+    need(len({value[k]['path'] for k in HISTORY_CLOSURE_KEYS-{'schema'}})==3,'history_binding_alias')
+
+def checked_historical_closure(value,history):
+    """Read-only complete evidence validation, with no clock or authority use."""
+    # Deliberately before evidence reads/imports: no unreviewed codec fallback.
+    need(HISTORY_CODEC_SHA256 is not None,'history_codec_not_accepted')
+    _closure_input(value);direct=_history_rows(history)
+    resolver,_=closure_codec()
+    root=value['root_index']
+    need(direct.get(root['path'])==root['sha256'],'root_index_not_direct_history')
+    root_raw=read_history(root['path'],root['sha256'],size=root['bytes'],limit=2_000_000)
+    rows,metadata,stats=resolver(root_raw,lambda path,pin:read_history(path,pin,limit=2_000_000))
+    # Defensive checks at the API boundary supplement the accepted codec caps.
+    need(type(rows) is list and 0<len(rows)<=2048 and type(metadata) is dict
+         and type(stats) is dict,'invalid_history_closure_result')
+    expanded={}
+    for row in rows:
+        history_ref(row)
+        need(row['path'] not in expanded,'duplicate_expanded_history')
+        expanded[row['path']]=row
+    need(list(expanded)==sorted(expanded) and sum(r['bytes'] for r in rows)<=512*1024*1024,
+         'expanded_history_bound')
+    need(set(stats)=={'index_documents','index_metadata_bytes','direct_files','expanded_files','expanded_bytes'}
+         and all(type(n) is int and n>=0 for n in stats.values())
+         and 1<=stats['index_documents']<=8 and stats['index_metadata_bytes']<=16_000_000
+         and 1<=stats['direct_files']<=500 and stats['expanded_files']==len(rows)
+         and stats['expanded_bytes']==sum(r['bytes'] for r in rows),'history_summary_changed')
+    for path,pin in direct.items():
+        need((path==root['path'] and pin==root['sha256'])
+             or (path in expanded and expanded[path]['sha256']==pin),'direct_history_not_in_closure')
+    for name in ('previous_prepared','root_reconciliation'):
+        ref=value[name];need(expanded.get(ref['path'])==ref,'history_binding_not_in_closure')
+    # Verify every leaf, including parent metadata, once through the bounded
+    # filesystem reader. Keep only the two small binding JSON documents.
+    retained={}
+    for row in rows:
+        raw=read_history(row['path'],row['sha256'],size=row['bytes'])
+        if row['path'] in metadata:need(raw==metadata[row['path']],'parent_index_changed')
+        if row['path'] in (value['previous_prepared']['path'],value['root_reconciliation']['path']):
+            retained[row['path']]=strict_json(raw)
+    previous=retained[value['previous_prepared']['path']]
+    reconciliation=retained[value['root_reconciliation']['path']]
+    need(type(previous) is dict and previous.get('schema')=='meshticulum.alpha3-individual-prepared.v1',
+         'invalid_previous_prepared')
+    inherited=_history_rows(previous['historical_evidence'])
+    for path,pin in inherited.items():
+        need(path in expanded and expanded[path]['sha256']==pin,'inherited_history_omitted')
+    if 'historical_closure' in previous:
+        prior=previous['historical_closure']
+        need(type(prior) is dict and set(prior)==HISTORY_CLOSURE_KEYS|{'source_sha256','validation'},
+             'invalid_previous_closure')
+        _closure_input({k:prior[k] for k in HISTORY_CLOSURE_KEYS});digest(prior['source_sha256'])
+        # Presence as an ordinary file is insufficient. This exact prior root
+        # must have been traversed in the SAME bounded global resolver call.
+        prior_root=prior['root_index'];prior_raw=metadata.get(prior_root['path'])
+        need(type(prior_raw) is bytes and len(prior_raw)==prior_root['bytes']
+             and sha(prior_raw)==prior_root['sha256'],'previous_closure_not_traversed')
+    previous_ref=value['previous_prepared']
+    need(type(reconciliation) is dict and reconciliation.get('prepared')==
+         {k:previous_ref[k] for k in ('path','sha256')},'reconciliation_prepared_changed')
+    for flag in ('complete','trial_closed','scope_expired_at_reconciliation','all_bursts_drained',
+                 'all_radios_unarmed_after_original_remote_deadlines','all_serial_channels_closed'):
+        need(reconciliation.get(flag) is True,'previous_trial_not_closed')
+    need(reconciliation.get('new_rf_authorized') is False and reconciliation.get('automatic_retry') is False
+         and type(reconciliation.get('refunds')) is int
+         and reconciliation['refunds']==0,'history_cannot_authorize_or_refund')
+    need(reconciliation.get('global_historical_debt_complete') is False
+         and reconciliation.get('historical_unknown_actual_cost','missing') is None,'historical_unknown_changed')
+    scope_ref=history_ref(reconciliation['scope'],sized=False)
+    need(scope_ref['path'] in expanded and expanded[scope_ref['path']]['sha256']==scope_ref['sha256'],
+         'previous_scope_not_in_closure')
+    scope_row=expanded[scope_ref['path']]
+    scope=strict_json(read_history(scope_ref['path'],scope_ref['sha256'],size=scope_row['bytes']))
+    need(type(scope) is dict and scope['prepared_sha256']==previous_ref['sha256'],'previous_scope_changed')
+    observation=reconciliation['expiry_observation']
+    need(type(scope.get('controller_boot')) is str and 0<len(scope['controller_boot'])<=128
+         and type(observation) is dict and observation['controller_boot']==scope['controller_boot'],
+         'previous_clock_boot_changed')
+    for source,deadline in (('epoch_us','expires_epoch_us'),('monotonic_us','original_deadline_monotonic_us')):
+        need(type(observation[source]) is int and type(scope[deadline]) is int
+             and 0<scope[deadline]<=observation[source]<2**63,'previous_scope_not_expired')
+    for key,deadline in (('original_scope_expires_epoch_us','expires_epoch_us'),
+                         ('original_scope_deadline_monotonic_us','original_deadline_monotonic_us')):
+        need(type(reconciliation.get(key)) is int and reconciliation[key]==scope[deadline],
+             'reconciliation_deadline_changed')
+    summary=dict(schema='meshticulum.campaign-history-validation.v1',**stats,
+        expanded_rows_sha256=sha(canonical(rows)),inherited_direct_files=len(inherited),
+        inherited_direct_sha256=sha(canonical(previous['historical_evidence'])),
+        previous_recursive_closure='historical_closure' in previous,
+        global_historical_debt_complete=False,historical_unknown_actual_cost=None,
+        refunds=0,new_rf_authorized=False)
+    return dict(value,source_sha256=HISTORY_CODEC_SHA256,validation=summary)
+
+def validate_historical_closure(prepared):
+    if 'historical_closure' not in prepared:
+        need('history_encoding.py' not in prepared.get('controller_sources',{}),'unexpected_history_codec')
+        return None
+    bound=prepared['historical_closure']
+    need(type(bound) is dict and set(bound)==HISTORY_CLOSURE_KEYS|{'source_sha256','validation'},
+         'invalid_bound_history_closure')
+    sources=prepared.get('controller_sources',{})
+    need(type(sources) is dict and set(sources)==set(controller_harnesses(prepared)),
+         'history_controller_inventory_changed')
+    for pin in sources.values():digest(pin)
+    need(bound['source_sha256']==HISTORY_CODEC_SHA256
+         and sources['history_encoding.py']==HISTORY_CODEC_SHA256,
+         'history_codec_binding_changed')
+    result=checked_historical_closure({k:bound[k] for k in HISTORY_CLOSURE_KEYS},prepared['historical_evidence'])
+    need(canonical(bound)==canonical(result),'history_validation_changed')
+    return result
 
 def boot_id():
     if sys.platform=='darwin':
@@ -150,7 +293,9 @@ def sf5_radio_parameters(policy, *, preamble_symbols=12, sync_word=66):
     return profile,admission
 
 def prepare(config_path,output):
-    raw=Path(config_path).read_bytes();config=json.loads(raw)
+    raw=Path(config_path).read_bytes();config=strict_json(raw)
+    history_binding=(checked_historical_closure(config['historical_closure'],config['historical_evidence'])
+                     if 'historical_closure' in config else None)
     need(config['schema']=='meshticulum.alpha3-individual-input.v1','new_config_required')
     need({config['sender'],config['receiver']}==set(UNITS),'this_adapter_is_ab_only')
     need(config['comparison_mode'] in ('baseline','queued') and type(config['profile_host']) is bool,'mode_required')
@@ -176,7 +321,9 @@ def prepare(config_path,output):
              and o['radio']['firmware']==identity and o['owned_channel_closed'] is True,'preflight_not_ready')
         need(config['units'][u]['host_boot_id']==o['facts_after']['host_boot_id'],'host_boot_changed')
     history=config['historical_evidence'];need(type(history) is list and history,'history_required')
-    for entry in history:pinned(entry,8_000_000)
+    for entry in history:
+        if history_binding is None:pinned(entry,8_000_000)
+        else:read_history(entry['path'],entry['sha256'])
     # CLOCK captures are evidence only; actual fresh clock mappings still occur
     # inside the public worker for every bounded queued burst.
     clock_evidence=config.get('clock_preflights',{})
@@ -239,7 +386,11 @@ def prepare(config_path,output):
     for p in (dest/'pack').rglob('*'):p.chmod(0o600 if p.is_file() else 0o700)
     for name,value,is_raw in [('trust.json',trust,False),('SOURCE.json',firmware,True),('admission.json',admission,False),('RUNTIME.json',spec,False),('wheelhouse/'+spec['sdk_wheel']['filename'],wheel,True)]:write_new(dest/name,value,raw=is_raw)
     write_new(target/'INPUT.bin',data,raw=True)
-    for name in HARNESSES:write_new(target/name,(BASE/name).read_bytes(),raw=True)
+    harnesses=controller_harnesses(config)
+    for name in harnesses:
+        code=(read_history(str(BASE/name),HISTORY_CODEC_SHA256,limit=2_000_000)
+              if name=='history_encoding.py' else (BASE/name).read_bytes())
+        write_new(target/name,code,raw=True)
     for name in ('file_run.py','remote_file_body.py','sdk_entry.py','sdk_batch_entry.py','small_fixture.py','install_environment.py','verify_environment.py'):write_new(dest/name,(BASE/name).read_bytes(),raw=True)
     for name in ('radio_file.py','radio_bundle.py'):write_new(dest/'examples'/name,(core/'examples'/name).read_bytes(),raw=True)
     files={str(p.relative_to(dest)):sha(p.read_bytes()) for p in dest.rglob('*') if p.is_file()}
@@ -257,16 +408,25 @@ def prepare(config_path,output):
         firmware_sources={u:dict(path='SOURCE.json',sha256=sha(firmware)) for u in UNITS},
         receiver_retirement=dict(cli_flags=['--confirm-receipt']),historical_evidence=history,
         run_budget=config['run_budget'],cold_planning=fit,clock_preflights=clock_evidence,
-        controller_sources={name:sha((target/name).read_bytes()) for name in HARNESSES},
+        controller_sources={name:sha((target/name).read_bytes()) for name in harnesses},
         continuation_pause=config.get('continuation_pause'),source_only=True,scopes_issued=0)
+    if history_binding is not None:prepared['historical_closure']=history_binding
     write_new(target/'PREPARED.json',prepared);write_new(target/'INPUT_CONFIG.json',raw,raw=True)
     return dict(prepared=str(target/'PREPARED.json'),sha256=sha(canonical(prepared)),parts=count,cold_planning=fit)
 
 def load_run():
-    p=json.loads((BASE/'PREPARED.json').read_bytes())
-    for name,pin in p['controller_sources'].items():read_pinned(BASE/name,pin)
-    for name,pin in p['files'].items():read_pinned(BASE/'prepared'/name,pin,20_000_000)
-    for item in p['historical_evidence']:pinned(item,8_000_000)
+    p=strict_json((BASE/'PREPARED.json').read_bytes())
+    validate_historical_closure(p)
+    closure='historical_closure' in p
+    for name,pin in p['controller_sources'].items():
+        if closure:read_history(str(BASE/name),pin,limit=4_000_000)
+        else:read_pinned(BASE/name,pin)
+    for name,pin in p['files'].items():
+        if closure:read_history(str(BASE/'prepared'/name),pin)
+        else:read_pinned(BASE/'prepared'/name,pin,20_000_000)
+    for item in p['historical_evidence']:
+        if closure:read_history(item['path'],item['sha256'])
+        else:pinned(item,8_000_000)
     sdk(Path(p['core_path']),p['core_commit'])
     return p
 
@@ -277,9 +437,11 @@ def remote_source():
     return campaign+'\n'+common+'\n'+prefix+(BASE/'remote_file_body.py').read_text()
 
 def stage(p,password):
+    validate_historical_closure(p)
     epoch,_=clock();window=dict(issued_epoch_us=epoch,expires_epoch_us=epoch+180_000_000,
         prepared_sha256=sha(canonical(p)),owner_window_sha256=p['campaign_sha256'])
-    payload={n:base64.b64encode((BASE/'prepared'/n).read_bytes()).decode() for n in p['files']}
+    payload={n:base64.b64encode(read_history(str(BASE/'prepared'/n),pin)
+        if 'historical_closure' in p else (BASE/'prepared'/n).read_bytes()).decode() for n,pin in p['files'].items()}
     results={}
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs={u:pool.submit(rpc,p['units'][u],remote_source(),dict(action='stage',unit=u,prepared=p,
@@ -288,7 +450,9 @@ def stage(p,password):
     write_new(BASE/'STAGED.json',results);return dict(complete=all(r['complete'] for r in results.values()),units=list(results))
 
 def issue(p):
-    staged=json.loads((BASE/'STAGED.json').read_bytes());need(all(staged[u]['complete'] for u in UNITS),'stage_required')
+    validate_historical_closure(p)
+    parse=strict_json if 'historical_closure' in p else json.loads
+    staged=parse((BASE/'STAGED.json').read_bytes());need(all(staged[u]['complete'] for u in UNITS),'stage_required')
     import radio_bundle
     epoch,mono=clock();end=epoch+p['policy']['scope_seconds']*1000000
     directory=Path(p['campaign_directory']);index=c.integer(p['run_index'])
@@ -303,8 +467,10 @@ def issue(p):
             original_monotonic_us=mono,original_deadline_monotonic_us=mono+end-epoch,
             controller_boot=boot_id(),max_attempts_per_endpoint=max(r['attempts'] for r in p['run_budget'].values()),
             max_reserved_airtime_us_per_endpoint=max(r['estimated_airtime_us'] for r in p['run_budget'].values()),historical_evidence=p['historical_evidence'])
+        if 'historical_closure' in p:window['historical_closure']=p['historical_closure']
         write_new(window_path,window)
-    else:window=json.loads(window_path.read_bytes())
+    else:window=parse(window_path.read_bytes())
+    bind_historical_closure(p,window)
     need(window['campaign_id']==p['campaign_id'],'campaign_binding_changed')
     validate_window(window,epoch,mono,boot_id())
     reserved={u:dict(attempts=0,estimated_airtime_us=0) for u in UNITS}
@@ -348,6 +514,8 @@ def issue(p):
         part_count=p['part_count'],order=p['order'],issued_epoch_us=epoch,expires_epoch_us=end,original_monotonic_us=mono,
         original_deadline_monotonic_us=mono+end-epoch,controller_boot=boot_id(),count_authorized=1,
         grants=grants,root_sole_device_writer=True,historical_evidence=p['historical_evidence'])
+    if 'historical_closure' in p:scope['historical_closure']=p['historical_closure']
+    bind_historical_closure(p,scope,window)
     write_new(BASE/'SCOPE.json',scope)
     write_new(directory/f'CAMPAIGN_CLAIM_{index}.json',dict(campaign_id=p['campaign_id'],index=index,
         run_directory=str(BASE),scope_sha256=sha(canonical(scope)),reserved=p['run_budget'],
@@ -355,6 +523,7 @@ def issue(p):
     return dict(scope=str(BASE/'SCOPE.json'),sha256=sha(canonical(scope)),expires_epoch_us=end)
 
 def run(p,password,scope_pin):
+    validate_historical_closure(p)
     from file_run import run_file
     return run_file(sys.modules[__name__],p,password,scope_pin)
 
