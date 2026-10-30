@@ -374,3 +374,21 @@ repair followed by seven new DATA frames. This sample needed 13 DATA retries,
 versus 10 previously, with different loss positions; it does not isolate a
 causal speed change. Both endpoints drained and closed, all paid attempts
 reconciled, and the original scope expired. The 3,000 B/s goal remains open.
+
+## Explicit terminal selective-retry candidate
+
+`selective_terminal_retry: true` additionally requires explicit queued mode,
+`train_depth: 8`, `flow_window_frames: 32` and `selective_repair_fill: true`.
+Preparation requires `policy_for_terminal_retry()` and binds its exact v5
+policy through the original scope and every part grant. Missing SDK support,
+partial configuration, false, null and coerced values refuse preparation.
+Omitting this field preserves the v1–v4 selections.
+
+This option targets the terminal holes seen in the first v4 sample. The SDK
+can use one later authenticated selective receipt for its existing one-time
+early retry only after the original final frame has genuinely handed over,
+outbound DATA is empty, and canonical peer receipt of that final frame is
+proven. The adapter must also release and verify physical drain before each
+offer. Bulk recovery still requires three later receipts; retry ceilings,
+backoff, authority, debt and native listening guards remain in force. Physical
+performance for v5 is pending.
