@@ -328,6 +328,10 @@ The logical-window32 candidate targets SDK commit
 `e43320ec3767c7aaabe64cf46af5116a2f2993cc`. Its separate wheel is 302,151 bytes,
 SHA-256 `83cba2892003df14eca5ec53cfd69b0cfed5711ba320183743b486d890246fd0`;
 all 75 runtime files, including 71 Python files, match that checkout. This
-identifies source support; physical throughput for this policy remains pending.
+identifies the source inputs for the first window32 hardware sample: the same
+23,900 useful bytes completed at 1,276.92 B/s in 18.716954 seconds including
+sender startup. All attempts reconciled and both endpoints closed. Loss positions
+and ACK losses differed from the earlier policy; repeated capacity and the
+3,000 B/s goal remain unqualified.
 The matched R11 eight-frame sample completed at 1,053.28 useful B/s including
 startup with different loss from the earlier sample. Neither reached 3,000 B/s.
