@@ -15,6 +15,8 @@ bytes conveys no authority or performance evidence from the earlier run.
 Optional preamble_symbols selects exact integer 12 (default) or 32 for the
 SF5 source experiment. The admitted waveform, grant profile and cold native/
 host estimates use that same selection; all original caps remain unchanged.
+Optional sync_word selects exact integer 66 (default) or 18. Both peers' profile
+and admission bind the same selection; airtime estimates and caps are unchanged.
 """
 import argparse
 import base64
@@ -120,15 +122,20 @@ def checked_data_burst(config):
         need(canonical(policy)==canonical(expected),'sdk_train_policy_mismatch')
     return policy
 
-def sf5_radio_parameters(policy, *, preamble_symbols=12):
+def checked_sync_word(value=66):
+    need(type(value) is int and value in (66, 18), 'invalid_sync_word')
+    return value
+
+def sf5_radio_parameters(policy, *, preamble_symbols=12, sync_word=66):
     """Build one exact profile/admission pair without writing or issuing work."""
     from meshticulum.bench.admission import RadioAdmission
     from meshticulum.bench.serial_protocol import RadioProfile
     preamble=c.checked_preamble_symbols(preamble_symbols)
+    sync=checked_sync_word(sync_word)
     profile=dict(frequency_hz=921375000,bandwidth_hz=500000,spreading_factor=5,coding_rate=5,
-        chip_power_dbm=0,preamble=preamble,sync_word=66,lease_ms=policy['radio_lease_ms'],
+        chip_power_dbm=0,preamble=preamble,sync_word=sync,lease_ms=policy['radio_lease_ms'],
         max_boot_attempts=policy['max_boot_attempts'],max_boot_estimated_airtime_us=policy['max_boot_estimated_airtime_us'])
-    admission=dict(country='MY',waveforms=[[921375000,500000,5,5,0,preamble,66]],min_lease_ms=10000,
+    admission=dict(country='MY',waveforms=[[921375000,500000,5,5,0,preamble,sync]],min_lease_ms=10000,
         max_lease_ms=180000,max_boot_attempts=policy['max_boot_attempts'],
         max_boot_estimated_airtime_us=policy['max_boot_estimated_airtime_us'])
     RadioAdmission(**{**admission,'waveforms':tuple(tuple(x) for x in admission['waveforms'])}).check('MY',True,RadioProfile(**profile))
@@ -140,6 +147,7 @@ def prepare(config_path,output):
     need({config['sender'],config['receiver']}==set(UNITS),'this_adapter_is_ab_only')
     need(config['comparison_mode'] in ('baseline','queued') and type(config['profile_host']) is bool,'mode_required')
     preamble=c.checked_preamble_symbols(config.get('preamble_symbols',12))
+    sync=checked_sync_word(config.get('sync_word',66))
     core=Path(config['core']['path']).resolve();commit=config['core']['commit'];sdk(core,commit)
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from meshticulum.resources import byte_bundle,knowledge_pack as kp
@@ -173,7 +181,7 @@ def prepare(config_path,output):
     need(60000<=policy['radio_lease_ms']<=180000 and 60<=policy['scope_seconds']<=1200
          and policy['radio_lease_ms']+10000<policy['scope_seconds']*1000
          and policy['max_frames']<=512,'finite_policy_required')
-    profile,admission=sf5_radio_parameters(policy,preamble_symbols=preamble)
+    profile,admission=sf5_radio_parameters(policy,preamble_symbols=preamble,sync_word=sync)
     size=c.integer(config['useful_bytes'],1);need(size<=1_000_000,'workload_too_large')
     part_bytes=c.integer(config['part_bytes'],1);need(part_bytes<=23900,'fixture_part_size')
     count=math.ceil(size/part_bytes)

@@ -176,6 +176,25 @@ unchanged finite limits and budget refusal. No firmware change, preparation,
 scope issuance or physical qualification is implied by this option. Any actual
 comparison requires a new reviewed finite case and retains all earlier debt.
 
+An independent source option accepts `sync_word: 18` (hexadecimal `0x12`);
+omission or explicit `66` preserves the preceding `0x42` profile and admission
+bytes. Only these two exact integers are accepted. The selected value appears
+in both the prepared profile and its sole admitted waveform, and every part's
+existing route/grant binding includes it. Null, booleans, strings, floats and
+other words fail before SDK/evidence loading or output creation.
+
+Pinned RadioLib uses control bits `0x44`: `setSyncWord(0x12)` writes `0x1424`,
+the private-network value in Semtech's SX1261/2 register table; `0x42` writes
+`0x4424`. MeshCore initializes this same radio family with `0x12`. A sync-word
+and preamble interaction is a hypothesis, not an identified cause of failed
+reception. This option changes no preamble, airtime estimate, power, policy,
+guard, deadline, attempt allowance or airtime cap. It implies no firmware
+change or physical qualification. A comparison must select its preamble
+explicitly and change only the intended waveform field in a new reviewed
+finite case. Source controls verify all 255 packet estimates, exact native
+encoding, matching and mismatched admission, peer grant/profile digests,
+unchanged costs and finite limits, and default byte compatibility.
+
 New input configurations can explicitly set `train_depth: 8` for the negotiated
 scalar eight-frame source candidate. Omission preserves the exact four-frame
 policy. Eight selects the public SDK's exact v2 policy, with `max_depth` and
