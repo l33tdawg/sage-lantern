@@ -350,3 +350,9 @@ The original scope and every part grant bind that option. This adds no retry
 opportunity, credit or attempt/airtime allowance, and retains native listening
 floors, finite deadlines and debt. Physical performance for this option remains
 pending; the earlier v3/window32 sample measured 1,276.92 useful B/s.
+
+The repair-fill candidate uses exact SDK commit
+`530fe62df03c3d235f04c892b23966100d659f51`, with a 302,742-byte wheel,
+SHA-256 `b3cef9b777a5757aedb30539e01a78a271e9931bf32780cfa24ecccf78290f9a`.
+All 75 runtime files, including 71 Python files, match that checkout. The
+source model and tests do not establish physical performance for v4.
