@@ -6,6 +6,20 @@ ACK_GRACE_US=20_000_000
 UNITS=("unit-a","unit-b")
 DATA_BURST_POLICY=dict(schema="meshticulum.data-burst-policy.v1",handover="irrevocably-charged-at-queue-acceptance",max_depth=4,max_hold_us=2_000_000,inter_packet_rx_us=5_000,reverse_listen_us=100_000)
 
+def data_burst_policy(depth=4):
+    need(type(depth) is int and depth in (4,8),'invalid_train_depth')
+    policy=dict(DATA_BURST_POLICY)
+    if depth==8:
+        policy.update(schema='meshticulum.data-burst-policy.v2',max_depth=8,train_frames=8)
+    return policy
+
+def selected_data_burst(config):
+    mode=config['comparison_mode'];need(mode in ('baseline','queued'),'invalid_mode')
+    depth=config.get('train_depth',4)
+    policy=data_burst_policy(depth)
+    need(mode=='queued' or depth==4,'baseline_train_depth_changed')
+    return policy if mode=='queued' else None
+
 def operation_limits(prepared):
     policy=prepared['policy']
     return {role:dict(attempts=policy.get(role+'_operation_attempt_allowance',policy['operation_attempt_allowance']),
@@ -14,14 +28,18 @@ def operation_limits(prepared):
 
 def validate_mode_binding(prepared, scope=None):
     mode=prepared['comparison_mode'];need(mode in ('baseline','queued'),'invalid_mode')
-    need(prepared['data_burst']==(DATA_BURST_POLICY if mode=='queued' else None),'mode_policy_changed')
+    value=prepared['data_burst']
+    need((value is None if mode=='baseline' else type(value) is dict and
+          any(canonical(value)==canonical(data_burst_policy(depth)) for depth in (4,8))),
+         'mode_policy_changed')
     if scope is not None:
-        need(scope['comparison_mode']==mode and scope['data_burst']==prepared['data_burst'],'scope_mode_changed')
+        need(scope['comparison_mode']==mode and canonical(scope['data_burst'])==canonical(value),'scope_mode_changed')
     return mode
 
 def validate_plan_mode(plan, prepared):
     mode=validate_mode_binding(prepared)
-    need(('data_burst' not in plan if mode=='baseline' else plan['data_burst']==DATA_BURST_POLICY),'grant_mode_changed')
+    need(('data_burst' not in plan if mode=='baseline' else type(plan.get('data_burst')) is dict
+          and canonical(plan['data_burst'])==canonical(prepared['data_burst'])),'grant_mode_changed')
     need(plan['operation_limits']==operation_limits(prepared),'operation_limit_changed')
 
 def stage_remote_deadline(stage, prepared, epoch, mono):

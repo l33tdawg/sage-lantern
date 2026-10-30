@@ -59,7 +59,11 @@ def prepare(config_path,output):
     from meshticulum.resources import byte_bundle,knowledge_pack as kp
     from meshticulum.bench.admission import RadioAdmission
     from meshticulum.bench.serial_protocol import RadioProfile
+    from meshticulum.bench.burst_protocol import policy_for_depth
     import radio_bundle,radio_file
+    burst_policy=selected_data_burst(config)
+    need(burst_policy is None or canonical(burst_policy)==canonical(
+         policy_for_depth(config.get('train_depth',4))),'sdk_train_policy_mismatch')
     wheel=pinned(config['candidate_wheel'],2_000_000)
     with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
         names=archive.namelist();need(len(names)==len(set(names)),'duplicate_wheel_entry')
@@ -152,7 +156,7 @@ def prepare(config_path,output):
         campaign_directory=str(Path(config['campaign_directory']).resolve()),run_index=config['run_index'],
         campaign_sha256=sha(raw),sender=config['sender'],receiver=config['receiver'],profile_host=config['profile_host'],
         core_path=str(core),core_commit=commit,candidate_wheel_sha256=sha(wheel),runtime_spec=spec,
-        comparison_mode=config['comparison_mode'],data_burst=DATA_BURST_POLICY if config['comparison_mode']=='queued' else None,
+        comparison_mode=config['comparison_mode'],data_burst=burst_policy,
         useful_bytes=size,useful_sha256=sha(data),manifest_sha256=kp.manifest_digest(manifest),object_id=byte_bundle.descriptor(manifest)['sha256'],
         part_count=count,part_bytes=part_bytes,order=config['order'],parts=responses,units=config['units'],policy=policy,profile=profile,
         files=files,staged_root='/var/lib/meshticulum-public-sdk/'+run_id,

@@ -465,7 +465,24 @@ def test_diagnostic_projection_retains_all_fixed_host_phases():
     report['last_part_metrics']['host_phase_timings'] = phases
     result = sdk.diagnostic_report(report, request(), 'A', EOFError())
     assert result['last_part_metrics']['host_phase_timings'] == phases
-    assert len(phases['phases']) == 24
+    assert len(phases['phases']) == 26
+
+
+def test_cipher_phase_projection_keeps_historical_absence_and_drops_unknown_data():
+    from meshticulum.bench.host_timing import HostPhaseTimings
+    current = HostPhaseTimings().snapshot()
+    assert {'cipher_seal', 'cipher_open'} <= current['phases'].keys()
+    historical = {**current, 'phases': {name: row for name, row in current['phases'].items()
+        if name not in ('cipher_seal', 'cipher_open')}}
+    assert len(historical['phases']) == 24
+    assert sdk._phase_report(historical) == historical
+    changed = {**current, 'phases': {**current['phases'], 'private_payload': {'value': 'secret'}}}
+    changed['phases']['cipher_seal'] = {**changed['phases']['cipher_seal'],
+        'count': 3, 'total_ns': 90, 'private_key': 'secret'}
+    result = sdk._phase_report(changed)
+    assert result['phases']['cipher_seal']['count'] == 3
+    assert result['phases']['cipher_seal']['total_ns'] == 90
+    assert 'secret' not in json.dumps(result) and 'private_payload' not in result['phases']
 
 
 def test_failure_projection_retains_ack_effects_and_only_bounded_metadata():
