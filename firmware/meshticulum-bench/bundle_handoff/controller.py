@@ -91,7 +91,11 @@ def checked_data_burst(config):
     from meshticulum.bench import burst_protocol
     policy=selected_data_burst(config)
     if policy is not None:
-        if 'selective_terminal_retry' in config:
+        if 'scalar_fill_pair' in config:
+            selector=getattr(burst_protocol,'policy_for_scalar_fill_pair',None)
+            need(callable(selector),'sdk_scalar_fill_pair_policy_unavailable')
+            expected=selector()
+        elif 'selective_terminal_retry' in config:
             selector=getattr(burst_protocol,'policy_for_terminal_retry',None)
             need(callable(selector),'sdk_terminal_retry_policy_unavailable')
             expected=selector()
