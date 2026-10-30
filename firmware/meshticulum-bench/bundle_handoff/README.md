@@ -164,6 +164,20 @@ matching new firmware capability and fresh build, install and RF qualification;
 it does not widen historical grants or certify a throughput result. Hold times,
 USB pacing, per-boot caps and all retained debt remain unchanged.
 
+A separate source option combines `comparison_mode: "queued"`, explicit
+`train_depth: 8` and `flow_window_frames: 32`. It selects the exact v3 policy:
+32 logical outstanding/reassembly slots with an eight-frame physical train.
+The SDK owner binds a 6,656-byte window (32 × the admitted 208-byte frame bound).
+The native queue, eight-frame ACK turn, 5 ms/100 ms receive guards, original
+deadlines and operation allowances stay unchanged. Omission retains the prior
+v1/v2 policy bytes; null, other widths, missing explicit train eight and baseline
+selection are refused. Preparation requires the exact pinned SDK to expose
+`policy_for_flow_window(32)` and return identical bytes. An older SDK still
+supports the unchanged default selections but refuses v3. The prepared record,
+original scope and every part grant bind the selected policy; a v2/v3 mismatch
+cannot widen it. This source option requires its own candidate pins and finite
+qualification and makes no hardware throughput claim.
+
 The associated cold plan is **50,000 useful bytes, five 10,000-byte parts,
 A→B, order 4, 2, 0, 3, 1**, with host profiling enabled. It proposes a fresh
 180-second original file window and 60-second per-part radio leases. Sender
@@ -309,3 +323,11 @@ profile speed comparison or sustained capacity result. The public
 [recovery record](https://github.com/l33tdawg/meshticulum/tree/main/benchmarks/2026-10-30-sf5-recovery)
 retains exact boundaries, the earlier 3 kB ACK-policy trial and source controls.
 The published alpha.3 artifacts and other Lantern integration locks are unchanged.
+
+The logical-window32 candidate targets SDK commit
+`e43320ec3767c7aaabe64cf46af5116a2f2993cc`. Its separate wheel is 302,151 bytes,
+SHA-256 `83cba2892003df14eca5ec53cfd69b0cfed5711ba320183743b486d890246fd0`;
+all 75 runtime files, including 71 Python files, match that checkout. This
+identifies source support; physical throughput for this policy remains pending.
+The matched R11 eight-frame sample completed at 1,053.28 useful B/s including
+startup with different loss from the earlier sample. Neither reached 3,000 B/s.

@@ -86,6 +86,20 @@ def sdk(core,commit):
     need(not subprocess.check_output(['git','-C',str(core),'status','--porcelain'],text=True),'candidate_checkout_dirty')
     sys.path[:0]=[str(core/'src'),str(core/'examples')]
 
+def checked_data_burst(config):
+    """Require identical selected policy in the exact caller-pinned SDK."""
+    from meshticulum.bench import burst_protocol
+    policy=selected_data_burst(config)
+    if policy is not None:
+        if 'flow_window_frames' in config:
+            selector=getattr(burst_protocol,'policy_for_flow_window',None)
+            need(callable(selector),'sdk_flow_window_policy_unavailable')
+            expected=selector(config['flow_window_frames'])
+        else:
+            expected=burst_protocol.policy_for_depth(config.get('train_depth',4))
+        need(canonical(policy)==canonical(expected),'sdk_train_policy_mismatch')
+    return policy
+
 def prepare(config_path,output):
     raw=Path(config_path).read_bytes();config=json.loads(raw)
     need(config['schema']=='meshticulum.alpha3-individual-input.v1','new_config_required')
@@ -96,11 +110,8 @@ def prepare(config_path,output):
     from meshticulum.resources import byte_bundle,knowledge_pack as kp
     from meshticulum.bench.admission import RadioAdmission
     from meshticulum.bench.serial_protocol import RadioProfile
-    from meshticulum.bench.burst_protocol import policy_for_depth
     import radio_bundle,radio_file
-    burst_policy=selected_data_burst(config)
-    need(burst_policy is None or canonical(burst_policy)==canonical(
-         policy_for_depth(config.get('train_depth',4))),'sdk_train_policy_mismatch')
+    burst_policy=checked_data_burst(config)
     wheel=pinned(config['candidate_wheel'],2_000_000)
     with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
         names=archive.namelist();need(len(names)==len(set(names)),'duplicate_wheel_entry')
