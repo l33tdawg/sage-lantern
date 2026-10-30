@@ -390,8 +390,7 @@ early retry only after the original final frame has genuinely handed over,
 outbound DATA is empty, and canonical peer receipt of that final frame is
 proven. The adapter must also release and verify physical drain before each
 offer. Bulk recovery still requires three later receipts; retry ceilings,
-backoff, authority, debt and native listening guards remain in force. Physical
-performance for v5 is pending.
+backoff, authority, debt and native listening guards remain in force.
 
 The reviewed v5 SDK input is clean commit
 `f168a6a66a15054e909e3d9555ea6e5089c0b14e`, with a 304,608-byte wheel,
@@ -400,3 +399,22 @@ All 75 runtime files, including 71 Python files, match that checkout. Its seven
 firmware source files also match the reviewed MNR1 preparation; the generated
 eighth input keeps the existing 2 MHz SPI setting. Source models remain
 separate from physical delivery evidence.
+
+The first v5/MNR1 diagnostic hardware sample verified the same 23,900 useful
+bytes in 11.793771 seconds including sender process startup, or 2,026.493477
+B/s. It made 134 DATA attempts (six selective retries), 20 ACK attempts and
+one confirmation. All six repairs had fresh DATA remaining and formed full
+repair-fill groups: the lower terminal threshold was enabled but not exercised.
+Different loss and diagnostic firmware prevent an isolated policy comparison.
+Both endpoints drained and closed, the original scope expired, all 239 history
+references and the old-debt upgrade bridge verified, and no UNKNOWN or refund
+was recorded. The 2,800/3,000 B/s checkpoints remain open.
+
+MNR1 reported only header-only IRQ restart drops (receiver 20, sender three),
+with zero other drop categories. Export counts matched authenticated DATA plus
+confirmation and ACK counts, but software categories cannot identify missing
+packets or establish their RF cause. The trace also showed six queue-empty
+transitions inside eight-frame groups, each entering the existing roughly
+100 ms reverse-listen floor. Further work targets refill and receive handling.
+The [sanitized public sample](https://github.com/l33tdawg/meshticulum/blob/main/benchmarks/2026-10-30-sf5-terminal-retry-profile/README.md)
+retains exact source, firmware and timing boundaries. Alpha.3 assets are unchanged.
