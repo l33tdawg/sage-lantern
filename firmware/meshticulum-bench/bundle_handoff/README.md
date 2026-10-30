@@ -351,8 +351,18 @@ opportunity, credit or attempt/airtime allowance, and retains native listening
 floors, finite deadlines and debt. Physical performance for this option remains
 pending; the earlier v3/window32 sample measured 1,276.92 useful B/s.
 
-The repair-fill candidate uses exact SDK commit
+The initial source-only repair-fill candidate used exact SDK commit
 `530fe62df03c3d235f04c892b23966100d659f51`, with a 302,742-byte wheel,
 SHA-256 `b3cef9b777a5757aedb30539e01a78a271e9931bf32780cfa24ecccf78290f9a`.
-All 75 runtime files, including 71 Python files, match that checkout. The
-source model and tests do not establish physical performance for v4.
+Review found that a final new DATA handover could cross another frame's retry
+deadline and admit that retry into a partial repair train. That candidate was
+not run on hardware; its source and wheel remain retained.
+
+The corrected candidate is SDK commit
+`79cbcd7e3b6c892fc2c3372d5aa474fe58419d02`, with a 302,855-byte wheel,
+SHA-256 `7c043840a72f1912f5caf8f1d869c3086fe3d0a8cacc5974ec5dae8123e274e7`.
+All 75 runtime files, including 71 Python files, match that clean checkout.
+An active partial repair train now takes the existing reverse hold after its
+final new DATA. Independent direct and deferred handover controls reproduce
+the old defect and pass with the correction. The source model and tests do not
+establish physical performance for v4.
